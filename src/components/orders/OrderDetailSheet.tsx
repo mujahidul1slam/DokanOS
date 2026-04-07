@@ -305,6 +305,23 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
               {/* ====== Order Info ====== */}
               <TabsContent value="info" className="px-6 py-4 space-y-6 mt-0">
+                {/* Payment & Source Info */}
+                <section>
+                  <h3 className="text-sm font-semibold text-foreground mb-3">Payment & Source</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Payment Method</Label>
+                      <p className="text-sm font-medium">{order?.payment_method || "N/A"}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Payment Status</Label>
+                      <p className="text-sm font-medium capitalize">{order?.payment_status || "N/A"}</p>
+                    </div>
+                  </div>
+                </section>
+
+                <Separator />
+
                 {/* Customer */}
                 <section>
                   <h3 className="text-sm font-semibold text-foreground mb-3">Customer Details</h3>
