@@ -12,6 +12,15 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.text();
+
+    // WooCommerce sends the initial ping as form-urlencoded (e.g. "webhook_id=11")
+    const contentType = req.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const payload = JSON.parse(body);
 
     // WooCommerce sends a webhook_id field on the initial ping — just acknowledge
