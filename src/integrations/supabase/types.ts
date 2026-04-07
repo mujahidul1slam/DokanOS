@@ -125,6 +125,7 @@ export type Database = {
           notes: string | null
           order_number: string
           payment_method: string | null
+          payment_status: string
           shipping_cost: number | null
           source: string
           status: string
@@ -144,6 +145,7 @@ export type Database = {
           notes?: string | null
           order_number: string
           payment_method?: string | null
+          payment_status?: string
           shipping_cost?: number | null
           source?: string
           status?: string
@@ -163,6 +165,7 @@ export type Database = {
           notes?: string | null
           order_number?: string
           payment_method?: string | null
+          payment_status?: string
           shipping_cost?: number | null
           source?: string
           status?: string
