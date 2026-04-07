@@ -1,6 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, Plus, Minus, Trash2, CreditCard } from "lucide-react";
-import { products } from "@/lib/mockData";
+import { supabase } from "@/integrations/supabase/client";
+
+interface Product {
+  id: string;
+  name: string;
+  sku: string | null;
+  price: number;
+  stock_quantity: number;
+}
 
 interface CartItem {
   id: string;
@@ -10,34 +18,48 @@ interface CartItem {
 }
 
 const POS = () => {
+  const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("id, name, sku, price, stock_quantity")
+        .eq("is_active", true)
+        .gt("stock_quantity", 0)
+        .order("name");
+      setProducts((data || []) as Product[]);
+      setLoading(false);
+    };
+    load();
+  }, []);
 
   const filtered = products.filter(
-    (p) => p.stock > 0 && p.name.toLowerCase().includes(search.toLowerCase())
+    (p) => p.name.toLowerCase().includes(search.toLowerCase()) || (p.sku || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const addToCart = (p: typeof products[0]) => {
+  const addToCart = (p: Product) => {
     setCart((prev) => {
       const existing = prev.find((c) => c.id === p.id);
       if (existing) return prev.map((c) => (c.id === p.id ? { ...c, qty: c.qty + 1 } : c));
-      return [...prev, { id: p.id, name: p.name, price: p.price, qty: 1 }];
+      return [...prev, { id: p.id, name: p.name, price: Number(p.price), qty: 1 }];
     });
   };
 
-  const updateQty = (id: string, delta: number) => {
-    setCart((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c))
-    );
-  };
+  const updateQty = (id: string, delta: number) =>
+    setCart((prev) => prev.map((c) => (c.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c)));
 
   const remove = (id: string) => setCart((prev) => prev.filter((c) => c.id !== id));
 
   const subtotal = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
 
+  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
+
   return (
     <div className="flex gap-6 h-[calc(100vh-5rem)]">
-      {/* Product grid */}
       <div className="flex-1 flex flex-col min-w-0">
         <div className="flex items-center justify-between mb-4">
           <h1 className="font-heading text-2xl font-semibold">Point of Sale</h1>
@@ -53,23 +75,18 @@ const POS = () => {
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 overflow-auto flex-1">
           {filtered.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => addToCart(p)}
-              className="flex flex-col items-start rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50"
-            >
+            <button key={p.id} onClick={() => addToCart(p)} className="flex flex-col items-start rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50">
               <p className="text-sm font-medium text-card-foreground">{p.name}</p>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">{p.sku}</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">{p.sku || "—"}</p>
               <div className="mt-auto pt-3 flex w-full items-center justify-between">
-                <span className="font-heading text-base font-semibold text-card-foreground">৳{p.price.toLocaleString()}</span>
-                <span className="text-xs text-muted-foreground">{p.stock} in stock</span>
+                <span className="font-heading text-base font-semibold text-card-foreground">৳{Number(p.price).toLocaleString()}</span>
+                <span className="text-xs text-muted-foreground">{p.stock_quantity} in stock</span>
               </div>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Cart */}
       <div className="w-80 flex flex-col rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
           <h2 className="font-heading text-sm font-medium text-card-foreground">Cart ({cart.length})</h2>
@@ -85,17 +102,11 @@ const POS = () => {
                   <p className="text-xs text-muted-foreground">৳{item.price.toLocaleString()}</p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => updateQty(item.id, -1)} className="h-6 w-6 rounded bg-secondary flex items-center justify-center text-foreground hover:bg-muted">
-                    <Minus className="h-3 w-3" />
-                  </button>
+                  <button onClick={() => updateQty(item.id, -1)} className="h-6 w-6 rounded bg-secondary flex items-center justify-center text-foreground hover:bg-muted"><Minus className="h-3 w-3" /></button>
                   <span className="w-6 text-center text-sm text-foreground">{item.qty}</span>
-                  <button onClick={() => updateQty(item.id, 1)} className="h-6 w-6 rounded bg-secondary flex items-center justify-center text-foreground hover:bg-muted">
-                    <Plus className="h-3 w-3" />
-                  </button>
+                  <button onClick={() => updateQty(item.id, 1)} className="h-6 w-6 rounded bg-secondary flex items-center justify-center text-foreground hover:bg-muted"><Plus className="h-3 w-3" /></button>
                 </div>
-                <button onClick={() => remove(item.id)} className="text-muted-foreground hover:text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <button onClick={() => remove(item.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
               </div>
             ))
           )}
@@ -105,10 +116,7 @@ const POS = () => {
             <span className="text-muted-foreground">Subtotal</span>
             <span className="font-medium text-card-foreground">৳{subtotal.toLocaleString()}</span>
           </div>
-          <button
-            disabled={cart.length === 0}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-primary py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          <button disabled={cart.length === 0} className="flex w-full items-center justify-center gap-2 rounded-md bg-primary py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">
             <CreditCard className="h-4 w-4" /> Charge ৳{subtotal.toLocaleString()}
           </button>
         </div>
