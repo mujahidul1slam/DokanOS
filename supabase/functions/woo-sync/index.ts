@@ -23,7 +23,6 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Fetch store credentials
     const { data: store, error: storeErr } = await supabase
       .from("stores")
       .select("*")
@@ -47,7 +46,6 @@ Deno.serve(async (req) => {
     const baseUrl = store.url.replace(/\/+$/, "");
     const authHeader = "Basic " + btoa(`${store.consumer_key}:${store.consumer_secret}`);
 
-    // Helper: paginated WooCommerce fetch
     async function wooFetchAll(endpoint: string) {
       const all: any[] = [];
       let page = 1;
@@ -93,7 +91,7 @@ Deno.serve(async (req) => {
       else summary.products = rows.length;
     }
 
-    // --- Sync Customers ---
+    // --- Sync Customers (registered) ---
     const wooCustomers = await wooFetchAll("customers");
     if (wooCustomers.length > 0) {
       const rows = wooCustomers.map((c: any) => ({
@@ -116,7 +114,7 @@ Deno.serve(async (req) => {
     // --- Sync Orders ---
     const wooOrders = await wooFetchAll("orders");
     if (wooOrders.length > 0) {
-      // Build a lookup of woo_customer_id -> our customer id
+      // Build customer lookup
       const { data: dbCustomers } = await supabase
         .from("customers")
         .select("id, woo_customer_id")
@@ -124,6 +122,30 @@ Deno.serve(async (req) => {
       const custMap = new Map(
         (dbCustomers || []).map((c: any) => [c.woo_customer_id, c.id])
       );
+
+      // For guest orders (customer_id=0), create customers from billing info
+      for (const o of wooOrders) {
+        if ((!o.customer_id || o.customer_id === 0) && o.billing?.phone) {
+          const guestName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "Guest";
+          const { data: guestCust } = await supabase
+            .from("customers")
+            .upsert({
+              store_id,
+              woo_customer_id: null,
+              name: guestName,
+              email: o.billing?.email || null,
+              phone: o.billing?.phone || null,
+              address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
+              city: o.billing?.city || null,
+            }, { onConflict: "id" })
+            .select("id")
+            .single();
+          if (guestCust) {
+            // Store temp mapping using negative woo order id
+            custMap.set(-o.id, guestCust.id);
+          }
+        }
+      }
 
       // Build product lookup
       const { data: dbProducts } = await supabase
@@ -134,21 +156,28 @@ Deno.serve(async (req) => {
         (dbProducts || []).map((p: any) => [p.woo_product_id, p.id])
       );
 
-      const orderRows = wooOrders.map((o: any) => ({
-        store_id,
-        woo_order_id: o.id,
-        order_number: String(o.number || o.id),
-        source: "online",
-        status: mapWooStatus(o.status),
-        payment_method: o.payment_method_title || o.payment_method || null,
-        subtotal: parseFloat(o.total) - parseFloat(o.shipping_total || "0") + parseFloat(o.discount_total || "0"),
-        discount: parseFloat(o.discount_total) || 0,
-        shipping_cost: parseFloat(o.shipping_total) || 0,
-        total: parseFloat(o.total) || 0,
-        customer_id: custMap.get(o.customer_id) || null,
-        notes: o.customer_note || null,
-        created_at: o.date_created_gmt ? o.date_created_gmt + "Z" : undefined,
-      }));
+      const orderRows = wooOrders.map((o: any) => {
+        const customerId = o.customer_id && o.customer_id > 0
+          ? custMap.get(o.customer_id) || null
+          : custMap.get(-o.id) || null;
+
+        return {
+          store_id,
+          woo_order_id: o.id,
+          order_number: String(o.number || o.id),
+          source: "online",
+          status: mapWooStatus(o.status),
+          payment_method: o.payment_method_title || o.payment_method || null,
+          payment_status: derivePaymentStatus(o),
+          subtotal: parseFloat(o.total) - parseFloat(o.shipping_total || "0") + parseFloat(o.discount_total || "0"),
+          discount: parseFloat(o.discount_total) || 0,
+          shipping_cost: parseFloat(o.shipping_total) || 0,
+          total: parseFloat(o.total) || 0,
+          customer_id: customerId,
+          notes: o.customer_note || null,
+          created_at: o.date_created_gmt ? o.date_created_gmt + "Z" : undefined,
+        };
+      });
 
       const { error } = await supabase
         .from("orders")
@@ -156,7 +185,7 @@ Deno.serve(async (req) => {
       if (error) console.error("Orders upsert error:", error);
       else summary.orders = orderRows.length;
 
-      // Now upsert order items – need to get the order IDs back
+      // Order items
       const { data: dbOrders } = await supabase
         .from("orders")
         .select("id, woo_order_id")
@@ -182,7 +211,6 @@ Deno.serve(async (req) => {
       }
 
       if (allItems.length > 0) {
-        // Delete existing items for these orders and re-insert
         const orderIds = [...new Set(allItems.map((i) => i.order_id))];
         for (const oid of orderIds) {
           await supabase.from("order_items").delete().eq("order_id", oid);
@@ -193,7 +221,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Update store status
     await supabase
       .from("stores")
       .update({ status: "connected", last_synced_at: new Date().toISOString() })
@@ -223,4 +250,16 @@ function mapWooStatus(status: string): string {
     shipped: "shipped",
   };
   return map[status] || "pending";
+}
+
+function derivePaymentStatus(o: any): string {
+  const method = (o.payment_method || "").toLowerCase();
+  const status = (o.status || "").toLowerCase();
+  if (method === "cod" || (o.payment_method_title || "").toLowerCase().includes("cash on delivery")) {
+    return "cod";
+  }
+  if (status === "completed" || status === "processing") {
+    return "paid";
+  }
+  return "unpaid";
 }
