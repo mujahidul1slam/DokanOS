@@ -13,7 +13,6 @@ Deno.serve(async (req) => {
   try {
     const body = await req.text();
 
-    // WooCommerce sends the initial ping as form-urlencoded (e.g. "webhook_id=11")
     const contentType = req.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
       return new Response(JSON.stringify({ ok: true }), {
@@ -23,7 +22,6 @@ Deno.serve(async (req) => {
 
     const payload = JSON.parse(body);
 
-    // WooCommerce sends a webhook_id field on the initial ping — just acknowledge
     if (payload.webhook_id && !payload.line_items) {
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -36,7 +34,6 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Find the store by URL
     const normalizedSource = webhookSource.replace(/\/+$/, "");
     const { data: store } = await supabase
       .from("stores")
@@ -56,8 +53,10 @@ Deno.serve(async (req) => {
     const store_id = store.id;
     const o = payload;
 
-    // Upsert customer
+    // Upsert customer (both registered and guest)
     let customer_id: string | null = null;
+    const hasCustomerInfo = o.billing?.phone || o.billing?.first_name || o.billing?.email;
+
     if (o.customer_id && o.customer_id > 0) {
       const custRow = {
         store_id,
@@ -74,6 +73,22 @@ Deno.serve(async (req) => {
         .select("id")
         .single();
       customer_id = cust?.id || null;
+    } else if (hasCustomerInfo) {
+      // Guest order - create customer from billing info
+      const guestName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "Guest";
+      const { data: guestCust } = await supabase
+        .from("customers")
+        .insert({
+          store_id,
+          name: guestName,
+          email: o.billing?.email || null,
+          phone: o.billing?.phone || null,
+          address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
+          city: o.billing?.city || null,
+        })
+        .select("id")
+        .single();
+      customer_id = guestCust?.id || null;
     }
 
     // Product lookup
@@ -83,6 +98,9 @@ Deno.serve(async (req) => {
       .eq("store_id", store_id);
     const prodMap = new Map((dbProducts || []).map((p: any) => [p.woo_product_id, p.id]));
 
+    // Derive payment status
+    const paymentStatus = derivePaymentStatus(o);
+
     // Upsert order
     const orderRow = {
       store_id,
@@ -91,6 +109,7 @@ Deno.serve(async (req) => {
       source: "online",
       status: mapWooStatus(o.status),
       payment_method: o.payment_method_title || o.payment_method || null,
+      payment_status: paymentStatus,
       subtotal: parseFloat(o.total) - parseFloat(o.shipping_total || "0") + parseFloat(o.discount_total || "0"),
       discount: parseFloat(o.discount_total) || 0,
       shipping_cost: parseFloat(o.shipping_total) || 0,
@@ -154,4 +173,16 @@ function mapWooStatus(status: string): string {
     shipped: "shipped",
   };
   return map[status] || "pending";
+}
+
+function derivePaymentStatus(o: any): string {
+  const method = (o.payment_method || "").toLowerCase();
+  if (method === "cod" || (o.payment_method_title || "").toLowerCase().includes("cash on delivery")) {
+    return "cod";
+  }
+  const status = (o.status || "").toLowerCase();
+  if (status === "completed" || status === "processing") {
+    return "paid";
+  }
+  return "unpaid";
 }
