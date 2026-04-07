@@ -343,6 +343,22 @@ const Orders = () => {
           </Button>
         </div>
       </div>
+
+      <OrderDetailSheet
+        orderId={detailOrderId}
+        open={!!detailOrderId}
+        onOpenChange={(open) => { if (!open) setDetailOrderId(null); }}
+        onSaved={() => {
+          const reload = async () => {
+            const { data } = await supabase
+              .from("orders")
+              .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, created_at, customers(name, phone, address)")
+              .order("created_at", { ascending: false });
+            setOrders((data || []) as unknown as OrderRow[]);
+          };
+          reload();
+        }}
+      />
     </div>
   );
 };
