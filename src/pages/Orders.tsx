@@ -281,7 +281,7 @@ const Orders = () => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>View Details</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setDetailOrderId(order.id)}>View Details</DropdownMenuItem>
                         <DropdownMenuItem>Print Invoice</DropdownMenuItem>
                         <DropdownMenuItem>Process Return/Exchange</DropdownMenuItem>
                         <DropdownMenuItem className="text-destructive">Cancel Order</DropdownMenuItem>
