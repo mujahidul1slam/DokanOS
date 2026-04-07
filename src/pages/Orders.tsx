@@ -49,6 +49,7 @@ const Orders = () => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
