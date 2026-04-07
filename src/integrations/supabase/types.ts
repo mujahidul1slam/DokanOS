@@ -14,7 +14,280 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      customers: {
+        Row: {
+          address: string | null
+          area: string | null
+          city: string | null
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          store_id: string | null
+          updated_at: string
+          woo_customer_id: number | null
+          zone: string | null
+        }
+        Insert: {
+          address?: string | null
+          area?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          store_id?: string | null
+          updated_at?: string
+          woo_customer_id?: number | null
+          zone?: string | null
+        }
+        Update: {
+          address?: string | null
+          area?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          store_id?: string | null
+          updated_at?: string
+          woo_customer_id?: number | null
+          zone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_items: {
+        Row: {
+          created_at: string
+          id: string
+          line_total: number
+          order_id: string
+          product_id: string | null
+          product_name: string
+          quantity: number
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          line_total?: number
+          order_id: string
+          product_id?: string | null
+          product_name: string
+          quantity?: number
+          unit_price?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          line_total?: number
+          order_id?: string
+          product_id?: string | null
+          product_name?: string
+          quantity?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          consignment_id: string | null
+          created_at: string
+          customer_id: string | null
+          discount: number | null
+          id: string
+          notes: string | null
+          order_number: string
+          payment_method: string | null
+          shipping_cost: number | null
+          source: string
+          status: string
+          store_id: string | null
+          subtotal: number
+          total: number
+          tracking_status: string | null
+          updated_at: string
+          woo_order_id: number | null
+        }
+        Insert: {
+          consignment_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          discount?: number | null
+          id?: string
+          notes?: string | null
+          order_number: string
+          payment_method?: string | null
+          shipping_cost?: number | null
+          source?: string
+          status?: string
+          store_id?: string | null
+          subtotal?: number
+          total?: number
+          tracking_status?: string | null
+          updated_at?: string
+          woo_order_id?: number | null
+        }
+        Update: {
+          consignment_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          discount?: number | null
+          id?: string
+          notes?: string | null
+          order_number?: string
+          payment_method?: string | null
+          shipping_cost?: number | null
+          source?: string
+          status?: string
+          store_id?: string | null
+          subtotal?: number
+          total?: number
+          tracking_status?: string | null
+          updated_at?: string
+          woo_order_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      products: {
+        Row: {
+          barcode: string | null
+          category: string | null
+          cost_price: number | null
+          created_at: string
+          description: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          name: string
+          price: number
+          sku: string | null
+          stock_quantity: number
+          store_id: string | null
+          updated_at: string
+          woo_product_id: number | null
+        }
+        Insert: {
+          barcode?: string | null
+          category?: string | null
+          cost_price?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          name: string
+          price?: number
+          sku?: string | null
+          stock_quantity?: number
+          store_id?: string | null
+          updated_at?: string
+          woo_product_id?: number | null
+        }
+        Update: {
+          barcode?: string | null
+          category?: string | null
+          cost_price?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          name?: string
+          price?: number
+          sku?: string | null
+          stock_quantity?: number
+          store_id?: string | null
+          updated_at?: string
+          woo_product_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stores: {
+        Row: {
+          consumer_key: string | null
+          consumer_secret: string | null
+          created_at: string
+          id: string
+          last_synced_at: string | null
+          name: string
+          status: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          consumer_key?: string | null
+          consumer_secret?: string | null
+          created_at?: string
+          id?: string
+          last_synced_at?: string | null
+          name: string
+          status?: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          consumer_key?: string | null
+          consumer_secret?: string | null
+          created_at?: string
+          id?: string
+          last_synced_at?: string | null
+          name?: string
+          status?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
