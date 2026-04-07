@@ -21,6 +21,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
+import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
 
 interface OrderRow {
   id: string;
