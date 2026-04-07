@@ -21,6 +21,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
+import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
 
 interface OrderRow {
   id: string;
@@ -48,6 +49,7 @@ const Orders = () => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -279,7 +281,7 @@ const Orders = () => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>View Details</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setDetailOrderId(order.id)}>View Details</DropdownMenuItem>
                         <DropdownMenuItem>Print Invoice</DropdownMenuItem>
                         <DropdownMenuItem>Process Return/Exchange</DropdownMenuItem>
                         <DropdownMenuItem className="text-destructive">Cancel Order</DropdownMenuItem>
@@ -341,6 +343,22 @@ const Orders = () => {
           </Button>
         </div>
       </div>
+
+      <OrderDetailSheet
+        orderId={detailOrderId}
+        open={!!detailOrderId}
+        onOpenChange={(open) => { if (!open) setDetailOrderId(null); }}
+        onSaved={() => {
+          const reload = async () => {
+            const { data } = await supabase
+              .from("orders")
+              .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, created_at, customers(name, phone, address)")
+              .order("created_at", { ascending: false });
+            setOrders((data || []) as unknown as OrderRow[]);
+          };
+          reload();
+        }}
+      />
     </div>
   );
 };

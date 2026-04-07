@@ -115,6 +115,79 @@ export type Database = {
           },
         ]
       }
+      order_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          method: string
+          notes: string | null
+          order_id: string
+          trx_id: string | null
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          id?: string
+          method: string
+          notes?: string | null
+          order_id: string
+          trx_id?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          method?: string
+          notes?: string | null
+          order_id?: string
+          trx_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_payments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_timeline: {
+        Row: {
+          created_at: string
+          description: string
+          event: string
+          id: string
+          metadata: Json | null
+          order_id: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          event: string
+          id?: string
+          metadata?: Json | null
+          order_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          event?: string
+          id?: string
+          metadata?: Json | null
+          order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_timeline_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           consignment_id: string | null
