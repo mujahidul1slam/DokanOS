@@ -114,35 +114,44 @@ Deno.serve(async (req) => {
     // --- Sync Orders ---
     const wooOrders = await wooFetchAll("orders");
     if (wooOrders.length > 0) {
-      // Build customer lookup
+      // Build customer lookup by woo_customer_id
       const { data: dbCustomers } = await supabase
         .from("customers")
-        .select("id, woo_customer_id")
+        .select("id, woo_customer_id, phone")
         .eq("store_id", store_id);
-      const custMap = new Map(
-        (dbCustomers || []).map((c: any) => [c.woo_customer_id, c.id])
+      const custByWooId = new Map(
+        (dbCustomers || []).filter((c: any) => c.woo_customer_id).map((c: any) => [c.woo_customer_id, c.id])
+      );
+      const custByPhone = new Map(
+        (dbCustomers || []).filter((c: any) => c.phone).map((c: any) => [c.phone, c.id])
       );
 
-      // For guest orders (customer_id=0), create customers from billing info
+      // For guest orders (customer_id=0), create/find customers from billing info
       for (const o of wooOrders) {
-        if ((!o.customer_id || o.customer_id === 0) && o.billing?.phone) {
+        if ((!o.customer_id || o.customer_id === 0) && (o.billing?.phone || o.billing?.email)) {
+          const phone = o.billing?.phone || null;
+          // Check if customer already exists by phone
+          if (phone && custByPhone.has(phone)) {
+            // Already exists, map this order's woo_id to the existing customer
+            custByWooId.set(-o.id, custByPhone.get(phone));
+            continue;
+          }
           const guestName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "Guest";
           const { data: guestCust } = await supabase
             .from("customers")
-            .upsert({
+            .insert({
               store_id,
-              woo_customer_id: null,
               name: guestName,
               email: o.billing?.email || null,
-              phone: o.billing?.phone || null,
+              phone,
               address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
               city: o.billing?.city || null,
-            }, { onConflict: "id" })
+            })
             .select("id")
             .single();
           if (guestCust) {
-            // Store temp mapping using negative woo order id
-            custMap.set(-o.id, guestCust.id);
+            custByWooId.set(-o.id, guestCust.id);
+            if (phone) custByPhone.set(phone, guestCust.id);
           }
         }
       }
@@ -158,8 +167,8 @@ Deno.serve(async (req) => {
 
       const orderRows = wooOrders.map((o: any) => {
         const customerId = o.customer_id && o.customer_id > 0
-          ? custMap.get(o.customer_id) || null
-          : custMap.get(-o.id) || null;
+          ? custByWooId.get(o.customer_id) || null
+          : custByWooId.get(-o.id) || null;
 
         return {
           store_id,
@@ -185,7 +194,7 @@ Deno.serve(async (req) => {
       if (error) console.error("Orders upsert error:", error);
       else summary.orders = orderRows.length;
 
-      // Order items
+      // Order items — delete all existing items for synced orders first, then bulk insert
       const { data: dbOrders } = await supabase
         .from("orders")
         .select("id, woo_order_id")
@@ -194,10 +203,13 @@ Deno.serve(async (req) => {
         (dbOrders || []).map((o: any) => [o.woo_order_id, o.id])
       );
 
+      // Collect all order IDs that will get new items
+      const orderIdsToRefresh: string[] = [];
       const allItems: any[] = [];
       for (const o of wooOrders) {
         const orderId = orderMap.get(o.id);
         if (!orderId) continue;
+        orderIdsToRefresh.push(orderId);
         for (const li of o.line_items || []) {
           allItems.push({
             order_id: orderId,
@@ -210,14 +222,19 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Delete ALL existing items for these orders in one batch, then insert
+      if (orderIdsToRefresh.length > 0) {
+        await supabase.from("order_items").delete().in("order_id", orderIdsToRefresh);
+      }
+
       if (allItems.length > 0) {
-        const orderIds = [...new Set(allItems.map((i) => i.order_id))];
-        for (const oid of orderIds) {
-          await supabase.from("order_items").delete().eq("order_id", oid);
+        // Insert in chunks of 500 to avoid payload limits
+        for (let i = 0; i < allItems.length; i += 500) {
+          const chunk = allItems.slice(i, i + 500);
+          const { error: itemErr } = await supabase.from("order_items").insert(chunk);
+          if (itemErr) console.error("Order items insert error:", itemErr);
         }
-        const { error: itemErr } = await supabase.from("order_items").insert(allItems);
-        if (itemErr) console.error("Order items insert error:", itemErr);
-        else summary.order_items = allItems.length;
+        summary.order_items = allItems.length;
       }
     }
 
