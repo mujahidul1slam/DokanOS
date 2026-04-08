@@ -21,6 +21,7 @@ interface ProductRow {
   stock_status: string;
   price: number;
   is_active: boolean;
+  categoryNames?: string[];
 }
 
 const stockBadge = (status: string) => {
@@ -48,29 +49,57 @@ const Products = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editProductId, setEditProductId] = useState<string | null>(null);
+  const [dbCategories, setDbCategories] = useState<{ id: string; name: string }[]>([]);
 
   const loadProducts = async () => {
     setLoading(true);
+
+    // Load products
     const { data } = await supabase
       .from("products")
       .select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active")
       .order("name");
-    setProducts((data || []) as ProductRow[]);
+
+    // Load product_categories with category names
+    const { data: pcData } = await supabase
+      .from("product_categories")
+      .select("product_id, category_id");
+
+    const { data: cats } = await supabase
+      .from("categories")
+      .select("id, name");
+
+    setDbCategories(cats || []);
+
+    const catNameMap = new Map((cats || []).map((c: any) => [c.id, c.name]));
+    const productCatMap = new Map<string, string[]>();
+    for (const pc of pcData || []) {
+      const names = productCatMap.get(pc.product_id) || [];
+      const catName = catNameMap.get(pc.category_id);
+      if (catName) names.push(catName);
+      productCatMap.set(pc.product_id, names);
+    }
+
+    const enriched = (data || []).map((p: any) => ({
+      ...p,
+      categoryNames: productCatMap.get(p.id) || (p.category ? [p.category] : []),
+    }));
+
+    setProducts(enriched as ProductRow[]);
     setLoading(false);
   };
 
   useEffect(() => { loadProducts(); }, []);
 
   const categories = useMemo(() => {
-    const cats = new Set(products.map(p => p.category).filter(Boolean) as string[]);
-    return Array.from(cats).sort();
-  }, [products]);
+    return dbCategories.map(c => c.name).sort();
+  }, [dbCategories]);
 
   const filtered = useMemo(() => {
     return products.filter(p => {
       const q = search.toLowerCase();
       const matchSearch = !q || p.name.toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q);
-      const matchCategory = categoryFilter === "all" || p.category === categoryFilter;
+      const matchCategory = categoryFilter === "all" || (p.categoryNames || []).includes(categoryFilter);
       const matchStock = stockFilter === "all" || p.stock_status === stockFilter;
       return matchSearch && matchCategory && matchStock;
     });
@@ -89,24 +118,36 @@ const Products = () => {
   const openEdit = (id: string) => { setEditProductId(id); setSheetOpen(true); };
 
   const handleDelete = async (id: string) => {
+    await supabase.from("product_categories").delete().eq("product_id", id);
     await supabase.from("product_variations").delete().eq("product_id", id);
     await supabase.from("products").delete().eq("id", id);
     toast({ title: "Product deleted" });
     loadProducts();
   };
 
+  const handleSyncCategories = async () => {
+    toast({ title: "Syncing categories from WooCommerce…" });
+    const { data: stores } = await supabase.from("stores").select("id").eq("status", "connected");
+    if (stores) {
+      for (const s of stores) {
+        await supabase.functions.invoke("woo-sync", { body: { store_id: s.id } });
+      }
+    }
+    await loadProducts();
+    toast({ title: "Categories synced!" });
+  };
+
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading…</div>;
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-semibold">Products</h1>
           <p className="text-sm text-muted-foreground">Central product catalog — {products.length} products</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleSyncCategories}>
             <RefreshCw className="h-3.5 w-3.5" /> Sync Categories
           </Button>
           <Button size="sm" className="gap-1.5" onClick={openNew}>
@@ -115,15 +156,10 @@ const Products = () => {
         </div>
       </div>
 
-      {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name or SKU…"
-            className="pl-9"
-          />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or SKU…" className="pl-9" />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Category" /></SelectTrigger>
@@ -140,14 +176,11 @@ const Products = () => {
         </Select>
       </div>
 
-      {/* Table */}
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-secondary">
-              <th className="w-10 px-4 py-3">
-                <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
-              </th>
+              <th className="w-10 px-4 py-3"><Checkbox checked={allSelected} onCheckedChange={toggleAll} /></th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Product</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Category</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Stock Status</th>
@@ -180,7 +213,16 @@ const Products = () => {
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{p.category || "—"}</td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1">
+                    {(p.categoryNames || []).length > 0
+                      ? (p.categoryNames || []).map((c, i) => (
+                          <Badge key={i} variant="secondary" className="text-xs">{c}</Badge>
+                        ))
+                      : <span className="text-muted-foreground">—</span>
+                    }
+                  </div>
+                </td>
                 <td className="px-4 py-3">{stockBadge(p.stock_status)}</td>
                 <td className="px-4 py-3 text-right font-mono text-foreground">
                   {p.manage_stock ? p.stock_quantity : "∞"}
