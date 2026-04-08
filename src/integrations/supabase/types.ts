@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      categories: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          parent_id: string | null
+          slug: string
+          store_id: string | null
+          updated_at: string
+          woo_category_id: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          parent_id?: string | null
+          slug?: string
+          store_id?: string | null
+          updated_at?: string
+          woo_category_id?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          parent_id?: string | null
+          slug?: string
+          store_id?: string | null
+          updated_at?: string
+          woo_category_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "categories_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "categories_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           address: string | null
@@ -266,6 +314,39 @@ export type Database = {
           },
         ]
       }
+      product_categories: {
+        Row: {
+          category_id: string
+          id: string
+          product_id: string
+        }
+        Insert: {
+          category_id: string
+          id?: string
+          product_id: string
+        }
+        Update: {
+          category_id?: string
+          id?: string
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_categories_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_categories_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_variations: {
         Row: {
           attributes: Json
@@ -280,6 +361,7 @@ export type Database = {
           stock_quantity: number
           stock_status: string
           updated_at: string
+          woo_variation_id: number | null
         }
         Insert: {
           attributes?: Json
@@ -294,6 +376,7 @@ export type Database = {
           stock_quantity?: number
           stock_status?: string
           updated_at?: string
+          woo_variation_id?: number | null
         }
         Update: {
           attributes?: Json
@@ -308,6 +391,7 @@ export type Database = {
           stock_quantity?: number
           stock_status?: string
           updated_at?: string
+          woo_variation_id?: number | null
         }
         Relationships: [
           {
