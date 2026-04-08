@@ -266,8 +266,62 @@ export type Database = {
           },
         ]
       }
+      product_variations: {
+        Row: {
+          attributes: Json
+          barcode: string | null
+          created_at: string
+          id: string
+          manage_stock: boolean
+          name: string
+          price: number
+          product_id: string
+          sku: string | null
+          stock_quantity: number
+          stock_status: string
+          updated_at: string
+        }
+        Insert: {
+          attributes?: Json
+          barcode?: string | null
+          created_at?: string
+          id?: string
+          manage_stock?: boolean
+          name?: string
+          price?: number
+          product_id: string
+          sku?: string | null
+          stock_quantity?: number
+          stock_status?: string
+          updated_at?: string
+        }
+        Update: {
+          attributes?: Json
+          barcode?: string | null
+          created_at?: string
+          id?: string
+          manage_stock?: boolean
+          name?: string
+          price?: number
+          product_id?: string
+          sku?: string | null
+          stock_quantity?: number
+          stock_status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_variations_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
+          backorders: string
           barcode: string | null
           category: string | null
           cost_price: number | null
@@ -276,15 +330,18 @@ export type Database = {
           id: string
           image_url: string | null
           is_active: boolean
+          manage_stock: boolean
           name: string
           price: number
           sku: string | null
           stock_quantity: number
+          stock_status: string
           store_id: string | null
           updated_at: string
           woo_product_id: number | null
         }
         Insert: {
+          backorders?: string
           barcode?: string | null
           category?: string | null
           cost_price?: number | null
@@ -293,15 +350,18 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_active?: boolean
+          manage_stock?: boolean
           name: string
           price?: number
           sku?: string | null
           stock_quantity?: number
+          stock_status?: string
           store_id?: string | null
           updated_at?: string
           woo_product_id?: number | null
         }
         Update: {
+          backorders?: string
           barcode?: string | null
           category?: string | null
           cost_price?: number | null
@@ -310,10 +370,12 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_active?: boolean
+          manage_stock?: boolean
           name?: string
           price?: number
           sku?: string | null
           stock_quantity?: number
+          stock_status?: string
           store_id?: string | null
           updated_at?: string
           woo_product_id?: number | null
