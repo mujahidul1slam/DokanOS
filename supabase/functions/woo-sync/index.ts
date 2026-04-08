@@ -203,36 +203,44 @@ Deno.serve(async (req) => {
         }
       }
 
-      // --- Sync Variations for variable products ---
-      for (const wp of wooProducts) {
-        if (wp.type !== "variable" || !wp.variations?.length) continue;
+      // --- Sync Variations for variable products (with rate limit protection) ---
+      const variableProducts = wooProducts.filter((wp: any) => wp.type === "variable" && wp.variations?.length > 0);
+      for (let vi = 0; vi < variableProducts.length; vi++) {
+        const wp = variableProducts[vi];
         const prodId = prodByWooId.get(wp.id);
         if (!prodId) continue;
 
-        const wooVars = await wooFetch(`products/${wp.id}/variations?per_page=100`);
-        if (!Array.isArray(wooVars) || wooVars.length === 0) continue;
+        // Throttle: wait 500ms between variation requests to avoid 429
+        if (vi > 0) await delay(500);
 
-        const varRows = wooVars.map((v: any) => ({
-          product_id: prodId,
-          woo_variation_id: v.id,
-          name: v.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${v.id}`,
-          sku: v.sku || null,
-          price: parseFloat(v.price) || 0,
-          manage_stock: v.manage_stock ?? false,
-          stock_quantity: v.stock_quantity ?? 0,
-          stock_status: v.stock_status || "in_stock",
-          barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
-          attributes: (v.attributes || []).map((a: any) => ({
-            key: a.name || a.slug,
-            value: a.option,
-          })),
-        }));
+        try {
+          const wooVars = await wooFetch(`products/${wp.id}/variations?per_page=100`);
+          if (!Array.isArray(wooVars) || wooVars.length === 0) continue;
 
-        const { error: varErr } = await supabase
-          .from("product_variations")
-          .upsert(varRows, { onConflict: "woo_variation_id,product_id", ignoreDuplicates: false });
-        if (varErr) console.error(`Variations upsert error for product ${wp.id}:`, varErr);
-        else summary.variations += varRows.length;
+          const varRows = wooVars.map((v: any) => ({
+            product_id: prodId,
+            woo_variation_id: v.id,
+            name: v.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${v.id}`,
+            sku: v.sku || null,
+            price: parseFloat(v.price) || 0,
+            manage_stock: v.manage_stock ?? false,
+            stock_quantity: v.stock_quantity ?? 0,
+            stock_status: v.stock_status || "in_stock",
+            barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
+            attributes: (v.attributes || []).map((a: any) => ({
+              key: a.name || a.slug,
+              value: a.option,
+            })),
+          }));
+
+          const { error: varErr } = await supabase
+            .from("product_variations")
+            .upsert(varRows, { onConflict: "woo_variation_id,product_id", ignoreDuplicates: false });
+          if (varErr) console.error(`Variations upsert error for product ${wp.id}:`, varErr);
+          else summary.variations += varRows.length;
+        } catch (e: any) {
+          console.warn(`Skipping variations for product ${wp.id}: ${e.message}`);
+        }
       }
     }
 
