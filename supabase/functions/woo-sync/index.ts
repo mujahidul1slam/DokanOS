@@ -46,12 +46,28 @@ Deno.serve(async (req) => {
     const baseUrl = store.url.replace(/\/+$/, "");
     const authHeader = "Basic " + btoa(`${store.consumer_key}:${store.consumer_secret}`);
 
+    const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+    async function wooFetchWithRetry(url: string, retries = 3): Promise<Response> {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        const res = await fetch(url, { headers: { Authorization: authHeader } });
+        if (res.status === 429) {
+          const wait = Math.min(2000 * Math.pow(2, attempt), 15000);
+          console.warn(`Rate limited on ${url}, waiting ${wait}ms (attempt ${attempt + 1})`);
+          await delay(wait);
+          continue;
+        }
+        return res;
+      }
+      throw new Error(`Rate limited after ${retries + 1} attempts: ${url}`);
+    }
+
     async function wooFetchAll(endpoint: string) {
       const all: any[] = [];
       let page = 1;
       while (true) {
         const url = `${baseUrl}/wp-json/wc/v3/${endpoint}?per_page=100&page=${page}`;
-        const res = await fetch(url, { headers: { Authorization: authHeader } });
+        const res = await wooFetchWithRetry(url);
         if (!res.ok) {
           const text = await res.text();
           throw new Error(`WooCommerce API error (${endpoint} p${page}): ${res.status} ${text}`);
@@ -66,7 +82,7 @@ Deno.serve(async (req) => {
 
     async function wooFetch(endpoint: string) {
       const url = `${baseUrl}/wp-json/wc/v3/${endpoint}`;
-      const res = await fetch(url, { headers: { Authorization: authHeader } });
+      const res = await wooFetchWithRetry(url);
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`WooCommerce API error (${endpoint}): ${res.status} ${text}`);
