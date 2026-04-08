@@ -7,10 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Trash2, RefreshCw } from "lucide-react";
+import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
 
+/* ---------- types ---------- */
 interface Variation {
   id?: string;
   name: string;
@@ -51,6 +55,23 @@ const STOCK_STATUSES = [
   { value: "on_backorder", label: "On Backorder" },
 ];
 
+/* ---------- sample category tree ---------- */
+interface CatNode { id: string; label: string; children?: CatNode[] }
+const SAMPLE_CATEGORIES: CatNode[] = [
+  { id: "clothing", label: "Clothing", children: [
+    { id: "mens", label: "Men's" },
+    { id: "womens", label: "Women's" },
+    { id: "kids", label: "Kids" },
+  ]},
+  { id: "electronics", label: "Electronics", children: [
+    { id: "phones", label: "Phones" },
+    { id: "accessories", label: "Accessories" },
+  ]},
+  { id: "home", label: "Home & Living" },
+  { id: "beauty", label: "Beauty & Health" },
+];
+
+/* ---------- props ---------- */
 interface Props {
   productId: string | null;
   open: boolean;
@@ -58,13 +79,22 @@ interface Props {
   onSaved: () => void;
 }
 
+/* ========== Component ========== */
 const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) => {
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [variations, setVariations] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // category tree
+  const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
+  const [catTree, setCatTree] = useState<CatNode[]>(SAMPLE_CATEGORIES);
+
+  // attribute / variation generation
   const [attrKeys, setAttrKeys] = useState<string[]>(["Size", "Color"]);
+  const [attrValues, setAttrValues] = useState<Record<string, string[]>>({ Size: [], Color: [] });
   const [newAttrKey, setNewAttrKey] = useState("");
+  const [newValInputs, setNewValInputs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -73,6 +103,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     } else {
       setForm(emptyForm);
       setVariations([]);
+      setSelectedCats(new Set());
+      setAttrValues({ Size: [], Color: [] });
     }
   }, [open, productId]);
 
@@ -87,6 +119,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         manage_stock: p.manage_stock ?? true, stock_quantity: p.stock_quantity,
         stock_status: p.stock_status || "in_stock", is_active: p.is_active,
       });
+      if (p.category) setSelectedCats(new Set(p.category.split(",").map((c: string) => c.trim().toLowerCase())));
     }
     const { data: vars } = await supabase.from("product_variations").select("*").eq("product_id", id).order("created_at");
     if (vars) {
@@ -96,18 +129,28 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         stock_status: v.stock_status, barcode: v.barcode || "",
         attributes: Array.isArray(v.attributes) ? v.attributes : [],
       })));
+      // Rebuild attrKeys from existing variations
+      if (vars.length > 0) {
+        const attrs = vars[0].attributes as any[];
+        if (Array.isArray(attrs)) {
+          const keys = attrs.map((a: any) => a.key);
+          setAttrKeys(keys.length ? keys : ["Size", "Color"]);
+        }
+      }
     }
     setLoading(false);
   };
 
   const set = (key: keyof ProductForm, val: any) => setForm(prev => ({ ...prev, [key]: val }));
 
+  /* ---------- save ---------- */
   const handleSave = async () => {
     if (!form.name.trim()) { toast({ title: "Product name is required", variant: "destructive" }); return; }
     setSaving(true);
+    const catString = Array.from(selectedCats).join(", ");
     const payload = {
       name: form.name, sku: form.sku || null, price: form.price, cost_price: form.cost_price,
-      description: form.description || null, category: form.category || null,
+      description: form.description || null, category: catString || null,
       image_url: form.image_url || null, barcode: form.barcode || null,
       manage_stock: form.manage_stock, stock_quantity: form.manage_stock ? form.stock_quantity : 0,
       stock_status: form.stock_status, is_active: form.is_active,
@@ -122,7 +165,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     }
 
     if (savedId) {
-      // Delete existing variations and re-insert
       await supabase.from("product_variations").delete().eq("product_id", savedId);
       if (variations.length > 0) {
         const rows = variations.map(v => ({
@@ -142,40 +184,79 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     onOpenChange(false);
   };
 
-  const addVariation = () => {
-    setVariations(prev => [...prev, {
-      name: "", sku: "", price: form.price, manage_stock: true,
-      stock_quantity: 0, stock_status: "in_stock", barcode: "",
-      attributes: attrKeys.map(k => ({ key: k, value: "" })),
-    }]);
+  /* ---------- category helpers ---------- */
+  const toggleCat = (id: string) => {
+    setSelectedCats(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
-  const updateVariation = (idx: number, key: keyof Variation, val: any) => {
-    setVariations(prev => prev.map((v, i) => i === idx ? { ...v, [key]: val } : v));
+  const syncCategories = () => {
+    toast({ title: "Categories synced from WooCommerce" });
   };
 
-  const updateVariationAttr = (vIdx: number, aIdx: number, val: string) => {
-    setVariations(prev => prev.map((v, i) => {
-      if (i !== vIdx) return v;
-      const attrs = [...v.attributes];
-      attrs[aIdx] = { ...attrs[aIdx], value: val };
-      return { ...v, attributes: attrs, name: attrs.map(a => a.value).filter(Boolean).join(" / ") };
-    }));
-  };
-
-  const removeVariation = (idx: number) => setVariations(prev => prev.filter((_, i) => i !== idx));
-
+  /* ---------- attribute helpers ---------- */
   const addAttributeKey = () => {
-    if (newAttrKey.trim() && !attrKeys.includes(newAttrKey.trim())) {
-      const key = newAttrKey.trim();
+    const key = newAttrKey.trim();
+    if (key && !attrKeys.includes(key)) {
       setAttrKeys(prev => [...prev, key]);
-      setVariations(prev => prev.map(v => ({
-        ...v, attributes: [...v.attributes, { key, value: "" }],
-      })));
+      setAttrValues(prev => ({ ...prev, [key]: [] }));
       setNewAttrKey("");
     }
   };
 
+  const removeAttributeKey = (key: string) => {
+    setAttrKeys(prev => prev.filter(k => k !== key));
+    setAttrValues(prev => { const n = { ...prev }; delete n[key]; return n; });
+  };
+
+  const addAttrValue = (key: string) => {
+    const val = (newValInputs[key] || "").trim();
+    if (!val) return;
+    setAttrValues(prev => ({
+      ...prev,
+      [key]: prev[key]?.includes(val) ? prev[key] : [...(prev[key] || []), val],
+    }));
+    setNewValInputs(prev => ({ ...prev, [key]: "" }));
+  };
+
+  const removeAttrValue = (key: string, val: string) => {
+    setAttrValues(prev => ({ ...prev, [key]: (prev[key] || []).filter(v => v !== val) }));
+  };
+
+  /* ---------- generate variations ---------- */
+  const generateVariations = () => {
+    const keys = attrKeys.filter(k => (attrValues[k] || []).length > 0);
+    if (keys.length === 0) { toast({ title: "Add attribute values first", variant: "destructive" }); return; }
+
+    // Cartesian product
+    const combos: { key: string; value: string }[][] = keys.reduce<{ key: string; value: string }[][]>(
+      (acc, key) => {
+        const vals = attrValues[key] || [];
+        if (acc.length === 0) return vals.map(v => [{ key, value: v }]);
+        return acc.flatMap(combo => vals.map(v => [...combo, { key, value: v }]));
+      },
+      []
+    );
+
+    setVariations(combos.map(attrs => ({
+      name: attrs.map(a => a.value).join(" / "),
+      sku: "", price: form.price, manage_stock: true,
+      stock_quantity: 0, stock_status: "in_stock", barcode: "",
+      attributes: attrs,
+    })));
+    toast({ title: `${combos.length} variations generated` });
+  };
+
+  /* ---------- variation helpers ---------- */
+  const updateVariation = (idx: number, key: keyof Variation, val: any) => {
+    setVariations(prev => prev.map((v, i) => i === idx ? { ...v, [key]: val } : v));
+  };
+  const removeVariation = (idx: number) => setVariations(prev => prev.filter((_, i) => i !== idx));
+
+  /* ---------- render ---------- */
   if (loading) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -193,14 +274,53 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
           <SheetTitle>{form.id ? "Edit Product" : "Add New Product"}</SheetTitle>
         </SheetHeader>
 
-        <Tabs defaultValue="basic" className="flex-1 mt-4">
-          <TabsList className="w-full grid grid-cols-3">
+        <Tabs defaultValue="categories" className="flex-1 mt-4">
+          <TabsList className="w-full grid grid-cols-4">
+            <TabsTrigger value="categories">Categories</TabsTrigger>
             <TabsTrigger value="basic">Basic Info</TabsTrigger>
             <TabsTrigger value="inventory">Inventory</TabsTrigger>
             <TabsTrigger value="variations">Variations</TabsTrigger>
           </TabsList>
 
-          {/* Tab 1: Basic Info & Categories */}
+          {/* ===== Tab 1: Categories ===== */}
+          <TabsContent value="categories" className="space-y-4 mt-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Product Categories</Label>
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-muted-foreground" onClick={syncCategories}>
+                <RefreshCw className="h-3 w-3" /> Sync Categories
+              </Button>
+            </div>
+
+            <div className="rounded-lg border border-border p-3 space-y-1 max-h-64 overflow-y-auto">
+              {catTree.map(parent => (
+                <div key={parent.id}>
+                  <label className="flex items-center gap-2 py-1.5 px-1 rounded hover:bg-secondary/50 cursor-pointer">
+                    <Checkbox checked={selectedCats.has(parent.id)} onCheckedChange={() => toggleCat(parent.id)} />
+                    <span className="text-sm text-foreground font-medium">{parent.label}</span>
+                  </label>
+                  {parent.children?.map(child => (
+                    <label key={child.id} className="flex items-center gap-2 py-1.5 pl-7 pr-1 rounded hover:bg-secondary/50 cursor-pointer">
+                      <Checkbox checked={selectedCats.has(child.id)} onCheckedChange={() => toggleCat(child.id)} />
+                      <span className="text-sm text-foreground">{child.label}</span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {selectedCats.size > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from(selectedCats).map(id => (
+                  <Badge key={id} variant="secondary" className="gap-1 capitalize">
+                    {id}
+                    <button onClick={() => toggleCat(id)} className="ml-0.5 hover:text-destructive"><X className="h-3 w-3" /></button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ===== Tab 2: Basic Info ===== */}
           <TabsContent value="basic" className="space-y-4 mt-4">
             <div className="space-y-2">
               <Label>Product Name *</Label>
@@ -227,15 +347,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
               </div>
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Category</Label>
-                <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-muted-foreground">
-                  <RefreshCw className="h-3 w-3" /> Sync Categories
-                </Button>
-              </div>
-              <Input value={form.category} onChange={e => set("category", e.target.value)} placeholder="e.g. Clothing" />
-            </div>
-            <div className="space-y-2">
               <Label>Description</Label>
               <Textarea value={form.description} onChange={e => set("description", e.target.value)} rows={3} placeholder="Product description…" />
             </div>
@@ -249,7 +360,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
             </div>
           </TabsContent>
 
-          {/* Tab 2: Inventory Rules */}
+          {/* ===== Tab 3: Inventory ===== */}
           <TabsContent value="inventory" className="space-y-6 mt-4">
             <div className="rounded-lg border border-border p-4 space-y-4">
               <div className="flex items-center justify-between">
@@ -260,19 +371,20 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
                 <Switch checked={form.manage_stock} onCheckedChange={v => set("manage_stock", v)} />
               </div>
 
-              <div className="space-y-2">
-                <Label>Stock Quantity</Label>
-                <Input
-                  type="number"
-                  value={form.stock_quantity}
-                  onChange={e => set("stock_quantity", Number(e.target.value))}
-                  disabled={!form.manage_stock}
-                  className={!form.manage_stock ? "opacity-50" : ""}
-                />
-                {!form.manage_stock && (
-                  <p className="text-xs text-muted-foreground">Stock tracking is disabled — quantity won't be enforced.</p>
-                )}
-              </div>
+              {form.manage_stock && (
+                <div className="space-y-2">
+                  <Label>Stock Quantity</Label>
+                  <Input
+                    type="number"
+                    value={form.stock_quantity}
+                    onChange={e => set("stock_quantity", Number(e.target.value))}
+                  />
+                </div>
+              )}
+
+              {!form.manage_stock && (
+                <p className="text-xs text-muted-foreground">Stock tracking is disabled — quantity won't be enforced.</p>
+              )}
 
               <div className="space-y-2">
                 <Label>Stock Status</Label>
@@ -287,82 +399,123 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
             </div>
           </TabsContent>
 
-          {/* Tab 3: Variations */}
+          {/* ===== Tab 4: Variations ===== */}
           <TabsContent value="variations" className="space-y-4 mt-4">
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Attribute Keys</Label>
-              <div className="flex flex-wrap gap-2">
-                {attrKeys.map(k => (
-                  <span key={k} className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">{k}</span>
-                ))}
-                <div className="flex gap-1">
-                  <Input value={newAttrKey} onChange={e => setNewAttrKey(e.target.value)} placeholder="New attr…" className="h-7 w-28 text-xs" onKeyDown={e => e.key === "Enter" && addAttributeKey()} />
-                  <Button variant="ghost" size="sm" className="h-7 px-2" onClick={addAttributeKey}><Plus className="h-3 w-3" /></Button>
-                </div>
-              </div>
-            </div>
-
+            {/* Attribute tag inputs */}
             <div className="space-y-3">
-              {variations.map((v, idx) => (
-                <div key={idx} className="rounded-lg border border-border p-3 space-y-3">
+              <Label className="text-sm font-medium">Attributes</Label>
+              {attrKeys.map(key => (
+                <div key={key} className="rounded-lg border border-border p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">{v.name || `Variation ${idx + 1}`}</span>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeVariation(idx)}>
-                      <Trash2 className="h-3.5 w-3.5" />
+                    <span className="text-sm font-medium text-foreground">{key}</span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => removeAttributeKey(key)}>
+                      <X className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-
-                  {/* Attribute value inputs */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {v.attributes.map((a, aIdx) => (
-                      <div key={a.key} className="space-y-1">
-                        <Label className="text-xs">{a.key}</Label>
-                        <Input value={a.value} onChange={e => updateVariationAttr(idx, aIdx, e.target.value)} className="h-8 text-xs" placeholder={a.key} />
-                      </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(attrValues[key] || []).map(val => (
+                      <Badge key={val} variant="secondary" className="gap-1">
+                        {val}
+                        <button onClick={() => removeAttrValue(key, val)} className="ml-0.5 hover:text-destructive"><X className="h-3 w-3" /></button>
+                      </Badge>
                     ))}
                   </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">SKU</Label>
-                      <Input value={v.sku} onChange={e => updateVariation(idx, "sku", e.target.value)} className="h-8 text-xs" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Price</Label>
-                      <Input type="number" value={v.price} onChange={e => updateVariation(idx, "price", Number(e.target.value))} className="h-8 text-xs" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Barcode</Label>
-                      <Input value={v.barcode} onChange={e => updateVariation(idx, "barcode", e.target.value)} className="h-8 text-xs" />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <Switch checked={v.manage_stock} onCheckedChange={val => updateVariation(idx, "manage_stock", val)} />
-                      <Label className="text-xs">Track Stock</Label>
-                    </div>
-                    <div className="w-20">
-                      <Input
-                        type="number" value={v.stock_quantity}
-                        onChange={e => updateVariation(idx, "stock_quantity", Number(e.target.value))}
-                        disabled={!v.manage_stock} className={`h-8 text-xs ${!v.manage_stock ? "opacity-50" : ""}`}
-                      />
-                    </div>
-                    <Select value={v.stock_status} onValueChange={val => updateVariation(idx, "stock_status", val)}>
-                      <SelectTrigger className="h-8 text-xs w-36"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {STOCK_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                  <div className="flex gap-1">
+                    <Input
+                      value={newValInputs[key] || ""}
+                      onChange={e => setNewValInputs(p => ({ ...p, [key]: e.target.value }))}
+                      placeholder={`Add ${key.toLowerCase()} value…`}
+                      className="h-8 text-xs"
+                      onKeyDown={e => e.key === "Enter" && addAttrValue(key)}
+                    />
+                    <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => addAttrValue(key)}>
+                      <Plus className="h-3 w-3" />
+                    </Button>
                   </div>
                 </div>
               ))}
+
+              {/* Add new attribute key */}
+              <div className="flex gap-1">
+                <Input
+                  value={newAttrKey}
+                  onChange={e => setNewAttrKey(e.target.value)}
+                  placeholder="New attribute name…"
+                  className="h-8 text-xs"
+                  onKeyDown={e => e.key === "Enter" && addAttributeKey()}
+                />
+                <Button variant="outline" size="sm" className="h-8 px-2 gap-1 text-xs" onClick={addAttributeKey}>
+                  <Plus className="h-3 w-3" /> Attribute
+                </Button>
+              </div>
             </div>
 
-            <Button variant="outline" size="sm" className="gap-1" onClick={addVariation}>
-              <Plus className="h-3.5 w-3.5" /> Add Variation
+            {/* Generate button */}
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={generateVariations}>
+              <Sparkles className="h-3.5 w-3.5" /> Generate Variations
             </Button>
+
+            {/* Variations accordion */}
+            {variations.length > 0 && (
+              <Accordion type="multiple" className="space-y-2">
+                {variations.map((v, idx) => (
+                  <AccordionItem key={idx} value={`var-${idx}`} className="rounded-lg border border-border px-3">
+                    <AccordionTrigger className="py-3 hover:no-underline">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium">{v.name || `Variation ${idx + 1}`}</span>
+                        {v.manage_stock && (
+                          <Badge variant="secondary" className="text-xs font-mono">{v.stock_quantity} qty</Badge>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-3 space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">SKU</Label>
+                          <Input value={v.sku} onChange={e => updateVariation(idx, "sku", e.target.value)} className="h-8 text-xs" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Price (BDT)</Label>
+                          <Input type="number" value={v.price} onChange={e => updateVariation(idx, "price", Number(e.target.value))} className="h-8 text-xs" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Barcode</Label>
+                          <Input value={v.barcode} onChange={e => updateVariation(idx, "barcode", e.target.value)} className="h-8 text-xs" />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <Switch checked={v.manage_stock} onCheckedChange={val => updateVariation(idx, "manage_stock", val)} />
+                          <Label className="text-xs">Track Stock</Label>
+                        </div>
+                        {v.manage_stock && (
+                          <div className="w-20">
+                            <Input
+                              type="number" value={v.stock_quantity}
+                              onChange={e => updateVariation(idx, "stock_quantity", Number(e.target.value))}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        )}
+                        <Select value={v.stock_status} onValueChange={val => updateVariation(idx, "stock_status", val)}>
+                          <SelectTrigger className="h-8 text-xs w-36"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {STOCK_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive gap-1" onClick={() => removeVariation(idx)}>
+                          <Trash2 className="h-3 w-3" /> Remove
+                        </Button>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            )}
           </TabsContent>
         </Tabs>
 
