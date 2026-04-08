@@ -64,7 +64,67 @@ Deno.serve(async (req) => {
       return all;
     }
 
-    const summary = { products: 0, orders: 0, order_items: 0, customers: 0 };
+    async function wooFetch(endpoint: string) {
+      const url = `${baseUrl}/wp-json/wc/v3/${endpoint}`;
+      const res = await fetch(url, { headers: { Authorization: authHeader } });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`WooCommerce API error (${endpoint}): ${res.status} ${text}`);
+      }
+      return res.json();
+    }
+
+    const summary = { products: 0, orders: 0, order_items: 0, customers: 0, categories: 0, variations: 0 };
+
+    // --- Sync Categories ---
+    const wooCategories = await wooFetchAll("products/categories");
+    if (wooCategories.length > 0) {
+      // First pass: upsert all categories without parent_id
+      const catRows = wooCategories.map((c: any) => ({
+        store_id,
+        woo_category_id: c.id,
+        name: c.name,
+        slug: c.slug || "",
+      }));
+
+      const { error: catErr } = await supabase
+        .from("categories")
+        .upsert(catRows, { onConflict: "woo_category_id,store_id", ignoreDuplicates: false });
+      if (catErr) console.error("Categories upsert error:", catErr);
+
+      // Build lookup of woo_category_id -> db id
+      const { data: dbCats } = await supabase
+        .from("categories")
+        .select("id, woo_category_id")
+        .eq("store_id", store_id);
+      const catMap = new Map(
+        (dbCats || []).map((c: any) => [c.woo_category_id, c.id])
+      );
+
+      // Second pass: set parent_id for hierarchical categories
+      for (const wc of wooCategories) {
+        if (wc.parent && wc.parent > 0) {
+          const dbId = catMap.get(wc.id);
+          const parentDbId = catMap.get(wc.parent);
+          if (dbId && parentDbId) {
+            await supabase
+              .from("categories")
+              .update({ parent_id: parentDbId })
+              .eq("id", dbId);
+          }
+        }
+      }
+      summary.categories = wooCategories.length;
+    }
+
+    // Build category lookup for product mapping
+    const { data: allDbCats } = await supabase
+      .from("categories")
+      .select("id, woo_category_id")
+      .eq("store_id", store_id);
+    const catByWooId = new Map(
+      (allDbCats || []).map((c: any) => [c.woo_category_id, c.id])
+    );
 
     // --- Sync Products ---
     const wooProducts = await wooFetchAll("products");
@@ -78,7 +138,10 @@ Deno.serve(async (req) => {
         price: parseFloat(p.price) || 0,
         cost_price: parseFloat(p.meta_data?.find((m: any) => m.key === "_cost")?.value) || 0,
         stock_quantity: p.stock_quantity ?? 0,
-        category: p.categories?.[0]?.name || null,
+        manage_stock: p.manage_stock ?? false,
+        stock_status: p.stock_status || "in_stock",
+        backorders: p.backorders || "no",
+        category: p.categories?.map((c: any) => c.name).join(", ") || null,
         image_url: p.images?.[0]?.src || null,
         is_active: p.status === "publish",
         barcode: p.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
@@ -89,9 +152,75 @@ Deno.serve(async (req) => {
         .upsert(rows, { onConflict: "woo_product_id,store_id", ignoreDuplicates: false });
       if (error) console.error("Products upsert error:", error);
       else summary.products = rows.length;
+
+      // Map product categories (many-to-many)
+      const { data: dbProds } = await supabase
+        .from("products")
+        .select("id, woo_product_id")
+        .eq("store_id", store_id);
+      const prodByWooId = new Map(
+        (dbProds || []).map((p: any) => [p.woo_product_id, p.id])
+      );
+
+      // Collect all product_categories rows
+      const pcRows: { product_id: string; category_id: string }[] = [];
+      const productIdsWithCats: string[] = [];
+      for (const wp of wooProducts) {
+        const prodId = prodByWooId.get(wp.id);
+        if (!prodId) continue;
+        productIdsWithCats.push(prodId);
+        for (const wc of wp.categories || []) {
+          const catId = catByWooId.get(wc.id);
+          if (catId) {
+            pcRows.push({ product_id: prodId, category_id: catId });
+          }
+        }
+      }
+
+      // Clear old mappings and insert new
+      if (productIdsWithCats.length > 0) {
+        await supabase.from("product_categories").delete().in("product_id", productIdsWithCats);
+      }
+      if (pcRows.length > 0) {
+        for (let i = 0; i < pcRows.length; i += 500) {
+          await supabase.from("product_categories").insert(pcRows.slice(i, i + 500));
+        }
+      }
+
+      // --- Sync Variations for variable products ---
+      for (const wp of wooProducts) {
+        if (wp.type !== "variable" || !wp.variations?.length) continue;
+        const prodId = prodByWooId.get(wp.id);
+        if (!prodId) continue;
+
+        const wooVars = await wooFetch(`products/${wp.id}/variations?per_page=100`);
+        if (!Array.isArray(wooVars) || wooVars.length === 0) continue;
+
+        const varRows = wooVars.map((v: any) => ({
+          product_id: prodId,
+          woo_variation_id: v.id,
+          name: v.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${v.id}`,
+          sku: v.sku || null,
+          price: parseFloat(v.price) || 0,
+          manage_stock: v.manage_stock ?? false,
+          stock_quantity: v.stock_quantity ?? 0,
+          stock_status: v.stock_status || "in_stock",
+          barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
+          attributes: (v.attributes || []).map((a: any) => ({
+            key: a.name || a.slug,
+            value: a.option,
+          })),
+        }));
+
+        const { error: varErr } = await supabase
+          .from("product_variations")
+          .upsert(varRows, { onConflict: "woo_variation_id,product_id", ignoreDuplicates: false });
+        if (varErr) console.error(`Variations upsert error for product ${wp.id}:`, varErr);
+        else summary.variations += varRows.length;
+      }
     }
 
-    // --- Sync Customers (registered) ---
+    // --- Sync Customers ---
     const wooCustomers = await wooFetchAll("customers");
     if (wooCustomers.length > 0) {
       const rows = wooCustomers.map((c: any) => ({
@@ -114,7 +243,6 @@ Deno.serve(async (req) => {
     // --- Sync Orders ---
     const wooOrders = await wooFetchAll("orders");
     if (wooOrders.length > 0) {
-      // Build customer lookup by woo_customer_id
       const { data: dbCustomers } = await supabase
         .from("customers")
         .select("id, woo_customer_id, phone")
@@ -126,13 +254,10 @@ Deno.serve(async (req) => {
         (dbCustomers || []).filter((c: any) => c.phone).map((c: any) => [c.phone, c.id])
       );
 
-      // For guest orders (customer_id=0), create/find customers from billing info
       for (const o of wooOrders) {
         if ((!o.customer_id || o.customer_id === 0) && (o.billing?.phone || o.billing?.email)) {
           const phone = o.billing?.phone || null;
-          // Check if customer already exists by phone
           if (phone && custByPhone.has(phone)) {
-            // Already exists, map this order's woo_id to the existing customer
             custByWooId.set(-o.id, custByPhone.get(phone));
             continue;
           }
@@ -156,7 +281,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Build product lookup
       const { data: dbProducts } = await supabase
         .from("products")
         .select("id, woo_product_id")
@@ -194,7 +318,6 @@ Deno.serve(async (req) => {
       if (error) console.error("Orders upsert error:", error);
       else summary.orders = orderRows.length;
 
-      // Order items — delete all existing items for synced orders first, then bulk insert
       const { data: dbOrders } = await supabase
         .from("orders")
         .select("id, woo_order_id")
@@ -203,7 +326,6 @@ Deno.serve(async (req) => {
         (dbOrders || []).map((o: any) => [o.woo_order_id, o.id])
       );
 
-      // Collect all order IDs that will get new items
       const orderIdsToRefresh: string[] = [];
       const allItems: any[] = [];
       for (const o of wooOrders) {
@@ -222,13 +344,11 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Delete ALL existing items for these orders in one batch, then insert
       if (orderIdsToRefresh.length > 0) {
         await supabase.from("order_items").delete().in("order_id", orderIdsToRefresh);
       }
 
       if (allItems.length > 0) {
-        // Insert in chunks of 500 to avoid payload limits
         for (let i = 0; i < allItems.length; i += 500) {
           const chunk = allItems.slice(i, i + 500);
           const { error: itemErr } = await supabase.from("order_items").insert(chunk);

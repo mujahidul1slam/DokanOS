@@ -55,21 +55,8 @@ const STOCK_STATUSES = [
   { value: "on_backorder", label: "On Backorder" },
 ];
 
-/* ---------- sample category tree ---------- */
-interface CatNode { id: string; label: string; children?: CatNode[] }
-const SAMPLE_CATEGORIES: CatNode[] = [
-  { id: "clothing", label: "Clothing", children: [
-    { id: "mens", label: "Men's" },
-    { id: "womens", label: "Women's" },
-    { id: "kids", label: "Kids" },
-  ]},
-  { id: "electronics", label: "Electronics", children: [
-    { id: "phones", label: "Phones" },
-    { id: "accessories", label: "Accessories" },
-  ]},
-  { id: "home", label: "Home & Living" },
-  { id: "beauty", label: "Beauty & Health" },
-];
+/* ---------- category tree types ---------- */
+interface CatNode { id: string; label: string; woo_category_id?: number; children: CatNode[] }
 
 /* ---------- props ---------- */
 interface Props {
@@ -86,9 +73,9 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // category tree
-  const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
-  const [catTree, setCatTree] = useState<CatNode[]>(SAMPLE_CATEGORIES);
+  // category tree from DB
+  const [catTree, setCatTree] = useState<CatNode[]>([]);
+  const [selectedCatIds, setSelectedCatIds] = useState<Set<string>>(new Set());
 
   // attribute / variation generation
   const [attrKeys, setAttrKeys] = useState<string[]>(["Size", "Color"]);
@@ -98,15 +85,41 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
   useEffect(() => {
     if (!open) return;
+    loadCategories();
     if (productId) {
       loadProduct(productId);
     } else {
       setForm(emptyForm);
       setVariations([]);
-      setSelectedCats(new Set());
+      setSelectedCatIds(new Set());
+      setAttrKeys(["Size", "Color"]);
       setAttrValues({ Size: [], Color: [] });
     }
   }, [open, productId]);
+
+  const loadCategories = async () => {
+    const { data: cats } = await supabase
+      .from("categories")
+      .select("id, name, slug, parent_id, woo_category_id")
+      .order("name");
+    if (!cats) return;
+
+    // Build tree
+    const nodeMap = new Map<string, CatNode>();
+    const roots: CatNode[] = [];
+    for (const c of cats) {
+      nodeMap.set(c.id, { id: c.id, label: c.name, woo_category_id: c.woo_category_id ?? undefined, children: [] });
+    }
+    for (const c of cats) {
+      const node = nodeMap.get(c.id)!;
+      if (c.parent_id && nodeMap.has(c.parent_id)) {
+        nodeMap.get(c.parent_id)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    setCatTree(roots);
+  };
 
   const loadProduct = async (id: string) => {
     setLoading(true);
@@ -119,8 +132,17 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         manage_stock: p.manage_stock ?? true, stock_quantity: p.stock_quantity,
         stock_status: p.stock_status || "in_stock", is_active: p.is_active,
       });
-      if (p.category) setSelectedCats(new Set(p.category.split(",").map((c: string) => c.trim().toLowerCase())));
     }
+
+    // Load product categories
+    const { data: pcData } = await supabase
+      .from("product_categories")
+      .select("category_id")
+      .eq("product_id", id);
+    if (pcData) {
+      setSelectedCatIds(new Set(pcData.map((pc: any) => pc.category_id)));
+    }
+
     const { data: vars } = await supabase.from("product_variations").select("*").eq("product_id", id).order("created_at");
     if (vars) {
       setVariations(vars.map((v: any) => ({
@@ -129,12 +151,16 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         stock_status: v.stock_status, barcode: v.barcode || "",
         attributes: Array.isArray(v.attributes) ? v.attributes : [],
       })));
-      // Rebuild attrKeys from existing variations
       if (vars.length > 0) {
         const attrs = vars[0].attributes as any[];
-        if (Array.isArray(attrs)) {
-          const keys = attrs.map((a: any) => a.key);
-          setAttrKeys(keys.length ? keys : ["Size", "Color"]);
+        if (Array.isArray(attrs) && attrs.length > 0) {
+          const keys = [...new Set(vars.flatMap((v: any) => (v.attributes as any[]).map((a: any) => a.key)))];
+          setAttrKeys(keys);
+          const vals: Record<string, string[]> = {};
+          for (const k of keys) {
+            vals[k] = [...new Set(vars.flatMap((v: any) => (v.attributes as any[]).filter((a: any) => a.key === k).map((a: any) => a.value)))];
+          }
+          setAttrValues(vals);
         }
       }
     }
@@ -147,10 +173,20 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   const handleSave = async () => {
     if (!form.name.trim()) { toast({ title: "Product name is required", variant: "destructive" }); return; }
     setSaving(true);
-    const catString = Array.from(selectedCats).join(", ");
+
+    // Build category string from selected categories for backward compat
+    const selectedLabels: string[] = [];
+    const collectLabels = (nodes: CatNode[]) => {
+      for (const n of nodes) {
+        if (selectedCatIds.has(n.id)) selectedLabels.push(n.label);
+        collectLabels(n.children);
+      }
+    };
+    collectLabels(catTree);
+
     const payload = {
       name: form.name, sku: form.sku || null, price: form.price, cost_price: form.cost_price,
-      description: form.description || null, category: catString || null,
+      description: form.description || null, category: selectedLabels.join(", ") || null,
       image_url: form.image_url || null, barcode: form.barcode || null,
       manage_stock: form.manage_stock, stock_quantity: form.manage_stock ? form.stock_quantity : 0,
       stock_status: form.stock_status, is_active: form.is_active,
@@ -165,6 +201,14 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     }
 
     if (savedId) {
+      // Save product_categories
+      await supabase.from("product_categories").delete().eq("product_id", savedId);
+      if (selectedCatIds.size > 0) {
+        const pcRows = Array.from(selectedCatIds).map(catId => ({ product_id: savedId!, category_id: catId }));
+        await supabase.from("product_categories").insert(pcRows);
+      }
+
+      // Save variations
       await supabase.from("product_variations").delete().eq("product_id", savedId);
       if (variations.length > 0) {
         const rows = variations.map(v => ({
@@ -186,14 +230,23 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
   /* ---------- category helpers ---------- */
   const toggleCat = (id: string) => {
-    setSelectedCats(prev => {
+    setSelectedCatIds(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   };
 
-  const syncCategories = () => {
+  const syncCategories = async () => {
+    toast({ title: "Syncing categories…" });
+    // Trigger a sync for all stores to refresh categories
+    const { data: stores } = await supabase.from("stores").select("id").eq("status", "connected");
+    if (stores) {
+      for (const s of stores) {
+        await supabase.functions.invoke("woo-sync", { body: { store_id: s.id } });
+      }
+    }
+    await loadCategories();
     toast({ title: "Categories synced from WooCommerce" });
   };
 
@@ -231,7 +284,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     const keys = attrKeys.filter(k => (attrValues[k] || []).length > 0);
     if (keys.length === 0) { toast({ title: "Add attribute values first", variant: "destructive" }); return; }
 
-    // Cartesian product
     const combos: { key: string; value: string }[][] = keys.reduce<{ key: string; value: string }[][]>(
       (acc, key) => {
         const vals = attrValues[key] || [];
@@ -255,6 +307,17 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     setVariations(prev => prev.map((v, i) => i === idx ? { ...v, [key]: val } : v));
   };
   const removeVariation = (idx: number) => setVariations(prev => prev.filter((_, i) => i !== idx));
+
+  /* ---------- render category tree recursively ---------- */
+  const renderCatNode = (node: CatNode, depth = 0) => (
+    <div key={node.id}>
+      <label className="flex items-center gap-2 py-1.5 rounded hover:bg-secondary/50 cursor-pointer" style={{ paddingLeft: `${8 + depth * 20}px` }}>
+        <Checkbox checked={selectedCatIds.has(node.id)} onCheckedChange={() => toggleCat(node.id)} />
+        <span className={`text-sm text-foreground ${depth === 0 ? "font-medium" : ""}`}>{node.label}</span>
+      </label>
+      {node.children.map(child => renderCatNode(child, depth + 1))}
+    </div>
+  );
 
   /* ---------- render ---------- */
   if (loading) {
@@ -292,30 +355,31 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
             </div>
 
             <div className="rounded-lg border border-border p-3 space-y-1 max-h-64 overflow-y-auto">
-              {catTree.map(parent => (
-                <div key={parent.id}>
-                  <label className="flex items-center gap-2 py-1.5 px-1 rounded hover:bg-secondary/50 cursor-pointer">
-                    <Checkbox checked={selectedCats.has(parent.id)} onCheckedChange={() => toggleCat(parent.id)} />
-                    <span className="text-sm text-foreground font-medium">{parent.label}</span>
-                  </label>
-                  {parent.children?.map(child => (
-                    <label key={child.id} className="flex items-center gap-2 py-1.5 pl-7 pr-1 rounded hover:bg-secondary/50 cursor-pointer">
-                      <Checkbox checked={selectedCats.has(child.id)} onCheckedChange={() => toggleCat(child.id)} />
-                      <span className="text-sm text-foreground">{child.label}</span>
-                    </label>
-                  ))}
-                </div>
-              ))}
+              {catTree.length === 0 && (
+                <p className="text-sm text-muted-foreground py-4 text-center">No categories yet. Click "Sync Categories" to fetch from WooCommerce.</p>
+              )}
+              {catTree.map(node => renderCatNode(node))}
             </div>
 
-            {selectedCats.size > 0 && (
+            {selectedCatIds.size > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {Array.from(selectedCats).map(id => (
-                  <Badge key={id} variant="secondary" className="gap-1 capitalize">
-                    {id}
-                    <button onClick={() => toggleCat(id)} className="ml-0.5 hover:text-destructive"><X className="h-3 w-3" /></button>
-                  </Badge>
-                ))}
+                {Array.from(selectedCatIds).map(id => {
+                  const findLabel = (nodes: CatNode[]): string => {
+                    for (const n of nodes) {
+                      if (n.id === id) return n.label;
+                      const found = findLabel(n.children);
+                      if (found) return found;
+                    }
+                    return "";
+                  };
+                  const label = findLabel(catTree);
+                  return (
+                    <Badge key={id} variant="secondary" className="gap-1">
+                      {label || id}
+                      <button onClick={() => toggleCat(id)} className="ml-0.5 hover:text-destructive"><X className="h-3 w-3" /></button>
+                    </Badge>
+                  );
+                })}
               </div>
             )}
           </TabsContent>
@@ -374,11 +438,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
               {form.manage_stock && (
                 <div className="space-y-2">
                   <Label>Stock Quantity</Label>
-                  <Input
-                    type="number"
-                    value={form.stock_quantity}
-                    onChange={e => set("stock_quantity", Number(e.target.value))}
-                  />
+                  <Input type="number" value={form.stock_quantity} onChange={e => set("stock_quantity", Number(e.target.value))} />
                 </div>
               )}
 
@@ -401,7 +461,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
           {/* ===== Tab 4: Variations ===== */}
           <TabsContent value="variations" className="space-y-4 mt-4">
-            {/* Attribute tag inputs */}
             <div className="space-y-3">
               <Label className="text-sm font-medium">Attributes</Label>
               {attrKeys.map(key => (
@@ -435,7 +494,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
                 </div>
               ))}
 
-              {/* Add new attribute key */}
               <div className="flex gap-1">
                 <Input
                   value={newAttrKey}
@@ -450,12 +508,10 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
               </div>
             </div>
 
-            {/* Generate button */}
             <Button variant="outline" size="sm" className="gap-1.5" onClick={generateVariations}>
               <Sparkles className="h-3.5 w-3.5" /> Generate Variations
             </Button>
 
-            {/* Variations accordion */}
             {variations.length > 0 && (
               <Accordion type="multiple" className="space-y-2">
                 {variations.map((v, idx) => (
