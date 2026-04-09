@@ -222,8 +222,23 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
       }
     }
 
+    // Push to WooCommerce if product is linked to a store
+    if (savedId) {
+      const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", savedId).single();
+      if (prod?.woo_product_id && prod?.store_id) {
+        try {
+          await supabase.functions.invoke("woo-push", {
+            body: { action: "push_product", product_id: savedId },
+          });
+        } catch (e) {
+          console.warn("WooCommerce push failed:", e);
+          toast({ title: "Saved locally, but WooCommerce sync failed", variant: "destructive" });
+        }
+      }
+    }
+
     setSaving(false);
-    toast({ title: form.id ? "Product updated" : "Product created" });
+    toast({ title: form.id ? "Product updated & synced" : "Product created" });
     onSaved();
     onOpenChange(false);
   };
