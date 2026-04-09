@@ -223,7 +223,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         });
       }
 
-      toast.success("Order updated successfully");
+      // Push status/notes change to WooCommerce if linked
+      if (order.id) {
+        try {
+          await supabase.functions.invoke("woo-push", {
+            body: { action: "push_order", order_id: order.id },
+          });
+        } catch (e) {
+          console.warn("WooCommerce order push failed:", e);
+        }
+      }
+
+      toast.success("Order updated & synced");
       onSaved?.();
       load();
     } catch {
