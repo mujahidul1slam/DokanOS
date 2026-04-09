@@ -5,6 +5,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-wc-webhook-signature, x-wc-webhook-source, x-wc-webhook-topic",
 };
 
+function jsonResp(body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -15,18 +22,14 @@ Deno.serve(async (req) => {
 
     const contentType = req.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResp({ ok: true });
     }
 
     const payload = JSON.parse(body);
 
     // WooCommerce sends a ping on webhook creation — ignore it
     if (payload.webhook_id && !payload.line_items && !payload.name && !payload.sku) {
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResp({ ok: true });
     }
 
     const webhookSource = req.headers.get("x-wc-webhook-source") || "";
@@ -47,10 +50,7 @@ Deno.serve(async (req) => {
 
     if (!store) {
       console.error("No store found for webhook source:", webhookSource);
-      return new Response(JSON.stringify({ error: "Unknown store" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResp({ error: "Unknown store" }, 404);
     }
 
     const store_id = store.id;
@@ -65,22 +65,16 @@ Deno.serve(async (req) => {
       return await handleOrderWebhook(supabase, store_id, payload);
     }
 
-    return new Response(JSON.stringify({ ok: true, message: "Unhandled topic" }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResp({ ok: true, message: "Unhandled topic" });
   } catch (err: any) {
     console.error("woo-webhook error:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResp({ error: err.message }, 500);
   }
 });
 
 /* ====== PRODUCT WEBHOOK ====== */
 async function handleProductWebhook(supabase: any, store_id: string, p: any) {
-  // Upsert product
-  const productRow = {
+  const productData = {
     store_id,
     woo_product_id: p.id,
     name: p.name,
@@ -98,25 +92,47 @@ async function handleProductWebhook(supabase: any, store_id: string, p: any) {
     barcode: p.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
   };
 
-  const { data: upsertedProduct, error: prodErr } = await supabase
+  // Check if product exists
+  const { data: existing } = await supabase
     .from("products")
-    .upsert(productRow, { onConflict: "woo_product_id,store_id" })
     .select("id")
-    .single();
+    .eq("woo_product_id", p.id)
+    .eq("store_id", store_id)
+    .maybeSingle();
 
-  if (prodErr || !upsertedProduct) {
-    console.error("Product upsert error:", prodErr);
-    return new Response(JSON.stringify({ error: "Failed to save product" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  let productId: string;
+
+  if (existing) {
+    // UPDATE existing product
+    const { error: updateErr } = await supabase
+      .from("products")
+      .update(productData)
+      .eq("id", existing.id);
+
+    if (updateErr) {
+      console.error("Product update error:", updateErr);
+      return jsonResp({ error: "Failed to update product" }, 500);
+    }
+    productId = existing.id;
+    console.log(`Updated product ${productId} (woo_id: ${p.id})`);
+  } else {
+    // INSERT new product
+    const { data: inserted, error: insertErr } = await supabase
+      .from("products")
+      .insert(productData)
+      .select("id")
+      .single();
+
+    if (insertErr || !inserted) {
+      console.error("Product insert error:", insertErr);
+      return jsonResp({ error: "Failed to insert product" }, 500);
+    }
+    productId = inserted.id;
+    console.log(`Inserted product ${productId} (woo_id: ${p.id})`);
   }
-
-  const productId = upsertedProduct.id;
 
   // Sync categories (many-to-many)
   if (p.categories && Array.isArray(p.categories)) {
-    // Get category mappings
     const { data: dbCats } = await supabase
       .from("categories")
       .select("id, woo_category_id")
@@ -133,17 +149,12 @@ async function handleProductWebhook(supabase: any, store_id: string, p: any) {
     }
   }
 
-  // Sync variations if variable product
+  // Variable product note
   if (p.type === "variable" && Array.isArray(p.variations) && p.variations.length > 0) {
-    // Note: The product webhook only sends variation IDs, not full data
-    // Full variation data comes through separate variation webhooks or needs an API call
-    // For now we just mark this — full variation sync happens via woo-sync
     console.log(`Variable product ${p.id} has ${p.variations.length} variations — full sync via woo-sync`);
   }
 
-  return new Response(JSON.stringify({ success: true, product_id: productId }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  return jsonResp({ success: true, product_id: productId });
 }
 
 /* ====== ORDER WEBHOOK ====== */
@@ -153,7 +164,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   const hasCustomerInfo = o.billing?.phone || o.billing?.first_name || o.billing?.email;
 
   if (o.customer_id && o.customer_id > 0) {
-    const custRow = {
+    const custData = {
       store_id,
       woo_customer_id: o.customer_id,
       name: `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "Guest",
@@ -162,12 +173,25 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
       address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
       city: o.billing?.city || null,
     };
-    const { data: cust } = await supabase
+
+    const { data: existingCust } = await supabase
       .from("customers")
-      .upsert(custRow, { onConflict: "woo_customer_id,store_id" })
       .select("id")
-      .single();
-    customer_id = cust?.id || null;
+      .eq("woo_customer_id", o.customer_id)
+      .eq("store_id", store_id)
+      .maybeSingle();
+
+    if (existingCust) {
+      await supabase.from("customers").update(custData).eq("id", existingCust.id);
+      customer_id = existingCust.id;
+    } else {
+      const { data: newCust } = await supabase
+        .from("customers")
+        .insert(custData)
+        .select("id")
+        .single();
+      customer_id = newCust?.id || null;
+    }
   } else if (hasCustomerInfo) {
     const guestName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "Guest";
     const { data: guestCust } = await supabase
@@ -194,7 +218,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
 
   const paymentStatus = derivePaymentStatus(o);
 
-  const orderRow = {
+  const orderData = {
     store_id,
     woo_order_id: o.id,
     order_number: String(o.number || o.id),
@@ -208,28 +232,54 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     total: parseFloat(o.total) || 0,
     customer_id,
     notes: o.customer_note || null,
-    created_at: o.date_created_gmt ? o.date_created_gmt + "Z" : undefined,
   };
 
-  const { data: upsertedOrder, error: orderErr } = await supabase
+  // Check if order exists
+  const { data: existingOrder } = await supabase
     .from("orders")
-    .upsert(orderRow, { onConflict: "woo_order_id,store_id" })
     .select("id")
-    .single();
+    .eq("woo_order_id", o.id)
+    .eq("store_id", store_id)
+    .maybeSingle();
 
-  if (orderErr || !upsertedOrder) {
-    console.error("Order upsert error:", orderErr);
-    return new Response(JSON.stringify({ error: "Failed to save order" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  let orderId: string;
+
+  if (existingOrder) {
+    const { error: updateErr } = await supabase
+      .from("orders")
+      .update(orderData)
+      .eq("id", existingOrder.id);
+
+    if (updateErr) {
+      console.error("Order update error:", updateErr);
+      return jsonResp({ error: "Failed to update order" }, 500);
+    }
+    orderId = existingOrder.id;
+    console.log(`Updated order ${orderId} (woo_id: ${o.id})`);
+  } else {
+    const orderInsert = {
+      ...orderData,
+      created_at: o.date_created_gmt ? o.date_created_gmt + "Z" : undefined,
+    };
+    const { data: inserted, error: insertErr } = await supabase
+      .from("orders")
+      .insert(orderInsert)
+      .select("id")
+      .single();
+
+    if (insertErr || !inserted) {
+      console.error("Order insert error:", insertErr);
+      return jsonResp({ error: "Failed to insert order" }, 500);
+    }
+    orderId = inserted.id;
+    console.log(`Inserted order ${orderId} (woo_id: ${o.id})`);
   }
 
   // Delete old items and insert new
-  await supabase.from("order_items").delete().eq("order_id", upsertedOrder.id);
+  await supabase.from("order_items").delete().eq("order_id", orderId);
 
   const items = (o.line_items || []).map((li: any) => ({
-    order_id: upsertedOrder.id,
+    order_id: orderId,
     product_id: prodMap.get(li.product_id) || null,
     product_name: li.name,
     quantity: li.quantity,
@@ -241,9 +291,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     await supabase.from("order_items").insert(items);
   }
 
-  return new Response(JSON.stringify({ success: true, order_id: upsertedOrder.id }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  return jsonResp({ success: true, order_id: orderId });
 }
 
 /* ====== Helpers ====== */
