@@ -1,25 +1,34 @@
 import { useState, useMemo } from "react";
-import { Search, ScanBarcode, Plus, Package } from "lucide-react";
+import { Search, ScanBarcode, Plus, Package, SlidersHorizontal, ArrowUpDown, Eye, EyeOff, Tag, Store as StoreIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import type { Product } from "./types";
 
 interface Props {
   products: Product[];
   categories: string[];
+  stores: { id: string; name: string }[];
   onSelectProduct: (p: Product) => void;
   onAddCustomItem: () => void;
 }
 
-const ProductCatalog = ({ products, categories, onSelectProduct, onAddCustomItem }: Props) => {
+const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCustomItem }: Props) => {
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"name" | "newest" | "price_asc" | "price_desc">("name");
+  const [hideOutOfStock, setHideOutOfStock] = useState(false);
+  const [onSaleOnly, setOnSaleOnly] = useState(false);
+  const [selectedStore, setSelectedStore] = useState<string>("all");
 
   const filtered = useMemo(() => {
     let list = products;
-    if (activeCategory) list = list.filter((p) => p.category === activeCategory);
+    if (activeCategory !== "all") list = list.filter((p) => p.category === activeCategory);
+    if (hideOutOfStock) list = list.filter((p) => p.stock_quantity > 0);
+    if (selectedStore !== "all") list = list.filter((p) => (p as any).store_id === selectedStore);
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -28,8 +37,24 @@ const ProductCatalog = ({ products, categories, onSelectProduct, onAddCustomItem
           (p.sku || "").toLowerCase().includes(q)
       );
     }
+    // Sort
+    switch (sortBy) {
+      case "newest":
+        list = [...list].sort((a, b) => ((b as any).created_at || "").localeCompare((a as any).created_at || ""));
+        break;
+      case "price_asc":
+        list = [...list].sort((a, b) => Number(a.price) - Number(b.price));
+        break;
+      case "price_desc":
+        list = [...list].sort((a, b) => Number(b.price) - Number(a.price));
+        break;
+      default:
+        list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    }
     return list;
-  }, [products, search, activeCategory]);
+  }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore]);
+
+  const activeFilterCount = [hideOutOfStock, onSaleOnly, selectedStore !== "all"].filter(Boolean).length;
 
   return (
     <div className="flex flex-col h-full min-w-0">
@@ -49,35 +74,95 @@ const ProductCatalog = ({ products, categories, onSelectProduct, onAddCustomItem
         </Button>
       </div>
 
-      {/* Category Pills */}
-      <ScrollArea className="mb-3 w-full">
-        <div className="flex gap-2 pb-2">
-          <button
-            onClick={() => setActiveCategory(null)}
-            className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-              !activeCategory
-                ? "bg-primary text-primary-foreground"
-                : "bg-secondary text-secondary-foreground hover:bg-muted"
-            }`}
-          >
-            All
-          </button>
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
-              className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors whitespace-nowrap ${
-                activeCategory === cat
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-secondary-foreground hover:bg-muted"
-              }`}
+      {/* Filters Row */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {/* Category Dropdown */}
+        <Select value={activeCategory} onValueChange={setActiveCategory}>
+          <SelectTrigger className="h-9 w-44 bg-secondary text-sm">
+            <SelectValue placeholder="All Categories" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {categories.map((cat) => (
+              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Sort Dropdown */}
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+          <SelectTrigger className="h-9 w-40 bg-secondary text-sm">
+            <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name">Name A-Z</SelectItem>
+            <SelectItem value="newest">Newest First</SelectItem>
+            <SelectItem value="price_asc">Price: Low-High</SelectItem>
+            <SelectItem value="price_desc">Price: High-Low</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* More Filters */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9 gap-1.5 bg-secondary border-border">
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <Badge className="text-[10px] px-1.5 py-0 ml-1">{activeFilterCount}</Badge>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52">
+            <DropdownMenuLabel className="text-xs">Visibility</DropdownMenuLabel>
+            <DropdownMenuCheckboxItem
+              checked={hideOutOfStock}
+              onCheckedChange={setHideOutOfStock}
             >
-              {cat}
-            </button>
-          ))}
-        </div>
-        <ScrollBar orientation="horizontal" />
-      </ScrollArea>
+              <EyeOff className="h-3.5 w-3.5 mr-2" /> Hide Out of Stock
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={onSaleOnly}
+              onCheckedChange={setOnSaleOnly}
+            >
+              <Tag className="h-3.5 w-3.5 mr-2" /> On Sale Only
+            </DropdownMenuCheckboxItem>
+            {stores.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-xs">Store</DropdownMenuLabel>
+                <DropdownMenuCheckboxItem
+                  checked={selectedStore === "all"}
+                  onCheckedChange={() => setSelectedStore("all")}
+                >
+                  All Stores
+                </DropdownMenuCheckboxItem>
+                {stores.map((s) => (
+                  <DropdownMenuCheckboxItem
+                    key={s.id}
+                    checked={selectedStore === s.id}
+                    onCheckedChange={() => setSelectedStore(selectedStore === s.id ? "all" : s.id)}
+                  >
+                    {s.name}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Quick stock toggle */}
+        <Button
+          variant={hideOutOfStock ? "default" : "outline"}
+          size="sm"
+          className="h-9 gap-1.5 ml-auto"
+          onClick={() => setHideOutOfStock(!hideOutOfStock)}
+        >
+          {hideOutOfStock ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          {hideOutOfStock ? "Hiding OOS" : "Show All"}
+        </Button>
+      </div>
 
       {/* Product Grid */}
       <ScrollArea className="flex-1">
