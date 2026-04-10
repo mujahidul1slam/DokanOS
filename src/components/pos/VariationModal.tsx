@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Ruler, Tag } from "lucide-react";
+import { Ruler, Tag, ShoppingCart } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,8 +19,26 @@ interface Props {
 
 const emptyMeasurements: CustomMeasurements = { chest: "", length: "", sleeves: "", shoulders: "", waist: "", notes: "" };
 
+interface ParsedAttr {
+  key: string;
+  value: string;
+}
+
+function parseAttributes(attrs: any): ParsedAttr[] {
+  if (!Array.isArray(attrs)) return [];
+  return attrs.map((a: any) => {
+    // Format: {key: "size", value: "L"}
+    if (a.key && a.value) return { key: a.key, value: a.value };
+    // Format: {size: "L"}
+    const k = Object.keys(a).find((k) => k !== "key" && k !== "value");
+    if (k) return { key: k, value: a[k] };
+    return null;
+  }).filter(Boolean) as ParsedAttr[];
+}
+
 const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
   const [variations, setVariations] = useState<Variation[]>([]);
+  const [loading, setLoading] = useState(false);
   const [selectedVar, setSelectedVar] = useState<Variation | null>(null);
   const [customTailoring, setCustomTailoring] = useState(false);
   const [measurements, setMeasurements] = useState<CustomMeasurements>(emptyMeasurements);
@@ -32,29 +50,37 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
     setCustomTailoring(false);
     setMeasurements(emptyMeasurements);
     setQty(1);
+    setLoading(true);
 
     supabase
       .from("product_variations")
       .select("id, product_id, name, sku, price, stock_quantity, attributes")
       .eq("product_id", product.id)
-      .then(({ data }) => setVariations((data || []) as Variation[]));
+      .then(({ data }) => {
+        setVariations((data || []) as Variation[]);
+        setLoading(false);
+      });
   }, [product, open]);
 
   if (!product) return null;
 
-  // Parse variation attributes into groups
-  const attrGroups: Record<string, { value: string; varId: string }[]> = {};
+  // Group attributes by key for display
+  const attrGroups: Record<string, { value: string; variations: Variation[] }[]> = {};
   variations.forEach((v) => {
-    const attrs = Array.isArray(v.attributes) ? v.attributes : [];
-    (attrs as Record<string, string>[]).forEach((a) => {
-      const key = Object.keys(a)[0];
-      if (key) {
-        if (!attrGroups[key]) attrGroups[key] = [];
-        if (!attrGroups[key].find((x) => x.value === a[key]))
-          attrGroups[key].push({ value: a[key], varId: v.id });
+    const parsed = parseAttributes(v.attributes);
+    parsed.forEach((attr) => {
+      if (!attrGroups[attr.key]) attrGroups[attr.key] = [];
+      const existing = attrGroups[attr.key].find((x) => x.value === attr.value);
+      if (existing) {
+        existing.variations.push(v);
+      } else {
+        attrGroups[attr.key].push({ value: attr.value, variations: [v] });
       }
     });
   });
+
+  const attrKeys = Object.keys(attrGroups);
+  const hasVariations = variations.length > 0;
 
   const finalPrice = selectedVar ? Number(selectedVar.price) : Number(product.price);
 
@@ -84,8 +110,57 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Variation selectors */}
-        {variations.length > 0 && (
+        {/* Loading state */}
+        {loading && (
+          <div className="py-4 text-center text-sm text-muted-foreground animate-pulse">
+            Loading variations...
+          </div>
+        )}
+
+        {/* Variation selectors grouped by attribute */}
+        {!loading && hasVariations && attrKeys.length > 0 && (
+          <div className="space-y-4">
+            {attrKeys.map((key) => (
+              <div key={key}>
+                <p className="text-sm font-medium flex items-center gap-2 mb-2 capitalize">
+                  <Tag className="h-4 w-4" /> {key}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {attrGroups[key].map((opt) => {
+                    // Find if any variation matching this option is currently selected
+                    const isSelected = selectedVar && opt.variations.some((v) => v.id === selectedVar.id);
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          // Find the matching variation
+                          const match = opt.variations[0];
+                          setSelectedVar(selectedVar?.id === match.id ? null : match);
+                        }}
+                        className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                          isSelected
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-secondary text-secondary-foreground hover:border-primary/40"
+                        }`}
+                      >
+                        <span>{opt.value}</span>
+                        {opt.variations.some((v) => v.stock_quantity <= 3 && v.stock_quantity > 0) && (
+                          <Badge variant="secondary" className="ml-2 text-[10px]">Low</Badge>
+                        )}
+                        {opt.variations.every((v) => v.stock_quantity <= 0) && (
+                          <Badge variant="destructive" className="ml-2 text-[10px]">OOS</Badge>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Fallback: show flat variation buttons if no structured attributes */}
+        {!loading && hasVariations && attrKeys.length === 0 && (
           <div className="space-y-4">
             <p className="text-sm font-medium flex items-center gap-2">
               <Tag className="h-4 w-4" /> Select Variation
@@ -108,6 +183,14 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* No variations message */}
+        {!loading && !hasVariations && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+            <ShoppingCart className="h-4 w-4" />
+            <span>Simple product — no variations</span>
           </div>
         )}
 
@@ -164,8 +247,12 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
           <p className="font-heading text-xl font-semibold">৳{(finalPrice * qty).toLocaleString()}</p>
         </div>
 
-        <Button onClick={handleAdd} className="w-full h-12 text-base font-medium">
-          Add to Cart
+        <Button
+          onClick={handleAdd}
+          disabled={hasVariations && !selectedVar}
+          className="w-full h-12 text-base font-medium"
+        >
+          {hasVariations && !selectedVar ? "Select a variation" : "Add to Cart"}
         </Button>
       </DialogContent>
     </Dialog>
