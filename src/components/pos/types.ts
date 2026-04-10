@@ -63,7 +63,7 @@ export interface Cart {
   label: string;
   items: CartItem[];
   customer: CustomerData | null;
-  fulfillment: "pickup" | "delivery";
+  fulfillment: "walkin" | "pickup" | "delivery";
   shippingAddress: string;
   pathaoZone: string;
   discount: number;
