@@ -11,7 +11,7 @@ const createEmptyCart = (label: string): Cart => ({
   label,
   items: [],
   customer: null,
-  fulfillment: "pickup",
+  fulfillment: "walkin",
   shippingAddress: "",
   pathaoZone: "",
   discount: 0,
@@ -23,30 +23,29 @@ const createEmptyCart = (label: string): Cart => ({
 const POS = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<CustomerData[]>([]);
 
-  // Modal state
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showVariationModal, setShowVariationModal] = useState(false);
   const [showCustomItem, setShowCustomItem] = useState(false);
 
-  // Multi-cart state
   const [carts, setCarts] = useState<Cart[]>([createEmptyCart("Cart 1")]);
   const [activeCartId, setActiveCartId] = useState(carts[0].id);
   const [cartCounter, setCartCounter] = useState(2);
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
-        .from("products")
-        .select("id, name, sku, price, stock_quantity, image_url, category, description")
-        .eq("is_active", true)
-        .order("name");
-      const prods = (data || []) as Product[];
+      const [prodRes, storeRes] = await Promise.all([
+        supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at").eq("is_active", true).order("name"),
+        supabase.from("stores").select("id, name"),
+      ]);
+      const prods = (prodRes.data || []) as any[];
       setProducts(prods);
       const cats = [...new Set(prods.map((p) => p.category).filter(Boolean))] as string[];
       setCategories(cats);
+      setStores((storeRes.data || []) as { id: string; name: string }[]);
       setLoading(false);
     };
     load();
@@ -116,11 +115,27 @@ const POS = () => {
     setCustomers((data || []) as CustomerData[]);
   }, []);
 
-  const completeOrder = useCallback(async (cart: Cart) => {
+  const completeOrder = useCallback(async (cart: Cart): Promise<string> => {
     const subtotal = cart.items.reduce((s, i) => s + i.price * i.qty, 0);
     const total = subtotal - cart.discount + (cart.fulfillment === "delivery" ? cart.shippingFee : 0);
 
     const orderNumber = `POS-${Date.now().toString(36).toUpperCase()}`;
+
+    // Upsert customer if new
+    let customerId: string | null = cart.customer?.id || null;
+    if (cart.customer && !cart.customer.id && cart.customer.name) {
+      const { data: newCust } = await supabase
+        .from("customers")
+        .insert({
+          name: cart.customer.name,
+          phone: cart.customer.phone || null,
+          address: cart.customer.address || null,
+        })
+        .select("id")
+        .single();
+      if (newCust) customerId = newCust.id;
+    }
+
     const { data: order } = await supabase
       .from("orders")
       .insert({
@@ -132,14 +147,13 @@ const POS = () => {
         discount: cart.discount,
         shipping_cost: cart.fulfillment === "delivery" ? cart.shippingFee : 0,
         total,
-        customer_id: cart.customer?.id || null,
+        customer_id: customerId,
         notes: cart.notes || null,
       })
       .select("id")
       .single();
 
     if (order) {
-      // Insert items
       const items = cart.items.map((i) => ({
         order_id: order.id,
         product_id: i.isCustomItem ? null : i.productId,
@@ -150,7 +164,6 @@ const POS = () => {
       }));
       await supabase.from("order_items").insert(items);
 
-      // Insert payments
       if (cart.payments.length > 0) {
         const payments = cart.payments.map((p) => ({
           order_id: order.id,
@@ -167,6 +180,8 @@ const POS = () => {
       setActiveCartId(next.find((c) => c.label === cart.label)?.id || next[0].id);
       return next;
     });
+
+    return orderNumber;
   }, []);
 
   if (loading) {
@@ -179,17 +194,15 @@ const POS = () => {
 
   return (
     <div className="flex h-[calc(100vh-3rem)] -m-6">
-      {/* Left: Product Catalog (60%) */}
       <div className="w-[60%] p-4">
         <ProductCatalog
           products={products}
           categories={categories}
+          stores={stores}
           onSelectProduct={handleSelectProduct}
           onAddCustomItem={() => setShowCustomItem(true)}
         />
       </div>
-
-      {/* Right: Cart Panel (40%) */}
       <div className="w-[40%]">
         <CartPanel
           carts={carts}
@@ -205,8 +218,6 @@ const POS = () => {
           onSearchCustomers={searchCustomers}
         />
       </div>
-
-      {/* Modals */}
       <VariationModal
         product={selectedProduct}
         open={showVariationModal}

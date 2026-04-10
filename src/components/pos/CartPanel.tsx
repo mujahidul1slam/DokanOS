@@ -1,6 +1,5 @@
-import { useState } from "react";
-import { Plus, Printer, FileText, Trash2, Minus, CreditCard, Banknote, Smartphone, Building2, Truck, Store, Search, UserPlus, ShoppingBag, Ruler, X, Check } from "lucide-react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useState, useCallback } from "react";
+import { Plus, Printer, FileText, Trash2, Minus, CreditCard, Banknote, Smartphone, Building2, Truck, Store, Search, UserPlus, ShoppingBag, Ruler, X, Check, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -9,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { printInvoice } from "./InvoicePrint";
 import type { Cart, CartItem, Payment, CustomerData } from "./types";
 
 interface Props {
@@ -20,7 +20,7 @@ interface Props {
   onUpdateCart: (id: string, updates: Partial<Cart>) => void;
   onUpdateItem: (cartId: string, uid: string, updates: Partial<CartItem>) => void;
   onRemoveItem: (cartId: string, uid: string) => void;
-  onCompleteOrder: (cart: Cart) => void;
+  onCompleteOrder: (cart: Cart) => Promise<string>;
   customers: CustomerData[];
   onSearchCustomers: (q: string) => void;
 }
@@ -42,7 +42,12 @@ const CartPanel = ({
   const [payMethod, setPayMethod] = useState<"cash" | "bkash" | "card" | "bank">("cash");
   const [payAmount, setPayAmount] = useState("");
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [completedCart, setCompletedCart] = useState<Cart | null>(null);
+  const [completedOrderNumber, setCompletedOrderNumber] = useState("");
+  const [completedCartSnapshot, setCompletedCartSnapshot] = useState<Cart | null>(null);
+  // Inline new customer fields
+  const [newCustName, setNewCustName] = useState("");
+  const [newCustPhone, setNewCustPhone] = useState("");
+  const [newCustAddress, setNewCustAddress] = useState("");
 
   const cart = carts.find((c) => c.id === activeCartId) || carts[0];
   if (!cart) return null;
@@ -64,16 +69,53 @@ const CartPanel = ({
     onUpdateCart(cart.id, { payments: cart.payments.filter((p) => p.id !== pid) });
   };
 
-  const handleComplete = () => {
-    setCompletedCart(cart);
-    onCompleteOrder(cart);
+  const handleComplete = async () => {
+    // If no customer selected but inline fields filled, set as new customer
+    if (!cart.customer && newCustName) {
+      const custData: CustomerData = {
+        name: newCustName,
+        phone: newCustPhone,
+        address: newCustAddress || undefined,
+      };
+      onUpdateCart(cart.id, { customer: custData });
+    }
+
+    const snapshot = { ...cart, customer: cart.customer || (newCustName ? { name: newCustName, phone: newCustPhone, address: newCustAddress || undefined } : null) };
+    setCompletedCartSnapshot(snapshot);
+    const orderNum = await onCompleteOrder(snapshot);
+    setCompletedOrderNumber(orderNum);
     setShowPrintModal(true);
+    setNewCustName("");
+    setNewCustPhone("");
+    setNewCustAddress("");
+    setCustomerSearch("");
   };
 
   const selectCustomer = (c: CustomerData) => {
     onUpdateCart(cart.id, { customer: c });
-    setCustomerSearch(c.name);
+    setNewCustName(c.name);
+    setNewCustPhone(c.phone);
+    setNewCustAddress(c.address || "");
+    setCustomerSearch("");
     setShowCustomerDropdown(false);
+  };
+
+  const clearCustomer = () => {
+    onUpdateCart(cart.id, { customer: null });
+    setNewCustName("");
+    setNewCustPhone("");
+    setNewCustAddress("");
+    setCustomerSearch("");
+  };
+
+  const handlePrint = (format: "thermal" | "a4") => {
+    if (completedCartSnapshot) {
+      const snap = completedCartSnapshot;
+      const sub = snap.items.reduce((s, i) => s + i.price * i.qty, 0);
+      const tot = sub - snap.discount + (snap.fulfillment === "delivery" ? snap.shippingFee : 0);
+      printInvoice({ orderNumber: completedOrderNumber, cart: snap, subtotal: sub, total: tot }, format);
+    }
+    setShowPrintModal(false);
   };
 
   return (
@@ -116,83 +158,98 @@ const CartPanel = ({
           </div>
         </div>
 
-        {/* Customer & Fulfillment */}
+        {/* Customer Info Section */}
         <div className="border-b border-border p-3 space-y-3">
-          {/* Customer search */}
-          <div className="relative">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  value={customerSearch}
-                  onChange={(e) => {
-                    setCustomerSearch(e.target.value);
-                    onSearchCustomers(e.target.value);
-                    setShowCustomerDropdown(true);
-                  }}
-                  onFocus={() => setShowCustomerDropdown(true)}
-                  placeholder="Search customer..."
-                  className="pl-8 h-9 text-sm bg-secondary"
-                />
-              </div>
-              <Button variant="outline" size="sm" className="h-9 gap-1 shrink-0">
-                <UserPlus className="h-3.5 w-3.5" /> New
-              </Button>
+          {/* Name & Phone with search */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="relative">
+              <Input
+                value={newCustName || customerSearch}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewCustName(val);
+                  setCustomerSearch(val);
+                  onSearchCustomers(val);
+                  setShowCustomerDropdown(true);
+                  if (!val) clearCustomer();
+                }}
+                onFocus={() => { if (newCustName) setShowCustomerDropdown(true); }}
+                onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                placeholder="Customer name *"
+                className="h-9 text-sm bg-secondary"
+              />
+              {showCustomerDropdown && customerSearch && customers.length > 0 && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-border bg-popover shadow-lg max-h-40 overflow-y-auto">
+                  {customers.map((c) => (
+                    <button
+                      key={c.id || c.phone}
+                      onClick={() => selectCustomer(c)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      <span className="text-muted-foreground ml-2">{c.phone}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            {showCustomerDropdown && customerSearch && customers.length > 0 && (
-              <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-border bg-popover shadow-lg max-h-40 overflow-y-auto">
-                {customers.map((c) => (
-                  <button
-                    key={c.id || c.phone}
-                    onClick={() => selectCustomer(c)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
-                  >
-                    <span className="font-medium">{c.name}</span>
-                    <span className="text-muted-foreground ml-2">{c.phone}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="relative">
+              <Input
+                value={newCustPhone}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewCustPhone(val);
+                  if (val.length >= 3) {
+                    onSearchCustomers(val);
+                    setShowCustomerDropdown(true);
+                  }
+                }}
+                placeholder="Phone number *"
+                className="h-9 text-sm bg-secondary"
+              />
+            </div>
           </div>
+
+          {/* Selected customer indicator */}
           {cart.customer && (
-            <div className="flex items-center justify-between rounded-md bg-secondary px-3 py-2">
-              <div className="text-sm">
-                <span className="font-medium">{cart.customer.name}</span>
-                <span className="text-muted-foreground ml-2">{cart.customer.phone}</span>
+            <div className="flex items-center justify-between rounded-md bg-primary/10 border border-primary/20 px-3 py-1.5">
+              <div className="flex items-center gap-2 text-sm">
+                <User className="h-3.5 w-3.5 text-primary" />
+                <span className="font-medium text-primary">{cart.customer.name}</span>
+                <span className="text-muted-foreground">{cart.customer.phone}</span>
               </div>
-              <button onClick={() => { onUpdateCart(cart.id, { customer: null }); setCustomerSearch(""); }} className="text-muted-foreground hover:text-destructive">
+              <button onClick={clearCustomer} className="text-muted-foreground hover:text-destructive">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
 
-          {/* Fulfillment toggle */}
+          {/* Fulfillment toggle - 3 options */}
           <div className="flex rounded-md border border-border overflow-hidden">
-            <button
-              onClick={() => onUpdateCart(cart.id, { fulfillment: "pickup" })}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium transition-colors ${
-                cart.fulfillment === "pickup" ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Store className="h-4 w-4" /> Shop Pickup
-            </button>
-            <button
-              onClick={() => onUpdateCart(cart.id, { fulfillment: "delivery" })}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium transition-colors ${
-                cart.fulfillment === "delivery" ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Truck className="h-4 w-4" /> Home Delivery
-            </button>
+            {([
+              { key: "walkin" as const, label: "Walk-In", icon: User },
+              { key: "pickup" as const, label: "Shop Pickup", icon: Store },
+              { key: "delivery" as const, label: "Home Delivery", icon: Truck },
+            ]).map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => onUpdateCart(cart.id, { fulfillment: key })}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors ${
+                  cart.fulfillment === key ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" /> {label}
+              </button>
+            ))}
           </div>
 
-          {/* Delivery fields */}
+          {/* Address - only shown & mandatory for Home Delivery */}
           {cart.fulfillment === "delivery" && (
             <div className="space-y-2">
               <Input
-                value={cart.shippingAddress}
-                onChange={(e) => onUpdateCart(cart.id, { shippingAddress: e.target.value })}
-                placeholder="Shipping address..."
+                value={newCustAddress}
+                onChange={(e) => setNewCustAddress(e.target.value)}
+                placeholder="Shipping address *"
                 className="h-9 text-sm bg-secondary"
               />
               <Input
@@ -359,6 +416,14 @@ const CartPanel = ({
             </div>
           </div>
 
+          {/* Notes */}
+          <Textarea
+            value={cart.notes}
+            onChange={(e) => onUpdateCart(cart.id, { notes: e.target.value })}
+            placeholder="Order notes..."
+            className="text-sm bg-secondary min-h-[40px] h-10"
+          />
+
           {/* Action button */}
           <Button
             onClick={handleComplete}
@@ -376,11 +441,14 @@ const CartPanel = ({
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="font-heading text-center">Order Completed! 🎉</DialogTitle>
-            <DialogDescription className="text-center">Print a receipt for the customer?</DialogDescription>
+            <DialogDescription className="text-center">
+              {completedOrderNumber && <span className="font-mono text-xs block mb-1">{completedOrderNumber}</span>}
+              Print a receipt for the customer?
+            </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 pt-2">
             <button
-              onClick={() => { setShowPrintModal(false); /* TODO: thermal print */ }}
+              onClick={() => handlePrint("thermal")}
               className="flex flex-col items-center gap-3 rounded-lg border border-border bg-secondary p-6 transition-colors hover:border-primary/50"
             >
               <Printer className="h-10 w-10 text-primary" />
@@ -390,7 +458,7 @@ const CartPanel = ({
               </div>
             </button>
             <button
-              onClick={() => { setShowPrintModal(false); /* TODO: A4 print */ }}
+              onClick={() => handlePrint("a4")}
               className="flex flex-col items-center gap-3 rounded-lg border border-border bg-secondary p-6 transition-colors hover:border-primary/50"
             >
               <FileText className="h-10 w-10 text-primary" />
