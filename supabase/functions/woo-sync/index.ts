@@ -413,6 +413,15 @@ function mapWooStatus(status: string): string {
   return map[status] || "pending";
 }
 
+function fromWooStockStatus(status: string): string {
+  const map: Record<string, string> = {
+    instock: "in_stock",
+    outofstock: "out_of_stock",
+    onbackorder: "on_backorder",
+  };
+  return map[status] || status;
+}
+
 function derivePaymentStatus(o: any): string {
   const method = (o.payment_method || "").toLowerCase();
   const status = (o.status || "").toLowerCase();
