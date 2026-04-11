@@ -144,8 +144,11 @@ Deno.serve(async (req) => {
 
     // --- Sync Products ---
     const wooProducts = await wooFetchAll("products");
-    if (wooProducts.length > 0) {
-      const rows = wooProducts.map((p: any) => ({
+    // Filter out variations — only keep simple, variable, grouped, external product types
+    const parentProducts = wooProducts.filter((p: any) => p.type !== "variation");
+
+    if (parentProducts.length > 0) {
+      const rows = parentProducts.map((p: any) => ({
         store_id,
         woo_product_id: p.id,
         name: p.name,
@@ -181,7 +184,7 @@ Deno.serve(async (req) => {
       // Collect all product_categories rows
       const pcRows: { product_id: string; category_id: string }[] = [];
       const productIdsWithCats: string[] = [];
-      for (const wp of wooProducts) {
+      for (const wp of parentProducts) {
         const prodId = prodByWooId.get(wp.id);
         if (!prodId) continue;
         productIdsWithCats.push(prodId);
@@ -204,7 +207,7 @@ Deno.serve(async (req) => {
       }
 
       // --- Sync Variations for variable products (with rate limit protection) ---
-      const variableProducts = wooProducts.filter((wp: any) => wp.type === "variable" && wp.variations?.length > 0);
+      const variableProducts = parentProducts.filter((wp: any) => wp.type === "variable" && wp.variations?.length > 0);
       for (let vi = 0; vi < variableProducts.length; vi++) {
         const wp = variableProducts[vi];
         const prodId = prodByWooId.get(wp.id);
