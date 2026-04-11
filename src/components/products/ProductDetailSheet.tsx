@@ -17,6 +17,7 @@ import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
 /* ---------- types ---------- */
 interface Variation {
   id?: string;
+  woo_variation_id?: number | null;
   name: string;
   sku: string;
   price: number;
@@ -146,7 +147,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     const { data: vars } = await supabase.from("product_variations").select("*").eq("product_id", id).order("created_at");
     if (vars) {
       setVariations(vars.map((v: any) => ({
-        id: v.id, name: v.name, sku: v.sku || "", price: Number(v.price),
+        id: v.id, woo_variation_id: v.woo_variation_id || null,
+        name: v.name, sku: v.sku || "", price: Number(v.price),
         manage_stock: v.manage_stock, stock_quantity: v.stock_quantity,
         stock_status: v.stock_status, barcode: v.barcode || "",
         attributes: Array.isArray(v.attributes) ? v.attributes : [],
@@ -217,6 +219,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
           manage_stock: v.manage_stock, stock_quantity: v.manage_stock ? v.stock_quantity : 0,
           stock_status: v.stock_status, barcode: v.barcode || null,
           attributes: v.attributes,
+          woo_variation_id: v.woo_variation_id || null,
         }));
         await supabase.from("product_variations").insert(rows);
       }
