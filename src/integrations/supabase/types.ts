@@ -238,17 +238,27 @@ export type Database = {
       }
       orders: {
         Row: {
+          amount_to_collect: number | null
           consignment_id: string | null
           created_at: string
           customer_id: string | null
+          delivery_type: number | null
           discount: number | null
           id: string
+          item_qty: number | null
+          item_type: number | null
+          item_weight: number | null
           notes: string | null
           order_number: string
+          pathao_recipient_area: number | null
+          pathao_recipient_city: number | null
+          pathao_recipient_zone: number | null
+          pathao_store_id: number | null
           payment_method: string | null
           payment_status: string
           shipping_cost: number | null
           source: string
+          special_instruction: string | null
           status: string
           store_id: string | null
           subtotal: number
@@ -258,17 +268,27 @@ export type Database = {
           woo_order_id: number | null
         }
         Insert: {
+          amount_to_collect?: number | null
           consignment_id?: string | null
           created_at?: string
           customer_id?: string | null
+          delivery_type?: number | null
           discount?: number | null
           id?: string
+          item_qty?: number | null
+          item_type?: number | null
+          item_weight?: number | null
           notes?: string | null
           order_number: string
+          pathao_recipient_area?: number | null
+          pathao_recipient_city?: number | null
+          pathao_recipient_zone?: number | null
+          pathao_store_id?: number | null
           payment_method?: string | null
           payment_status?: string
           shipping_cost?: number | null
           source?: string
+          special_instruction?: string | null
           status?: string
           store_id?: string | null
           subtotal?: number
@@ -278,17 +298,27 @@ export type Database = {
           woo_order_id?: number | null
         }
         Update: {
+          amount_to_collect?: number | null
           consignment_id?: string | null
           created_at?: string
           customer_id?: string | null
+          delivery_type?: number | null
           discount?: number | null
           id?: string
+          item_qty?: number | null
+          item_type?: number | null
+          item_weight?: number | null
           notes?: string | null
           order_number?: string
+          pathao_recipient_area?: number | null
+          pathao_recipient_city?: number | null
+          pathao_recipient_zone?: number | null
+          pathao_store_id?: number | null
           payment_method?: string | null
           payment_status?: string
           shipping_cost?: number | null
           source?: string
+          special_instruction?: string | null
           status?: string
           store_id?: string | null
           subtotal?: number
@@ -311,6 +341,118 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stores"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      pathao_areas: {
+        Row: {
+          area_id: number
+          area_name: string
+          fetched_at: string
+          zone_id: number
+        }
+        Insert: {
+          area_id: number
+          area_name: string
+          fetched_at?: string
+          zone_id: number
+        }
+        Update: {
+          area_id?: number
+          area_name?: string
+          fetched_at?: string
+          zone_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pathao_areas_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "pathao_zones"
+            referencedColumns: ["zone_id"]
+          },
+        ]
+      }
+      pathao_cities: {
+        Row: {
+          city_id: number
+          city_name: string
+          fetched_at: string
+        }
+        Insert: {
+          city_id: number
+          city_name: string
+          fetched_at?: string
+        }
+        Update: {
+          city_id?: number
+          city_name?: string
+          fetched_at?: string
+        }
+        Relationships: []
+      }
+      pathao_stores: {
+        Row: {
+          city_id: number | null
+          fetched_at: string
+          hub_id: number | null
+          id: string
+          is_active: boolean | null
+          pathao_store_id: number
+          store_address: string | null
+          store_name: string
+          zone_id: number | null
+        }
+        Insert: {
+          city_id?: number | null
+          fetched_at?: string
+          hub_id?: number | null
+          id?: string
+          is_active?: boolean | null
+          pathao_store_id: number
+          store_address?: string | null
+          store_name: string
+          zone_id?: number | null
+        }
+        Update: {
+          city_id?: number | null
+          fetched_at?: string
+          hub_id?: number | null
+          id?: string
+          is_active?: boolean | null
+          pathao_store_id?: number
+          store_address?: string | null
+          store_name?: string
+          zone_id?: number | null
+        }
+        Relationships: []
+      }
+      pathao_zones: {
+        Row: {
+          city_id: number
+          fetched_at: string
+          zone_id: number
+          zone_name: string
+        }
+        Insert: {
+          city_id: number
+          fetched_at?: string
+          zone_id: number
+          zone_name: string
+        }
+        Update: {
+          city_id?: number
+          fetched_at?: string
+          zone_id?: number
+          zone_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pathao_zones_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "pathao_cities"
+            referencedColumns: ["city_id"]
           },
         ]
       }
