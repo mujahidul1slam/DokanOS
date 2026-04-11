@@ -17,6 +17,7 @@ import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
 /* ---------- types ---------- */
 interface Variation {
   id?: string;
+  woo_variation_id?: number | null;
   name: string;
   sku: string;
   price: number;
