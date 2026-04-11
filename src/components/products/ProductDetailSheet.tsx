@@ -489,14 +489,14 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
               )}
 
               <div className="space-y-2">
-                <Label>Stock Status</Label>
-                <Select value={form.stock_status} onValueChange={v => set("stock_status", v)}>
+                <Label>Stock Status {pushingStock && <span className="text-xs text-muted-foreground ml-2">Syncing…</span>}</Label>
+                <Select value={form.stock_status} onValueChange={handleStockStatusChange} disabled={pushingStock}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {STOCK_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">"On Backorder" can be set regardless of stock quantity.</p>
+                <p className="text-xs text-muted-foreground">Changes auto-sync to WooCommerce.</p>
               </div>
             </div>
           </TabsContent>
