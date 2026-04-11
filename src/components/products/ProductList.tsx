@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from "react";
-import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import ProductDetailSheet from "@/components/products/ProductDetailSheet";
@@ -67,6 +68,12 @@ const ProductList = () => {
   const [dbCategories, setDbCategories] = useState<{ id: string; name: string }[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [page, setPage] = useState(1);
+
+  // Bulk action state
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [catDialogOpen, setCatDialogOpen] = useState(false);
+  const [selectedBulkCats, setSelectedBulkCats] = useState<Set<string>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const loadProducts = async () => {
     setLoading(true);
@@ -131,6 +138,8 @@ const ProductList = () => {
     setSelected(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   };
 
+  const selectAllFiltered = () => setSelected(new Set(filtered.map(p => p.id)));
+
   const openNew = () => { setEditProductId(null); setSheetOpen(true); };
   const openEdit = (id: string) => { setEditProductId(id); setSheetOpen(true); };
 
@@ -156,6 +165,148 @@ const ProductList = () => {
     toast({ title: "Products synced!" });
   };
 
+  /* ====== BULK ACTIONS ====== */
+  const selectedIds = Array.from(selected);
+  const selectedCount = selectedIds.length;
+
+  const bulkSetStockStatus = async (status: string) => {
+    if (selectedCount === 0) return;
+    setBulkBusy(true);
+    try {
+      // Update products
+      for (const id of selectedIds) {
+        await supabase.from("products").update({ stock_status: status }).eq("id", id);
+        // Also update variations
+        await supabase.from("product_variations").update({ stock_status: status }).eq("product_id", id);
+      }
+
+      // Push to WooCommerce for linked products
+      const { data: linkedProducts } = await supabase
+        .from("products")
+        .select("id, woo_product_id, store_id")
+        .in("id", selectedIds)
+        .not("woo_product_id", "is", null);
+
+      if (linkedProducts) {
+        for (const prod of linkedProducts) {
+          if (prod.store_id) {
+            try {
+              await supabase.functions.invoke("woo-push", {
+                body: { action: "push_stock", product_id: prod.id },
+              });
+            } catch (e) {
+              console.warn(`WooCommerce push failed for ${prod.id}:`, e);
+            }
+          }
+        }
+      }
+
+      toast({ title: `${selectedCount} products updated to ${status.replace(/_/g, " ")}` });
+      setSelected(new Set());
+      await loadProducts();
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const bulkSetActive = async (isActive: boolean) => {
+    if (selectedCount === 0) return;
+    setBulkBusy(true);
+    try {
+      for (const id of selectedIds) {
+        await supabase.from("products").update({ is_active: isActive }).eq("id", id);
+      }
+
+      // Push to WooCommerce
+      const { data: linkedProducts } = await supabase
+        .from("products")
+        .select("id, woo_product_id, store_id")
+        .in("id", selectedIds)
+        .not("woo_product_id", "is", null);
+
+      if (linkedProducts) {
+        for (const prod of linkedProducts) {
+          if (prod.store_id) {
+            try {
+              await supabase.functions.invoke("woo-push", {
+                body: { action: "push_product", product_id: prod.id },
+              });
+            } catch (e) {
+              console.warn(`WooCommerce push failed for ${prod.id}:`, e);
+            }
+          }
+        }
+      }
+
+      toast({ title: `${selectedCount} products ${isActive ? "activated" : "deactivated"}` });
+      setSelected(new Set());
+      await loadProducts();
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const bulkDelete = async () => {
+    if (selectedCount === 0) return;
+    setBulkBusy(true);
+    try {
+      for (const id of selectedIds) {
+        await supabase.from("product_categories").delete().eq("product_id", id);
+        await supabase.from("product_variations").delete().eq("product_id", id);
+        await supabase.from("products").delete().eq("id", id);
+      }
+      toast({ title: `${selectedCount} products deleted` });
+      setSelected(new Set());
+      setDeleteDialogOpen(false);
+      await loadProducts();
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const openCatDialog = () => {
+    setSelectedBulkCats(new Set());
+    setCatDialogOpen(true);
+  };
+
+  const toggleBulkCat = (id: string) => {
+    setSelectedBulkCats(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const bulkAssignCategories = async () => {
+    if (selectedCount === 0 || selectedBulkCats.size === 0) return;
+    setBulkBusy(true);
+    try {
+      for (const productId of selectedIds) {
+        // Remove existing category assignments
+        await supabase.from("product_categories").delete().eq("product_id", productId);
+        // Insert new ones
+        const rows = Array.from(selectedBulkCats).map(catId => ({
+          product_id: productId,
+          category_id: catId,
+        }));
+        await supabase.from("product_categories").insert(rows);
+
+        // Update the category text field too
+        const catNames = dbCategories
+          .filter(c => selectedBulkCats.has(c.id))
+          .map(c => c.name);
+        await supabase.from("products").update({ category: catNames.join(", ") }).eq("id", productId);
+      }
+
+      toast({ title: `Categories assigned to ${selectedCount} products` });
+      setSelected(new Set());
+      setCatDialogOpen(false);
+      await loadProducts();
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading…</div>;
 
   return (
@@ -171,6 +322,72 @@ const ProductList = () => {
           </Button>
         </div>
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectedCount > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
+          <span className="text-sm font-medium text-foreground">{selectedCount} selected</span>
+          {selectedCount < filtered.length && (
+            <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={selectAllFiltered}>
+              Select all {filtered.length}
+            </Button>
+          )}
+          <div className="ml-auto flex items-center gap-1.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5 h-8" disabled={bulkBusy}>
+                  <PackageCheck className="h-3.5 w-3.5" /> Stock Status
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => bulkSetStockStatus("in_stock")}>
+                  <Badge className="bg-success/15 text-success border-0 mr-2">●</Badge> In Stock
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => bulkSetStockStatus("out_of_stock")}>
+                  <Badge className="bg-destructive/15 text-destructive border-0 mr-2">●</Badge> Out of Stock
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => bulkSetStockStatus("on_backorder")}>
+                  <Badge className="bg-warning/15 text-warning border-0 mr-2">●</Badge> On Backorder
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button variant="outline" size="sm" className="gap-1.5 h-8" disabled={bulkBusy} onClick={openCatDialog}>
+              <Tags className="h-3.5 w-3.5" /> Categories
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5 h-8" disabled={bulkBusy}>
+                  <Eye className="h-3.5 w-3.5" /> Status
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => bulkSetActive(true)}>
+                  <Eye className="h-3.5 w-3.5 mr-2" /> Activate
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => bulkSetActive(false)}>
+                  <EyeOff className="h-3.5 w-3.5 mr-2" /> Deactivate
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8 text-destructive hover:bg-destructive/10 border-destructive/30"
+              disabled={bulkBusy}
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </Button>
+
+            <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
@@ -218,7 +435,7 @@ const ProductList = () => {
               <tr><td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">No products found.</td></tr>
             )}
             {paginated.map(p => (
-              <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/50 cursor-pointer" onClick={() => openEdit(p.id)}>
+              <tr key={p.id} className={`border-b border-border last:border-0 hover:bg-secondary/50 cursor-pointer ${selected.has(p.id) ? "bg-primary/5" : ""}`} onClick={() => openEdit(p.id)}>
                 <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                   <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleOne(p.id)} />
                 </td>
@@ -293,6 +510,53 @@ const ProductList = () => {
       </div>
 
       <ProductDetailSheet productId={editProductId} open={sheetOpen} onOpenChange={setSheetOpen} onSaved={loadProducts} />
+
+      {/* Bulk Category Dialog */}
+      <Dialog open={catDialogOpen} onOpenChange={setCatDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Categories to {selectedCount} Products</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Select the categories to assign. This will replace existing categories on the selected products.</p>
+          <div className="rounded-lg border border-border p-3 space-y-1 max-h-64 overflow-y-auto">
+            {dbCategories.length === 0 && (
+              <p className="text-sm text-muted-foreground py-4 text-center">No categories found.</p>
+            )}
+            {dbCategories.map(c => (
+              <label key={c.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-secondary/50 cursor-pointer">
+                <Checkbox checked={selectedBulkCats.has(c.id)} onCheckedChange={() => toggleBulkCat(c.id)} />
+                <span className="text-sm text-foreground">{c.name}</span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCatDialogOpen(false)}>Cancel</Button>
+            <Button onClick={bulkAssignCategories} disabled={bulkBusy || selectedBulkCats.size === 0}>
+              {bulkBusy ? "Assigning…" : `Assign to ${selectedCount} Products`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" /> Delete {selectedCount} Products?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will permanently delete {selectedCount} product{selectedCount > 1 ? "s" : ""} and their variations. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={bulkDelete} disabled={bulkBusy}>
+              {bulkBusy ? "Deleting…" : `Delete ${selectedCount} Products`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
