@@ -144,8 +144,11 @@ Deno.serve(async (req) => {
 
     // --- Sync Products ---
     const wooProducts = await wooFetchAll("products");
-    if (wooProducts.length > 0) {
-      const rows = wooProducts.map((p: any) => ({
+    // Filter out variations — only keep simple, variable, grouped, external product types
+    const parentProducts = wooProducts.filter((p: any) => p.type !== "variation");
+
+    if (parentProducts.length > 0) {
+      const rows = parentProducts.map((p: any) => ({
         store_id,
         woo_product_id: p.id,
         name: p.name,
