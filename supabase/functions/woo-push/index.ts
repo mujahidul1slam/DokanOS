@@ -120,7 +120,7 @@ async function pushProduct(supabase: any, productId: string) {
     description: product.description || "",
     manage_stock: product.manage_stock,
     stock_quantity: product.manage_stock ? product.stock_quantity : null,
-    stock_status: product.stock_status,
+    stock_status: toWooStockStatus(product.stock_status),
     backorders: product.backorders || "no",
     status: product.is_active ? "publish" : "draft",
   };
@@ -176,7 +176,7 @@ async function pushProduct(supabase: any, productId: string) {
         regular_price: String(v.price),
         manage_stock: v.manage_stock,
         stock_quantity: v.manage_stock ? v.stock_quantity : null,
-        stock_status: v.stock_status,
+        stock_status: toWooStockStatus(v.stock_status),
       };
       const varUrl = `${baseUrl(store)}/wp-json/wc/v3/products/${product.woo_product_id}/variations/${v.woo_variation_id}`;
       const varRes = await fetch(varUrl, {
@@ -211,7 +211,7 @@ async function pushStock(supabase: any, productId: string) {
   const wooPayload = {
     manage_stock: product.manage_stock,
     stock_quantity: product.manage_stock ? product.stock_quantity : null,
-    stock_status: product.stock_status,
+    stock_status: toWooStockStatus(product.stock_status),
   };
 
   const url = `${baseUrl(store)}/wp-json/wc/v3/products/${product.woo_product_id}`;
@@ -245,7 +245,7 @@ async function pushStock(supabase: any, productId: string) {
         body: JSON.stringify({
           manage_stock: v.manage_stock,
           stock_quantity: v.manage_stock ? v.stock_quantity : null,
-          stock_status: v.stock_status,
+          stock_status: toWooStockStatus(v.stock_status),
         }),
       });
     }
