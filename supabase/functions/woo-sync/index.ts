@@ -184,7 +184,7 @@ Deno.serve(async (req) => {
       // Collect all product_categories rows
       const pcRows: { product_id: string; category_id: string }[] = [];
       const productIdsWithCats: string[] = [];
-      for (const wp of wooProducts) {
+      for (const wp of parentProducts) {
         const prodId = prodByWooId.get(wp.id);
         if (!prodId) continue;
         productIdsWithCats.push(prodId);
