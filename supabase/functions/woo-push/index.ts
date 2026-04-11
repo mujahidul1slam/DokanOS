@@ -90,14 +90,18 @@ function baseUrl(store: any) {
   return store.url.replace(/\/+$/, "");
 }
 
-/** Convert DB stock_status (in_stock) to WooCommerce format (instock) */
+/** Convert DB stock_status to WooCommerce format — handles both formats gracefully */
 function toWooStockStatus(status: string): string {
   const map: Record<string, string> = {
     in_stock: "instock",
     out_of_stock: "outofstock",
     on_backorder: "onbackorder",
+    // Pass through if already in WooCommerce format
+    instock: "instock",
+    outofstock: "outofstock",
+    onbackorder: "onbackorder",
   };
-  return map[status] || status;
+  return map[status] || "instock";
 }
 
 /* ====== PUSH PRODUCT ====== */
