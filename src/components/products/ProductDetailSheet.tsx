@@ -70,9 +70,11 @@ interface Props {
 /* ========== Component ========== */
 const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) => {
   const [form, setForm] = useState<ProductForm>(emptyForm);
+  const [originalStockStatus, setOriginalStockStatus] = useState<string>("in_stock");
   const [variations, setVariations] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pushingStock, setPushingStock] = useState(false);
 
   // category tree from DB
   const [catTree, setCatTree] = useState<CatNode[]>([]);
