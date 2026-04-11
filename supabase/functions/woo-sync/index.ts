@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
         cost_price: parseFloat(p.meta_data?.find((m: any) => m.key === "_cost")?.value) || 0,
         stock_quantity: p.stock_quantity ?? 0,
         manage_stock: p.manage_stock ?? false,
-        stock_status: p.stock_status || "in_stock",
+        stock_status: fromWooStockStatus(p.stock_status || "instock"),
         backorders: p.backorders || "no",
         category: p.categories?.map((c: any) => c.name).join(", ") || null,
         image_url: p.images?.[0]?.src || null,
@@ -225,7 +225,7 @@ Deno.serve(async (req) => {
             price: parseFloat(v.price) || 0,
             manage_stock: v.manage_stock ?? false,
             stock_quantity: v.stock_quantity ?? 0,
-            stock_status: v.stock_status || "in_stock",
+            stock_status: fromWooStockStatus(v.stock_status || "instock"),
             barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
             attributes: (v.attributes || []).map((a: any) => ({
               key: a.name || a.slug,
