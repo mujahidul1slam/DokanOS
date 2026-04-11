@@ -174,6 +174,27 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
   const set = (key: keyof ProductForm, val: any) => setForm(prev => ({ ...prev, [key]: val }));
 
+  /* ---------- quick stock push ---------- */
+  const handleStockStatusChange = async (newStatus: string) => {
+    set("stock_status", newStatus);
+    if (!form.id) return;
+    setPushingStock(true);
+    await supabase.from("products").update({ stock_status: newStatus }).eq("id", form.id);
+    const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", form.id).single();
+    if (prod?.woo_product_id && prod?.store_id) {
+      try {
+        await supabase.functions.invoke("woo-push", {
+          body: { action: "push_stock", product_id: form.id },
+        });
+        toast({ title: "Stock status synced to WooCommerce" });
+      } catch (e) {
+        console.warn("WooCommerce stock push failed:", e);
+        toast({ title: "Saved locally, WooCommerce sync failed", variant: "destructive" });
+      }
+    }
+    setPushingStock(false);
+  };
+
   /* ---------- save ---------- */
   const handleSave = async () => {
     if (!form.name.trim()) { toast({ title: "Product name is required", variant: "destructive" }); return; }
