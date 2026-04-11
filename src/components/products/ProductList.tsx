@@ -26,8 +26,17 @@ interface ProductRow {
   storeName?: string;
 }
 
+const normalizeStockStatus = (status: string) => {
+  const map: Record<string, string> = {
+    instock: "in_stock", outofstock: "out_of_stock", onbackorder: "on_backorder",
+    in_stock: "in_stock", out_of_stock: "out_of_stock", on_backorder: "on_backorder",
+  };
+  return map[status] || status;
+};
+
 const stockBadge = (status: string) => {
-  switch (status) {
+  const normalized = normalizeStockStatus(status);
+  switch (normalized) {
     case "in_stock": return <Badge className="bg-success/15 text-success border-0 hover:bg-success/25">In Stock</Badge>;
     case "out_of_stock": return <Badge className="bg-destructive/15 text-destructive border-0 hover:bg-destructive/25">Out of Stock</Badge>;
     case "on_backorder": return <Badge className="bg-warning/15 text-warning border-0 hover:bg-warning/25">On Backorder</Badge>;
