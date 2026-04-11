@@ -136,6 +136,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         stock_status: p.stock_status || "in_stock", is_active: p.is_active,
       });
       setOriginalStockStatus(p.stock_status || "in_stock");
+    }
 
     // Load product categories
     const { data: pcData } = await supabase
