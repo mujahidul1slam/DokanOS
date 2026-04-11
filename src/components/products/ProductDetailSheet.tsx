@@ -56,6 +56,19 @@ const STOCK_STATUSES = [
   { value: "on_backorder", label: "On Backorder" },
 ];
 
+const normalizeStockStatus = (status: string) => {
+  const map: Record<string, string> = {
+    instock: "in_stock",
+    outofstock: "out_of_stock",
+    onbackorder: "on_backorder",
+    in_stock: "in_stock",
+    out_of_stock: "out_of_stock",
+    on_backorder: "on_backorder",
+  };
+
+  return map[status] || "in_stock";
+};
+
 /* ---------- category tree types ---------- */
 interface CatNode { id: string; label: string; woo_category_id?: number; children: CatNode[] }
 
@@ -70,7 +83,6 @@ interface Props {
 /* ========== Component ========== */
 const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) => {
   const [form, setForm] = useState<ProductForm>(emptyForm);
-  const [originalStockStatus, setOriginalStockStatus] = useState<string>("in_stock");
   const [variations, setVariations] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -133,9 +145,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         cost_price: Number(p.cost_price || 0), description: p.description || "",
         category: p.category || "", image_url: p.image_url || "", barcode: p.barcode || "",
         manage_stock: p.manage_stock ?? true, stock_quantity: p.stock_quantity,
-        stock_status: p.stock_status || "in_stock", is_active: p.is_active,
+        stock_status: normalizeStockStatus(p.stock_status || "in_stock"), is_active: p.is_active,
       });
-      setOriginalStockStatus(p.stock_status || "in_stock");
     }
 
     // Load product categories
@@ -153,7 +164,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         id: v.id, woo_variation_id: v.woo_variation_id || null,
         name: v.name, sku: v.sku || "", price: Number(v.price),
         manage_stock: v.manage_stock, stock_quantity: v.stock_quantity,
-        stock_status: v.stock_status, barcode: v.barcode || "",
+        stock_status: normalizeStockStatus(v.stock_status || "in_stock"), barcode: v.barcode || "",
         attributes: Array.isArray(v.attributes) ? v.attributes : [],
       })));
       if (vars.length > 0) {
@@ -176,23 +187,47 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
   /* ---------- quick stock push ---------- */
   const handleStockStatusChange = async (newStatus: string) => {
-    set("stock_status", newStatus);
+    const normalizedStatus = normalizeStockStatus(newStatus);
+    set("stock_status", normalizedStatus);
+
+    if (variations.length > 0) {
+      setVariations(prev => prev.map(v => ({ ...v, stock_status: normalizedStatus })));
+    }
+
     if (!form.id) return;
+
     setPushingStock(true);
-    await supabase.from("products").update({ stock_status: newStatus }).eq("id", form.id);
-    const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", form.id).single();
-    if (prod?.woo_product_id && prod?.store_id) {
-      try {
-        await supabase.functions.invoke("woo-push", {
+    try {
+      const updates: Promise<any>[] = [
+        supabase.from("products").update({ stock_status: normalizedStatus }).eq("id", form.id),
+      ];
+
+      if (variations.length > 0) {
+        updates.push(
+          supabase.from("product_variations").update({ stock_status: normalizedStatus }).eq("product_id", form.id),
+        );
+      }
+
+      await Promise.all(updates);
+
+      const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", form.id).single();
+      if (prod?.woo_product_id && prod?.store_id) {
+        const { error } = await supabase.functions.invoke("woo-push", {
           body: { action: "push_stock", product_id: form.id },
         });
-        toast({ title: "Stock status synced to WooCommerce" });
-      } catch (e) {
-        console.warn("WooCommerce stock push failed:", e);
-        toast({ title: "Saved locally, WooCommerce sync failed", variant: "destructive" });
+
+        if (error) throw error;
+
+        toast({
+          title: variations.length > 0 ? "Product and variations synced to WooCommerce" : "Stock status synced to WooCommerce",
+        });
       }
+    } catch (e) {
+      console.warn("WooCommerce stock push failed:", e);
+      toast({ title: "Saved locally, WooCommerce sync failed", variant: "destructive" });
+    } finally {
+      setPushingStock(false);
     }
-    setPushingStock(false);
   };
 
   /* ---------- save ---------- */
@@ -215,7 +250,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
       description: form.description || null, category: selectedLabels.join(", ") || null,
       image_url: form.image_url || null, barcode: form.barcode || null,
       manage_stock: form.manage_stock, stock_quantity: form.manage_stock ? form.stock_quantity : 0,
-      stock_status: form.stock_status, is_active: form.is_active,
+      stock_status: normalizeStockStatus(form.stock_status), is_active: form.is_active,
     };
 
     let savedId = form.id;
@@ -241,7 +276,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
           product_id: savedId!,
           name: v.name, sku: v.sku || null, price: v.price,
           manage_stock: v.manage_stock, stock_quantity: v.manage_stock ? v.stock_quantity : 0,
-          stock_status: v.stock_status, barcode: v.barcode || null,
+          stock_status: normalizeStockStatus(v.stock_status), barcode: v.barcode || null,
           attributes: v.attributes,
           woo_variation_id: v.woo_variation_id || null,
         }));
@@ -254,9 +289,11 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
       const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", savedId).single();
       if (prod?.woo_product_id && prod?.store_id) {
         try {
-          await supabase.functions.invoke("woo-push", {
+          const { error } = await supabase.functions.invoke("woo-push", {
             body: { action: "push_product", product_id: savedId },
           });
+
+          if (error) throw error;
         } catch (e) {
           console.warn("WooCommerce push failed:", e);
           toast({ title: "Saved locally, but WooCommerce sync failed", variant: "destructive" });
