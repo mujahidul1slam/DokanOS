@@ -198,17 +198,17 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
     setPushingStock(true);
     try {
-      const updates: Promise<any>[] = [
-        supabase.from("products").update({ stock_status: normalizedStatus }).eq("id", form.id),
-      ];
+      await supabase
+        .from("products")
+        .update({ stock_status: normalizedStatus })
+        .eq("id", form.id);
 
       if (variations.length > 0) {
-        updates.push(
-          supabase.from("product_variations").update({ stock_status: normalizedStatus }).eq("product_id", form.id),
-        );
+        await supabase
+          .from("product_variations")
+          .update({ stock_status: normalizedStatus })
+          .eq("product_id", form.id);
       }
-
-      await Promise.all(updates);
 
       const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", form.id).single();
       if (prod?.woo_product_id && prod?.store_id) {
