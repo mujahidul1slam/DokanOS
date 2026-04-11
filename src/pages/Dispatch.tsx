@@ -632,7 +632,11 @@ const Dispatch = () => {
 
           <div className="space-y-6">
             {dispatchOrders.map((order) => {
-              const ov = orderOverrides[order.id] || {};
+              const ov = orderOverrides[order.id] || {
+                city_id: "", zone_id: "", area_id: "",
+                amount_to_collect: "", item_weight: "", special_instruction: "",
+                recipient_name: "", recipient_phone: "", recipient_address: "",
+              };
               const cityId = ov.city_id ? Number(ov.city_id) : 0;
               const zoneId = ov.zone_id ? Number(ov.zone_id) : 0;
               const zones = zonesMap[cityId] || [];
