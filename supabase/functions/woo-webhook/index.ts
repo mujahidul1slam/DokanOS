@@ -87,6 +87,12 @@ Deno.serve(async (req) => {
 
 /* ====== PRODUCT WEBHOOK ====== */
 async function handleProductWebhook(supabase: any, store_id: string, p: any) {
+  // Skip variations — they arrive as separate webhook events with type "variation"
+  if (p.type === "variation") {
+    console.log(`Skipping variation webhook for woo_id ${p.id}`);
+    return jsonResp({ ok: true, skipped: "variation" });
+  }
+
   const productData = {
     store_id,
     woo_product_id: p.id,
