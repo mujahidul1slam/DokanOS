@@ -70,9 +70,11 @@ interface Props {
 /* ========== Component ========== */
 const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) => {
   const [form, setForm] = useState<ProductForm>(emptyForm);
+  const [originalStockStatus, setOriginalStockStatus] = useState<string>("in_stock");
   const [variations, setVariations] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pushingStock, setPushingStock] = useState(false);
 
   // category tree from DB
   const [catTree, setCatTree] = useState<CatNode[]>([]);
@@ -133,6 +135,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         manage_stock: p.manage_stock ?? true, stock_quantity: p.stock_quantity,
         stock_status: p.stock_status || "in_stock", is_active: p.is_active,
       });
+      setOriginalStockStatus(p.stock_status || "in_stock");
     }
 
     // Load product categories
@@ -170,6 +173,27 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   };
 
   const set = (key: keyof ProductForm, val: any) => setForm(prev => ({ ...prev, [key]: val }));
+
+  /* ---------- quick stock push ---------- */
+  const handleStockStatusChange = async (newStatus: string) => {
+    set("stock_status", newStatus);
+    if (!form.id) return;
+    setPushingStock(true);
+    await supabase.from("products").update({ stock_status: newStatus }).eq("id", form.id);
+    const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", form.id).single();
+    if (prod?.woo_product_id && prod?.store_id) {
+      try {
+        await supabase.functions.invoke("woo-push", {
+          body: { action: "push_stock", product_id: form.id },
+        });
+        toast({ title: "Stock status synced to WooCommerce" });
+      } catch (e) {
+        console.warn("WooCommerce stock push failed:", e);
+        toast({ title: "Saved locally, WooCommerce sync failed", variant: "destructive" });
+      }
+    }
+    setPushingStock(false);
+  };
 
   /* ---------- save ---------- */
   const handleSave = async () => {
@@ -465,14 +489,14 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
               )}
 
               <div className="space-y-2">
-                <Label>Stock Status</Label>
-                <Select value={form.stock_status} onValueChange={v => set("stock_status", v)}>
+                <Label>Stock Status {pushingStock && <span className="text-xs text-muted-foreground ml-2">Syncing…</span>}</Label>
+                <Select value={form.stock_status} onValueChange={handleStockStatusChange} disabled={pushingStock}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {STOCK_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">"On Backorder" can be set regardless of stock quantity.</p>
+                <p className="text-xs text-muted-foreground">Changes auto-sync to WooCommerce.</p>
               </div>
             </div>
           </TabsContent>
