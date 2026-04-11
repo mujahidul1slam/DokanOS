@@ -5,6 +5,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-wc-webhook-signature, x-wc-webhook-source, x-wc-webhook-topic",
 };
 
+/** Convert WooCommerce stock_status to DB format */
+function fromWooStockStatus(status: string): string {
+  const map: Record<string, string> = {
+    instock: "in_stock",
+    outofstock: "out_of_stock",
+    onbackorder: "on_backorder",
+    in_stock: "in_stock",
+    out_of_stock: "out_of_stock",
+    on_backorder: "on_backorder",
+  };
+  return map[status] || "in_stock";
+}
+
 function jsonResp(body: any, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -84,7 +97,7 @@ async function handleProductWebhook(supabase: any, store_id: string, p: any) {
     cost_price: parseFloat(p.meta_data?.find((m: any) => m.key === "_cost")?.value) || 0,
     stock_quantity: p.stock_quantity ?? 0,
     manage_stock: p.manage_stock ?? false,
-    stock_status: p.stock_status || "in_stock",
+    stock_status: fromWooStockStatus(p.stock_status || "instock"),
     backorders: p.backorders || "no",
     category: p.categories?.map((c: any) => c.name).join(", ") || null,
     image_url: p.images?.[0]?.src || null,
