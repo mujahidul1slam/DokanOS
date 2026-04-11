@@ -90,6 +90,16 @@ function baseUrl(store: any) {
   return store.url.replace(/\/+$/, "");
 }
 
+/** Convert DB stock_status (in_stock) to WooCommerce format (instock) */
+function toWooStockStatus(status: string): string {
+  const map: Record<string, string> = {
+    in_stock: "instock",
+    out_of_stock: "outofstock",
+    on_backorder: "onbackorder",
+  };
+  return map[status] || status;
+}
+
 /* ====== PUSH PRODUCT ====== */
 async function pushProduct(supabase: any, productId: string) {
   const ctx = await getStoreForProduct(supabase, productId);
