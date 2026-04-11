@@ -219,6 +219,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
           manage_stock: v.manage_stock, stock_quantity: v.manage_stock ? v.stock_quantity : 0,
           stock_status: v.stock_status, barcode: v.barcode || null,
           attributes: v.attributes,
+          woo_variation_id: v.woo_variation_id || null,
         }));
         await supabase.from("product_variations").insert(rows);
       }
