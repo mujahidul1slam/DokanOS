@@ -97,7 +97,7 @@ async function handleProductWebhook(supabase: any, store_id: string, p: any) {
     cost_price: parseFloat(p.meta_data?.find((m: any) => m.key === "_cost")?.value) || 0,
     stock_quantity: p.stock_quantity ?? 0,
     manage_stock: p.manage_stock ?? false,
-    stock_status: p.stock_status || "in_stock",
+    stock_status: fromWooStockStatus(p.stock_status || "instock"),
     backorders: p.backorders || "no",
     category: p.categories?.map((c: any) => c.name).join(", ") || null,
     image_url: p.images?.[0]?.src || null,
