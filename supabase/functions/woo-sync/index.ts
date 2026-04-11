@@ -207,7 +207,7 @@ Deno.serve(async (req) => {
       }
 
       // --- Sync Variations for variable products (with rate limit protection) ---
-      const variableProducts = wooProducts.filter((wp: any) => wp.type === "variable" && wp.variations?.length > 0);
+      const variableProducts = parentProducts.filter((wp: any) => wp.type === "variable" && wp.variations?.length > 0);
       for (let vi = 0; vi < variableProducts.length; vi++) {
         const wp = variableProducts[vi];
         const prodId = prodByWooId.get(wp.id);
