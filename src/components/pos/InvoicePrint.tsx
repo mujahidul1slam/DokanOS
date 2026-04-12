@@ -1,17 +1,30 @@
-import type { Cart, CartItem } from "./types";
+import type { Cart } from "./types";
+import type { InvoiceSettings } from "@/hooks/useInvoiceSettings";
 
 interface InvoiceData {
   orderNumber: string;
   cart: Cart;
   subtotal: number;
   total: number;
+  invoiceSettings?: InvoiceSettings;
 }
 
 export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
-  const { orderNumber, cart, subtotal, total } = data;
+  const { orderNumber, cart, subtotal, total, invoiceSettings } = data;
   const discount = cart.discount || 0;
   const shipping = cart.fulfillment === "delivery" ? cart.shippingFee : 0;
   const now = new Date();
+
+  const biz = invoiceSettings || {
+    business_name: "OmniSync",
+    tagline: "",
+    address: "",
+    phone: "",
+    email: "",
+    logo_url: "",
+    footer_text: "Thank you for shopping with us!",
+    terms_text: "",
+  };
 
   const customerBlock = cart.customer
     ? `
@@ -52,6 +65,20 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
   const width = format === "thermal" ? "280px" : "210mm";
   const fontSize = format === "thermal" ? "12px" : "14px";
 
+  const logoHtml = biz.logo_url
+    ? `<img src="${biz.logo_url}" alt="Logo" style="max-height:${format === "thermal" ? "40px" : "60px"};max-width:${format === "thermal" ? "120px" : "180px"};object-fit:contain;margin:0 auto 6px;" />`
+    : "";
+
+  const contactLine = [biz.phone, biz.email].filter(Boolean).join(" | ");
+  const addressBlock = biz.address ? `<p class="meta" style="margin:2px 0;">${biz.address}</p>` : "";
+  const contactBlock = contactLine ? `<p class="meta" style="margin:2px 0;">${contactLine}</p>` : "";
+
+  const termsBlock = biz.terms_text
+    ? `<div style="margin-top:12px;padding-top:8px;border-top:1px solid #ddd;font-size:${format === "thermal" ? "9px" : "10px"};color:#888;">
+        <strong>Terms & Conditions:</strong><br/>${biz.terms_text}
+      </div>`
+    : "";
+
   const html = `
     <!DOCTYPE html>
     <html>
@@ -73,8 +100,11 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
     <body>
       <div class="invoice">
         <div class="header">
-          <h1>OmniSync</h1>
-          <p class="meta">${format === "a4" ? "Fashion & Tailoring" : ""}</p>
+          ${logoHtml}
+          <h1>${biz.business_name}</h1>
+          ${biz.tagline ? `<p class="meta">${biz.tagline}</p>` : ""}
+          ${addressBlock}
+          ${contactBlock}
         </div>
 
         <div style="margin-bottom:12px;">
@@ -112,8 +142,10 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
 
         ${cart.notes ? `<div style="margin-top:8px;font-size:11px;"><strong>Notes:</strong> ${cart.notes}</div>` : ""}
 
+        ${termsBlock}
+
         <div class="footer">
-          Thank you for shopping with us!
+          ${biz.footer_text || "Thank you for shopping with us!"}
         </div>
       </div>
     </body>
