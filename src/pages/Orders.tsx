@@ -227,7 +227,7 @@ const Orders = () => {
               Update Tracking
             </Button>
           )}
-          {(tab === "pending" || tab === "all") && (
+          {canWrite && (tab === "pending" || tab === "all") && (
             <Button disabled={selected.size === 0} className="gap-2" onClick={() => openDispatch(Array.from(selected))}>
               <Send className="h-4 w-4" /> Dispatch {selected.size > 0 ? `(${selected.size})` : ""}
             </Button>
