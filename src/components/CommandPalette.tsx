@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CommandDialog,
@@ -71,19 +71,26 @@ const CommandPalette = () => {
     setQuery("");
   };
 
+  const q = query.toLowerCase();
+  const filteredNav = q.length > 0
+    ? navItems.filter((item) => item.label.toLowerCase().includes(q))
+    : navItems;
+
   return (
     <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={false}>
       <CommandInput placeholder="Search orders, customers, products, or navigate..." value={query} onValueChange={setQuery} />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
-        <CommandGroup heading="Navigation">
-          {navItems.map((item) => (
-            <CommandItem key={item.path} onSelect={() => go(item.path)}>
-              <item.icon className="mr-2 h-4 w-4" />
-              {item.label}
-            </CommandItem>
-          ))}
-        </CommandGroup>
+        {filteredNav.length > 0 && (
+          <CommandGroup heading="Navigation">
+            {filteredNav.map((item) => (
+              <CommandItem key={item.path} onSelect={() => go(item.path)}>
+                <item.icon className="mr-2 h-4 w-4" />
+                {item.label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         {orders.length > 0 && (
           <CommandGroup heading="Orders">
             {orders.map((o) => (
