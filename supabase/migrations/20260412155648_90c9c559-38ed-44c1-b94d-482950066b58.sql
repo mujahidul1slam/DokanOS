@@ -1,0 +1,1 @@
+ALTER TABLE public.customers ADD COLUMN source text NOT NULL DEFAULT 'online';
