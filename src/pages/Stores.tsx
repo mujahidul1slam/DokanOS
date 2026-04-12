@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import StatusBadge from "@/components/StatusBadge";
+import { StatsSkeleton } from "@/components/ui/loading-states";
 
 interface StoreRow {
   id: string;

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { FulfillmentBadge, PaymentBadge, SourceBadge } from "@/components/orders/OrderBadges";
+import { TableSkeleton } from "@/components/ui/loading-states";
 
 interface CustomerRow {
   id: string;
