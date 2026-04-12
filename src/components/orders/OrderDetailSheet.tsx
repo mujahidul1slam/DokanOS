@@ -226,6 +226,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         });
       }
 
+      if (paymentStatus !== order.payment_status) {
+        await supabase.from("order_timeline").insert({
+          order_id: order.id,
+          event: "payment_status_changed",
+          description: `Payment status changed from "${order.payment_status}" to "${paymentStatus}"`,
+        });
+      }
+
       // Push status/notes change to WooCommerce if linked
       if (order.id) {
         try {
