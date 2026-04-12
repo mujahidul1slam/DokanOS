@@ -56,7 +56,7 @@ interface OrderRow {
   customers: { name: string; phone: string | null; address: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
-  productNames: string[];
+  productItems: { name: string; qty: number }[];
 }
 
 interface StoreOption { id: string; name: string }
@@ -96,13 +96,15 @@ const Orders = () => {
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
       .from("orders")
-      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, created_at, store_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address), stores(name), order_items(id, product_name)")
+      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, created_at, store_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address), stores(name), order_items(id, product_name, quantity)")
       .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
       ...o,
       itemCount: o.order_items?.length || 0,
-      productNames: (o.order_items || []).map((i: any) => i.product_name).filter(Boolean) as string[],
+      productItems: (o.order_items || [])
+        .filter((i: any) => i.product_name)
+        .map((i: any) => ({ name: i.product_name, qty: i.quantity || 1 })),
     }));
     setOrders(mapped as OrderRow[]);
     setLoading(false);
@@ -412,16 +414,21 @@ const Orders = () => {
                       <div className="text-xs text-muted-foreground">{order.customers?.phone || "—"}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="max-w-[180px]">
-                        {order.productNames.length === 0 ? (
+                      <div className="max-w-[200px]" title={order.productItems.map(p => `${p.name} ×${p.qty}`).join('\n')}>
+                        {order.productItems.length === 0 ? (
                           <span className="text-xs text-muted-foreground italic">—</span>
                         ) : (
-                          <>
-                            <div className="text-sm truncate">{order.productNames[0]}</div>
-                            {order.productNames.length > 1 && (
-                              <span className="text-xs text-muted-foreground">+{order.productNames.length - 1} more</span>
+                          <div className="space-y-0.5">
+                            {order.productItems.slice(0, 2).map((p, i) => (
+                              <div key={i} className="text-sm truncate">
+                                <span className="text-muted-foreground">×{p.qty}</span>{" "}
+                                <span>{p.name}</span>
+                              </div>
+                            ))}
+                            {order.productItems.length > 2 && (
+                              <span className="text-xs text-muted-foreground">+{order.productItems.length - 2} more</span>
                             )}
-                          </>
+                          </div>
                         )}
                       </div>
                     </TableCell>
