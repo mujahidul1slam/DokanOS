@@ -11,11 +11,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { UserPlus, Shield, Mail, Loader2, Trash2 } from "lucide-react";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { TableSkeleton, EmptyState } from "@/components/ui/loading-states";
 
 interface TeamMember {
   user_id: string;
   full_name: string | null;
-  email: string;
   role: string;
 }
 
@@ -28,7 +29,7 @@ interface Invitation {
 }
 
 const TeamManagement = () => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, session } = useAuth();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -36,10 +37,10 @@ const TeamManagement = () => {
   const [inviting, setInviting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [deleteInviteId, setDeleteInviteId] = useState<string | null>(null);
 
   const fetchTeam = async () => {
     setLoading(true);
-    // Fetch members with roles
     const { data: roles } = await supabase.from("user_roles").select("user_id, role");
     if (roles) {
       const { data: profiles } = await supabase.from("profiles").select("user_id, full_name");
@@ -48,14 +49,11 @@ const TeamManagement = () => {
         return {
           user_id: r.user_id,
           full_name: profile?.full_name || null,
-          email: profile?.full_name || r.user_id, // fallback
           role: r.role,
         };
       });
       setMembers(memberList);
     }
-
-    // Fetch invitations
     const { data: invites } = await supabase
       .from("invitations")
       .select("*")
@@ -72,78 +70,53 @@ const TeamManagement = () => {
     if (!inviteEmail) return;
     setInviting(true);
 
-    // Check if already invited
-    const { data: existing } = await supabase
-      .from("invitations")
-      .select("id")
-      .eq("email", inviteEmail)
-      .is("accepted_at", null)
-      .single();
+    try {
+      const { data, error } = await supabase.functions.invoke("team-manage", {
+        body: { action: "invite", email: inviteEmail, role: inviteRole },
+      });
 
-    if (existing) {
-      toast.error("This email already has a pending invitation");
-      setInviting(false);
-      return;
-    }
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-    // Create invitation
-    const { error: invError } = await supabase.from("invitations").insert({
-      email: inviteEmail,
-      role: inviteRole as any,
-    });
-
-    if (invError) {
-      toast.error("Failed to create invitation");
-      setInviting(false);
-      return;
-    }
-
-    // Send invite via Supabase Auth (inviteUserByEmail is admin-only, use edge function or just create the user)
-    const { error: authError } = await supabase.auth.signUp({
-      email: inviteEmail,
-      password: crypto.randomUUID(), // random password, user will reset
-      options: {
-        data: { invited: true },
-      },
-    });
-
-    if (authError && !authError.message.includes("already registered")) {
-      toast.error("Failed to send invite: " + authError.message);
-    } else {
       toast.success(`Invitation sent to ${inviteEmail}`);
+      setInviteEmail("");
+      setInviteRole("staff");
+      setDialogOpen(false);
+      fetchTeam();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send invitation");
     }
-
-    setInviteEmail("");
-    setInviteRole("staff");
-    setDialogOpen(false);
     setInviting(false);
-    fetchTeam();
   };
 
   const handleDeleteInvite = async (id: string) => {
     await supabase.from("invitations").delete().eq("id", id);
     toast.success("Invitation removed");
+    setDeleteInviteId(null);
     fetchTeam();
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
-    const { error } = await supabase
-      .from("user_roles")
-      .update({ role: newRole as any })
-      .eq("user_id", userId);
-    if (error) {
-      toast.error("Failed to update role");
-    } else {
+    try {
+      const { data, error } = await supabase.functions.invoke("team-manage", {
+        body: { action: "update_role", user_id: userId, role: newRole },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       toast.success("Role updated");
       fetchTeam();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update role");
     }
   };
 
   if (!isAdmin) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <p className="text-muted-foreground">You don't have permission to manage the team.</p>
-      </div>
+      <EmptyState
+        icon={Shield}
+        title="Access Denied"
+        description="You don't have permission to manage the team. Contact an admin."
+      />
     );
   }
 
@@ -157,17 +130,14 @@ const TeamManagement = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Team Management</h1>
           <p className="text-sm text-muted-foreground">Manage team members and invitations</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Invite Member
-            </Button>
+            <Button><UserPlus className="mr-2 h-4 w-4" />Invite Member</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
@@ -176,19 +146,12 @@ const TeamManagement = () => {
             <div className="space-y-4 pt-4">
               <div className="space-y-2">
                 <Label>Email Address</Label>
-                <Input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="colleague@example.com"
-                />
+                <Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@example.com" />
               </div>
               <div className="space-y-2">
                 <Label>Role</Label>
                 <Select value={inviteRole} onValueChange={setInviteRole}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="staff">Staff</SelectItem>
@@ -205,20 +168,16 @@ const TeamManagement = () => {
         </Dialog>
       </div>
 
-      {/* Team Members */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Shield className="h-5 w-5" />
-            Team Members
-          </CardTitle>
+          <CardTitle className="flex items-center gap-2 text-lg"><Shield className="h-5 w-5" />Team Members</CardTitle>
           <CardDescription>Current team members and their roles</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
+            <TableSkeleton rows={3} cols={3} />
+          ) : members.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">No team members yet</p>
           ) : (
             <Table>
               <TableHeader>
@@ -232,17 +191,10 @@ const TeamManagement = () => {
                 {members.map((m) => (
                   <TableRow key={m.user_id}>
                     <TableCell className="font-medium">{m.full_name || m.user_id.slice(0, 8)}</TableCell>
+                    <TableCell><Badge variant={roleBadgeVariant(m.role) as any}>{m.role}</Badge></TableCell>
                     <TableCell>
-                      <Badge variant={roleBadgeVariant(m.role) as any}>{m.role}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={m.role}
-                        onValueChange={(v) => handleRoleChange(m.user_id, v)}
-                      >
-                        <SelectTrigger className="w-28">
-                          <SelectValue />
-                        </SelectTrigger>
+                      <Select value={m.role} onValueChange={(v) => handleRoleChange(m.user_id, v)}>
+                        <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="admin">Admin</SelectItem>
                           <SelectItem value="staff">Staff</SelectItem>
@@ -258,13 +210,9 @@ const TeamManagement = () => {
         </CardContent>
       </Card>
 
-      {/* Invitations */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Mail className="h-5 w-5" />
-            Invitations
-          </CardTitle>
+          <CardTitle className="flex items-center gap-2 text-lg"><Mail className="h-5 w-5" />Invitations</CardTitle>
           <CardDescription>Pending and accepted invitations</CardDescription>
         </CardHeader>
         <CardContent>
@@ -284,23 +232,17 @@ const TeamManagement = () => {
                 {invitations.map((inv) => (
                   <TableRow key={inv.id}>
                     <TableCell>{inv.email}</TableCell>
-                    <TableCell>
-                      <Badge variant={roleBadgeVariant(inv.role) as any}>{inv.role}</Badge>
-                    </TableCell>
+                    <TableCell><Badge variant={roleBadgeVariant(inv.role) as any}>{inv.role}</Badge></TableCell>
                     <TableCell>
                       {inv.accepted_at ? (
-                        <Badge variant="outline" className="text-green-600">Accepted</Badge>
+                        <Badge variant="outline" className="text-success">Accepted</Badge>
                       ) : (
-                        <Badge variant="outline" className="text-yellow-600">Pending</Badge>
+                        <Badge variant="outline" className="text-warning">Pending</Badge>
                       )}
                     </TableCell>
                     <TableCell>
                       {!inv.accepted_at && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDeleteInvite(inv.id)}
-                        >
+                        <Button size="sm" variant="ghost" onClick={() => setDeleteInviteId(inv.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
@@ -312,6 +254,16 @@ const TeamManagement = () => {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!deleteInviteId}
+        onOpenChange={(open) => { if (!open) setDeleteInviteId(null); }}
+        title="Remove Invitation"
+        description="This will revoke the pending invitation. The user will not be able to join."
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={() => deleteInviteId && handleDeleteInvite(deleteInviteId)}
+      />
     </div>
   );
 };
