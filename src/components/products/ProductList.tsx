@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle } from "lucide-react";
+import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,6 +11,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import ProductDetailSheet from "@/components/products/ProductDetailSheet";
 import { TableSkeleton } from "@/components/ui/loading-states";
+import { downloadCsv } from "@/lib/exportCsv";
+import { format } from "date-fns";
 
 interface ProductRow {
   id: string;
@@ -315,6 +317,16 @@ const ProductList = () => {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{filtered.length} products</p>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => {
+            const headers = ["Name", "SKU", "Category", "Price", "Stock", "Stock Status", "Store", "Active"];
+            const rows = filtered.map((p) => [
+              p.name, p.sku || "", p.category || "", String(p.price),
+              String(p.stock_quantity), p.stock_status, p.storeName || "", p.is_active ? "Yes" : "No",
+            ]);
+            downloadCsv(`products-${format(new Date(), "yyyy-MM-dd")}.csv`, headers, rows);
+          }}>
+            <Download className="h-3.5 w-3.5" /> Export
+          </Button>
           <Button variant="outline" size="sm" className="gap-1.5" onClick={handleSyncProducts} disabled={syncing}>
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} /> Sync Products
           </Button>
