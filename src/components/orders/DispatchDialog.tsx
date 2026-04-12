@@ -68,6 +68,56 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     })();
   }, [open]);
 
+  // Fuzzy match helper: normalize, then check includes / startsWith / Levenshtein-like
+  const fuzzyMatch = useCallback(<T,>(items: T[], getText: (item: T) => string, query: string): T | undefined => {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const q = norm(query);
+    if (!q) return undefined;
+
+    // Exact normalized match first
+    let best = items.find((i) => norm(getText(i)) === q);
+    if (best) return best;
+
+    // startsWith match
+    best = items.find((i) => norm(getText(i)).startsWith(q) || q.startsWith(norm(getText(i))));
+    if (best) return best;
+
+    // Contains match
+    best = items.find((i) => norm(getText(i)).includes(q) || q.includes(norm(getText(i))));
+    if (best) return best;
+
+    // Simple edit-distance based: pick best scoring item if close enough
+    const distance = (a: string, b: string): number => {
+      if (a.length === 0) return b.length;
+      if (b.length === 0) return a.length;
+      const matrix: number[][] = [];
+      for (let i = 0; i <= a.length; i++) { matrix[i] = [i]; }
+      for (let j = 0; j <= b.length; j++) { matrix[0][j] = j; }
+      for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+          );
+        }
+      }
+      return matrix[a.length][b.length];
+    };
+
+    let minDist = Infinity;
+    let closest: T | undefined;
+    for (const item of items) {
+      const d = distance(q, norm(getText(item)));
+      const threshold = Math.max(2, Math.floor(q.length * 0.35));
+      if (d < minDist && d <= threshold) {
+        minDist = d;
+        closest = item;
+      }
+    }
+    return closest;
+  }, []);
+
   // Auto-fill: match customer city/zone/area text to Pathao IDs
   useEffect(() => {
     if (!open || orders.length === 0 || cities.length === 0) return;
@@ -88,24 +138,19 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           recipient_address: o.customers?.address || "",
         };
 
-        // If city/zone/area IDs already set, skip auto-fill for this order
         if (base.city_id && base.zone_id) {
-          // Pre-fetch zones/areas so dropdowns are populated
           await fetchZones(Number(base.city_id));
           if (base.zone_id) await fetchAreas(Number(base.zone_id));
           overrides[o.id] = base;
           continue;
         }
 
-        // Try to match customer city text
         const custCity = o.customers?.city;
         const custZone = o.customers?.zone;
         const custArea = o.customers?.area;
 
         if (custCity && !base.city_id) {
-          const match = cities.find((c) =>
-            c.city_name.toLowerCase() === custCity.toLowerCase()
-          );
+          const match = fuzzyMatch(cities, (c) => c.city_name, custCity);
           if (match) {
             base.city_id = String(match.city_id);
             await fetchZones(match.city_id);
@@ -115,9 +160,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         if (custZone && base.city_id && !base.zone_id) {
           const cityZones = zonesMap[Number(base.city_id)];
           if (cityZones) {
-            const match = cityZones.find((z) =>
-              z.zone_name.toLowerCase() === custZone.toLowerCase()
-            );
+            const match = fuzzyMatch(cityZones, (z) => z.zone_name, custZone);
             if (match) {
               base.zone_id = String(match.zone_id);
               await fetchAreas(match.zone_id);
@@ -128,9 +171,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         if (custArea && base.zone_id && !base.area_id) {
           const zoneAreas = areasMap[Number(base.zone_id)];
           if (zoneAreas) {
-            const match = zoneAreas.find((a) =>
-              a.area_name.toLowerCase() === custArea.toLowerCase()
-            );
+            const match = fuzzyMatch(zoneAreas, (a) => a.area_name, custArea);
             if (match) {
               base.area_id = String(match.area_id);
             }
