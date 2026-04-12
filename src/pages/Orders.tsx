@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
-  RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart,
+  RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
