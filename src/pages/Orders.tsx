@@ -62,6 +62,8 @@ interface StoreOption { id: string; name: string }
 const PAGE_SIZE = 10;
 
 const Orders = () => {
+  const { role } = useAuth();
+  const canWrite = role === "admin" || role === "staff";
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
