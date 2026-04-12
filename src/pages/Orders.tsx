@@ -56,7 +56,7 @@ interface OrderRow {
   customers: { name: string; phone: string | null; address: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
-  productNames: string[];
+  productItems: { name: string; qty: number }[];
 }
 
 interface StoreOption { id: string; name: string }
