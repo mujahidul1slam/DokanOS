@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
@@ -31,6 +32,7 @@ import DispatchDialog from "@/components/orders/DispatchDialog";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge,
 } from "@/components/orders/OrderBadges";
+import { TableSkeleton } from "@/components/ui/loading-states";
 
 interface OrderRow {
   id: string;
@@ -61,6 +63,8 @@ interface StoreOption { id: string; name: string }
 const PAGE_SIZE = 10;
 
 const Orders = () => {
+  const { role } = useAuth();
+  const canWrite = role === "admin" || role === "staff";
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -198,7 +202,12 @@ const Orders = () => {
     } catch (err: any) { toast({ title: "Track failed", description: err.message, variant: "destructive" }); }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" />Loading...</div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <div><h1 className="font-heading text-2xl font-semibold">Orders</h1></div>
+      <TableSkeleton rows={10} cols={7} />
+    </div>
+  );
 
   const pendingCount = orders.filter((o) => o.status === "processing" && !o.consignment_id).length;
   const inTransitCount = orders.filter((o) => !!o.consignment_id && !["delivered", "completed", "cancelled", "returned"].includes(o.status)).length;
@@ -218,7 +227,7 @@ const Orders = () => {
               Update Tracking
             </Button>
           )}
-          {(tab === "pending" || tab === "all") && (
+          {canWrite && (tab === "pending" || tab === "all") && (
             <Button disabled={selected.size === 0} className="gap-2" onClick={() => openDispatch(Array.from(selected))}>
               <Send className="h-4 w-4" /> Dispatch {selected.size > 0 ? `(${selected.size})` : ""}
             </Button>

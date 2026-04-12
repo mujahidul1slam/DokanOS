@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import StatusBadge from "@/components/StatusBadge";
+import { StatsSkeleton } from "@/components/ui/loading-states";
 
 interface StoreRow {
   id: string;
@@ -98,7 +99,12 @@ const Stores = () => {
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
+  if (loading) return (
+    <div className="space-y-6">
+      <div><h1 className="font-heading text-2xl font-semibold">Stores</h1></div>
+      <StatsSkeleton count={3} />
+    </div>
+  );
 
   return (
     <div className="space-y-6">
