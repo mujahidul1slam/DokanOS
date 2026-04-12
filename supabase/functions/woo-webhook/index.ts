@@ -213,19 +213,39 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     }
   } else if (hasCustomerInfo) {
     const guestName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "Guest";
-    const { data: guestCust } = await supabase
-      .from("customers")
-      .insert({
-        store_id,
-        name: guestName,
-        email: o.billing?.email || null,
-        phone: o.billing?.phone || null,
-        address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
-        city: o.billing?.city || null,
-      })
-      .select("id")
-      .single();
-    customer_id = guestCust?.id || null;
+    const guestPhone = o.billing?.phone || null;
+    // Check for existing customer by phone first
+    if (guestPhone) {
+      const { data: existingByPhone } = await supabase
+        .from("customers")
+        .select("id")
+        .eq("phone", guestPhone)
+        .maybeSingle();
+      if (existingByPhone) {
+        customer_id = existingByPhone.id;
+        await supabase.from("customers").update({
+          name: guestName,
+          email: o.billing?.email || null,
+          address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
+          city: o.billing?.city || null,
+        }).eq("id", existingByPhone.id);
+      }
+    }
+    if (!customer_id) {
+      const { data: guestCust } = await supabase
+        .from("customers")
+        .insert({
+          store_id,
+          name: guestName,
+          email: o.billing?.email || null,
+          phone: guestPhone,
+          address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
+          city: o.billing?.city || null,
+        })
+        .select("id")
+        .single();
+      customer_id = guestCust?.id || null;
+    }
   }
 
   // Product lookup

@@ -121,20 +121,39 @@ const POS = () => {
 
     const orderNumber = `POS-${Date.now().toString(36).toUpperCase()}`;
 
-    // Upsert customer if new
+    // Upsert customer — find existing by phone first to avoid duplicates
     let customerId: string | null = cart.customer?.id || null;
     if (cart.customer && !cart.customer.id && cart.customer.name) {
-      const { data: newCust } = await supabase
-        .from("customers")
-        .insert({
-          name: cart.customer.name,
-          phone: cart.customer.phone || null,
-          address: cart.customer.address || null,
-          source: 'pos',
-        })
-        .select("id")
-        .single();
-      if (newCust) customerId = newCust.id;
+      // Try to find existing customer by phone
+      if (cart.customer.phone) {
+        const { data: existing } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("phone", cart.customer.phone)
+          .maybeSingle();
+        if (existing) {
+          customerId = existing.id;
+          // Update their info
+          await supabase.from("customers").update({
+            name: cart.customer.name,
+            address: cart.customer.address || null,
+          }).eq("id", existing.id);
+        }
+      }
+      // Only insert if no existing match found
+      if (!customerId) {
+        const { data: newCust } = await supabase
+          .from("customers")
+          .insert({
+            name: cart.customer.name,
+            phone: cart.customer.phone || null,
+            address: cart.customer.address || null,
+            source: 'pos',
+          })
+          .select("id")
+          .single();
+        if (newCust) customerId = newCust.id;
+      }
     }
 
     const { data: order } = await supabase
