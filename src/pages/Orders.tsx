@@ -32,6 +32,7 @@ import DispatchDialog from "@/components/orders/DispatchDialog";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge,
 } from "@/components/orders/OrderBadges";
+import { TableSkeleton } from "@/components/ui/loading-states";
 
 interface OrderRow {
   id: string;
