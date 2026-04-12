@@ -8,9 +8,6 @@ import {
   Store,
   Settings,
 } from "lucide-react";
-  Store,
-  Settings,
-} from "lucide-react";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
