@@ -86,6 +86,10 @@ const Orders = () => {
   // Tracking
   const [trackingLoading, setTrackingLoading] = useState(false);
 
+  // Bulk status
+  const [bulkStatus, setBulkStatus] = useState("");
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+
   const { toast } = useToast();
 
   const loadOrders = useCallback(async () => {
