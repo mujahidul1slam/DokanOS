@@ -18,7 +18,7 @@ interface DispatchOrder {
   order_number: string;
   total: number;
   itemCount: number;
-  customers: { name: string; phone: string | null; address: string | null } | null;
+  customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
   pathao_recipient_city: number | null;
   pathao_recipient_zone: number | null;
   pathao_recipient_area: number | null;
@@ -68,24 +68,82 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     })();
   }, [open]);
 
+  // Auto-fill: match customer city/zone/area text to Pathao IDs
   useEffect(() => {
-    if (!open || orders.length === 0) return;
-    const overrides: typeof orderOverrides = {};
-    for (const o of orders) {
-      overrides[o.id] = {
-        city_id: o.pathao_recipient_city ? String(o.pathao_recipient_city) : "",
-        zone_id: o.pathao_recipient_zone ? String(o.pathao_recipient_zone) : "",
-        area_id: o.pathao_recipient_area ? String(o.pathao_recipient_area) : "",
-        amount_to_collect: String(o.amount_to_collect || o.total || 0),
-        item_weight: String(o.item_weight || 0.5),
-        special_instruction: o.special_instruction || "",
-        recipient_name: o.customers?.name || "",
-        recipient_phone: o.customers?.phone || "",
-        recipient_address: o.customers?.address || "",
-      };
-    }
-    setOrderOverrides(overrides);
-  }, [open, orders]);
+    if (!open || orders.length === 0 || cities.length === 0) return;
+
+    const autoFill = async () => {
+      const overrides: typeof orderOverrides = {};
+
+      for (const o of orders) {
+        const base = {
+          city_id: o.pathao_recipient_city ? String(o.pathao_recipient_city) : "",
+          zone_id: o.pathao_recipient_zone ? String(o.pathao_recipient_zone) : "",
+          area_id: o.pathao_recipient_area ? String(o.pathao_recipient_area) : "",
+          amount_to_collect: String(o.amount_to_collect || o.total || 0),
+          item_weight: String(o.item_weight || 0.5),
+          special_instruction: o.special_instruction || "",
+          recipient_name: o.customers?.name || "",
+          recipient_phone: o.customers?.phone || "",
+          recipient_address: o.customers?.address || "",
+        };
+
+        // If city/zone/area IDs already set, skip auto-fill for this order
+        if (base.city_id && base.zone_id) {
+          // Pre-fetch zones/areas so dropdowns are populated
+          await fetchZones(Number(base.city_id));
+          if (base.zone_id) await fetchAreas(Number(base.zone_id));
+          overrides[o.id] = base;
+          continue;
+        }
+
+        // Try to match customer city text
+        const custCity = o.customers?.city;
+        const custZone = o.customers?.zone;
+        const custArea = o.customers?.area;
+
+        if (custCity && !base.city_id) {
+          const match = cities.find((c) =>
+            c.city_name.toLowerCase() === custCity.toLowerCase()
+          );
+          if (match) {
+            base.city_id = String(match.city_id);
+            await fetchZones(match.city_id);
+          }
+        }
+
+        if (custZone && base.city_id && !base.zone_id) {
+          const cityZones = zonesMap[Number(base.city_id)];
+          if (cityZones) {
+            const match = cityZones.find((z) =>
+              z.zone_name.toLowerCase() === custZone.toLowerCase()
+            );
+            if (match) {
+              base.zone_id = String(match.zone_id);
+              await fetchAreas(match.zone_id);
+            }
+          }
+        }
+
+        if (custArea && base.zone_id && !base.area_id) {
+          const zoneAreas = areasMap[Number(base.zone_id)];
+          if (zoneAreas) {
+            const match = zoneAreas.find((a) =>
+              a.area_name.toLowerCase() === custArea.toLowerCase()
+            );
+            if (match) {
+              base.area_id = String(match.area_id);
+            }
+          }
+        }
+
+        overrides[o.id] = base;
+      }
+      setOrderOverrides(overrides);
+    };
+
+    autoFill();
+  }, [open, orders, cities.length]);
 
   const fetchZones = async (cityId: number) => {
     if (zonesMap[cityId]) return;
