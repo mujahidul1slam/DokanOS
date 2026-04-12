@@ -206,6 +206,35 @@ const Orders = () => {
     } catch (err: any) { toast({ title: "Track failed", description: err.message, variant: "destructive" }); }
   };
 
+  const handleBulkStatusUpdate = async () => {
+    if (!bulkStatus || selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase
+        .from("orders")
+        .update({ status: bulkStatus })
+        .in("id", ids);
+
+      // Add timeline entries
+      const timelineEntries = ids.map((id) => ({
+        order_id: id,
+        event: "status_changed",
+        description: `Bulk status update to "${bulkStatus}"`,
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+
+      toast({ title: `${ids.length} order(s) updated to "${bulkStatus}"` });
+      setSelected(new Set());
+      setBulkStatus("");
+      loadOrders();
+    } catch {
+      toast({ title: "Bulk update failed", variant: "destructive" });
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
+
   if (loading) return (
     <div className="space-y-4">
       <div><h1 className="font-heading text-2xl font-semibold">Orders</h1></div>
