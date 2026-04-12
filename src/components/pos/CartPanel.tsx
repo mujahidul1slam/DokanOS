@@ -38,6 +38,7 @@ const CartPanel = ({
   onUpdateCart, onUpdateItem, onRemoveItem, onCompleteOrder,
   customers, onSearchCustomers,
 }: Props) => {
+  const { settings: invoiceSettings } = useInvoiceSettings();
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [payMethod, setPayMethod] = useState<"cash" | "bkash" | "card" | "bank">("cash");
@@ -114,7 +115,7 @@ const CartPanel = ({
       const snap = completedCartSnapshot;
       const sub = snap.items.reduce((s, i) => s + i.price * i.qty, 0);
       const tot = sub - snap.discount + (snap.fulfillment === "delivery" ? snap.shippingFee : 0);
-      printInvoice({ orderNumber: completedOrderNumber, cart: snap, subtotal: sub, total: tot }, format);
+      printInvoice({ orderNumber: completedOrderNumber, cart: snap, subtotal: sub, total: tot, invoiceSettings }, format);
     }
     setShowPrintModal(false);
   };
