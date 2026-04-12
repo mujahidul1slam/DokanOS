@@ -95,7 +95,7 @@ const Orders = () => {
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
       .from("orders")
-      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, created_at, store_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address), stores(name), order_items(id)")
+      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, created_at, store_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address), stores(name), order_items(id, product_name)")
       .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
