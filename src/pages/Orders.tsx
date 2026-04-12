@@ -102,7 +102,9 @@ const Orders = () => {
     const mapped = (data || []).map((o: any) => ({
       ...o,
       itemCount: o.order_items?.length || 0,
-      productNames: (o.order_items || []).map((i: any) => i.product_name).filter(Boolean) as string[],
+      productItems: (o.order_items || [])
+        .filter((i: any) => i.product_name)
+        .map((i: any) => ({ name: i.product_name, qty: i.quantity || 1 })),
     }));
     setOrders(mapped as OrderRow[]);
     setLoading(false);
