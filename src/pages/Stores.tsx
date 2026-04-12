@@ -98,7 +98,12 @@ const Stores = () => {
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
+  if (loading) return (
+    <div className="space-y-6">
+      <div><h1 className="font-heading text-2xl font-semibold">Stores</h1></div>
+      <StatsSkeleton count={3} />
+    </div>
+  );
 
   return (
     <div className="space-y-6">

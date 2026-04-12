@@ -129,7 +129,12 @@ const Customers = () => {
 
   useEffect(() => { setPage(1); }, [search, storeFilter, sourceFilter]);
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <div><h1 className="font-heading text-2xl font-semibold">Customers</h1></div>
+      <TableSkeleton rows={8} cols={6} />
+    </div>
+  );
 
   return (
     <div className="space-y-4">
