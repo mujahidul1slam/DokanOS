@@ -414,16 +414,21 @@ const Orders = () => {
                       <div className="text-xs text-muted-foreground">{order.customers?.phone || "—"}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="max-w-[180px]">
-                        {order.productNames.length === 0 ? (
+                      <div className="max-w-[200px]" title={order.productItems.map(p => `${p.name} ×${p.qty}`).join('\n')}>
+                        {order.productItems.length === 0 ? (
                           <span className="text-xs text-muted-foreground italic">—</span>
                         ) : (
-                          <>
-                            <div className="text-sm truncate">{order.productNames[0]}</div>
-                            {order.productNames.length > 1 && (
-                              <span className="text-xs text-muted-foreground">+{order.productNames.length - 1} more</span>
+                          <div className="space-y-0.5">
+                            {order.productItems.slice(0, 2).map((p, i) => (
+                              <div key={i} className="text-sm truncate">
+                                <span className="text-muted-foreground">×{p.qty}</span>{" "}
+                                <span>{p.name}</span>
+                              </div>
+                            ))}
+                            {order.productItems.length > 2 && (
+                              <span className="text-xs text-muted-foreground">+{order.productItems.length - 2} more</span>
                             )}
-                          </>
+                          </div>
                         )}
                       </div>
                     </TableCell>
