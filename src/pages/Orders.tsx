@@ -390,10 +390,9 @@ const Orders = () => {
                   <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
                   <TableHead>Order Info</TableHead>
                   <TableHead>Customer</TableHead>
-                  <TableHead className="w-[280px]">Products</TableHead>
+                  <TableHead className="w-[260px]">Products</TableHead>
                   <TableHead>Source</TableHead>
-                  <TableHead>Payment</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Payment / Total</TableHead>
                   <TableHead>Fulfillment</TableHead>
                   <TableHead>Courier Status</TableHead>
                   <TableHead className="w-10"></TableHead>
@@ -401,7 +400,7 @@ const Orders = () => {
               </TableHeader>
               <TableBody>
                 {paginated.length === 0 ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">No orders found</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">No orders found</TableCell></TableRow>
                 ) : paginated.map((order) => (
                   <TableRow key={order.id} className="group">
                     <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
@@ -414,27 +413,29 @@ const Orders = () => {
                       <div className="text-xs text-muted-foreground">{order.customers?.phone || "—"}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="max-w-[280px]" title={order.productItems.map((p) => `${p.name} ×${p.qty}`).join("\n")}>
+                      <div className="max-w-[260px]" title={order.productItems.map((p) => `${p.name} ×${p.qty}`).join("\n")}>
                         {order.productItems.length === 0 ? (
                           <span className="text-xs text-muted-foreground italic">—</span>
                         ) : (
-                          <div className="space-y-1">
-                            {order.productItems.slice(0, 2).map((p, i) => (
-                              <div key={i} className="text-sm leading-5 break-words whitespace-normal">
+                          <div className="space-y-0.5">
+                            {order.productItems.slice(0, 3).map((p, i) => (
+                              <div key={i} className="text-xs leading-4 break-words whitespace-normal">
                                 <span className="text-muted-foreground">×{p.qty}</span>{" "}
                                 <span>{p.name}</span>
                               </div>
                             ))}
-                            {order.productItems.length > 2 && (
-                              <span className="text-xs text-muted-foreground">+{order.productItems.length - 2} more</span>
+                            {order.productItems.length > 3 && (
+                              <span className="text-[11px] text-muted-foreground">+{order.productItems.length - 3} more</span>
                             )}
                           </div>
                         )}
                       </div>
                     </TableCell>
                     <TableCell><SourceBadge source={order.source} /></TableCell>
-                    <TableCell><PaymentBadge status={order.payment_status} /></TableCell>
-                    <TableCell className="text-right font-medium text-foreground">৳{Number(order.total).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="font-medium text-foreground">৳{Number(order.total).toLocaleString()}</div>
+                      <div className="mt-0.5"><PaymentBadge status={order.payment_status} /></div>
+                    </TableCell>
                     <TableCell><FulfillmentBadge status={order.status} /></TableCell>
                     <TableCell>
                       {order.consignment_id ? (
