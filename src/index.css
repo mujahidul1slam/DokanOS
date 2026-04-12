@@ -59,6 +59,55 @@
     --font-heading: 'Space Grotesk', sans-serif;
     --font-body: 'Inter', sans-serif;
   }
+  .light {
+    --background: 0 0% 98%;
+    --foreground: 224 10% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 10% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 10% 15%;
+
+    --primary: 217 91% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 224 10% 30%;
+
+    --muted: 220 12% 92%;
+    --muted-foreground: 220 8% 46%;
+
+    --accent: 220 14% 94%;
+    --accent-foreground: 224 10% 15%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 35%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 45%;
+    --warning-foreground: 0 0% 0%;
+
+    --border: 220 13% 87%;
+    --input: 220 13% 87%;
+    --ring: 217 91% 50%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 10% 40%;
+    --sidebar-primary: 217 91% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 95%;
+    --sidebar-accent-foreground: 224 10% 15%;
+    --sidebar-border: 220 13% 90%;
+    --sidebar-ring: 217 91% 50%;
+
+    --font-heading: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
+  }
 }
 
 @layer base {
