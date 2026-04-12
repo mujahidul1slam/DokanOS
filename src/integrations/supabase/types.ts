@@ -660,7 +660,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      merge_duplicate_customers: {
+        Args: never
+        Returns: {
+          deleted_count: number
+          kept_id: string
+          merged_phone: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
