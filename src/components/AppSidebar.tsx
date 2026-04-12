@@ -7,7 +7,11 @@ import {
   Monitor,
   Store,
   Settings,
+  UsersRound,
+  LogOut,
 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -16,11 +20,19 @@ const navItems = [
   { icon: Users, label: "Customers", path: "/customers" },
   { icon: Monitor, label: "POS", path: "/pos" },
   { icon: Store, label: "Stores", path: "/stores" },
+  { icon: UsersRound, label: "Team", path: "/team", adminOnly: true },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
 const AppSidebar = () => {
   const location = useLocation();
+  const { user, role, signOut, isAdmin } = useAuth();
+
+  const visibleItems = navItems.filter(
+    (item) => !item.adminOnly || isAdmin
+  );
+
+  const initials = user?.email?.slice(0, 2).toUpperCase() || "??";
 
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-60 flex-col border-r border-border bg-sidebar">
@@ -32,7 +44,7 @@ const AppSidebar = () => {
       </div>
 
       <nav className="flex-1 space-y-0.5 px-3 py-3">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <Link
@@ -54,12 +66,15 @@ const AppSidebar = () => {
       <div className="border-t border-border px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
-            AD
+            {initials}
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm text-foreground">Admin</p>
-            <p className="truncate text-xs text-muted-foreground">admin@omnisync.io</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm text-foreground">{user?.email}</p>
+            <p className="truncate text-xs capitalize text-muted-foreground">{role || "—"}</p>
           </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={signOut}>
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </aside>
