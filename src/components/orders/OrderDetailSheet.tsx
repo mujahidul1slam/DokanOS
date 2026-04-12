@@ -89,6 +89,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
   // Editable state
   const [status, setStatus] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
@@ -134,6 +135,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     if (o) {
       setOrder(o);
       setStatus(o.status);
+      setPaymentStatus(o.payment_status);
       setCustomerName(o.customers?.name || "");
       setCustomerPhone(o.customers?.phone || "");
       setCustomerAddress(o.customers?.address || "");
