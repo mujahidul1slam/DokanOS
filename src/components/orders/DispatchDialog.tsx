@@ -98,9 +98,9 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         }
 
         // Try to match customer city text
-        const custCity = (o.customers as any)?.city as string | undefined;
-        const custZone = (o.customers as any)?.zone as string | undefined;
-        const custArea = (o.customers as any)?.area as string | undefined;
+        const custCity = o.customers?.city;
+        const custZone = o.customers?.zone;
+        const custArea = o.customers?.area;
 
         if (custCity && !base.city_id) {
           const match = cities.find((c) =>
