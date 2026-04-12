@@ -177,6 +177,8 @@ const SettingsPage = () => {
             </div>
           )}
 
+          {activeTab === "invoice" && <InvoiceSettingsTab />}
+
           {activeTab === "integrations" && (
             <div className="space-y-4">
               <div className="rounded-lg border border-border bg-card p-6">
