@@ -101,6 +101,7 @@ const Orders = () => {
     const mapped = (data || []).map((o: any) => ({
       ...o,
       itemCount: o.order_items?.length || 0,
+      productNames: (o.order_items || []).map((i: any) => i.product_name).filter(Boolean) as string[],
     }));
     setOrders(mapped as OrderRow[]);
     setLoading(false);
