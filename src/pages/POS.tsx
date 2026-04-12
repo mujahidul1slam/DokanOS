@@ -130,6 +130,7 @@ const POS = () => {
           name: cart.customer.name,
           phone: cart.customer.phone || null,
           address: cart.customer.address || null,
+          source: 'pos',
         })
         .select("id")
         .single();
