@@ -414,13 +414,13 @@ const Orders = () => {
                       <div className="text-xs text-muted-foreground">{order.customers?.phone || "—"}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="max-w-[200px]" title={order.productItems.map(p => `${p.name} ×${p.qty}`).join('\n')}>
+                      <div className="max-w-[280px]" title={order.productItems.map((p) => `${p.name} ×${p.qty}`).join("\n")}>
                         {order.productItems.length === 0 ? (
                           <span className="text-xs text-muted-foreground italic">—</span>
                         ) : (
-                          <div className="space-y-0.5">
+                          <div className="space-y-1">
                             {order.productItems.slice(0, 2).map((p, i) => (
-                              <div key={i} className="text-sm truncate">
+                              <div key={i} className="text-sm leading-5 break-words whitespace-normal">
                                 <span className="text-muted-foreground">×{p.qty}</span>{" "}
                                 <span>{p.name}</span>
                               </div>
