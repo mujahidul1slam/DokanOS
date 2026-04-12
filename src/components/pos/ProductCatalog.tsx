@@ -34,7 +34,8 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
       list = list.filter(
         (p) =>
           p.name.toLowerCase().includes(q) ||
-          (p.sku || "").toLowerCase().includes(q)
+          (p.sku || "").toLowerCase().includes(q) ||
+          ((p as any).barcode || "").toLowerCase().includes(q)
       );
     }
     // Sort

@@ -2,9 +2,10 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ShoppingCart, Package, Users, Monitor, Store,
-  Settings, UsersRound, LogOut, Menu, X, Search,
+  Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/hooks/useTheme";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
@@ -21,6 +22,7 @@ const navItems = [
 const AppSidebar = () => {
   const location = useLocation();
   const { user, role, signOut } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const visibleItems = navItems.filter(
@@ -78,7 +80,7 @@ const AppSidebar = () => {
         })}
       </nav>
 
-      <div className="border-t border-border px-4 py-3">
+      <div className="border-t border-border px-4 py-3 space-y-2">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
             {initials}
@@ -87,6 +89,9 @@ const AppSidebar = () => {
             <p className="truncate text-sm text-foreground">{user?.email}</p>
             <p className="truncate text-xs capitalize text-muted-foreground">{role || "—"}</p>
           </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={toggleTheme} title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={signOut}>
             <LogOut className="h-4 w-4" />
           </Button>

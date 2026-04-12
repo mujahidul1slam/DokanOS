@@ -192,6 +192,28 @@ const POS = () => {
         }));
         await supabase.from("order_payments").insert(payments);
       }
+
+      // Reduce local stock and push to WooCommerce
+      for (const item of cart.items) {
+        if (item.isCustomItem || !item.productId) continue;
+        if (item.variationId) {
+          const { data: v } = await supabase.from("product_variations").select("stock_quantity").eq("id", item.variationId).single();
+          if (v) {
+            await supabase.from("product_variations").update({ stock_quantity: Math.max(0, v.stock_quantity - item.qty) }).eq("id", item.variationId);
+          }
+        }
+        // Update parent product stock
+        const { data: prod } = await supabase.from("products").select("stock_quantity, woo_product_id, store_id").eq("id", item.productId).single();
+        if (prod) {
+          await supabase.from("products").update({ stock_quantity: Math.max(0, prod.stock_quantity - item.qty) }).eq("id", item.productId);
+          // Push stock to WooCommerce if linked
+          if (prod.woo_product_id) {
+            supabase.functions.invoke("woo-push", {
+              body: { action: "push_stock", product_id: item.productId },
+            }).catch(() => {});
+          }
+        }
+      }
     }
 
     // Reset cart
