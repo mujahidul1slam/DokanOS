@@ -89,6 +89,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
   // Editable state
   const [status, setStatus] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
@@ -134,6 +135,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     if (o) {
       setOrder(o);
       setStatus(o.status);
+      setPaymentStatus(o.payment_status);
       setCustomerName(o.customers?.name || "");
       setCustomerPhone(o.customers?.phone || "");
       setCustomerAddress(o.customers?.address || "");
@@ -182,6 +184,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .from("orders")
         .update({
           status,
+          payment_status: paymentStatus,
           discount,
           shipping_cost: shippingCost,
           subtotal: computedSubtotal,
@@ -220,6 +223,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           order_id: order.id,
           event: "status_changed",
           description: `Status changed from "${order.status}" to "${status}"`,
+        });
+      }
+
+      if (paymentStatus !== order.payment_status) {
+        await supabase.from("order_timeline").insert({
+          order_id: order.id,
+          event: "payment_status_changed",
+          description: `Payment status changed from "${order.payment_status}" to "${paymentStatus}"`,
         });
       }
 
@@ -326,7 +337,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Status</Label>
-                      <p className="text-sm font-medium capitalize">{order?.payment_status || "N/A"}</p>
+                      <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unpaid">Unpaid</SelectItem>
+                          <SelectItem value="partial">Partial</SelectItem>
+                          <SelectItem value="paid">Paid</SelectItem>
+                          <SelectItem value="refunded">Refunded</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                 </section>
