@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
-  RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart,
+  RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +85,10 @@ const Orders = () => {
 
   // Tracking
   const [trackingLoading, setTrackingLoading] = useState(false);
+
+  // Bulk status
+  const [bulkStatus, setBulkStatus] = useState("");
+  const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const { toast } = useToast();
 
@@ -202,6 +206,35 @@ const Orders = () => {
     } catch (err: any) { toast({ title: "Track failed", description: err.message, variant: "destructive" }); }
   };
 
+  const handleBulkStatusUpdate = async () => {
+    if (!bulkStatus || selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase
+        .from("orders")
+        .update({ status: bulkStatus })
+        .in("id", ids);
+
+      // Add timeline entries
+      const timelineEntries = ids.map((id) => ({
+        order_id: id,
+        event: "status_changed",
+        description: `Bulk status update to "${bulkStatus}"`,
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+
+      toast({ title: `${ids.length} order(s) updated to "${bulkStatus}"` });
+      setSelected(new Set());
+      setBulkStatus("");
+      loadOrders();
+    } catch {
+      toast({ title: "Bulk update failed", variant: "destructive" });
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
+
   if (loading) return (
     <div className="space-y-4">
       <div><h1 className="font-heading text-2xl font-semibold">Orders</h1></div>
@@ -243,6 +276,41 @@ const Orders = () => {
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Bulk Action Bar */}
+      {canWrite && selected.size > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+          <CheckSquare className="h-4 w-4 text-primary shrink-0" />
+          <span className="text-sm font-medium">{selected.size} order{selected.size > 1 ? "s" : ""} selected</span>
+          <div className="flex items-center gap-2 ml-auto">
+            <Select value={bulkStatus} onValueChange={setBulkStatus}>
+              <SelectTrigger className="w-[160px] h-9">
+                <SelectValue placeholder="Change status to…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="shipped">Shipped</SelectItem>
+                <SelectItem value="delivered">Delivered</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="returned">Returned</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              disabled={!bulkStatus || bulkUpdating}
+              onClick={handleBulkStatusUpdate}
+            >
+              {bulkUpdating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+              Apply
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={setTab}>
