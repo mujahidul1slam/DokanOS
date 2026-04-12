@@ -400,7 +400,7 @@ const Orders = () => {
               </TableHeader>
               <TableBody>
                 {paginated.length === 0 ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">No orders found</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">No orders found</TableCell></TableRow>
                 ) : paginated.map((order) => (
                   <TableRow key={order.id} className="group">
                     <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
