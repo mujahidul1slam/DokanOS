@@ -178,6 +178,48 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_settings: {
+        Row: {
+          address: string | null
+          business_name: string
+          created_at: string
+          email: string | null
+          footer_text: string | null
+          id: string
+          logo_url: string | null
+          phone: string | null
+          tagline: string | null
+          terms_text: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          business_name?: string
+          created_at?: string
+          email?: string | null
+          footer_text?: string | null
+          id?: string
+          logo_url?: string | null
+          phone?: string | null
+          tagline?: string | null
+          terms_text?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          business_name?: string
+          created_at?: string
+          email?: string | null
+          footer_text?: string | null
+          id?: string
+          logo_url?: string | null
+          phone?: string | null
+          tagline?: string | null
+          terms_text?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       order_items: {
         Row: {
           created_at: string

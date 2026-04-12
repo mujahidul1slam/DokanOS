@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Plus, Printer, FileText, Trash2, Minus, CreditCard, Banknote, Smartphone, Building2, Truck, Store, Search, UserPlus, ShoppingBag, Ruler, X, Check, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { printInvoice } from "./InvoicePrint";
 import type { Cart, CartItem, Payment, CustomerData } from "./types";
+import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 
 interface Props {
   carts: Cart[];
@@ -37,6 +38,7 @@ const CartPanel = ({
   onUpdateCart, onUpdateItem, onRemoveItem, onCompleteOrder,
   customers, onSearchCustomers,
 }: Props) => {
+  const { settings: invoiceSettings } = useInvoiceSettings();
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [payMethod, setPayMethod] = useState<"cash" | "bkash" | "card" | "bank">("cash");
@@ -113,7 +115,7 @@ const CartPanel = ({
       const snap = completedCartSnapshot;
       const sub = snap.items.reduce((s, i) => s + i.price * i.qty, 0);
       const tot = sub - snap.discount + (snap.fulfillment === "delivery" ? snap.shippingFee : 0);
-      printInvoice({ orderNumber: completedOrderNumber, cart: snap, subtotal: sub, total: tot }, format);
+      printInvoice({ orderNumber: completedOrderNumber, cart: snap, subtotal: sub, total: tot, invoiceSettings }, format);
     }
     setShowPrintModal(false);
   };

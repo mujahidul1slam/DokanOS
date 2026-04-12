@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Settings, Package, Plug, Store, RefreshCw, CheckCircle, AlertTriangle } from "lucide-react";
+import { Settings, Package, Plug, Store, RefreshCw, CheckCircle, AlertTriangle, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -9,10 +9,12 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useTheme } from "@/hooks/useTheme";
+import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 
 const tabs = [
   { id: "general", label: "General", icon: Settings },
   { id: "inventory", label: "Inventory", icon: Package },
+  { id: "invoice", label: "Invoice", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Plug },
 ] as const;
 
@@ -174,6 +176,8 @@ const SettingsPage = () => {
               </div>
             </div>
           )}
+
+          {activeTab === "invoice" && <InvoiceSettingsTab />}
 
           {activeTab === "integrations" && (
             <div className="space-y-4">
