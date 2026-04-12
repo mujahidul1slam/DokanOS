@@ -29,6 +29,7 @@ interface CustomerRow {
   zone: string | null;
   area: string | null;
   store_id: string | null;
+  source: string;
   created_at: string;
   order_count: number;
   total_spent: number;
@@ -53,6 +54,7 @@ const Customers = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [storeFilter, setStoreFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [page, setPage] = useState(1);
 
@@ -64,7 +66,7 @@ const Customers = () => {
   const loadCustomers = useCallback(async () => {
     const { data } = await supabase
       .from("customers")
-      .select("id, name, phone, email, address, city, zone, area, store_id, created_at")
+      .select("id, name, phone, email, address, city, zone, area, store_id, source, created_at")
       .order("created_at", { ascending: false });
 
     if (!data) { setLoading(false); return; }
@@ -117,14 +119,15 @@ const Customers = () => {
         (c.phone || "").toLowerCase().includes(q) ||
         (c.email || "").toLowerCase().includes(q);
       const matchStore = storeFilter === "all" || c.store_id === storeFilter;
-      return matchSearch && matchStore;
+      const matchSource = sourceFilter === "all" || c.source === sourceFilter;
+      return matchSearch && matchStore && matchSource;
     });
-  }, [customers, search, storeFilter]);
+  }, [customers, search, storeFilter, sourceFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, storeFilter]);
+  useEffect(() => { setPage(1); }, [search, storeFilter, sourceFilter]);
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
 
@@ -149,6 +152,14 @@ const Customers = () => {
             {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={sourceFilter} onValueChange={setSourceFilter}>
+          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Source" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sources</SelectItem>
+            <SelectItem value="online">WooCommerce</SelectItem>
+            <SelectItem value="pos">POS</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Table */}
@@ -158,6 +169,7 @@ const Customers = () => {
             <TableRow className="bg-secondary hover:bg-secondary">
               <TableHead>Customer</TableHead>
               <TableHead>Contact</TableHead>
+              <TableHead>Source</TableHead>
               <TableHead>Location</TableHead>
               <TableHead className="text-center">Orders</TableHead>
               <TableHead className="text-right">Total Spent</TableHead>
@@ -168,7 +180,7 @@ const Customers = () => {
           <TableBody>
             {paginated.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                   <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   No customers found
                 </TableCell>
@@ -201,6 +213,9 @@ const Customers = () => {
                     )}
                     {!customer.phone && !customer.email && <span className="text-sm text-muted-foreground">—</span>}
                   </div>
+                </TableCell>
+                <TableCell>
+                  <SourceBadge source={customer.source} />
                 </TableCell>
                 <TableCell>
                   {customer.city || customer.area ? (
