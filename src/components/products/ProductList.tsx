@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import ProductDetailSheet from "@/components/products/ProductDetailSheet";
+import { TableSkeleton } from "@/components/ui/loading-states";
 
 interface ProductRow {
   id: string;
@@ -307,7 +308,7 @@ const ProductList = () => {
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading…</div>;
+  if (loading) return <TableSkeleton rows={10} cols={7} />;
 
   return (
     <div className="space-y-4">
