@@ -13,7 +13,7 @@ const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: ShoppingCart, label: "Orders", path: "/orders" },
   { icon: Package, label: "Products", path: "/products" },
-  { icon: Truck, label: "Dispatch", path: "/dispatch" },
+  
   { icon: Monitor, label: "POS", path: "/pos" },
   { icon: Store, label: "Stores", path: "/stores" },
   { icon: Settings, label: "Settings", path: "/settings" },
