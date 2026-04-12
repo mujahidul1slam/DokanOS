@@ -1,55 +1,70 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard,
-  ShoppingCart,
-  Package,
-  Users,
-  Monitor,
-  Store,
-  Settings,
-  UsersRound,
-  LogOut,
+  LayoutDashboard, ShoppingCart, Package, Users, Monitor, Store,
+  Settings, UsersRound, LogOut, Menu, X, Search,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: ShoppingCart, label: "Orders", path: "/orders" },
-  { icon: Package, label: "Products", path: "/products" },
-  { icon: Users, label: "Customers", path: "/customers" },
-  { icon: Monitor, label: "POS", path: "/pos" },
-  { icon: Store, label: "Stores", path: "/stores" },
-  { icon: UsersRound, label: "Team", path: "/team", adminOnly: true },
-  { icon: Settings, label: "Settings", path: "/settings" },
+  { icon: LayoutDashboard, label: "Dashboard", path: "/", roles: ["admin", "staff", "viewer"] },
+  { icon: ShoppingCart, label: "Orders", path: "/orders", roles: ["admin", "staff", "viewer"] },
+  { icon: Package, label: "Products", path: "/products", roles: ["admin", "staff"] },
+  { icon: Users, label: "Customers", path: "/customers", roles: ["admin", "staff", "viewer"] },
+  { icon: Monitor, label: "POS", path: "/pos", roles: ["admin", "staff"] },
+  { icon: Store, label: "Stores", path: "/stores", roles: ["admin"] },
+  { icon: UsersRound, label: "Team", path: "/team", roles: ["admin"] },
+  { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },
 ];
 
 const AppSidebar = () => {
   const location = useLocation();
-  const { user, role, signOut, isAdmin } = useAuth();
+  const { user, role, signOut } = useAuth();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const visibleItems = navItems.filter(
-    (item) => !item.adminOnly || isAdmin
+    (item) => role && item.roles.includes(role)
   );
 
   const initials = user?.email?.slice(0, 2).toUpperCase() || "??";
 
-  return (
-    <aside className="fixed left-0 top-0 z-40 flex h-screen w-60 flex-col border-r border-border bg-sidebar">
-      <div className="flex h-14 items-center gap-2 border-b border-border px-5">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
-          <span className="font-heading text-xs font-bold text-primary-foreground">O</span>
+  const sidebar = (
+    <>
+      <div className="flex h-14 items-center justify-between border-b border-border px-5">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
+            <span className="font-heading text-xs font-bold text-primary-foreground">O</span>
+          </div>
+          <span className="font-heading text-base font-semibold text-foreground">OmniSync</span>
         </div>
-        <span className="font-heading text-base font-semibold text-foreground">OmniSync</span>
+        <button className="lg:hidden text-muted-foreground" onClick={() => setMobileOpen(false)}>
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
-      <nav className="flex-1 space-y-0.5 px-3 py-3">
+      {/* Search hint */}
+      <div className="px-3 py-2">
+        <button
+          onClick={() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true })); setMobileOpen(false); }}
+          className="flex w-full items-center gap-2 rounded-md border border-border bg-secondary/50 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span>Search...</span>
+          <kbd className="ml-auto hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 text-[10px] font-mono text-muted-foreground">
+            ⌘K
+          </kbd>
+        </button>
+      </div>
+
+      <nav className="flex-1 space-y-0.5 px-3 py-1">
         {visibleItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <Link
               key={item.path}
               to={item.path}
+              onClick={() => setMobileOpen(false)}
               className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
                 isActive
                   ? "bg-sidebar-accent text-foreground"
@@ -65,19 +80,46 @@ const AppSidebar = () => {
 
       <div className="border-t border-border px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
             {initials}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm text-foreground">{user?.email}</p>
             <p className="truncate text-xs capitalize text-muted-foreground">{role || "—"}</p>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={signOut}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={signOut}>
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile hamburger */}
+      <button
+        className="fixed left-4 top-4 z-50 lg:hidden rounded-md bg-card border border-border p-2"
+        onClick={() => setMobileOpen(true)}
+      >
+        <Menu className="h-5 w-5 text-foreground" />
+      </button>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden" onClick={() => setMobileOpen(false)} />
+      )}
+
+      {/* Mobile sidebar */}
+      <aside className={`fixed left-0 top-0 z-50 flex h-screen w-64 flex-col border-r border-border bg-sidebar transition-transform lg:hidden ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        {sidebar}
+      </aside>
+
+      {/* Desktop sidebar */}
+      <aside className="hidden lg:flex fixed left-0 top-0 z-40 h-screen w-60 flex-col border-r border-border bg-sidebar">
+        {sidebar}
+      </aside>
+    </>
   );
 };
 
