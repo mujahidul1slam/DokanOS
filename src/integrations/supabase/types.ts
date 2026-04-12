@@ -72,6 +72,7 @@ export type Database = {
           id: string
           name: string
           phone: string | null
+          source: string
           store_id: string | null
           updated_at: string
           woo_customer_id: number | null
@@ -86,6 +87,7 @@ export type Database = {
           id?: string
           name: string
           phone?: string | null
+          source?: string
           store_id?: string | null
           updated_at?: string
           woo_customer_id?: number | null
@@ -100,6 +102,7 @@ export type Database = {
           id?: string
           name?: string
           phone?: string | null
+          source?: string
           store_id?: string | null
           updated_at?: string
           woo_customer_id?: number | null
