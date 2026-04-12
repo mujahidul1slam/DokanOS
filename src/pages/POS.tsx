@@ -197,8 +197,7 @@ const POS = () => {
       for (const item of cart.items) {
         if (item.isCustomItem || !item.productId) continue;
         if (item.variationId) {
-          await supabase.rpc("" as any); // skip rpc, do manual update
-          const { data: v } = await supabase.from("product_variations").select("stock_quantity, woo_variation_id").eq("id", item.variationId).single();
+          const { data: v } = await supabase.from("product_variations").select("stock_quantity").eq("id", item.variationId).single();
           if (v) {
             await supabase.from("product_variations").update({ stock_quantity: Math.max(0, v.stock_quantity - item.qty) }).eq("id", item.variationId);
           }

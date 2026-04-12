@@ -1,9 +1,10 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import {
-  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, X,
+  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, X, Download,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { downloadCsv } from "@/lib/exportCsv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -166,6 +167,17 @@ const Customers = () => {
             <SelectItem value="pos">POS</SelectItem>
           </SelectContent>
         </Select>
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => {
+          const headers = ["Name", "Phone", "Email", "Address", "City", "Source", "Orders", "Total Spent", "Joined"];
+          const rows = filtered.map((c) => [
+            c.name, c.phone || "", c.email || "", c.address || "", c.city || "",
+            c.source, String(c.order_count), String(c.total_spent),
+            format(new Date(c.created_at), "yyyy-MM-dd"),
+          ]);
+          downloadCsv(`customers-${format(new Date(), "yyyy-MM-dd")}.csv`, headers, rows);
+        }}>
+          <Download className="h-4 w-4" /> Export
+        </Button>
       </div>
 
       {/* Table */}
