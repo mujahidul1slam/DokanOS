@@ -184,6 +184,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .from("orders")
         .update({
           status,
+          payment_status: paymentStatus,
           discount,
           shipping_cost: shippingCost,
           subtotal: computedSubtotal,
