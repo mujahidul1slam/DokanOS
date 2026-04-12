@@ -413,7 +413,7 @@ const Orders = () => {
                       <div className="text-xs text-muted-foreground">{order.customers?.phone || "—"}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="max-w-[260px]" title={order.productItems.map((p) => `${p.name} ×${p.qty}`).join("\n")}>
+                      <div className="max-w-[260px]">
                         {order.productItems.length === 0 ? (
                           <span className="text-xs text-muted-foreground italic">—</span>
                         ) : (
@@ -425,7 +425,24 @@ const Orders = () => {
                               </div>
                             ))}
                             {order.productItems.length > 3 && (
-                              <span className="text-[11px] text-muted-foreground">+{order.productItems.length - 3} more</span>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button className="text-[11px] text-primary hover:underline cursor-pointer">
+                                    +{order.productItems.length - 3} more
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-72 p-3" align="start">
+                                  <p className="text-xs font-medium text-muted-foreground mb-2">All items ({order.productItems.length})</p>
+                                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                                    {order.productItems.map((p, i) => (
+                                      <div key={i} className="text-xs leading-4">
+                                        <span className="text-muted-foreground">×{p.qty}</span>{" "}
+                                        <span>{p.name}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
                             )}
                           </div>
                         )}
