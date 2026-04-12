@@ -202,7 +202,12 @@ const Orders = () => {
     } catch (err: any) { toast({ title: "Track failed", description: err.message, variant: "destructive" }); }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" />Loading...</div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <div><h1 className="font-heading text-2xl font-semibold">Orders</h1></div>
+      <TableSkeleton rows={10} cols={7} />
+    </div>
+  );
 
   const pendingCount = orders.filter((o) => o.status === "processing" && !o.consignment_id).length;
   const inTransitCount = orders.filter((o) => !!o.consignment_id && !["delivered", "completed", "cancelled", "returned"].includes(o.status)).length;
