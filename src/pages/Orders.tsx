@@ -56,6 +56,7 @@ interface OrderRow {
   customers: { name: string; phone: string | null; address: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
+  productNames: string[];
 }
 
 interface StoreOption { id: string; name: string }
@@ -95,12 +96,13 @@ const Orders = () => {
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
       .from("orders")
-      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, created_at, store_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address), stores(name), order_items(id)")
+      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, created_at, store_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address), stores(name), order_items(id, product_name)")
       .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
       ...o,
       itemCount: o.order_items?.length || 0,
+      productNames: (o.order_items || []).map((i: any) => i.product_name).filter(Boolean) as string[],
     }));
     setOrders(mapped as OrderRow[]);
     setLoading(false);
@@ -386,17 +388,18 @@ const Orders = () => {
                   <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
                   <TableHead>Order Info</TableHead>
                   <TableHead>Customer</TableHead>
+                  <TableHead>Products</TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead>Payment</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Fulfillment</TableHead>
-                  <TableHead>Courier & Tracking</TableHead>
+                  <TableHead>Courier Status</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginated.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">No orders found</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">No orders found</TableCell></TableRow>
                 ) : paginated.map((order) => (
                   <TableRow key={order.id} className="group">
                     <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
@@ -408,15 +411,32 @@ const Orders = () => {
                       <div className="font-medium text-foreground">{order.customers?.name || "—"}</div>
                       <div className="text-xs text-muted-foreground">{order.customers?.phone || "—"}</div>
                     </TableCell>
+                    <TableCell>
+                      <div className="max-w-[180px]">
+                        {order.productNames.length === 0 ? (
+                          <span className="text-xs text-muted-foreground italic">—</span>
+                        ) : (
+                          <>
+                            <div className="text-sm truncate">{order.productNames[0]}</div>
+                            {order.productNames.length > 1 && (
+                              <span className="text-xs text-muted-foreground">+{order.productNames.length - 1} more</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell><SourceBadge source={order.source} /></TableCell>
                     <TableCell><PaymentBadge status={order.payment_status} /></TableCell>
                     <TableCell className="text-right font-medium text-foreground">৳{Number(order.total).toLocaleString()}</TableCell>
                     <TableCell><FulfillmentBadge status={order.status} /></TableCell>
                     <TableCell>
                       {order.consignment_id ? (
-                        <a href={`https://merchant.pathao.com/tracking?consignment_id=${order.consignment_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                          {order.consignment_id}<ExternalLink className="h-3 w-3" />
-                        </a>
+                        <div className="space-y-1">
+                          <a href={`https://merchant.pathao.com/tracking?consignment_id=${order.consignment_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                            {order.consignment_id}<ExternalLink className="h-3 w-3" />
+                          </a>
+                          <div><TrackingBadge status={order.tracking_status} /></div>
+                        </div>
                       ) : <span className="text-xs text-muted-foreground italic">Not Dispatched</span>}
                     </TableCell>
                     <TableCell>
