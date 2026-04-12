@@ -3,8 +3,11 @@ import {
   LayoutDashboard,
   ShoppingCart,
   Package,
-  Truck,
+  Users,
   Monitor,
+  Store,
+  Settings,
+} from "lucide-react";
   Store,
   Settings,
 } from "lucide-react";
@@ -13,7 +16,7 @@ const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: ShoppingCart, label: "Orders", path: "/orders" },
   { icon: Package, label: "Products", path: "/products" },
-  
+  { icon: Users, label: "Customers", path: "/customers" },
   { icon: Monitor, label: "POS", path: "/pos" },
   { icon: Store, label: "Stores", path: "/stores" },
   { icon: Settings, label: "Settings", path: "/settings" },
