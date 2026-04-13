@@ -223,45 +223,55 @@ Deno.serve(async (req) => {
         const { orders } = params; // array of { order_id, order_payload }
         const results: any[] = [];
 
-        for (const entry of orders) {
-          try {
-            const data = await pathaoPost(
-              token,
-              "/aladdin/api/v1/orders",
-              entry.order_payload
-            );
-            const consignment_id =
-              data.data?.consignment_id || data.consignment_id;
+        // Process orders sequentially to avoid rate limits, with concurrency for DB updates
+        const CONCURRENCY = 5;
+        for (let i = 0; i < orders.length; i += CONCURRENCY) {
+          const chunk = orders.slice(i, i + CONCURRENCY);
+          const chunkResults = await Promise.allSettled(
+            chunk.map(async (entry: any) => {
+              try {
+                const data = await pathaoPost(
+                  token,
+                  "/aladdin/api/v1/orders",
+                  entry.order_payload
+                );
+                const consignment_id =
+                  data.data?.consignment_id || data.consignment_id;
 
-            if (entry.order_id && consignment_id) {
-              await sb
-                .from("orders")
-                .update({
+                if (entry.order_id && consignment_id) {
+                  await sb
+                    .from("orders")
+                    .update({
+                      consignment_id,
+                      tracking_status: "Pickup Pending",
+                      status: "shipped",
+                    })
+                    .eq("id", entry.order_id);
+
+                  await sb.from("order_timeline").insert({
+                    order_id: entry.order_id,
+                    event: "dispatched",
+                    description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
+                    metadata: { consignment_id },
+                  });
+                }
+
+                return {
+                  order_id: entry.order_id,
+                  success: true,
                   consignment_id,
-                  tracking_status: "Pickup Pending",
-                  status: "shipped",
-                })
-                .eq("id", entry.order_id);
-
-              await sb.from("order_timeline").insert({
-                order_id: entry.order_id,
-                event: "dispatched",
-                description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
-                metadata: { consignment_id },
-              });
-            }
-
-            results.push({
-              order_id: entry.order_id,
-              success: true,
-              consignment_id,
-            });
-          } catch (err: any) {
-            results.push({
-              order_id: entry.order_id,
-              success: false,
-              error: err.message,
-            });
+                };
+              } catch (err: any) {
+                return {
+                  order_id: entry.order_id,
+                  success: false,
+                  error: err.message,
+                };
+              }
+            })
+          );
+          for (const r of chunkResults) {
+            results.push(r.status === "fulfilled" ? r.value : { success: false, error: String(r.reason) });
           }
         }
 

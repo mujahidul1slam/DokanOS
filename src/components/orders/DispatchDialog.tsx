@@ -346,7 +346,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           recipient_address: order.customers?.address || "",
         };
 
-        const cityCandidates = buildLocationCandidates([order.customers?.city, base.recipient_address], { includeWords: false });
+        const cityCandidates = buildLocationCandidates([order.customers?.city, base.recipient_address]);
         const zoneCandidates = buildLocationCandidates([order.customers?.zone, order.customers?.area, base.recipient_address]);
 
         if (!base.zone_id && allZones.length > 0) {
@@ -358,6 +358,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         }
 
         if (!base.city_id) {
+          // For city, only accept exact/alias matches from address words (no fuzzy on short tokens)
           const cityMatch = getStrictLocationMatch(cities, (city) => city.city_name, cityCandidates);
           if (cityMatch) {
             base.city_id = String(cityMatch.city_id);
@@ -404,7 +405,8 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     }
     setDispatching(true);
     try {
-      const bulkPayload = orders.map((o) => {
+      const BATCH_SIZE = 20;
+      const allPayloads = orders.map((o) => {
         const ov = orderOverrides[o.id];
         return {
           order_id: o.id,
@@ -425,9 +427,15 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           },
         };
       });
-      const { data, error } = await supabase.functions.invoke("pathao-courier", { body: { action: "create_bulk", orders: bulkPayload } });
-      if (error) throw error;
-      const results = data?.data?.results || [];
+      const allResults: any[] = [];
+      for (let i = 0; i < allPayloads.length; i += BATCH_SIZE) {
+        const batch = allPayloads.slice(i, i + BATCH_SIZE);
+        const { data, error } = await supabase.functions.invoke("pathao-courier", { body: { action: "create_bulk", orders: batch } });
+        if (error) throw error;
+        const batchResults = data?.data?.results || [];
+        allResults.push(...batchResults);
+      }
+      const results = allResults;
       const succeeded = results.filter((r: any) => r.success).length;
       const failed = results.filter((r: any) => !r.success);
       if (failed.length > 0) {
