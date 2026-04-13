@@ -1,5 +1,6 @@
 const statusStyles: Record<string, string> = {
   processing: "bg-primary/15 text-primary",
+  ready_to_ship: "bg-cyan-500/15 text-cyan-500",
   shipped: "bg-warning/15 text-warning",
   delivered: "bg-success/15 text-success",
   completed: "bg-success/15 text-success",
