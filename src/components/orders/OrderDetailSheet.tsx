@@ -568,7 +568,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="processing">New Order</SelectItem>
+                <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
                 <SelectItem value="shipped">Shipped</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
@@ -593,7 +594,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 function FulfillmentBadge({ status }: { status: string }) {
   switch (status) {
     case "processing":
-      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">Processing</Badge>;
+      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">New Order</Badge>;
+    case "ready_to_ship":
+      return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20">Ready to Ship</Badge>;
     case "shipped":
       return <Badge className="bg-primary/15 text-primary border-primary/20">Shipped</Badge>;
     case "delivered":
