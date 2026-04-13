@@ -104,6 +104,11 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
             "",
           ),
         );
+
+        // Also try individual words (for addresses like "dhaka jatrabari" without separators)
+        for (const word of trimmed.split(/\s+/)) {
+          if (word.length >= 3) addCandidate(word);
+        }
       }
     }
 
