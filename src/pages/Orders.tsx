@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
+  PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
 import DispatchDialog from "@/components/orders/DispatchDialog";
+import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge,
 } from "@/components/orders/OrderBadges";
@@ -61,7 +63,9 @@ interface OrderRow {
 
 interface StoreOption { id: string; name: string }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
+
+type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold";
 
 const Orders = () => {
   const { role } = useAuth();
@@ -77,7 +81,7 @@ const Orders = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [tab, setTab] = useState("all");
+  const [tab, setTab] = useState<TabKey>("new");
   const [stores, setStores] = useState<StoreOption[]>([]);
 
   // Dispatch
@@ -87,8 +91,7 @@ const Orders = () => {
   // Tracking
   const [trackingLoading, setTrackingLoading] = useState(false);
 
-  // Bulk status
-  const [bulkStatus, setBulkStatus] = useState("");
+  // Bulk actions
   const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const { toast } = useToast();
@@ -117,20 +120,40 @@ const Orders = () => {
 
   useEffect(() => { loadOrders(); loadStores(); }, [loadOrders, loadStores]);
 
-  /* ─── Filtering ─── */
-  const filtered = useMemo(() => {
+  /* ─── Tab-based filtering ─── */
+  const getTabOrders = useCallback((tabKey: TabKey) => {
     return orders.filter((o) => {
+      switch (tabKey) {
+        case "new":
+          return o.status === "processing" && !o.consignment_id;
+        case "ready":
+          return o.status === "ready_to_ship" && !o.consignment_id;
+        case "pickup_pending":
+          return !!o.consignment_id && o.tracking_status === "Pickup Pending";
+        case "in_transit":
+          return !!o.consignment_id && ["Picked", "In Transit"].includes(o.tracking_status || "");
+        case "delivered":
+          return !!o.consignment_id && ["Delivered", "Partial Delivered"].includes(o.tracking_status || "");
+        case "on_hold":
+          return !!o.consignment_id && ["On Hold", "Return", "Returned"].includes(o.tracking_status || "");
+        default:
+          return true;
+      }
+    });
+  }, [orders]);
+
+  const filtered = useMemo(() => {
+    const tabOrders = getTabOrders(tab);
+    return tabOrders.filter((o) => {
       const q = search.toLowerCase();
       const matchSearch = !q ||
         o.order_number.toLowerCase().includes(q) ||
         (o.customers?.name || "").toLowerCase().includes(q) ||
         (o.customers?.phone || "").toLowerCase().includes(q);
-
-      const matchStatus = statusFilter === "all" || o.status === statusFilter;
+      const matchStatus = tab !== "all" || statusFilter === "all" || o.status === statusFilter;
       const matchPayment = paymentFilter === "all" || o.payment_status === paymentFilter;
       const matchSource = sourceFilter === "all" || o.source === sourceFilter;
       const matchStore = storeFilter === "all" || o.store_id === storeFilter;
-
       let matchDate = true;
       if (dateRange?.from) {
         const d = new Date(o.created_at);
@@ -141,14 +164,9 @@ const Orders = () => {
           matchDate = matchDate && d <= end;
         }
       }
-
-      // Tab filtering
-      if (tab === "pending") return matchSearch && matchStore && o.status === "processing" && !o.consignment_id;
-      if (tab === "in-transit") return matchSearch && matchStore && !!o.consignment_id && !["delivered", "completed", "cancelled", "returned"].includes(o.status);
-
       return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate;
     });
-  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, dateRange, tab]);
+  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, dateRange, tab, getTabOrders]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -164,6 +182,17 @@ const Orders = () => {
     else setSelected(new Set(paginated.map((o) => o.id)));
   };
 
+  /* ─── Tab counts ─── */
+  const counts = useMemo(() => ({
+    all: orders.length,
+    new: getTabOrders("new").length,
+    ready: getTabOrders("ready").length,
+    pickup_pending: getTabOrders("pickup_pending").length,
+    in_transit: getTabOrders("in_transit").length,
+    delivered: getTabOrders("delivered").length,
+    on_hold: getTabOrders("on_hold").length,
+  }), [orders, getTabOrders]);
+
   /* ─── Dispatch helpers ─── */
   const openDispatch = (ids: string[]) => {
     setDispatchOrderIds(ids);
@@ -175,7 +204,30 @@ const Orders = () => {
     [orders, dispatchOrderIds]
   );
 
-  /* ─── Pathao sync helpers ─── */
+  /* ─── Mark Ready to Ship ─── */
+  const handleMarkReadyToShip = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("orders").update({ status: "ready_to_ship" }).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id,
+        event: "status_changed",
+        description: "Marked as Ready to Ship",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) marked Ready to Ship` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Update failed", variant: "destructive" });
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
+
+  /* ─── Pathao sync ─── */
   const syncPathaoStores = async () => {
     try {
       await supabase.functions.invoke("pathao-courier", { body: { action: "get_stores" } });
@@ -210,35 +262,6 @@ const Orders = () => {
     } catch (err: any) { toast({ title: "Track failed", description: err.message, variant: "destructive" }); }
   };
 
-  const handleBulkStatusUpdate = async () => {
-    if (!bulkStatus || selected.size === 0) return;
-    setBulkUpdating(true);
-    try {
-      const ids = Array.from(selected);
-      await supabase
-        .from("orders")
-        .update({ status: bulkStatus })
-        .in("id", ids);
-
-      // Add timeline entries
-      const timelineEntries = ids.map((id) => ({
-        order_id: id,
-        event: "status_changed",
-        description: `Bulk status update to "${bulkStatus}"`,
-      }));
-      await supabase.from("order_timeline").insert(timelineEntries);
-
-      toast({ title: `${ids.length} order(s) updated to "${bulkStatus}"` });
-      setSelected(new Set());
-      setBulkStatus("");
-      loadOrders();
-    } catch {
-      toast({ title: "Bulk update failed", variant: "destructive" });
-    } finally {
-      setBulkUpdating(false);
-    }
-  };
-
   if (loading) return (
     <div className="space-y-4">
       <div><h1 className="font-heading text-2xl font-semibold">Orders</h1></div>
@@ -246,8 +269,14 @@ const Orders = () => {
     </div>
   );
 
-  const pendingCount = orders.filter((o) => o.status === "processing" && !o.consignment_id).length;
-  const inTransitCount = orders.filter((o) => !!o.consignment_id && !["delivered", "completed", "cancelled", "returned"].includes(o.status)).length;
+  /* ─── Selected order data for slip printing ─── */
+  const selectedOrders = orders.filter((o) => selected.has(o.id));
+
+  /* ─── Determine which action buttons to show ─── */
+  const showMarkReady = canWrite && tab === "new" && selected.size > 0;
+  const showDispatch = canWrite && tab === "ready" && selected.size > 0;
+  const showPrintSlip = tab === "ready" && selected.size > 0;
+  const showTrackAll = ["pickup_pending", "in_transit", "on_hold"].includes(tab);
 
   return (
     <div className="space-y-4">
@@ -255,18 +284,13 @@ const Orders = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-semibold">Orders</h1>
-          <p className="text-sm text-muted-foreground">Unified view — all channels, dispatch & tracking</p>
+          <p className="text-sm text-muted-foreground">Manage your order pipeline — from new orders to delivery</p>
         </div>
         <div className="flex items-center gap-2">
-          {tab === "in-transit" && (
+          {showTrackAll && (
             <Button variant="outline" size="sm" onClick={handleTrackAll} disabled={trackingLoading}>
               {trackingLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
               Update Tracking
-            </Button>
-          )}
-          {canWrite && (tab === "pending" || tab === "all") && (
-            <Button disabled={selected.size === 0} className="gap-2" onClick={() => openDispatch(Array.from(selected))}>
-              <Send className="h-4 w-4" /> Dispatch {selected.size > 0 ? `(${selected.size})` : ""}
             </Button>
           )}
           <DropdownMenu>
@@ -281,129 +305,135 @@ const Orders = () => {
         </div>
       </div>
 
-      {/* Bulk Action Bar */}
-      {canWrite && selected.size > 0 && (
+      {/* Action Bar */}
+      {(showMarkReady || showDispatch || showPrintSlip) && (
         <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
           <CheckSquare className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-medium">{selected.size} order{selected.size > 1 ? "s" : ""} selected</span>
           <div className="flex items-center gap-2 ml-auto">
-            <Select value={bulkStatus} onValueChange={setBulkStatus}>
-              <SelectTrigger className="w-[160px] h-9">
-                <SelectValue placeholder="Change status to…" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="processing">Processing</SelectItem>
-                <SelectItem value="shipped">Shipped</SelectItem>
-                <SelectItem value="delivered">Delivered</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="returned">Returned</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              disabled={!bulkStatus || bulkUpdating}
-              onClick={handleBulkStatusUpdate}
-            >
-              {bulkUpdating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
-              Apply
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
-              Clear
-            </Button>
+            {showMarkReady && (
+              <Button size="sm" onClick={handleMarkReadyToShip} disabled={bulkUpdating} className="gap-1.5">
+                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
+                Mark Ready to Ship
+              </Button>
+            )}
+            {showPrintSlip && (
+              <PickupSlipPrint orders={selectedOrders} />
+            )}
+            {showDispatch && (
+              <Button size="sm" onClick={() => openDispatch(Array.from(selected))} className="gap-1.5">
+                <Send className="h-4 w-4" /> Dispatch to Pathao
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
           </div>
         </div>
       )}
 
       {/* Tabs */}
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="all" className="gap-1.5"><ShoppingCart className="h-4 w-4" />All Orders ({orders.length})</TabsTrigger>
-          <TabsTrigger value="pending" className="gap-1.5"><Package className="h-4 w-4" />Pending Dispatch ({pendingCount})</TabsTrigger>
-          <TabsTrigger value="in-transit" className="gap-1.5"><Truck className="h-4 w-4" />In Transit ({inTransitCount})</TabsTrigger>
-        </TabsList>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+        <div className="overflow-x-auto">
+          <TabsList className="inline-flex w-auto min-w-full">
+            <TabsTrigger value="all" className="gap-1.5 text-xs"><ShoppingCart className="h-3.5 w-3.5" />All ({counts.all})</TabsTrigger>
+            <TabsTrigger value="new" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />New Orders ({counts.new})</TabsTrigger>
+            <TabsTrigger value="ready" className="gap-1.5 text-xs"><PackageCheck className="h-3.5 w-3.5" />Ready to Ship ({counts.ready})</TabsTrigger>
+            <TabsTrigger value="pickup_pending" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Pickup Pending ({counts.pickup_pending})</TabsTrigger>
+            <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
+            <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
+            <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold / Return ({counts.on_hold})</TabsTrigger>
+          </TabsList>
+        </div>
 
-        {/* ── All Orders Tab ── */}
-        <TabsContent value="all" className="space-y-4">
-          {/* Toolbar */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[240px]">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search ID, Name, or Phone..." className="pl-9" />
-            </div>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className={cn("gap-2 text-sm font-normal", !dateRange?.from && "text-muted-foreground")}>
-                  <CalendarIcon className="h-4 w-4" />
-                  {dateRange?.from ? (dateRange.to ? `${format(dateRange.from, "MMM d")} – ${format(dateRange.to, "MMM d")}` : format(dateRange.from, "MMM d, yyyy")) : "Date Range"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="range" selected={dateRange} onSelect={setDateRange} numberOfMonths={2} className="p-3 pointer-events-auto" />
-              </PopoverContent>
-            </Popover>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px]"><SelectValue placeholder="Fulfillment" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="processing">Processing</SelectItem>
-                <SelectItem value="shipped">Shipped</SelectItem>
-                <SelectItem value="delivered">Delivered</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="returned">Returned</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={paymentFilter} onValueChange={setPaymentFilter}>
-              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Payment" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Payment</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="unpaid">Unpaid</SelectItem>
-                <SelectItem value="cod">COD</SelectItem>
-                <SelectItem value="partial">Partial</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="w-[130px]"><SelectValue placeholder="Source" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Sources</SelectItem>
-                <SelectItem value="online">Online</SelectItem>
-                <SelectItem value="pos">POS</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={storeFilter} onValueChange={setStoreFilter}>
-              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Store" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Stores</SelectItem>
-                {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+        {/* Search & Filters — shared across all tabs */}
+        <div className="flex flex-wrap items-center gap-3 mt-4">
+          <div className="relative flex-1 min-w-[240px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order #, name, or phone..." className="pl-9" />
           </div>
+          {tab === "all" && (
+            <>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("gap-2 text-sm font-normal", !dateRange?.from && "text-muted-foreground")}>
+                    <CalendarIcon className="h-4 w-4" />
+                    {dateRange?.from ? (dateRange.to ? `${format(dateRange.from, "MMM d")} – ${format(dateRange.to, "MMM d")}` : format(dateRange.from, "MMM d, yyyy")) : "Date Range"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="range" selected={dateRange} onSelect={setDateRange} numberOfMonths={2} className="p-3 pointer-events-auto" />
+                </PopoverContent>
+              </Popover>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="processing">New Order</SelectItem>
+                  <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
+                  <SelectItem value="shipped">Shipped</SelectItem>
+                  <SelectItem value="delivered">Delivered</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="returned">Returned</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+                <SelectTrigger className="w-[140px]"><SelectValue placeholder="Payment" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Payment</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="unpaid">Unpaid</SelectItem>
+                  <SelectItem value="cod">COD</SelectItem>
+                  <SelectItem value="partial">Partial</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                <SelectTrigger className="w-[130px]"><SelectValue placeholder="Source" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sources</SelectItem>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="pos">POS</SelectItem>
+                </SelectContent>
+              </Select>
+            </>
+          )}
+          <Select value={storeFilter} onValueChange={setStoreFilter}>
+            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Store" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Stores</SelectItem>
+              {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
 
-          {/* All Orders Table */}
-          <div className="rounded-lg border border-border overflow-hidden">
+        {/* ── Shared Table ── */}
+        {paginated.length === 0 ? (
+          <EmptyState tab={tab} />
+        ) : (
+          <div className="rounded-lg border border-border overflow-hidden mt-4">
             <Table>
               <TableHeader>
                 <TableRow className="bg-secondary hover:bg-secondary">
-                  <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
+                  {(tab === "new" || tab === "ready") && canWrite && (
+                    <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
+                  )}
                   <TableHead>Order Info</TableHead>
                   <TableHead>Customer</TableHead>
-                  <TableHead className="w-[260px]">Products</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead className="text-right">Payment / Total</TableHead>
-                  <TableHead>Fulfillment</TableHead>
-                  <TableHead>Courier Status</TableHead>
+                  <TableHead className="w-[240px]">Products</TableHead>
+                  {tab === "all" && <TableHead>Source</TableHead>}
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead>Status</TableHead>
+                  {["pickup_pending", "in_transit", "on_hold", "all"].includes(tab) && (
+                    <TableHead>Courier</TableHead>
+                  )}
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginated.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">No orders found</TableCell></TableRow>
-                ) : paginated.map((order) => (
-                  <TableRow key={order.id} className="group">
-                    <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
+                {paginated.map((order) => (
+                  <TableRow key={order.id} className={cn("group", selected.has(order.id) && "bg-primary/5")}>
+                    {(tab === "new" || tab === "ready") && canWrite && (
+                      <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
+                    )}
                     <TableCell>
                       <div className="font-medium text-foreground">#{order.order_number}</div>
                       <div className="text-xs text-muted-foreground">{format(new Date(order.created_at), "MMM d, yyyy · h:mm a")}</div>
@@ -411,59 +441,33 @@ const Orders = () => {
                     <TableCell>
                       <div className="font-medium text-foreground">{order.customers?.name || "—"}</div>
                       <div className="text-xs text-muted-foreground">{order.customers?.phone || "—"}</div>
+                      {(tab === "ready" || tab === "new") && order.customers?.address && (
+                        <div className="text-xs text-muted-foreground max-w-[180px] truncate mt-0.5">{order.customers.address}</div>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <div className="max-w-[260px]">
-                        {order.productItems.length === 0 ? (
-                          <span className="text-xs text-muted-foreground italic">—</span>
-                        ) : (
-                          <div className="space-y-0.5">
-                            {order.productItems.slice(0, 3).map((p, i) => (
-                              <div key={i} className="text-xs leading-4 break-words whitespace-normal">
-                                <span className="text-muted-foreground">×{p.qty}</span>{" "}
-                                <span>{p.name}</span>
-                              </div>
-                            ))}
-                            {order.productItems.length > 3 && (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <button className="text-[11px] text-primary hover:underline cursor-pointer">
-                                    +{order.productItems.length - 3} more
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-72 p-3" align="start">
-                                  <p className="text-xs font-medium text-muted-foreground mb-2">All items ({order.productItems.length})</p>
-                                  <div className="space-y-1 max-h-48 overflow-y-auto">
-                                    {order.productItems.map((p, i) => (
-                                      <div key={i} className="text-xs leading-4">
-                                        <span className="text-muted-foreground">×{p.qty}</span>{" "}
-                                        <span>{p.name}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <ProductsList items={order.productItems} />
                     </TableCell>
-                    <TableCell><SourceBadge source={order.source} /></TableCell>
+                    {tab === "all" && <TableCell><SourceBadge source={order.source} /></TableCell>}
                     <TableCell className="text-right">
                       <div className="font-medium text-foreground">৳{Number(order.total).toLocaleString()}</div>
                       <div className="mt-0.5"><PaymentBadge status={order.payment_status} /></div>
                     </TableCell>
-                    <TableCell><FulfillmentBadge status={order.status} /></TableCell>
                     <TableCell>
-                      {order.consignment_id ? (
-                        <div className="space-y-1">
-                          <a href={`https://merchant.pathao.com/tracking?consignment_id=${order.consignment_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                            {order.consignment_id}<ExternalLink className="h-3 w-3" />
-                          </a>
-                          <div><TrackingBadge status={order.tracking_status} /></div>
-                        </div>
-                      ) : <span className="text-xs text-muted-foreground italic">Not Dispatched</span>}
+                      <FulfillmentBadge status={order.status} />
                     </TableCell>
+                    {["pickup_pending", "in_transit", "on_hold", "all"].includes(tab) && (
+                      <TableCell>
+                        {order.consignment_id ? (
+                          <div className="space-y-1">
+                            <a href={`https://merchant.pathao.com/tracking?consignment_id=${order.consignment_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                              {order.consignment_id}<ExternalLink className="h-3 w-3" />
+                            </a>
+                            <div><TrackingBadge status={order.tracking_status} /></div>
+                          </div>
+                        ) : <span className="text-xs text-muted-foreground italic">—</span>}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -471,13 +475,27 @@ const Orders = () => {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setDetailOrderId(order.id)}>View Details</DropdownMenuItem>
-                          {order.status === "processing" && !order.consignment_id && (
-                            <DropdownMenuItem onClick={() => openDispatch([order.id])}>
-                              <Send className="h-4 w-4 mr-2" />Dispatch to Pathao
+                          {order.status === "processing" && !order.consignment_id && canWrite && (
+                            <DropdownMenuItem onClick={() => {
+                              supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
+                                supabase.from("order_timeline").insert({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
+                                toast({ title: "Marked Ready to Ship" });
+                                loadOrders();
+                              });
+                            }}>
+                              <PackageCheck className="h-4 w-4 mr-2" /> Mark Ready to Ship
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem>Print Invoice</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">Cancel Order</DropdownMenuItem>
+                          {order.status === "ready_to_ship" && !order.consignment_id && canWrite && (
+                            <DropdownMenuItem onClick={() => openDispatch([order.id])}>
+                              <Send className="h-4 w-4 mr-2" /> Dispatch to Pathao
+                            </DropdownMenuItem>
+                          )}
+                          {order.consignment_id && (
+                            <DropdownMenuItem onClick={() => handleTrackOne(order.consignment_id!)}>
+                              <RefreshCw className="h-4 w-4 mr-2" /> Refresh Tracking
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -486,137 +504,9 @@ const Orders = () => {
               </TableBody>
             </Table>
           </div>
-          <Pagination page={page} totalPages={totalPages} filtered={filtered} setPage={setPage} />
-        </TabsContent>
+        )}
 
-        {/* ── Pending Dispatch Tab ── */}
-        <TabsContent value="pending" className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order, customer, phone..." className="pl-9" />
-            </div>
-            <Select value={storeFilter} onValueChange={setStoreFilter}>
-              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Store" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Stores</SelectItem>
-                {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Button disabled={selected.size === 0} onClick={() => openDispatch(Array.from(selected))} className="gap-2">
-              <Send className="h-4 w-4" />Dispatch {selected.size > 0 && `(${selected.size})`}
-            </Button>
-          </div>
-          {paginated.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-border bg-card py-16">
-              <Truck className="h-10 w-10 text-muted-foreground" />
-              <p className="mt-3 text-sm text-muted-foreground">No orders pending dispatch</p>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-secondary hover:bg-secondary">
-                    <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
-                    <TableHead>Order</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Address</TableHead>
-                    <TableHead>Store</TableHead>
-                    <TableHead>Items</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="w-10"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginated.map((order) => (
-                    <TableRow key={order.id} className={selected.has(order.id) ? "bg-primary/5" : ""}>
-                      <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
-                      <TableCell className="font-medium text-foreground">#{order.order_number}</TableCell>
-                      <TableCell>
-                        <div className="text-foreground">{order.customers?.name || "—"}</div>
-                        <div className="text-xs text-muted-foreground">{order.customers?.phone || ""}</div>
-                      </TableCell>
-                      <TableCell><div className="text-sm text-muted-foreground max-w-[200px] truncate">{order.customers?.address || "—"}</div></TableCell>
-                      <TableCell className="text-muted-foreground">{order.stores?.name || "—"}</TableCell>
-                      <TableCell>{order.itemCount}</TableCell>
-                      <TableCell className="text-right font-medium">৳{Number(order.total).toLocaleString()}</TableCell>
-                      <TableCell>
-                        <Button size="sm" variant="ghost" onClick={() => openDispatch([order.id])} title="Dispatch"><Send className="h-4 w-4" /></Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-          <Pagination page={page} totalPages={totalPages} filtered={filtered} setPage={setPage} />
-        </TabsContent>
-
-        {/* ── In Transit Tab ── */}
-        <TabsContent value="in-transit" className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order, customer..." className="pl-9" />
-            </div>
-            <Select value={storeFilter} onValueChange={setStoreFilter}>
-              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Store" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Stores</SelectItem>
-                {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          {paginated.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-border bg-card py-16">
-              <Package className="h-10 w-10 text-muted-foreground" />
-              <p className="mt-3 text-sm text-muted-foreground">No active shipments</p>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-secondary hover:bg-secondary">
-                    <TableHead>Order</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Consignment</TableHead>
-                    <TableHead>Tracking Status</TableHead>
-                    <TableHead>Order Status</TableHead>
-                    <TableHead className="text-right">COD</TableHead>
-                    <TableHead className="w-10"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginated.map((order) => (
-                    <TableRow key={order.id}>
-                      <TableCell className="font-medium">#{order.order_number}</TableCell>
-                      <TableCell>
-                        <div className="text-foreground">{order.customers?.name || "—"}</div>
-                        <div className="text-xs text-muted-foreground">{order.customers?.phone || ""}</div>
-                      </TableCell>
-                      <TableCell>
-                        {order.consignment_id ? (
-                          <a href={`https://merchant.pathao.com/tracking?consignment_id=${order.consignment_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
-                            {order.consignment_id}<ExternalLink className="h-3 w-3" />
-                          </a>
-                        ) : "—"}
-                      </TableCell>
-                      <TableCell><TrackingBadge status={order.tracking_status} /></TableCell>
-                      <TableCell><FulfillmentBadge status={order.status} /></TableCell>
-                      <TableCell className="text-right font-medium">৳{Number(order.amount_to_collect || order.total).toLocaleString()}</TableCell>
-                      <TableCell>
-                        <Button size="sm" variant="ghost" onClick={() => order.consignment_id && handleTrackOne(order.consignment_id)} title="Refresh tracking">
-                          <RefreshCw className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-          <Pagination page={page} totalPages={totalPages} filtered={filtered} setPage={setPage} />
-        </TabsContent>
+        <Pagination page={page} totalPages={totalPages} filtered={filtered} setPage={setPage} />
       </Tabs>
 
       <OrderDetailSheet
@@ -636,10 +526,61 @@ const Orders = () => {
   );
 };
 
+/* ─── Empty State ─── */
+function EmptyState({ tab }: { tab: TabKey }) {
+  const configs: Record<TabKey, { icon: any; text: string }> = {
+    all: { icon: ShoppingCart, text: "No orders found" },
+    new: { icon: Package, text: "No new orders to process" },
+    ready: { icon: PackageCheck, text: "No orders ready to ship — mark orders as Ready from the New Orders tab" },
+    pickup_pending: { icon: Clock, text: "No orders waiting for pickup" },
+    in_transit: { icon: Truck, text: "No orders in transit" },
+    delivered: { icon: CheckCircle2, text: "No delivered orders" },
+    on_hold: { icon: AlertTriangle, text: "No orders on hold or returned" },
+  };
+  const config = configs[tab];
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-border bg-card py-16 mt-4">
+      <config.icon className="h-10 w-10 text-muted-foreground" />
+      <p className="mt-3 text-sm text-muted-foreground">{config.text}</p>
+    </div>
+  );
+}
+
+/* ─── Products List ─── */
+function ProductsList({ items }: { items: { name: string; qty: number }[] }) {
+  if (items.length === 0) return <span className="text-xs text-muted-foreground italic">—</span>;
+  return (
+    <div className="max-w-[240px]">
+      <div className="space-y-0.5">
+        {items.slice(0, 3).map((p, i) => (
+          <div key={i} className="text-xs leading-4 break-words whitespace-normal">
+            <span className="text-muted-foreground">×{p.qty}</span>{" "}<span>{p.name}</span>
+          </div>
+        ))}
+        {items.length > 3 && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="text-[11px] text-primary hover:underline cursor-pointer">+{items.length - 3} more</button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-3" align="start">
+              <p className="text-xs font-medium text-muted-foreground mb-2">All items ({items.length})</p>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {items.map((p, i) => (
+                  <div key={i} className="text-xs leading-4"><span className="text-muted-foreground">×{p.qty}</span>{" "}<span>{p.name}</span></div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Pagination ─── */
 function Pagination({ page, totalPages, filtered, setPage }: { page: number; totalPages: number; filtered: any[]; setPage: (p: number) => void }) {
   return (
-    <div className="flex items-center justify-between text-sm text-muted-foreground">
+    <div className="flex items-center justify-between text-sm text-muted-foreground mt-4">
       <span>Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to {Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
       <div className="flex items-center gap-1">
         <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
