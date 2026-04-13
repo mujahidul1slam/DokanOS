@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const PATHAO_BASE = "https://api-hermes.pathao.com";
+const PATHAO_BASE = "https://hermes-api.p-stageenv.xyz";
 
 async function getAccessToken(): Promise<string> {
   const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/issue-token`, {
@@ -48,15 +48,22 @@ Deno.serve(async (req) => {
       .not("status", "in", '("delivered","completed","cancelled","returned")');
 
     const statusMap: Record<string, string> = {
-      "Pending": "processing",
+      "Pending": "shipped",
       "Pickup Pending": "shipped",
+      "Assigned for Pickup": "shipped",
       "Picked": "shipped",
+      "Picked Up": "shipped",
+      "At Sorting Hub": "shipped",
       "In Transit": "shipped",
+      "Out for Delivery": "shipped",
       "Delivered": "delivered",
       "Partial Delivered": "delivered",
       "Return": "returned",
       "Returned": "returned",
       "Cancelled": "cancelled",
+      "On Hold": "processing",
+      "Exchange": "processing",
+      "Payment Invoice": "delivered",
     };
 
     let updated = 0;
