@@ -59,6 +59,7 @@ export function TrackingBadge({ status }: { status: string | null }) {
     "Returned": "bg-red-500/15 text-red-400 border-red-500/20",
     "Exchange": "bg-orange-500/15 text-orange-400 border-orange-500/20",
     "On Hold": "bg-amber-500/15 text-amber-400 border-amber-500/20",
+    "Pickup Cancel": "bg-red-500/15 text-red-400 border-red-500/20",
     "Cancelled": "bg-zinc-500/15 text-zinc-400 border-zinc-500/20",
   };
 
