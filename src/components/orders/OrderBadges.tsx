@@ -23,7 +23,9 @@ export function PaymentBadge({ status }: { status: string }) {
 export function FulfillmentBadge({ status }: { status: string }) {
   switch (status) {
     case "processing":
-      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">Processing</Badge>;
+      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">New Order</Badge>;
+    case "ready_to_ship":
+      return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/25">Ready to Ship</Badge>;
     case "shipped":
       return <Badge className="bg-primary/15 text-primary border-primary/20 hover:bg-primary/25">Shipped</Badge>;
     case "delivered":
