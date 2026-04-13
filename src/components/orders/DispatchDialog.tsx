@@ -28,9 +28,28 @@ interface DispatchOrder {
 }
 
 interface City { city_id: number; city_name: string }
-interface Zone { zone_id: number; zone_name: string }
+interface Zone { zone_id: number; zone_name: string; city_id: number }
 interface Area { area_id: number; area_name: string }
 interface PathaoStore { pathao_store_id: number; store_name: string }
+
+const LOCATION_WORD_BLACKLIST = new Set([
+  "address", "area", "bari", "bazar", "block", "building", "city", "district", "door", "flat",
+  "floor", "gate", "goli", "gram", "house", "lane", "market", "moor", "para", "post", "road",
+  "sector", "street", "thana", "union", "upazila", "village", "word", "zilla", "zip",
+]);
+
+const LOCATION_ALIAS_GROUPS = [
+  ["bbaria", "brahmanbaria"],
+  ["barisal", "barishal"],
+  ["bogra", "bogura"],
+  ["chittagong", "chattogram"],
+  ["cumilla", "comilla"],
+  ["jashore", "jessore"],
+  ["lakshmipur", "laxmipur", "lokkhipur"],
+  ["munsiganj", "munshiganj"],
+  ["narshingdi", "narsingdi", "narshingdi"],
+  ["gopalgonj", "gopalganj"],
+];
 
 interface DispatchDialogProps {
   open: boolean;
@@ -44,6 +63,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   const [pathaoStores, setPathaoStores] = useState<PathaoStore[]>([]);
   const [selectedPathaoStore, setSelectedPathaoStore] = useState("");
   const [cities, setCities] = useState<City[]>([]);
+  const [allZones, setAllZones] = useState<Zone[]>([]);
   const [zonesMap, setZonesMap] = useState<Record<number, Zone[]>>({});
   const [areasMap, setAreasMap] = useState<Record<number, Area[]>>({});
   const [orderOverrides, setOrderOverrides] = useState<Record<string, {
@@ -56,12 +76,14 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const [{ data: stores }, { data: citiesData }] = await Promise.all([
+      const [{ data: stores }, { data: citiesData }, { data: zonesData }] = await Promise.all([
         supabase.from("pathao_stores").select("pathao_store_id, store_name").eq("is_active", true),
         supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
+        supabase.from("pathao_zones").select("zone_id, zone_name, city_id").order("zone_name"),
       ]);
       setPathaoStores(stores || []);
       setCities(citiesData || []);
+      setAllZones(zonesData || []);
       if (stores?.length && !selectedPathaoStore) {
         setSelectedPathaoStore(String(stores[0].pathao_store_id));
       }
@@ -70,9 +92,47 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
 
   const normalizeLocationText = useCallback((value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, ""), []);
 
-  const buildLocationCandidates = useCallback((...values: Array<string | null | undefined>) => {
+  const getEditDistance = useCallback((a: string, b: string): number => {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+
+    const matrix: number[][] = [];
+    for (let i = 0; i <= a.length; i += 1) matrix[i] = [i];
+    for (let j = 0; j <= b.length; j += 1) matrix[0][j] = j;
+
+    for (let i = 1; i <= a.length; i += 1) {
+      for (let j = 1; j <= b.length; j += 1) {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+        );
+      }
+    }
+
+    return matrix[a.length][b.length];
+  }, []);
+
+  const expandLocationAliases = useCallback((value: string) => {
+    const normalized = normalizeLocationText(value);
+    const variants = new Set<string>();
+    if (!normalized) return variants;
+
+    variants.add(normalized);
+
+    for (const group of LOCATION_ALIAS_GROUPS) {
+      if (group.includes(normalized)) {
+        group.forEach((alias) => variants.add(alias));
+      }
+    }
+
+    return variants;
+  }, [normalizeLocationText]);
+
+  const buildLocationCandidates = useCallback((values: Array<string | null | undefined>, options?: { includeWords?: boolean }) => {
     const candidates: string[] = [];
     const seen = new Set<string>();
+    const includeWords = options?.includeWords ?? true;
 
     const addCandidate = (value?: string | null) => {
       const trimmed = value?.trim();
@@ -105,15 +165,86 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           ),
         );
 
-        // Also try individual words (for addresses like "dhaka jatrabari" without separators)
-        for (const word of trimmed.split(/\s+/)) {
-          if (word.length >= 3) addCandidate(word);
+        if (includeWords) {
+          for (const word of trimmed.split(/\s+/)) {
+            const normalizedWord = normalizeLocationText(word);
+            if (
+              normalizedWord.length >= 3
+              && !LOCATION_WORD_BLACKLIST.has(normalizedWord)
+              && !/^\d+$/.test(normalizedWord)
+            ) {
+              addCandidate(word);
+            }
+          }
         }
       }
     }
 
     return candidates;
   }, [normalizeLocationText]);
+
+  const getStrictLocationMatch = useCallback(<T,>(
+    items: T[],
+    getText: (item: T) => string,
+    queries: string | string[],
+  ): T | undefined => {
+    const queryList = (Array.isArray(queries) ? queries : [queries]).filter(Boolean);
+
+    const ranked = items
+      .map((item) => {
+        const itemText = getText(item);
+        const itemVariants = expandLocationAliases(itemText);
+        let bestScore: number | null = null;
+
+        for (const rawQuery of queryList) {
+          const trimmedQuery = rawQuery.trim();
+          if (!trimmedQuery) continue;
+
+          const queryVariants = expandLocationAliases(trimmedQuery);
+
+          for (const itemValue of itemVariants) {
+            for (const queryValue of queryVariants) {
+              if (!queryValue || queryValue.length < 3) continue;
+
+              let score: number | null = null;
+
+              if (itemValue === queryValue) {
+                score = 0;
+              } else if (
+                Math.min(itemValue.length, queryValue.length) >= 5
+                && (itemValue.startsWith(queryValue) || queryValue.startsWith(itemValue))
+              ) {
+                score = 1;
+              } else if (
+                Math.min(itemValue.length, queryValue.length) >= 5
+                && (itemValue.includes(queryValue) || queryValue.includes(itemValue))
+              ) {
+                score = 2;
+              } else {
+                const distance = getEditDistance(itemValue, queryValue);
+                const threshold = Math.max(1, Math.floor(Math.max(itemValue.length, queryValue.length) * 0.18));
+                if (Math.min(itemValue.length, queryValue.length) >= 5 && distance <= threshold) {
+                  score = 10 + distance;
+                }
+              }
+
+              if (score !== null && (bestScore === null || score < bestScore)) {
+                bestScore = score;
+              }
+            }
+          }
+        }
+
+        return bestScore === null ? null : { item, score: bestScore, text: normalizeLocationText(itemText) };
+      })
+      .filter((entry): entry is { item: T; score: number; text: string } => entry !== null)
+      .sort((a, b) => a.score - b.score || a.text.localeCompare(b.text));
+
+    if (ranked.length === 0) return undefined;
+    if (ranked.length > 1 && ranked[0].score === ranked[1].score) return undefined;
+
+    return ranked[0].item;
+  }, [expandLocationAliases, getEditDistance, normalizeLocationText]);
 
   const fuzzyMatch = useCallback(<T,>(items: T[], getText: (item: T) => string, queries: string | string[]): T | undefined => {
     const queryList = Array.isArray(queries) ? queries : [queries];
@@ -137,32 +268,11 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
       });
       if (best) return best;
 
-      const distance = (a: string, b: string): number => {
-        if (a.length === 0) return b.length;
-        if (b.length === 0) return a.length;
-
-        const matrix: number[][] = [];
-        for (let i = 0; i <= a.length; i += 1) matrix[i] = [i];
-        for (let j = 0; j <= b.length; j += 1) matrix[0][j] = j;
-
-        for (let i = 1; i <= a.length; i += 1) {
-          for (let j = 1; j <= b.length; j += 1) {
-            matrix[i][j] = Math.min(
-              matrix[i - 1][j] + 1,
-              matrix[i][j - 1] + 1,
-              matrix[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
-            );
-          }
-        }
-
-        return matrix[a.length][b.length];
-      };
-
       let minDistance = Infinity;
       let closest: T | undefined;
 
       for (const item of items) {
-        const currentDistance = distance(q, normalizeLocationText(getText(item)));
+        const currentDistance = getEditDistance(q, normalizeLocationText(getText(item)));
         const threshold = Math.max(2, Math.floor(q.length * 0.35));
         if (currentDistance < minDistance && currentDistance <= threshold) {
           minDistance = currentDistance;
@@ -174,14 +284,14 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     }
 
     return undefined;
-  }, [normalizeLocationText]);
+  }, [getEditDistance, normalizeLocationText]);
 
   const fetchZones = useCallback(async (cityId: number): Promise<Zone[]> => {
     if (zonesMap[cityId]?.length) return zonesMap[cityId];
 
     const { data: cached } = await supabase
       .from("pathao_zones")
-      .select("zone_id, zone_name")
+      .select("zone_id, zone_name, city_id")
       .eq("city_id", cityId)
       .order("zone_name");
 
@@ -191,7 +301,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     }
 
     const { data } = await supabase.functions.invoke("pathao-courier", { body: { action: "get_zones", city_id: cityId } });
-    const zones = (data?.data || []).map((zone: any) => ({ zone_id: zone.zone_id, zone_name: zone.zone_name }));
+    const zones = (data?.data || []).map((zone: any) => ({ zone_id: zone.zone_id, zone_name: zone.zone_name, city_id: zone.city_id ?? cityId }));
     setZonesMap((prev) => ({ ...prev, [cityId]: zones }));
     return zones;
   }, [zonesMap]);
@@ -236,16 +346,25 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           recipient_address: order.customers?.address || "",
         };
 
-        const cityCandidates = buildLocationCandidates(order.customers?.city, base.recipient_address);
+        const cityCandidates = buildLocationCandidates([order.customers?.city, base.recipient_address], { includeWords: false });
+        const zoneCandidates = buildLocationCandidates([order.customers?.zone, order.customers?.area, base.recipient_address]);
+
+        if (!base.zone_id && allZones.length > 0) {
+          const globalZoneMatch = getStrictLocationMatch(allZones, (zone) => zone.zone_name, zoneCandidates);
+          if (globalZoneMatch) {
+            base.zone_id = String(globalZoneMatch.zone_id);
+            base.city_id = String(globalZoneMatch.city_id);
+          }
+        }
+
         if (!base.city_id) {
-          const cityMatch = fuzzyMatch(cities, (city) => city.city_name, cityCandidates);
+          const cityMatch = getStrictLocationMatch(cities, (city) => city.city_name, cityCandidates);
           if (cityMatch) {
             base.city_id = String(cityMatch.city_id);
           }
         }
 
         const zones = base.city_id ? await fetchZones(Number(base.city_id)) : [];
-        const zoneCandidates = buildLocationCandidates(order.customers?.zone, base.recipient_address);
         if (!base.zone_id && zones.length > 0) {
           const zoneMatch = fuzzyMatch(zones, (zone) => zone.zone_name, zoneCandidates);
           if (zoneMatch) {
@@ -254,7 +373,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         }
 
         const areas = base.zone_id ? await fetchAreas(Number(base.zone_id)) : [];
-        const areaCandidates = buildLocationCandidates(order.customers?.area, base.recipient_address);
+        const areaCandidates = buildLocationCandidates([order.customers?.area, base.recipient_address]);
         if (!base.area_id && areas.length > 0) {
           const areaMatch = fuzzyMatch(areas, (area) => area.area_name, areaCandidates);
           if (areaMatch) {
@@ -269,7 +388,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     };
 
     void autoFill();
-  }, [open, orders, cities, buildLocationCandidates, fetchAreas, fetchZones, fuzzyMatch]);
+  }, [open, orders, cities, allZones, buildLocationCandidates, fetchAreas, fetchZones, fuzzyMatch, getStrictLocationMatch]);
 
   const updateOverride = (orderId: string, field: string, value: string) => {
     setOrderOverrides((prev) => ({ ...prev, [orderId]: { ...prev[orderId], [field]: value } }));
