@@ -129,13 +129,13 @@ const Orders = () => {
         case "ready":
           return o.status === "ready_to_ship" && !o.consignment_id;
         case "pickup_pending":
-          return !!o.consignment_id && o.tracking_status === "Pickup Pending";
+          return !!o.consignment_id && ["Pending", "Pickup Pending"].includes(o.tracking_status || "");
         case "in_transit":
-          return !!o.consignment_id && ["Picked", "In Transit"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["Picked", "Assigned for Pickup", "Picked Up", "At Sorting Hub", "In Transit", "Out for Delivery"].includes(o.tracking_status || "");
         case "delivered":
           return !!o.consignment_id && ["Delivered", "Partial Delivered"].includes(o.tracking_status || "");
         case "on_hold":
-          return !!o.consignment_id && ["On Hold", "Return", "Returned"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["On Hold", "Return", "Returned", "Exchange", "Cancelled", "Payment Invoice"].includes(o.tracking_status || "");
         default:
           return true;
       }
