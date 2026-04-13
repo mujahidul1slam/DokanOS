@@ -135,7 +135,7 @@ const Orders = () => {
         case "delivered":
           return !!o.consignment_id && ["Delivered", "Partial Delivered"].includes(o.tracking_status || "");
         case "on_hold":
-          return !!o.consignment_id && ["On Hold", "Return", "Returned", "Exchange", "Cancelled", "Payment Invoice"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["On Hold", "Return", "Returned", "Exchange", "Cancelled", "Pickup Cancel", "Payment Invoice"].includes(o.tracking_status || "");
         default:
           return true;
       }
