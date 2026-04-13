@@ -48,15 +48,22 @@ Deno.serve(async (req) => {
       .not("status", "in", '("delivered","completed","cancelled","returned")');
 
     const statusMap: Record<string, string> = {
-      "Pending": "processing",
+      "Pending": "shipped",
       "Pickup Pending": "shipped",
+      "Assigned for Pickup": "shipped",
       "Picked": "shipped",
+      "Picked Up": "shipped",
+      "At Sorting Hub": "shipped",
       "In Transit": "shipped",
+      "Out for Delivery": "shipped",
       "Delivered": "delivered",
       "Partial Delivered": "delivered",
       "Return": "returned",
       "Returned": "returned",
       "Cancelled": "cancelled",
+      "On Hold": "processing",
+      "Exchange": "processing",
+      "Payment Invoice": "delivered",
     };
 
     let updated = 0;

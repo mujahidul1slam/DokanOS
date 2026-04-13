@@ -292,10 +292,14 @@ Deno.serve(async (req) => {
         // Update the order in DB if we can match it
         if (consignment_id) {
           const statusMap: Record<string, string> = {
-            "Pending": "processing",
+            "Pending": "shipped",
             "Pickup Pending": "shipped",
+            "Assigned for Pickup": "shipped",
             "Picked": "shipped",
+            "Picked Up": "shipped",
+            "At Sorting Hub": "shipped",
             "In Transit": "shipped",
+            "Out for Delivery": "shipped",
             "Delivered": "delivered",
             "Partial Delivered": "delivered",
             "Return": "returned",
@@ -303,6 +307,7 @@ Deno.serve(async (req) => {
             "Exchange": "processing",
             "On Hold": "processing",
             "Cancelled": "cancelled",
+            "Payment Invoice": "delivered",
           };
 
           const mappedStatus = statusMap[order_status] || undefined;
@@ -344,15 +349,22 @@ Deno.serve(async (req) => {
             const order_status = info.order_status || info.status;
 
             const statusMap: Record<string, string> = {
-              "Pending": "processing",
+              "Pending": "shipped",
               "Pickup Pending": "shipped",
+              "Assigned for Pickup": "shipped",
               "Picked": "shipped",
+              "Picked Up": "shipped",
+              "At Sorting Hub": "shipped",
               "In Transit": "shipped",
+              "Out for Delivery": "shipped",
               "Delivered": "delivered",
               "Partial Delivered": "delivered",
               "Return": "returned",
               "Returned": "returned",
               "Cancelled": "cancelled",
+              "On Hold": "processing",
+              "Exchange": "processing",
+              "Payment Invoice": "delivered",
             };
 
             const mappedStatus = statusMap[order_status] || undefined;
