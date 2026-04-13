@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const PATHAO_BASE = "https://hermes-api.p-stageenv.xyz";
+const PATHAO_BASE = "https://api-hermes.pathao.com";
 
 async function getAccessToken(): Promise<string> {
   const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/issue-token`, {
