@@ -151,6 +151,53 @@ export type Database = {
           },
         ]
       }
+      held_carts: {
+        Row: {
+          cart_data: Json
+          created_at: string
+          customer_name: string | null
+          customer_phone: string | null
+          held_by: string | null
+          id: string
+          label: string
+          notes: string | null
+          store_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          cart_data?: Json
+          created_at?: string
+          customer_name?: string | null
+          customer_phone?: string | null
+          held_by?: string | null
+          id?: string
+          label?: string
+          notes?: string | null
+          store_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cart_data?: Json
+          created_at?: string
+          customer_name?: string | null
+          customer_phone?: string | null
+          held_by?: string | null
+          id?: string
+          label?: string
+          notes?: string | null
+          store_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "held_carts_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invitations: {
         Row: {
           accepted_at: string | null
@@ -223,6 +270,7 @@ export type Database = {
       order_items: {
         Row: {
           created_at: string
+          discount: number | null
           id: string
           line_total: number
           order_id: string
@@ -233,6 +281,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          discount?: number | null
           id?: string
           line_total?: number
           order_id: string
@@ -243,6 +292,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          discount?: number | null
           id?: string
           line_total?: number
           order_id?: string
@@ -361,12 +411,15 @@ export type Database = {
           pathao_store_id: number | null
           payment_method: string | null
           payment_status: string
+          salesperson_id: string | null
+          salesperson_name: string | null
           shipping_cost: number | null
           source: string
           special_instruction: string | null
           status: string
           store_id: string | null
           subtotal: number
+          tax_amount: number | null
           total: number
           tracking_status: string | null
           updated_at: string
@@ -391,12 +444,15 @@ export type Database = {
           pathao_store_id?: number | null
           payment_method?: string | null
           payment_status?: string
+          salesperson_id?: string | null
+          salesperson_name?: string | null
           shipping_cost?: number | null
           source?: string
           special_instruction?: string | null
           status?: string
           store_id?: string | null
           subtotal?: number
+          tax_amount?: number | null
           total?: number
           tracking_status?: string | null
           updated_at?: string
@@ -421,12 +477,15 @@ export type Database = {
           pathao_store_id?: number | null
           payment_method?: string | null
           payment_status?: string
+          salesperson_id?: string | null
+          salesperson_name?: string | null
           shipping_cost?: number | null
           source?: string
           special_instruction?: string | null
           status?: string
           store_id?: string | null
           subtotal?: number
+          tax_amount?: number | null
           total?: number
           tracking_status?: string | null
           updated_at?: string
@@ -558,6 +617,137 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "pathao_cities"
             referencedColumns: ["city_id"]
+          },
+        ]
+      }
+      pos_returns: {
+        Row: {
+          created_at: string
+          id: string
+          items: Json
+          notes: string | null
+          order_id: string | null
+          processed_by: string | null
+          reason: string | null
+          refund_amount: number
+          refund_method: string
+          restock: boolean
+          return_number: string
+          store_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          items?: Json
+          notes?: string | null
+          order_id?: string | null
+          processed_by?: string | null
+          reason?: string | null
+          refund_amount?: number
+          refund_method?: string
+          restock?: boolean
+          return_number: string
+          store_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          items?: Json
+          notes?: string | null
+          order_id?: string | null
+          processed_by?: string | null
+          reason?: string | null
+          refund_amount?: number
+          refund_method?: string
+          restock?: boolean
+          return_number?: string
+          store_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_returns_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_returns_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pos_shifts: {
+        Row: {
+          bank_sales: number
+          bkash_sales: number
+          card_sales: number
+          cash_sales: number
+          closed_at: string | null
+          closing_balance: number | null
+          expected_balance: number | null
+          id: string
+          notes: string | null
+          opened_at: string
+          opening_float: number
+          status: string
+          store_id: string | null
+          total_returns: number
+          total_sales: number
+          transaction_count: number
+          user_email: string | null
+          user_id: string
+        }
+        Insert: {
+          bank_sales?: number
+          bkash_sales?: number
+          card_sales?: number
+          cash_sales?: number
+          closed_at?: string | null
+          closing_balance?: number | null
+          expected_balance?: number | null
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          opening_float?: number
+          status?: string
+          store_id?: string | null
+          total_returns?: number
+          total_sales?: number
+          transaction_count?: number
+          user_email?: string | null
+          user_id: string
+        }
+        Update: {
+          bank_sales?: number
+          bkash_sales?: number
+          card_sales?: number
+          cash_sales?: number
+          closed_at?: string | null
+          closing_balance?: number | null
+          expected_balance?: number | null
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          opening_float?: number
+          status?: string
+          store_id?: string | null
+          total_returns?: number
+          total_sales?: number
+          transaction_count?: number
+          user_email?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_shifts_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
           },
         ]
       }

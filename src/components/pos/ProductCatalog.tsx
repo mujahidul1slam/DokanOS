@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, RefObject } from "react";
 import { Search, ScanBarcode, Plus, Package, SlidersHorizontal, ArrowUpDown, Eye, EyeOff, Tag, Store as StoreIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,10 @@ interface Props {
   stores: { id: string; name: string }[];
   onSelectProduct: (p: Product) => void;
   onAddCustomItem: () => void;
+  searchInputRef?: RefObject<HTMLInputElement>;
 }
 
-const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCustomItem }: Props) => {
+const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCustomItem, searchInputRef }: Props) => {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"name" | "newest" | "price_asc" | "price_desc">("name");
@@ -38,7 +39,6 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
           ((p as any).barcode || "").toLowerCase().includes(q)
       );
     }
-    // Sort
     switch (sortBy) {
       case "newest":
         list = [...list].sort((a, b) => ((b as any).created_at || "").localeCompare((a as any).created_at || ""));
@@ -59,25 +59,24 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
 
   return (
     <div className="flex flex-col h-full min-w-0">
-      {/* Top Bar */}
       <div className="flex items-center gap-3 mb-3">
         <div className="relative flex-1">
           <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
+            ref={searchInputRef as any}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Scan barcode or search products..."
+            placeholder="Scan barcode or search products... (F1)"
             className="pl-11 h-12 text-base bg-secondary border-border"
+            data-barcode-enabled="true"
           />
         </div>
         <Button onClick={onAddCustomItem} className="h-12 gap-2 px-5 shrink-0">
-          <Plus className="h-4 w-4" /> Custom Item
+          <Plus className="h-4 w-4" /> Custom
         </Button>
       </div>
 
-      {/* Filters Row */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        {/* Category Dropdown */}
         <Select value={activeCategory} onValueChange={setActiveCategory}>
           <SelectTrigger className="h-9 w-44 bg-secondary text-sm">
             <SelectValue placeholder="All Categories" />
@@ -90,7 +89,6 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
           </SelectContent>
         </Select>
 
-        {/* Sort Dropdown */}
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
           <SelectTrigger className="h-9 w-40 bg-secondary text-sm">
             <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
@@ -104,7 +102,6 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
           </SelectContent>
         </Select>
 
-        {/* More Filters */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="h-9 gap-1.5 bg-secondary border-border">
@@ -117,34 +114,21 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52">
             <DropdownMenuLabel className="text-xs">Visibility</DropdownMenuLabel>
-            <DropdownMenuCheckboxItem
-              checked={hideOutOfStock}
-              onCheckedChange={setHideOutOfStock}
-            >
+            <DropdownMenuCheckboxItem checked={hideOutOfStock} onCheckedChange={setHideOutOfStock}>
               <EyeOff className="h-3.5 w-3.5 mr-2" /> Hide Out of Stock
             </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={onSaleOnly}
-              onCheckedChange={setOnSaleOnly}
-            >
+            <DropdownMenuCheckboxItem checked={onSaleOnly} onCheckedChange={setOnSaleOnly}>
               <Tag className="h-3.5 w-3.5 mr-2" /> On Sale Only
             </DropdownMenuCheckboxItem>
             {stores.length > 0 && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel className="text-xs">Store</DropdownMenuLabel>
-                <DropdownMenuCheckboxItem
-                  checked={selectedStore === "all"}
-                  onCheckedChange={() => setSelectedStore("all")}
-                >
+                <DropdownMenuCheckboxItem checked={selectedStore === "all"} onCheckedChange={() => setSelectedStore("all")}>
                   All Stores
                 </DropdownMenuCheckboxItem>
                 {stores.map((s) => (
-                  <DropdownMenuCheckboxItem
-                    key={s.id}
-                    checked={selectedStore === s.id}
-                    onCheckedChange={() => setSelectedStore(selectedStore === s.id ? "all" : s.id)}
-                  >
+                  <DropdownMenuCheckboxItem key={s.id} checked={selectedStore === s.id} onCheckedChange={() => setSelectedStore(selectedStore === s.id ? "all" : s.id)}>
                     {s.name}
                   </DropdownMenuCheckboxItem>
                 ))}
@@ -153,7 +137,6 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Quick stock toggle */}
         <Button
           variant={hideOutOfStock ? "default" : "outline"}
           size="sm"
@@ -165,7 +148,6 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
         </Button>
       </div>
 
-      {/* Product Grid */}
       <ScrollArea className="flex-1">
         <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 pr-3">
           {filtered.map((p) => (
@@ -176,12 +158,7 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
             >
               <div className="relative aspect-square bg-secondary flex items-center justify-center overflow-hidden">
                 {p.image_url ? (
-                  <img
-                    src={p.image_url}
-                    alt={p.name}
-                    className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                    loading="lazy"
-                  />
+                  <img src={p.image_url} alt={p.name} className="h-full w-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
                 ) : (
                   <Package className="h-10 w-10 text-muted-foreground/40" />
                 )}

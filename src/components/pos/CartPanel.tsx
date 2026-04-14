@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import { Plus, Printer, FileText, Trash2, Minus, CreditCard, Banknote, Smartphone, Building2, Truck, Store, Search, UserPlus, ShoppingBag, Ruler, X, Check, User } from "lucide-react";
+import { useState } from "react";
+import { Plus, Printer, FileText, Trash2, Minus, CreditCard, Banknote, Smartphone, Building2, Truck, Store, Search, ShoppingBag, Ruler, X, Check, User, Percent, Edit3 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { printInvoice } from "./InvoicePrint";
 import type { Cart, CartItem, Payment, CustomerData } from "./types";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
@@ -33,6 +34,8 @@ const methodIcons: Record<string, React.ReactNode> = {
   bank: <Building2 className="h-4 w-4" />,
 };
 
+const QUICK_CASH = [500, 1000, 2000, 5000];
+
 const CartPanel = ({
   carts, activeCartId, onSetActiveCart, onAddCart, onRemoveCart,
   onUpdateCart, onUpdateItem, onRemoveItem, onCompleteOrder,
@@ -46,16 +49,30 @@ const CartPanel = ({
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [completedOrderNumber, setCompletedOrderNumber] = useState("");
   const [completedCartSnapshot, setCompletedCartSnapshot] = useState<Cart | null>(null);
-  // Inline new customer fields
   const [newCustName, setNewCustName] = useState("");
   const [newCustPhone, setNewCustPhone] = useState("");
   const [newCustAddress, setNewCustAddress] = useState("");
+  const [editingItemPrice, setEditingItemPrice] = useState<string | null>(null);
 
   const cart = carts.find((c) => c.id === activeCartId) || carts[0];
   if (!cart) return null;
 
-  const subtotal = cart.items.reduce((s, i) => s + i.price * i.qty, 0);
-  const total = subtotal - cart.discount + (cart.fulfillment === "delivery" ? cart.shippingFee : 0);
+  // Calculate totals with per-item discounts
+  const subtotal = cart.items.reduce((s, i) => {
+    const lineTotal = i.price * i.qty;
+    const itemDiscount = i.discountType === "percent"
+      ? lineTotal * (i.discountValue || 0) / 100
+      : (i.discountValue || 0);
+    return s + lineTotal - itemDiscount;
+  }, 0);
+
+  const cartDiscount = cart.discountType === "percent"
+    ? subtotal * cart.discount / 100
+    : cart.discount;
+
+  const afterDiscount = subtotal - cartDiscount;
+  const taxAmount = afterDiscount * cart.taxRate / 100;
+  const total = afterDiscount + taxAmount + (cart.fulfillment === "delivery" ? cart.shippingFee : 0);
   const totalPaid = cart.payments.reduce((s, p) => s + p.amount, 0);
   const balance = total - totalPaid;
 
@@ -67,12 +84,22 @@ const CartPanel = ({
     setPayAmount("");
   };
 
+  const addQuickCash = (amount: number) => {
+    const p: Payment = { id: crypto.randomUUID(), method: "cash", amount };
+    onUpdateCart(cart.id, { payments: [...cart.payments, p] });
+  };
+
+  const addExactCash = () => {
+    if (balance <= 0) return;
+    const p: Payment = { id: crypto.randomUUID(), method: "cash", amount: Math.ceil(balance) };
+    onUpdateCart(cart.id, { payments: [...cart.payments, p] });
+  };
+
   const removePayment = (pid: string) => {
     onUpdateCart(cart.id, { payments: cart.payments.filter((p) => p.id !== pid) });
   };
 
   const handleComplete = async () => {
-    // If no customer selected but inline fields filled, set as new customer
     if (!cart.customer && newCustName) {
       const custData: CustomerData = {
         name: newCustName,
@@ -120,9 +147,17 @@ const CartPanel = ({
     setShowPrintModal(false);
   };
 
+  const getItemLineTotal = (item: CartItem) => {
+    const lineTotal = item.price * item.qty;
+    const itemDiscount = item.discountType === "percent"
+      ? lineTotal * (item.discountValue || 0) / 100
+      : (item.discountValue || 0);
+    return lineTotal - itemDiscount;
+  };
+
   return (
     <>
-      <div className="flex flex-col h-full border-l border-border bg-card">
+      <div className="flex flex-col h-full bg-card">
         {/* Multi-Cart Tabs */}
         <div className="border-b border-border px-3 pt-3">
           <div className="flex items-center gap-1 overflow-x-auto pb-2">
@@ -160,9 +195,8 @@ const CartPanel = ({
           </div>
         </div>
 
-        {/* Customer Info Section */}
+        {/* Customer Info */}
         <div className="border-b border-border p-3 space-y-3">
-          {/* Name & Phone with search */}
           <div className="grid grid-cols-2 gap-2">
             <div className="relative">
               <Input
@@ -195,24 +229,20 @@ const CartPanel = ({
                 </div>
               )}
             </div>
-            <div className="relative">
-              <Input
-                value={newCustPhone}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setNewCustPhone(val);
-                  if (val.length >= 3) {
-                    onSearchCustomers(val);
-                    setShowCustomerDropdown(true);
-                  }
-                }}
-                placeholder="Phone number *"
-                className="h-9 text-sm bg-secondary"
-              />
-            </div>
+            <Input
+              value={newCustPhone}
+              onChange={(e) => {
+                setNewCustPhone(e.target.value);
+                if (e.target.value.length >= 3) {
+                  onSearchCustomers(e.target.value);
+                  setShowCustomerDropdown(true);
+                }
+              }}
+              placeholder="Phone number *"
+              className="h-9 text-sm bg-secondary"
+            />
           </div>
 
-          {/* Selected customer indicator */}
           {cart.customer && (
             <div className="flex items-center justify-between rounded-md bg-primary/10 border border-primary/20 px-3 py-1.5">
               <div className="flex items-center gap-2 text-sm">
@@ -226,12 +256,11 @@ const CartPanel = ({
             </div>
           )}
 
-          {/* Fulfillment toggle - 3 options */}
           <div className="flex rounded-md border border-border overflow-hidden">
             {([
               { key: "walkin" as const, label: "Walk-In", icon: User },
-              { key: "pickup" as const, label: "Shop Pickup", icon: Store },
-              { key: "delivery" as const, label: "Home Delivery", icon: Truck },
+              { key: "pickup" as const, label: "Pickup", icon: Store },
+              { key: "delivery" as const, label: "Delivery", icon: Truck },
             ]).map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -245,21 +274,10 @@ const CartPanel = ({
             ))}
           </div>
 
-          {/* Address - only shown & mandatory for Home Delivery */}
           {cart.fulfillment === "delivery" && (
             <div className="space-y-2">
-              <Input
-                value={newCustAddress}
-                onChange={(e) => setNewCustAddress(e.target.value)}
-                placeholder="Shipping address *"
-                className="h-9 text-sm bg-secondary"
-              />
-              <Input
-                value={cart.pathaoZone}
-                onChange={(e) => onUpdateCart(cart.id, { pathaoZone: e.target.value })}
-                placeholder="Pathao delivery zone..."
-                className="h-9 text-sm bg-secondary"
-              />
+              <Input value={newCustAddress} onChange={(e) => setNewCustAddress(e.target.value)} placeholder="Shipping address *" className="h-9 text-sm bg-secondary" />
+              <Input value={cart.pathaoZone} onChange={(e) => onUpdateCart(cart.id, { pathaoZone: e.target.value })} placeholder="Pathao zone..." className="h-9 text-sm bg-secondary" />
             </div>
           )}
         </div>
@@ -271,6 +289,7 @@ const CartPanel = ({
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <ShoppingBag className="h-10 w-10 mb-2 opacity-30" />
                 <p className="text-sm">Cart is empty</p>
+                <p className="text-xs mt-1">Scan a barcode or click a product</p>
               </div>
             ) : (
               cart.items.map((item) => (
@@ -283,34 +302,82 @@ const CartPanel = ({
                       )}
                       {item.customTailoring && (
                         <Badge variant="outline" className="mt-1 text-[10px] gap-1">
-                          <Ruler className="h-3 w-3" /> Custom Tailoring
+                          <Ruler className="h-3 w-3" /> Custom
                         </Badge>
                       )}
-                      {item.isCustomItem && (
-                        <Badge variant="outline" className="mt-1 text-[10px]">Custom Item</Badge>
-                      )}
                     </div>
-                    <button onClick={() => onRemoveItem(cart.id, item.uid)} className="text-muted-foreground hover:text-destructive p-1">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {/* Inline price edit */}
+                      <Popover open={editingItemPrice === item.uid} onOpenChange={(v) => setEditingItemPrice(v ? item.uid : null)}>
+                        <PopoverTrigger asChild>
+                          <button className="text-muted-foreground hover:text-foreground p-1" title="Edit price">
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-52 p-3 space-y-2" align="end">
+                          <Label className="text-xs">Unit Price (৳)</Label>
+                          <Input
+                            type="number"
+                            defaultValue={item.price}
+                            onChange={(e) => {
+                              const newPrice = parseFloat(e.target.value);
+                              if (newPrice > 0) {
+                                onUpdateItem(cart.id, item.uid, { price: newPrice, originalPrice: item.originalPrice || item.price });
+                              }
+                            }}
+                            className="h-8 text-sm bg-secondary"
+                          />
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <Label className="text-xs">Discount</Label>
+                              <Input
+                                type="number"
+                                value={item.discountValue || ""}
+                                onChange={(e) => onUpdateItem(cart.id, item.uid, { discountValue: parseFloat(e.target.value) || 0 })}
+                                placeholder="0"
+                                className="h-8 text-sm bg-secondary"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Type</Label>
+                              <Select
+                                value={item.discountType || "flat"}
+                                onValueChange={(v) => onUpdateItem(cart.id, item.uid, { discountType: v as "flat" | "percent" })}
+                              >
+                                <SelectTrigger className="h-8 w-16 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="flat">৳</SelectItem>
+                                  <SelectItem value="percent">%</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          {item.originalPrice && item.price !== item.originalPrice && (
+                            <p className="text-[10px] text-muted-foreground">Original: ৳{item.originalPrice.toLocaleString()}</p>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+                      <button onClick={() => onRemoveItem(cart.id, item.uid)} className="text-muted-foreground hover:text-destructive p-1">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between mt-2">
                     <div className="flex items-center border border-border rounded-md bg-card">
-                      <button
-                        onClick={() => onUpdateItem(cart.id, item.uid, { qty: Math.max(1, item.qty - 1) })}
-                        className="px-2 py-1 text-xs hover:bg-muted"
-                      >
+                      <button onClick={() => onUpdateItem(cart.id, item.uid, { qty: Math.max(1, item.qty - 1) })} className="px-2 py-1 text-xs hover:bg-muted">
                         <Minus className="h-3 w-3" />
                       </button>
                       <span className="px-2.5 py-1 text-xs font-medium border-x border-border min-w-[1.5rem] text-center">{item.qty}</span>
-                      <button
-                        onClick={() => onUpdateItem(cart.id, item.uid, { qty: item.qty + 1 })}
-                        className="px-2 py-1 text-xs hover:bg-muted"
-                      >
+                      <button onClick={() => onUpdateItem(cart.id, item.uid, { qty: item.qty + 1 })} className="px-2 py-1 text-xs hover:bg-muted">
                         <Plus className="h-3 w-3" />
                       </button>
                     </div>
-                    <p className="text-sm font-semibold font-heading">৳{(item.price * item.qty).toLocaleString()}</p>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold font-heading">৳{getItemLineTotal(item).toLocaleString()}</p>
+                      {(item.discountValue || 0) > 0 && (
+                        <p className="text-[10px] text-destructive">-{item.discountType === "percent" ? `${item.discountValue}%` : `৳${item.discountValue}`}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))
@@ -320,7 +387,6 @@ const CartPanel = ({
 
         {/* Checkout Section */}
         <div className="border-t border-border p-3 space-y-3">
-          {/* Financial Summary */}
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subtotal</span>
@@ -328,14 +394,53 @@ const CartPanel = ({
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">Discount</span>
+              <div className="flex items-center gap-1">
+                <Select
+                  value={cart.discountType}
+                  onValueChange={(v) => onUpdateCart(cart.id, { discountType: v as "flat" | "percent" })}
+                >
+                  <SelectTrigger className="h-7 w-14 text-xs bg-secondary border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="flat">৳</SelectItem>
+                    <SelectItem value="percent">%</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  value={cart.discount || ""}
+                  onChange={(e) => onUpdateCart(cart.id, { discount: parseFloat(e.target.value) || 0 })}
+                  placeholder="0"
+                  className="h-7 w-20 text-right text-sm bg-secondary"
+                />
+              </div>
+            </div>
+            {cartDiscount > 0 && cart.discountType === "percent" && (
+              <div className="flex justify-between text-xs text-destructive">
+                <span></span>
+                <span>-৳{cartDiscount.toLocaleString()}</span>
+              </div>
+            )}
+
+            {/* Tax */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Tax (%)</span>
               <Input
                 type="number"
-                value={cart.discount || ""}
-                onChange={(e) => onUpdateCart(cart.id, { discount: parseFloat(e.target.value) || 0 })}
+                value={cart.taxRate || ""}
+                onChange={(e) => onUpdateCart(cart.id, { taxRate: parseFloat(e.target.value) || 0 })}
                 placeholder="0"
-                className="h-7 w-24 text-right text-sm bg-secondary"
+                className="h-7 w-20 text-right text-sm bg-secondary"
               />
             </div>
+            {taxAmount > 0 && (
+              <div className="flex justify-between text-xs">
+                <span></span>
+                <span>+৳{taxAmount.toLocaleString()}</span>
+              </div>
+            )}
+
             {cart.fulfillment === "delivery" && (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Shipping</span>
@@ -352,6 +457,30 @@ const CartPanel = ({
               <span>Total</span>
               <span className="font-heading">৳{total.toLocaleString()}</span>
             </div>
+          </div>
+
+          {/* Quick Cash Buttons */}
+          <div className="flex gap-1.5 flex-wrap">
+            {QUICK_CASH.map((amt) => (
+              <Button
+                key={amt}
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs flex-1 min-w-0"
+                onClick={() => addQuickCash(amt)}
+              >
+                ৳{amt.toLocaleString()}
+              </Button>
+            ))}
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 text-xs flex-1 min-w-0"
+              onClick={addExactCash}
+              disabled={balance <= 0}
+            >
+              Exact
+            </Button>
           </div>
 
           {/* Split Payments */}
@@ -391,6 +520,7 @@ const CartPanel = ({
                 type="number"
                 value={payAmount}
                 onChange={(e) => setPayAmount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addPayment()}
                 placeholder="Amount"
                 className="h-9 flex-1 text-sm bg-secondary"
               />
@@ -399,7 +529,7 @@ const CartPanel = ({
               </Button>
             </div>
 
-            {/* Balance tracker */}
+            {/* Balance / Change */}
             <div className="grid grid-cols-3 gap-2 text-center text-xs">
               <div className="rounded-md bg-secondary p-2">
                 <p className="text-muted-foreground">Due</p>
@@ -407,11 +537,11 @@ const CartPanel = ({
               </div>
               <div className="rounded-md bg-secondary p-2">
                 <p className="text-muted-foreground">Paid</p>
-                <p className="font-semibold font-heading text-sm text-green-400">৳{totalPaid.toLocaleString()}</p>
+                <p className="font-semibold font-heading text-sm text-primary">৳{totalPaid.toLocaleString()}</p>
               </div>
               <div className="rounded-md bg-secondary p-2">
                 <p className="text-muted-foreground">{balance > 0 ? "Balance" : "Change"}</p>
-                <p className={`font-semibold font-heading text-sm ${balance > 0 ? "text-orange-400" : "text-green-400"}`}>
+                <p className={`font-semibold font-heading text-sm ${balance > 0 ? "text-destructive" : "text-primary"}`}>
                   ৳{Math.abs(balance).toLocaleString()}
                 </p>
               </div>
@@ -426,14 +556,15 @@ const CartPanel = ({
             className="text-sm bg-secondary min-h-[40px] h-10"
           />
 
-          {/* Action button */}
+          {/* Complete */}
           <Button
             onClick={handleComplete}
-            disabled={cart.items.length === 0 || (balance > 0)}
+            disabled={cart.items.length === 0 || balance > 0}
             className="w-full h-14 text-lg font-semibold gap-2"
           >
             <Check className="h-5 w-5" />
-            Complete Order — ৳{total.toLocaleString()}
+            Complete — ৳{total.toLocaleString()}
+            {balance < 0 && <span className="text-sm opacity-80">(Change: ৳{Math.abs(balance).toLocaleString()})</span>}
           </Button>
         </div>
       </div>
@@ -445,7 +576,7 @@ const CartPanel = ({
             <DialogTitle className="font-heading text-center">Order Completed! 🎉</DialogTitle>
             <DialogDescription className="text-center">
               {completedOrderNumber && <span className="font-mono text-xs block mb-1">{completedOrderNumber}</span>}
-              Print a receipt for the customer?
+              Print a receipt?
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 pt-2">
@@ -455,7 +586,7 @@ const CartPanel = ({
             >
               <Printer className="h-10 w-10 text-primary" />
               <div className="text-center">
-                <p className="text-sm font-medium">Thermal Receipt</p>
+                <p className="text-sm font-medium">Thermal</p>
                 <p className="text-xs text-muted-foreground">80mm</p>
               </div>
             </button>
