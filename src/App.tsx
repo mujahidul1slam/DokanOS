@@ -84,6 +84,7 @@ const AppRoutes = () => {
           <RoleGuard allowedRoles={["admin"]}>
             <Analytics />
           </RoleGuard>
+        } />
         <Route path="/stores" element={
           <RoleGuard allowedRoles={["admin"]}>
             <Stores />
