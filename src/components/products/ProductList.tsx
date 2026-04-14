@@ -492,7 +492,10 @@ const ProductList = () => {
                       {p.image_url ? <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" /> : <ImageIcon className="h-4 w-4 text-muted-foreground" />}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-medium text-foreground truncate">{p.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-medium text-foreground truncate">{p.name}</p>
+                        {p.is_featured && <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 shrink-0" />}
+                      </div>
                       <p className="text-xs font-mono text-muted-foreground">{p.sku || "—"}</p>
                     </div>
                   </div>
