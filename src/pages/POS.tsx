@@ -4,6 +4,8 @@ import ProductCatalog from "@/components/pos/ProductCatalog";
 import VariationModal from "@/components/pos/VariationModal";
 import CartPanel from "@/components/pos/CartPanel";
 import CustomItemDialog from "@/components/pos/CustomItemDialog";
+import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
+import { useToast } from "@/hooks/use-toast";
 import type { Product, Cart, CartItem, CustomerData } from "@/components/pos/types";
 
 const createEmptyCart = (label: string): Cart => ({
@@ -26,6 +28,7 @@ const POS = () => {
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<CustomerData[]>([]);
+  const { toast } = useToast();
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showVariationModal, setShowVariationModal] = useState(false);
@@ -34,6 +37,68 @@ const POS = () => {
   const [carts, setCarts] = useState<Cart[]>([createEmptyCart("Cart 1")]);
   const [activeCartId, setActiveCartId] = useState(carts[0].id);
   const [cartCounter, setCartCounter] = useState(2);
+
+  // Barcode scanner support
+  useBarcodeScanner(useCallback(async (barcode: string) => {
+    // Search by barcode or SKU
+    const product = products.find(
+      (p) => (p as any).barcode === barcode || p.sku === barcode
+    );
+    if (product) {
+      // Check for variations
+      const { data: variations } = await supabase
+        .from("product_variations")
+        .select("id, barcode, sku")
+        .eq("product_id", product.id);
+
+      const matchingVariation = (variations || []).find(
+        (v: any) => v.barcode === barcode || v.sku === barcode
+      );
+
+      if (matchingVariation || (variations && variations.length > 0)) {
+        setSelectedProduct(product);
+        setShowVariationModal(true);
+      } else {
+        // Add directly to cart
+        addToCart({
+          uid: crypto.randomUUID(),
+          productId: product.id,
+          name: product.name,
+          price: Number(product.price),
+          qty: 1,
+          variationId: null,
+          variationLabel: null,
+          isCustomItem: false,
+        });
+        toast({ title: `Added: ${product.name}` });
+      }
+    } else {
+      // Check product_variations barcode
+      const { data: varMatch } = await supabase
+        .from("product_variations")
+        .select("id, name, price, product_id, barcode")
+        .eq("barcode", barcode)
+        .limit(1);
+
+      if (varMatch && varMatch.length > 0) {
+        const v = varMatch[0];
+        const parentProduct = products.find((p) => p.id === v.product_id);
+        addToCart({
+          uid: crypto.randomUUID(),
+          productId: v.product_id,
+          name: parentProduct?.name || "Product",
+          price: Number(v.price),
+          qty: 1,
+          variationId: v.id,
+          variationLabel: v.name,
+          isCustomItem: false,
+        });
+        toast({ title: `Added: ${parentProduct?.name} - ${v.name}` });
+      } else {
+        toast({ title: "Product not found", description: `No match for barcode: ${barcode}`, variant: "destructive" });
+      }
+    }
+  }, [products]));
 
   useEffect(() => {
     const load = async () => {
@@ -235,8 +300,8 @@ const POS = () => {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] -m-6">
-      <div className="w-[60%] p-4">
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-3rem)] -m-6">
+      <div className="lg:w-[60%] w-full p-4 overflow-hidden">
         <ProductCatalog
           products={products}
           categories={categories}
@@ -245,7 +310,7 @@ const POS = () => {
           onAddCustomItem={() => setShowCustomItem(true)}
         />
       </div>
-      <div className="w-[40%]">
+      <div className="lg:w-[40%] w-full border-t lg:border-t-0 lg:border-l border-border">
         <CartPanel
           carts={carts}
           activeCartId={activeCartId}
