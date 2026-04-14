@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { X, Trash2, Plus, ExternalLink, CircleDot } from "lucide-react";
+import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -276,6 +276,57 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     setPayNotes("");
     toast.success("Payment logged");
     load();
+  };
+
+  /* ---------- Process Return ---------- */
+
+  const handleReturn = async () => {
+    if (!order) return;
+    setSaving(true);
+    try {
+      // Update order status
+      await supabase.from("orders").update({
+        status: "returned",
+        payment_status: "refunded",
+      }).eq("id", order.id);
+
+      // Restock inventory
+      for (const item of items) {
+        if (!item.product_id) continue;
+        const { data: prod } = await supabase
+          .from("products")
+          .select("stock_quantity, woo_product_id")
+          .eq("id", item.product_id)
+          .single();
+        if (prod) {
+          await supabase.from("products").update({
+            stock_quantity: prod.stock_quantity + item.quantity,
+          }).eq("id", item.product_id);
+
+          // Push stock to WooCommerce if linked
+          if (prod.woo_product_id) {
+            supabase.functions.invoke("woo-push", {
+              body: { action: "push_stock", product_id: item.product_id },
+            }).catch(() => {});
+          }
+        }
+      }
+
+      // Timeline entries
+      await supabase.from("order_timeline").insert({
+        order_id: order.id,
+        event: "returned",
+        description: "Order returned — inventory restocked",
+      });
+
+      toast.success("Order returned & inventory restocked");
+      onSaved?.();
+      load();
+    } catch {
+      toast.error("Return processing failed");
+    } finally {
+      setSaving(false);
+    }
   };
 
   /* ---------- Render ---------- */
@@ -578,9 +629,16 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save Changes"}
-          </Button>
+          <div className="flex items-center gap-2">
+            {order && (order.status === "delivered" || order.status === "completed") && (
+              <Button variant="outline" onClick={handleReturn} disabled={saving} className="gap-1.5 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
+                <Undo2 className="h-4 w-4" /> Return
+              </Button>
+            )}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save Changes"}
+            </Button>
+          </div>
         </SheetFooter>
       </SheetContent>
     </Sheet>
