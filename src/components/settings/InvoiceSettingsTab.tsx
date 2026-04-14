@@ -63,6 +63,7 @@ const InvoiceSettingsTab = () => {
             ...data,
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
             pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
+            shipping_presets: data.shipping_presets || [80, 150],
           });
         }
       });
@@ -116,6 +117,7 @@ const InvoiceSettingsTab = () => {
         default_print_format: settings.default_print_format,
         invoice_template: settings.invoice_template,
         pickup_slip_template: settings.pickup_slip_template,
+        shipping_presets: settings.shipping_presets,
       } as any)
       .eq("id", settings.id);
     setSaving(false);
