@@ -528,7 +528,11 @@ const CartPanel = ({
                       <button
                         key={z.zone_id}
                         onClick={() => {
-                          onUpdateCart(cart.id, { pathaoZone: z.zone_name });
+                          onUpdateCart(cart.id, { 
+                            pathaoZone: z.zone_name,
+                            pathaoZoneId: z.zone_id,
+                            pathaoCityId: z.city_id,
+                          });
                           setZoneSearch("");
                           setShowZoneDropdown(false);
                         }}
