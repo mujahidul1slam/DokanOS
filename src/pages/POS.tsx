@@ -1,11 +1,19 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
+import { usePosSound } from "@/hooks/usePosSound";
 import ProductCatalog from "@/components/pos/ProductCatalog";
 import VariationModal from "@/components/pos/VariationModal";
 import CartPanel from "@/components/pos/CartPanel";
 import CustomItemDialog from "@/components/pos/CustomItemDialog";
-import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
-import { useToast } from "@/hooks/use-toast";
+import ReturnDialog from "@/components/pos/ReturnDialog";
+import HeldCartsDialog from "@/components/pos/HeldCartsDialog";
+import RecentOrdersDialog from "@/components/pos/RecentOrdersDialog";
+import ShiftDialog from "@/components/pos/ShiftDialog";
+import POSToolbar from "@/components/pos/POSToolbar";
+import KeyboardShortcutsHelp from "@/components/pos/KeyboardShortcutsHelp";
 import type { Product, Cart, CartItem, CustomerData } from "@/components/pos/types";
 
 const createEmptyCart = (label: string): Cart => ({
@@ -17,35 +25,130 @@ const createEmptyCart = (label: string): Cart => ({
   shippingAddress: "",
   pathaoZone: "",
   discount: 0,
+  discountType: "flat",
   shippingFee: 0,
   payments: [],
   notes: "",
+  taxRate: 0,
 });
 
 const POS = () => {
+  const { user } = useAuth();
+  const { toast } = useToast();
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<CustomerData[]>([]);
-  const { toast } = useToast();
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showVariationModal, setShowVariationModal] = useState(false);
   const [showCustomItem, setShowCustomItem] = useState(false);
+  const [showReturn, setShowReturn] = useState(false);
+  const [showHeld, setShowHeld] = useState(false);
+  const [showRecent, setShowRecent] = useState(false);
+  const [showShift, setShowShift] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   const [carts, setCarts] = useState<Cart[]>([createEmptyCart("Cart 1")]);
   const [activeCartId, setActiveCartId] = useState(carts[0].id);
   const [cartCounter, setCartCounter] = useState(2);
 
-  // Barcode scanner support
+  const [selectedStoreId, setSelectedStoreId] = useState("default");
+  const [currentShift, setCurrentShift] = useState<any>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [heldCount, setHeldCount] = useState(0);
+
+  const { scanBeep, addBeep, errorBeep, successChime } = usePosSound(soundEnabled);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Load current open shift
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("pos_shifts" as any)
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("status", "open")
+      .order("opened_at", { ascending: false })
+      .limit(1)
+      .then(({ data }: any) => {
+        if (data && data.length > 0) setCurrentShift(data[0]);
+      });
+  }, [user]);
+
+  // Load held count
+  useEffect(() => {
+    supabase
+      .from("held_carts" as any)
+      .select("id", { count: "exact", head: true })
+      .then(({ count }: any) => setHeldCount(count || 0));
+  }, [showHeld]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      // Skip if typing in input
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        if (e.key === "Escape") {
+          (e.target as HTMLElement).blur();
+          e.preventDefault();
+        }
+        return;
+      }
+
+      switch (e.key) {
+        case "F1":
+          e.preventDefault();
+          searchInputRef.current?.focus();
+          break;
+        case "F3":
+          e.preventDefault();
+          setShowCustomItem(true);
+          break;
+        case "F5":
+          e.preventDefault();
+          holdCurrentCart();
+          break;
+        case "F6":
+          e.preventDefault();
+          setShowHeld(true);
+          break;
+        case "F7":
+          e.preventDefault();
+          setShowReturn(true);
+          break;
+        case "F8":
+          e.preventDefault();
+          setShowRecent(true);
+          break;
+        case "F9":
+          e.preventDefault();
+          setShowShift(true);
+          break;
+        case "F11":
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        case "?":
+          setShowShortcuts(true);
+          break;
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [activeCartId, carts]);
+
+  // Barcode scanner
   useBarcodeScanner(useCallback(async (barcode: string) => {
-    // Search by barcode or SKU
+    scanBeep();
     const product = products.find(
       (p) => (p as any).barcode === barcode || p.sku === barcode
     );
     if (product) {
-      // Check for variations
       const { data: variations } = await supabase
         .from("product_variations")
         .select("id, barcode, sku")
@@ -59,22 +162,18 @@ const POS = () => {
         setSelectedProduct(product);
         setShowVariationModal(true);
       } else {
-        // Add directly to cart
         addToCart({
           uid: crypto.randomUUID(),
           productId: product.id,
           name: product.name,
           price: Number(product.price),
           qty: 1,
-          variationId: undefined,
-          variationLabel: undefined,
-          isCustomItem: false,
           customTailoring: false,
         });
+        addBeep();
         toast({ title: `Added: ${product.name}` });
       }
     } else {
-      // Check product_variations barcode
       const { data: varMatch } = await supabase
         .from("product_variations")
         .select("id, name, price, product_id, barcode")
@@ -92,26 +191,26 @@ const POS = () => {
           qty: 1,
           variationId: v.id,
           variationLabel: v.name,
-          isCustomItem: false,
           customTailoring: false,
         });
+        addBeep();
         toast({ title: `Added: ${parentProduct?.name} - ${v.name}` });
       } else {
+        errorBeep();
         toast({ title: "Product not found", description: `No match for barcode: ${barcode}`, variant: "destructive" });
       }
     }
-  }, [products]));
+  }, [products, scanBeep, addBeep, errorBeep]));
 
   useEffect(() => {
     const load = async () => {
       const [prodRes, storeRes] = await Promise.all([
-        supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at").eq("is_active", true).order("name"),
+        supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode").eq("is_active", true).order("name"),
         supabase.from("stores").select("id, name"),
       ]);
       const prods = (prodRes.data || []) as any[];
       setProducts(prods);
-      const cats = [...new Set(prods.map((p) => p.category).filter(Boolean))] as string[];
-      setCategories(cats);
+      setCategories([...new Set(prods.map((p) => p.category).filter(Boolean))] as string[]);
       setStores((storeRes.data || []) as { id: string; name: string }[]);
       setLoading(false);
     };
@@ -124,12 +223,13 @@ const POS = () => {
   };
 
   const addToCart = useCallback((item: CartItem) => {
+    addBeep();
     setCarts((prev) =>
       prev.map((c) =>
         c.id === activeCartId ? { ...c, items: [...c.items, item] } : c
       )
     );
-  }, [activeCartId]);
+  }, [activeCartId, addBeep]);
 
   const updateCart = useCallback((cartId: string, updates: Partial<Cart>) => {
     setCarts((prev) => prev.map((c) => (c.id === cartId ? { ...c, ...updates } : c)));
@@ -172,6 +272,33 @@ const POS = () => {
     });
   }, [activeCartId]);
 
+  const holdCurrentCart = useCallback(async () => {
+    const cart = carts.find((c) => c.id === activeCartId);
+    if (!cart || cart.items.length === 0) {
+      toast({ title: "Cart is empty", variant: "destructive" });
+      return;
+    }
+
+    await supabase.from("held_carts" as any).insert({
+      label: cart.label,
+      cart_data: cart,
+      customer_name: cart.customer?.name || null,
+      customer_phone: cart.customer?.phone || null,
+      notes: cart.notes || null,
+      store_id: selectedStoreId !== "default" ? selectedStoreId : null,
+      held_by: user?.id || null,
+    });
+
+    // Reset current cart
+    removeCart(cart.id);
+    toast({ title: `${cart.label} held` });
+  }, [carts, activeCartId, selectedStoreId, user]);
+
+  const recallCart = useCallback((cart: Cart) => {
+    setCarts((prev) => [...prev, cart]);
+    setActiveCartId(cart.id);
+  }, []);
+
   const searchCustomers = useCallback(async (q: string) => {
     if (!q || q.length < 2) { setCustomers([]); return; }
     const { data } = await supabase
@@ -183,15 +310,26 @@ const POS = () => {
   }, []);
 
   const completeOrder = useCallback(async (cart: Cart): Promise<string> => {
-    const subtotal = cart.items.reduce((s, i) => s + i.price * i.qty, 0);
-    const total = subtotal - cart.discount + (cart.fulfillment === "delivery" ? cart.shippingFee : 0);
+    const subtotal = cart.items.reduce((s, i) => {
+      const lineTotal = i.price * i.qty;
+      const itemDiscount = i.discountType === "percent"
+        ? lineTotal * (i.discountValue || 0) / 100
+        : (i.discountValue || 0);
+      return s + lineTotal - itemDiscount;
+    }, 0);
+
+    const cartDiscount = cart.discountType === "percent"
+      ? subtotal * cart.discount / 100
+      : cart.discount;
+
+    const afterDiscount = subtotal - cartDiscount;
+    const taxAmount = afterDiscount * cart.taxRate / 100;
+    const total = afterDiscount + taxAmount + (cart.fulfillment === "delivery" ? cart.shippingFee : 0);
 
     const orderNumber = `POS-${Date.now().toString(36).toUpperCase()}`;
 
-    // Upsert customer — find existing by phone first to avoid duplicates
     let customerId: string | null = cart.customer?.id || null;
     if (cart.customer && !cart.customer.id && cart.customer.name) {
-      // Try to find existing customer by phone
       if (cart.customer.phone) {
         const { data: existing } = await supabase
           .from("customers")
@@ -200,23 +338,16 @@ const POS = () => {
           .maybeSingle();
         if (existing) {
           customerId = existing.id;
-          // Update their info
           await supabase.from("customers").update({
             name: cart.customer.name,
             address: cart.customer.address || null,
           }).eq("id", existing.id);
         }
       }
-      // Only insert if no existing match found
       if (!customerId) {
         const { data: newCust } = await supabase
           .from("customers")
-          .insert({
-            name: cart.customer.name,
-            phone: cart.customer.phone || null,
-            address: cart.customer.address || null,
-            source: 'pos',
-          })
+          .insert({ name: cart.customer.name, phone: cart.customer.phone || null, address: cart.customer.address || null, source: 'pos' })
           .select("id")
           .single();
         if (newCust) customerId = newCust.id;
@@ -231,11 +362,15 @@ const POS = () => {
         status: "completed",
         payment_status: "paid",
         subtotal,
-        discount: cart.discount,
+        discount: cartDiscount,
         shipping_cost: cart.fulfillment === "delivery" ? cart.shippingFee : 0,
         total,
+        tax_amount: taxAmount,
         customer_id: customerId,
         notes: cart.notes || null,
+        store_id: cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null),
+        salesperson_id: cart.salespersonId || user?.id || null,
+        salesperson_name: cart.salespersonName || user?.email || null,
       })
       .select("id")
       .single();
@@ -248,6 +383,9 @@ const POS = () => {
         quantity: i.qty,
         unit_price: i.price,
         line_total: i.price * i.qty,
+        discount: i.discountType === "percent"
+          ? (i.price * i.qty * (i.discountValue || 0) / 100)
+          : (i.discountValue || 0),
       }));
       await supabase.from("order_items").insert(items);
 
@@ -260,7 +398,36 @@ const POS = () => {
         await supabase.from("order_payments").insert(payments);
       }
 
-      // Reduce local stock and push to WooCommerce
+      // Update shift stats
+      if (currentShift) {
+        const cashPaid = cart.payments.filter((p) => p.method === "cash").reduce((s, p) => s + p.amount, 0);
+        const cardPaid = cart.payments.filter((p) => p.method === "card").reduce((s, p) => s + p.amount, 0);
+        const bkashPaid = cart.payments.filter((p) => p.method === "bkash").reduce((s, p) => s + p.amount, 0);
+        const bankPaid = cart.payments.filter((p) => p.method === "bank").reduce((s, p) => s + p.amount, 0);
+
+        const updated = {
+          ...currentShift,
+          total_sales: currentShift.total_sales + total,
+          transaction_count: currentShift.transaction_count + 1,
+          cash_sales: currentShift.cash_sales + cashPaid,
+          card_sales: currentShift.card_sales + cardPaid,
+          bkash_sales: currentShift.bkash_sales + bkashPaid,
+          bank_sales: currentShift.bank_sales + bankPaid,
+        };
+
+        await supabase.from("pos_shifts" as any).update({
+          total_sales: updated.total_sales,
+          transaction_count: updated.transaction_count,
+          cash_sales: updated.cash_sales,
+          card_sales: updated.card_sales,
+          bkash_sales: updated.bkash_sales,
+          bank_sales: updated.bank_sales,
+        }).eq("id", currentShift.id);
+
+        setCurrentShift(updated);
+      }
+
+      // Stock reduction
       for (const item of cart.items) {
         if (item.isCustomItem || !item.productId) continue;
         if (item.variationId) {
@@ -269,11 +436,9 @@ const POS = () => {
             await supabase.from("product_variations").update({ stock_quantity: Math.max(0, v.stock_quantity - item.qty) }).eq("id", item.variationId);
           }
         }
-        // Update parent product stock
         const { data: prod } = await supabase.from("products").select("stock_quantity, woo_product_id, store_id").eq("id", item.productId).single();
         if (prod) {
           await supabase.from("products").update({ stock_quantity: Math.max(0, prod.stock_quantity - item.qty) }).eq("id", item.productId);
-          // Push stock to WooCommerce if linked
           if (prod.woo_product_id) {
             supabase.functions.invoke("woo-push", {
               body: { action: "push_stock", product_id: item.productId },
@@ -283,6 +448,8 @@ const POS = () => {
       }
     }
 
+    successChime();
+
     // Reset cart
     setCarts((prev) => {
       const next = prev.map((c) => (c.id === cart.id ? createEmptyCart(c.label) : c));
@@ -291,6 +458,16 @@ const POS = () => {
     });
 
     return orderNumber;
+  }, [selectedStoreId, user, currentShift, successChime]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
   }, []);
 
   if (loading) {
@@ -302,31 +479,53 @@ const POS = () => {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-3rem)] -m-6">
-      <div className="lg:w-[60%] w-full p-4 overflow-hidden">
-        <ProductCatalog
-          products={products}
-          categories={categories}
-          stores={stores}
-          onSelectProduct={handleSelectProduct}
-          onAddCustomItem={() => setShowCustomItem(true)}
-        />
+    <div className="flex flex-col h-[calc(100vh-3rem)] -m-6">
+      <POSToolbar
+        stores={stores}
+        selectedStoreId={selectedStoreId}
+        onStoreChange={setSelectedStoreId}
+        salespersonName={user?.email || ""}
+        onOpenHeld={() => setShowHeld(true)}
+        onHoldCurrent={holdCurrentCart}
+        onOpenReturn={() => setShowReturn(true)}
+        onOpenRecent={() => setShowRecent(true)}
+        onOpenShift={() => setShowShift(true)}
+        onToggleFullscreen={toggleFullscreen}
+        isFullscreen={isFullscreen}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => setSoundEnabled(!soundEnabled)}
+        shiftOpen={!!currentShift}
+        heldCount={heldCount}
+      />
+
+      <div className="flex flex-1 overflow-hidden">
+        <div className="lg:w-[60%] w-full p-4 overflow-hidden">
+          <ProductCatalog
+            products={products}
+            categories={categories}
+            stores={stores}
+            onSelectProduct={handleSelectProduct}
+            onAddCustomItem={() => setShowCustomItem(true)}
+            searchInputRef={searchInputRef}
+          />
+        </div>
+        <div className="lg:w-[40%] w-full border-l border-border">
+          <CartPanel
+            carts={carts}
+            activeCartId={activeCartId}
+            onSetActiveCart={setActiveCartId}
+            onAddCart={addCart}
+            onRemoveCart={removeCart}
+            onUpdateCart={updateCart}
+            onUpdateItem={updateItem}
+            onRemoveItem={removeItem}
+            onCompleteOrder={completeOrder}
+            customers={customers}
+            onSearchCustomers={searchCustomers}
+          />
+        </div>
       </div>
-      <div className="lg:w-[40%] w-full border-t lg:border-t-0 lg:border-l border-border">
-        <CartPanel
-          carts={carts}
-          activeCartId={activeCartId}
-          onSetActiveCart={setActiveCartId}
-          onAddCart={addCart}
-          onRemoveCart={removeCart}
-          onUpdateCart={updateCart}
-          onUpdateItem={updateItem}
-          onRemoveItem={removeItem}
-          onCompleteOrder={completeOrder}
-          customers={customers}
-          onSearchCustomers={searchCustomers}
-        />
-      </div>
+
       <VariationModal
         product={selectedProduct}
         open={showVariationModal}
@@ -337,6 +536,29 @@ const POS = () => {
         open={showCustomItem}
         onClose={() => setShowCustomItem(false)}
         onAdd={addToCart}
+      />
+      <ReturnDialog
+        open={showReturn}
+        onClose={() => setShowReturn(false)}
+      />
+      <HeldCartsDialog
+        open={showHeld}
+        onClose={() => setShowHeld(false)}
+        onRecall={recallCart}
+      />
+      <RecentOrdersDialog
+        open={showRecent}
+        onClose={() => setShowRecent(false)}
+      />
+      <ShiftDialog
+        open={showShift}
+        onClose={() => setShowShift(false)}
+        currentShift={currentShift}
+        onShiftChange={setCurrentShift}
+      />
+      <KeyboardShortcutsHelp
+        open={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
       />
     </div>
   );
