@@ -113,7 +113,13 @@ const CartPanel = ({
     setCompletedCartSnapshot(snapshot);
     const orderNum = await onCompleteOrder(snapshot);
     setCompletedOrderNumber(orderNum);
-    setShowPrintModal(true);
+
+    // Auto-print using default format from settings (no popup)
+    const fmt = invoiceSettings?.default_print_format || "thermal";
+    const sub = snapshot.items.reduce((s, i) => s + i.price * i.qty, 0);
+    const tot = sub - snapshot.discount + (snapshot.fulfillment === "delivery" ? snapshot.shippingFee : 0);
+    printInvoice({ orderNumber: orderNum, cart: snapshot, subtotal: sub, total: tot, invoiceSettings }, fmt);
+
     setNewCustName("");
     setNewCustPhone("");
     setNewCustAddress("");
