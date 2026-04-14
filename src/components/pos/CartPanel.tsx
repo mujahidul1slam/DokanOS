@@ -574,43 +574,6 @@ const CartPanel = ({
         </div>
       </div>
 
-      {/* Print Modal */}
-      <Dialog open={showPrintModal} onOpenChange={setShowPrintModal}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-heading text-center">Order Completed! 🎉</DialogTitle>
-            <DialogDescription className="text-center">
-              {completedOrderNumber && <span className="font-mono text-xs block mb-1">{completedOrderNumber}</span>}
-              Print a receipt?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <button
-              onClick={() => handlePrint("thermal")}
-              className="flex flex-col items-center gap-3 rounded-lg border border-border bg-secondary p-6 transition-colors hover:border-primary/50"
-            >
-              <Printer className="h-10 w-10 text-primary" />
-              <div className="text-center">
-                <p className="text-sm font-medium">Thermal</p>
-                <p className="text-xs text-muted-foreground">80mm</p>
-              </div>
-            </button>
-            <button
-              onClick={() => handlePrint("a4")}
-              className="flex flex-col items-center gap-3 rounded-lg border border-border bg-secondary p-6 transition-colors hover:border-primary/50"
-            >
-              <FileText className="h-10 w-10 text-primary" />
-              <div className="text-center">
-                <p className="text-sm font-medium">A4 Invoice</p>
-                <p className="text-xs text-muted-foreground">Full page</p>
-              </div>
-            </button>
-          </div>
-          <Button variant="ghost" onClick={() => setShowPrintModal(false)} className="w-full mt-1">
-            Skip
-          </Button>
-        </DialogContent>
-      </Dialog>
     </>
   );
 };
