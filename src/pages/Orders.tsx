@@ -530,9 +530,7 @@ const Orders = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-secondary hover:bg-secondary">
-                  {(tab === "new" || tab === "ready") && canWrite && (
-                    <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
-                  )}
+                  <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
                   <TableHead>Order Info</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead className="w-[240px]">Products</TableHead>
