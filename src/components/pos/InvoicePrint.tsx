@@ -15,12 +15,16 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
   const shipping = cart.fulfillment === "delivery" ? cart.shippingFee : 0;
   const now = new Date();
 
+  const totalPaid = cart.payments.reduce((s, p) => s + p.amount, 0);
+  const dueAmount = Math.max(0, total - totalPaid);
+
   const biz = invoiceSettings || {
     business_name: "OmniSync", tagline: "", address: "", phone: "", email: "",
     logo_url: "", footer_text: "Thank you for shopping with us!", terms_text: "",
     default_print_format: "thermal" as const,
     invoice_template: {} as InvoiceTemplateConfig,
     pickup_slip_template: {} as any,
+    shipping_presets: [80, 150],
   };
 
   const tpl: InvoiceTemplateConfig = {
@@ -30,6 +34,7 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
     show_subtotal: true, show_discount: true, show_shipping: true, show_tax: true,
     show_total: true, show_payments: true, show_notes: true, show_terms: true,
     show_footer: true, show_order_date: true, show_fulfillment: true,
+    show_due: true,
     custom_fields: [],
     ...((biz as any).invoice_template || {}),
   };
@@ -60,6 +65,10 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
   const paymentsBlock = tpl.show_payments && cart.payments.length > 0
     ? `<div style="margin-top:8px;font-size:${format === "thermal" ? "11px" : "12px"};"><strong>Payments:</strong><br/>
         ${cart.payments.map((p) => `${p.method.toUpperCase()}: ৳${p.amount.toLocaleString()}`).join("<br/>")}</div>`
+    : "";
+
+  const dueBlock = tpl.show_due && dueAmount > 0
+    ? `<div style="margin-top:6px;font-size:${format === "thermal" ? "13px" : "15px"};font-weight:bold;color:#dc2626;">Due Amount: ৳${dueAmount.toLocaleString()}</div>`
     : "";
 
   const customFieldsBlock = tpl.custom_fields.filter(f => f.label && f.value).map(f =>
@@ -114,6 +123,7 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
         ${tpl.show_total ? `<div style="font-size:${format === "thermal" ? "14px" : "18px"};font-weight:bold;margin-top:4px;border-top:2px solid #333;padding-top:4px;">Total: ৳${total.toLocaleString()}</div>` : ""}
       </div>
       ${paymentsBlock}
+      ${dueBlock}
       ${tpl.show_notes && cart.notes ? `<div style="margin-top:8px;font-size:11px;"><strong>Notes:</strong> ${cart.notes}</div>` : ""}
       ${tpl.show_terms && biz.terms_text ? `<div style="margin-top:12px;padding-top:8px;border-top:1px solid #ddd;font-size:${format === "thermal" ? "9px" : "10px"};color:#888;"><strong>Terms:</strong><br/>${biz.terms_text}</div>` : ""}
       ${tpl.show_footer ? `<div class="footer">${biz.footer_text || "Thank you for shopping with us!"}</div>` : ""}

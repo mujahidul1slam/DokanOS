@@ -6,6 +6,7 @@ import { useInvoiceSettings, type PickupSlipTemplateConfig } from "@/hooks/useIn
 interface SlipOrder {
   order_number: string;
   total: number;
+  amount_to_collect?: number | null;
   customers: { name: string; phone: string | null; address: string | null } | null;
   productItems: { name: string; qty: number }[];
 }
@@ -29,8 +30,8 @@ export default function PickupSlipPrint({ orders }: Props) {
     if (!printWindow) return;
 
     if (isA4) {
-      // A4 landscape with 8 slips per page (2 cols × 4 rows)
       const slipsHtml = orders.map((order) => {
+        const dueAmount = order.amount_to_collect || 0;
         const customFieldsHtml = tpl.custom_fields.filter(f => f.label && f.value).map(f =>
           `<div style="font-size:9px;margin-top:2px;"><strong>${f.label}:</strong> ${f.value}</div>`
         ).join("");
@@ -48,6 +49,7 @@ export default function PickupSlipPrint({ orders }: Props) {
             </tbody></table></div>` : ""}
           ${customFieldsHtml}
           ${tpl.show_total ? `<div class="total-row">Total: ৳${Number(order.total).toLocaleString()}</div>` : ""}
+          ${tpl.show_due && dueAmount > 0 ? `<div style="text-align:right;font-weight:700;font-size:10px;color:#dc2626;margin-top:2px;">Due: ৳${dueAmount.toLocaleString()}</div>` : ""}
         </div>`;
       }).join("");
 
@@ -74,7 +76,6 @@ export default function PickupSlipPrint({ orders }: Props) {
         <div class="grid">${slipsHtml}</div>
       </body></html>`);
     } else {
-      // Thermal format — single column
       printWindow.document.write(`<html><head><title>Pickup Slips</title><style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #111; }
@@ -92,6 +93,7 @@ export default function PickupSlipPrint({ orders }: Props) {
         td { padding: 4px 0; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
         .qty { text-align: center; width: 40px; }
         .total-row { margin-top: 8px; text-align: right; font-weight: 700; font-size: 14px; border-top: 1px solid #333; padding-top: 6px; }
+        .due-row { text-align: right; font-weight: 700; font-size: 13px; color: #dc2626; margin-top: 4px; }
         @media print { body { margin: 0; } .slip { border: none; } }
       </style></head><body>${content.innerHTML}</body>
       <script>window.onload=function(){window.print();window.close();}<\/script></html>`);
@@ -114,36 +116,40 @@ export default function PickupSlipPrint({ orders }: Props) {
 
       {/* Hidden print content for thermal */}
       <div ref={printRef} className="hidden">
-        {orders.map((order) => (
-          <div key={order.order_number} className="slip">
-            <div className="header">
-              <h2>{tpl.title || "PICKUP SLIP"}</h2>
-              {tpl.show_order_number && <div className="order-num">#{order.order_number}</div>}
+        {orders.map((order) => {
+          const dueAmount = order.amount_to_collect || 0;
+          return (
+            <div key={order.order_number} className="slip">
+              <div className="header">
+                <h2>{tpl.title || "PICKUP SLIP"}</h2>
+                {tpl.show_order_number && <div className="order-num">#{order.order_number}</div>}
+              </div>
+              {(tpl.show_customer_name || tpl.show_customer_phone || tpl.show_customer_address) && (
+                <div className="section">
+                  <div className="section-title">Customer</div>
+                  {tpl.show_customer_name && <div className="customer-name">{order.customers?.name || "Walk-in"}</div>}
+                  {tpl.show_customer_phone && order.customers?.phone && <div className="customer-detail">📞 {order.customers.phone}</div>}
+                  {tpl.show_customer_address && order.customers?.address && <div className="customer-detail">📍 {order.customers.address}</div>}
+                </div>
+              )}
+              {tpl.show_items && (
+                <div className="section">
+                  <div className="section-title">Items</div>
+                  <table>
+                    <thead><tr><th>Product</th>{tpl.show_item_qty && <th className="qty">Qty</th>}</tr></thead>
+                    <tbody>
+                      {order.productItems.map((item, i) => (
+                        <tr key={i}><td>{item.name}</td>{tpl.show_item_qty && <td className="qty">{item.qty}</td>}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {tpl.show_total && <div className="total-row">Total: ৳{Number(order.total).toLocaleString()}</div>}
+              {tpl.show_due && dueAmount > 0 && <div className="due-row">Due: ৳{dueAmount.toLocaleString()}</div>}
             </div>
-            {(tpl.show_customer_name || tpl.show_customer_phone || tpl.show_customer_address) && (
-              <div className="section">
-                <div className="section-title">Customer</div>
-                {tpl.show_customer_name && <div className="customer-name">{order.customers?.name || "Walk-in"}</div>}
-                {tpl.show_customer_phone && order.customers?.phone && <div className="customer-detail">📞 {order.customers.phone}</div>}
-                {tpl.show_customer_address && order.customers?.address && <div className="customer-detail">📍 {order.customers.address}</div>}
-              </div>
-            )}
-            {tpl.show_items && (
-              <div className="section">
-                <div className="section-title">Items</div>
-                <table>
-                  <thead><tr><th>Product</th>{tpl.show_item_qty && <th className="qty">Qty</th>}</tr></thead>
-                  <tbody>
-                    {order.productItems.map((item, i) => (
-                      <tr key={i}><td>{item.name}</td>{tpl.show_item_qty && <td className="qty">{item.qty}</td>}</tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {tpl.show_total && <div className="total-row">Total: ৳{Number(order.total).toLocaleString()}</div>}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

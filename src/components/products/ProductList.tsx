@@ -32,6 +32,13 @@ interface ProductRow {
   storeName?: string;
 }
 
+interface CategoryNode {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  children: CategoryNode[];
+}
+
 const normalizeStockStatus = (status: string) => {
   const map: Record<string, string> = {
     instock: "in_stock", outofstock: "out_of_stock", onbackorder: "on_backorder",
@@ -59,6 +66,31 @@ const STOCK_FILTER_OPTIONS = [
 
 const PAGE_SIZE = 20;
 
+function buildCategoryTree(categories: { id: string; name: string; parent_id: string | null }[]): CategoryNode[] {
+  const map = new Map<string, CategoryNode>();
+  categories.forEach(c => map.set(c.id, { ...c, children: [] }));
+  const roots: CategoryNode[] = [];
+  map.forEach(node => {
+    if (node.parent_id && map.has(node.parent_id)) {
+      map.get(node.parent_id)!.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  roots.sort((a, b) => a.name.localeCompare(b.name));
+  roots.forEach(r => r.children.sort((a, b) => a.name.localeCompare(b.name)));
+  return roots;
+}
+
+function flattenCategoryTree(nodes: CategoryNode[], depth = 0): { id: string; name: string; depth: number }[] {
+  const result: { id: string; name: string; depth: number }[] = [];
+  for (const node of nodes) {
+    result.push({ id: node.id, name: node.name, depth });
+    result.push(...flattenCategoryTree(node.children, depth + 1));
+  }
+  return result;
+}
+
 const ProductList = () => {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,10 +99,11 @@ const ProductList = () => {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [stockFilter, setStockFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
+  const [featuredFilter, setFeaturedFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editProductId, setEditProductId] = useState<string | null>(null);
-  const [dbCategories, setDbCategories] = useState<{ id: string; name: string }[]>([]);
+  const [dbCategories, setDbCategories] = useState<{ id: string; name: string; parent_id: string | null }[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [page, setPage] = useState(1);
 
@@ -86,11 +119,11 @@ const ProductList = () => {
     const [{ data }, { data: pcData }, { data: cats }, { data: storeData }] = await Promise.all([
       supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id, is_featured, sales_count").order("name"),
       supabase.from("product_categories").select("product_id, category_id"),
-      supabase.from("categories").select("id, name"),
+      supabase.from("categories").select("id, name, parent_id"),
       supabase.from("stores").select("id, name"),
     ]);
 
-    setDbCategories(cats || []);
+    setDbCategories((cats || []) as any);
     setStores(storeData || []);
 
     const catNameMap = new Map((cats || []).map((c: any) => [c.id, c.name]));
@@ -115,7 +148,8 @@ const ProductList = () => {
 
   useEffect(() => { loadProducts(); }, []);
 
-  const categories = useMemo(() => dbCategories.map(c => c.name).sort(), [dbCategories]);
+  const categoryTree = useMemo(() => buildCategoryTree(dbCategories), [dbCategories]);
+  const flatCategories = useMemo(() => flattenCategoryTree(categoryTree), [categoryTree]);
 
   const filtered = useMemo(() => {
     return products.filter(p => {
@@ -124,15 +158,16 @@ const ProductList = () => {
       const matchCategory = categoryFilter === "all" || (p.categoryNames || []).includes(categoryFilter);
       const matchStock = stockFilter === "all" || p.stock_status === stockFilter;
       const matchStore = storeFilter === "all" || p.store_id === storeFilter;
-      return matchSearch && matchCategory && matchStock && matchStore;
+      const matchFeatured = featuredFilter === "all" || (featuredFilter === "featured" && p.is_featured) || (featuredFilter === "not_featured" && !p.is_featured);
+      return matchSearch && matchCategory && matchStock && matchStore && matchFeatured;
     });
-  }, [products, search, categoryFilter, stockFilter, storeFilter]);
+  }, [products, search, categoryFilter, stockFilter, storeFilter, featuredFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, categoryFilter, stockFilter, storeFilter]);
+  useEffect(() => { setPage(1); }, [search, categoryFilter, stockFilter, storeFilter, featuredFilter]);
 
   const allSelected = paginated.length > 0 && paginated.every(p => selected.has(p.id));
   const toggleAll = () => {
@@ -178,77 +213,41 @@ const ProductList = () => {
     if (selectedCount === 0) return;
     setBulkBusy(true);
     try {
-      // Update products
       for (const id of selectedIds) {
         await supabase.from("products").update({ stock_status: status }).eq("id", id);
-        // Also update variations
         await supabase.from("product_variations").update({ stock_status: status }).eq("product_id", id);
       }
-
-      // Push to WooCommerce for linked products
-      const { data: linkedProducts } = await supabase
-        .from("products")
-        .select("id, woo_product_id, store_id")
-        .in("id", selectedIds)
-        .not("woo_product_id", "is", null);
-
+      const { data: linkedProducts } = await supabase.from("products").select("id, woo_product_id, store_id").in("id", selectedIds).not("woo_product_id", "is", null);
       if (linkedProducts) {
         for (const prod of linkedProducts) {
           if (prod.store_id) {
-            try {
-              await supabase.functions.invoke("woo-push", {
-                body: { action: "push_stock", product_id: prod.id },
-              });
-            } catch (e) {
-              console.warn(`WooCommerce push failed for ${prod.id}:`, e);
-            }
+            try { await supabase.functions.invoke("woo-push", { body: { action: "push_stock", product_id: prod.id } }); } catch {}
           }
         }
       }
-
       toast({ title: `${selectedCount} products updated to ${status.replace(/_/g, " ")}` });
       setSelected(new Set());
       await loadProducts();
-    } finally {
-      setBulkBusy(false);
-    }
+    } finally { setBulkBusy(false); }
   };
 
   const bulkSetActive = async (isActive: boolean) => {
     if (selectedCount === 0) return;
     setBulkBusy(true);
     try {
-      for (const id of selectedIds) {
-        await supabase.from("products").update({ is_active: isActive }).eq("id", id);
-      }
-
-      // Push to WooCommerce
-      const { data: linkedProducts } = await supabase
-        .from("products")
-        .select("id, woo_product_id, store_id")
-        .in("id", selectedIds)
-        .not("woo_product_id", "is", null);
-
+      for (const id of selectedIds) { await supabase.from("products").update({ is_active: isActive }).eq("id", id); }
+      const { data: linkedProducts } = await supabase.from("products").select("id, woo_product_id, store_id").in("id", selectedIds).not("woo_product_id", "is", null);
       if (linkedProducts) {
         for (const prod of linkedProducts) {
           if (prod.store_id) {
-            try {
-              await supabase.functions.invoke("woo-push", {
-                body: { action: "push_product", product_id: prod.id },
-              });
-            } catch (e) {
-              console.warn(`WooCommerce push failed for ${prod.id}:`, e);
-            }
+            try { await supabase.functions.invoke("woo-push", { body: { action: "push_product", product_id: prod.id } }); } catch {}
           }
         }
       }
-
       toast({ title: `${selectedCount} products ${isActive ? "activated" : "deactivated"}` });
       setSelected(new Set());
       await loadProducts();
-    } finally {
-      setBulkBusy(false);
-    }
+    } finally { setBulkBusy(false); }
   };
 
   const bulkDelete = async () => {
@@ -264,22 +263,12 @@ const ProductList = () => {
       setSelected(new Set());
       setDeleteDialogOpen(false);
       await loadProducts();
-    } finally {
-      setBulkBusy(false);
-    }
+    } finally { setBulkBusy(false); }
   };
 
-  const openCatDialog = () => {
-    setSelectedBulkCats(new Set());
-    setCatDialogOpen(true);
-  };
-
+  const openCatDialog = () => { setSelectedBulkCats(new Set()); setCatDialogOpen(true); };
   const toggleBulkCat = (id: string) => {
-    setSelectedBulkCats(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+    setSelectedBulkCats(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   };
 
   const bulkAssignCategories = async () => {
@@ -287,45 +276,28 @@ const ProductList = () => {
     setBulkBusy(true);
     try {
       for (const productId of selectedIds) {
-        // Remove existing category assignments
         await supabase.from("product_categories").delete().eq("product_id", productId);
-        // Insert new ones
-        const rows = Array.from(selectedBulkCats).map(catId => ({
-          product_id: productId,
-          category_id: catId,
-        }));
+        const rows = Array.from(selectedBulkCats).map(catId => ({ product_id: productId, category_id: catId }));
         await supabase.from("product_categories").insert(rows);
-
-        // Update the category text field too
-        const catNames = dbCategories
-          .filter(c => selectedBulkCats.has(c.id))
-          .map(c => c.name);
+        const catNames = dbCategories.filter(c => selectedBulkCats.has(c.id)).map(c => c.name);
         await supabase.from("products").update({ category: catNames.join(", ") }).eq("id", productId);
       }
-
       toast({ title: `Categories assigned to ${selectedCount} products` });
       setSelected(new Set());
       setCatDialogOpen(false);
       await loadProducts();
-    } finally {
-      setBulkBusy(false);
-    }
+    } finally { setBulkBusy(false); }
   };
-
 
   const bulkSetFeatured = async (featured: boolean) => {
     if (selectedCount === 0) return;
     setBulkBusy(true);
     try {
-      for (const id of selectedIds) {
-        await supabase.from("products").update({ is_featured: featured } as any).eq("id", id);
-      }
+      for (const id of selectedIds) { await supabase.from("products").update({ is_featured: featured } as any).eq("id", id); }
       toast({ title: `${selectedCount} products ${featured ? "marked as featured" : "unmarked"}` });
       setSelected(new Set());
       await loadProducts();
-    } finally {
-      setBulkBusy(false);
-    }
+    } finally { setBulkBusy(false); }
   };
 
   if (loading) return <TableSkeleton rows={10} cols={7} />;
@@ -394,12 +366,8 @@ const ProductList = () => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => bulkSetActive(true)}>
-                  <Eye className="h-3.5 w-3.5 mr-2" /> Activate
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => bulkSetActive(false)}>
-                  <EyeOff className="h-3.5 w-3.5 mr-2" /> Deactivate
-                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => bulkSetActive(true)}><Eye className="h-3.5 w-3.5 mr-2" /> Activate</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => bulkSetActive(false)}><EyeOff className="h-3.5 w-3.5 mr-2" /> Deactivate</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -420,11 +388,9 @@ const ProductList = () => {
             </DropdownMenu>
 
             <Button
-              variant="outline"
-              size="sm"
+              variant="outline" size="sm"
               className="gap-1.5 h-8 text-destructive hover:bg-destructive/10 border-destructive/30"
-              disabled={bulkBusy}
-              onClick={() => setDeleteDialogOpen(true)}
+              disabled={bulkBusy} onClick={() => setDeleteDialogOpen(true)}
             >
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </Button>
@@ -442,10 +408,17 @@ const ProductList = () => {
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or SKU…" className="pl-9" />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Category" /></SelectTrigger>
+          <SelectTrigger className="w-[200px]"><SelectValue placeholder="Category" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Categories</SelectItem>
-            {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+            {flatCategories.map(c => (
+              <SelectItem key={c.id} value={c.name}>
+                <span style={{ paddingLeft: `${c.depth * 16}px` }} className="flex items-center gap-1">
+                  {c.depth > 0 && <span className="text-muted-foreground">└</span>}
+                  {c.name}
+                </span>
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={stockFilter} onValueChange={setStockFilter}>
@@ -459,6 +432,14 @@ const ProductList = () => {
           <SelectContent>
             <SelectItem value="all">All Stores</SelectItem>
             {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={featuredFilter} onValueChange={setFeaturedFilter}>
+          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Featured" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Products</SelectItem>
+            <SelectItem value="featured">⭐ Featured</SelectItem>
+            <SelectItem value="not_featured">Not Featured</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -581,10 +562,13 @@ const ProductList = () => {
             {dbCategories.length === 0 && (
               <p className="text-sm text-muted-foreground py-4 text-center">No categories found.</p>
             )}
-            {dbCategories.map(c => (
-              <label key={c.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-secondary/50 cursor-pointer">
+            {flatCategories.map(c => (
+              <label key={c.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-secondary/50 cursor-pointer" style={{ paddingLeft: `${8 + c.depth * 16}px` }}>
                 <Checkbox checked={selectedBulkCats.has(c.id)} onCheckedChange={() => toggleBulkCat(c.id)} />
-                <span className="text-sm text-foreground">{c.name}</span>
+                <span className="text-sm text-foreground">
+                  {c.depth > 0 && <span className="text-muted-foreground mr-1">└</span>}
+                  {c.name}
+                </span>
               </label>
             ))}
           </div>
