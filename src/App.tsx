@@ -13,6 +13,7 @@ import Orders from "./pages/Orders";
 import Customers from "./pages/Customers";
 import Products from "./pages/Products";
 import POS from "./pages/POS";
+import Analytics from "./pages/Analytics";
 import Stores from "./pages/Stores";
 import SettingsPage from "./pages/SettingsPage";
 import TeamManagement from "./pages/TeamManagement";
@@ -79,6 +80,10 @@ const AppRoutes = () => {
             <POS />
           </RoleGuard>
         } />
+        <Route path="/analytics" element={
+          <RoleGuard allowedRoles={["admin"]}>
+            <Analytics />
+          </RoleGuard>
         <Route path="/stores" element={
           <RoleGuard allowedRoles={["admin"]}>
             <Stores />
