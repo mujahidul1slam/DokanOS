@@ -1,5 +1,5 @@
 import { useState, useMemo, RefObject } from "react";
-import { Search, ScanBarcode, Plus, Package, SlidersHorizontal, ArrowUpDown, Eye, EyeOff, Tag, Store as StoreIcon } from "lucide-react";
+import { Search, ScanBarcode, Plus, Package, SlidersHorizontal, ArrowUpDown, Eye, EyeOff, Tag, Store as StoreIcon, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +17,17 @@ interface Props {
   searchInputRef?: RefObject<HTMLInputElement>;
 }
 
+const PER_PAGE_OPTIONS = [12, 24, 48, 96];
+
 const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCustomItem, searchInputRef }: Props) => {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<"name" | "newest" | "price_asc" | "price_desc">("name");
+  const [sortBy, setSortBy] = useState<"name" | "newest" | "price_asc" | "price_desc" | "popularity">("name");
   const [hideOutOfStock, setHideOutOfStock] = useState(false);
   const [onSaleOnly, setOnSaleOnly] = useState(false);
   const [selectedStore, setSelectedStore] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(24);
 
   const filtered = useMemo(() => {
     let list = products;
@@ -39,21 +43,38 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
           ((p as any).barcode || "").toLowerCase().includes(q)
       );
     }
-    switch (sortBy) {
-      case "newest":
-        list = [...list].sort((a, b) => ((b as any).created_at || "").localeCompare((a as any).created_at || ""));
-        break;
-      case "price_asc":
-        list = [...list].sort((a, b) => Number(a.price) - Number(b.price));
-        break;
-      case "price_desc":
-        list = [...list].sort((a, b) => Number(b.price) - Number(a.price));
-        break;
-      default:
-        list = [...list].sort((a, b) => a.name.localeCompare(b.name));
-    }
-    return list;
+
+    // Featured products always first
+    const featured = list.filter((p) => (p as any).is_featured);
+    const nonFeatured = list.filter((p) => !(p as any).is_featured);
+
+    const sortFn = (a: Product, b: Product) => {
+      switch (sortBy) {
+        case "newest":
+          return ((b as any).created_at || "").localeCompare((a as any).created_at || "");
+        case "price_asc":
+          return Number(a.price) - Number(b.price);
+        case "price_desc":
+          return Number(b.price) - Number(a.price);
+        case "popularity":
+          return ((b as any).sales_count || 0) - ((a as any).sales_count || 0);
+        default:
+          return a.name.localeCompare(b.name);
+      }
+    };
+
+    featured.sort(sortFn);
+    nonFeatured.sort(sortFn);
+
+    return [...featured, ...nonFeatured];
   }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore]);
+
+  // Reset page on filter change
+  useMemo(() => { setPage(1); }, [search, activeCategory, sortBy, hideOutOfStock, selectedStore, perPage]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   const activeFilterCount = [hideOutOfStock, onSaleOnly, selectedStore !== "all"].filter(Boolean).length;
 
@@ -99,6 +120,7 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
             <SelectItem value="newest">Newest First</SelectItem>
             <SelectItem value="price_asc">Price: Low-High</SelectItem>
             <SelectItem value="price_desc">Price: High-Low</SelectItem>
+            <SelectItem value="popularity">Popularity</SelectItem>
           </SelectContent>
         </Select>
 
@@ -150,7 +172,7 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
 
       <ScrollArea className="flex-1">
         <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 pr-3">
-          {filtered.map((p) => (
+          {paginated.map((p) => (
             <button
               key={p.id}
               onClick={() => onSelectProduct(p)}
@@ -168,6 +190,9 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
                 >
                   {p.stock_quantity > 0 ? `${p.stock_quantity} in stock` : "Out"}
                 </Badge>
+                {(p as any).is_featured && (
+                  <Star className="absolute top-2 left-2 h-4 w-4 text-yellow-400 fill-yellow-400" />
+                )}
               </div>
               <div className="p-3 flex flex-col gap-1">
                 <p className="text-sm font-medium text-card-foreground line-clamp-2 leading-snug">{p.name}</p>
@@ -178,7 +203,7 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
               </div>
             </button>
           ))}
-          {filtered.length === 0 && (
+          {paginated.length === 0 && (
             <div className="col-span-full flex flex-col items-center justify-center py-20 text-muted-foreground">
               <Search className="h-10 w-10 mb-3 opacity-40" />
               <p className="text-sm">No products found</p>
@@ -186,6 +211,37 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
           )}
         </div>
       </ScrollArea>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between pt-3 border-t border-border mt-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Show</span>
+          <Select value={String(perPage)} onValueChange={(v) => setPerPage(Number(v))}>
+            <SelectTrigger className="h-8 w-20 text-xs bg-secondary">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PER_PAGE_OPTIONS.map((n) => (
+                <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground">
+            of {filtered.length} products
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage <= 1} onClick={() => setPage((p) => p - 1)}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground px-2">
+            {currentPage} / {totalPages}
+          </span>
+          <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage >= totalPages} onClick={() => setPage((p) => p + 1)}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 };
