@@ -1,0 +1,1 @@
+ALTER TABLE public.invoice_settings ADD COLUMN IF NOT EXISTS pickup_slip_print_format text NOT NULL DEFAULT 'thermal';
