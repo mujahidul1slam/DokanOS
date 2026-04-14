@@ -495,7 +495,11 @@ const CartPanel = ({
               {detectedZone && !cart.pathaoZone && (
                 <button
                   onClick={() => {
-                    onUpdateCart(cart.id, { pathaoZone: detectedZone.zone_name });
+                    onUpdateCart(cart.id, { 
+                      pathaoZone: detectedZone.zone_name,
+                      pathaoZoneId: detectedZone.zone_id,
+                      pathaoCityId: detectedZone.city_id,
+                    });
                     setZoneSearch("");
                   }}
                   className="w-full text-left rounded-md bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 transition-colors"
