@@ -860,9 +860,11 @@ export type Database = {
           id: string
           image_url: string | null
           is_active: boolean
+          is_featured: boolean
           manage_stock: boolean
           name: string
           price: number
+          sales_count: number
           sku: string | null
           stock_quantity: number
           stock_status: string
@@ -880,9 +882,11 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_active?: boolean
+          is_featured?: boolean
           manage_stock?: boolean
           name: string
           price?: number
+          sales_count?: number
           sku?: string | null
           stock_quantity?: number
           stock_status?: string
@@ -900,9 +904,11 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_active?: boolean
+          is_featured?: boolean
           manage_stock?: boolean
           name?: string
           price?: number
+          sales_count?: number
           sku?: string | null
           stock_quantity?: number
           stock_status?: string
