@@ -66,9 +66,10 @@ const POS = () => {
           name: product.name,
           price: Number(product.price),
           qty: 1,
-          variationId: null,
-          variationLabel: null,
+          variationId: undefined,
+          variationLabel: undefined,
           isCustomItem: false,
+          customTailoring: false,
         });
         toast({ title: `Added: ${product.name}` });
       }
@@ -92,6 +93,7 @@ const POS = () => {
           variationId: v.id,
           variationLabel: v.name,
           isCustomItem: false,
+          customTailoring: false,
         });
         toast({ title: `Added: ${parentProduct?.name} - ${v.name}` });
       } else {
