@@ -24,6 +24,7 @@ interface InvoiceSettings {
   default_print_format: string;
   invoice_template: InvoiceTemplateConfig;
   pickup_slip_template: PickupSlipTemplateConfig;
+  shipping_presets: number[];
 }
 
 const defaultInvoiceTemplate: InvoiceTemplateConfig = {
@@ -33,13 +34,14 @@ const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   show_subtotal: true, show_discount: true, show_shipping: true, show_tax: true,
   show_total: true, show_payments: true, show_notes: true, show_terms: true,
   show_footer: true, show_order_date: true, show_fulfillment: true,
+  show_due: true,
   custom_fields: [],
 };
 
 const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
   show_order_number: true, show_customer_name: true, show_customer_phone: true,
   show_customer_address: true, show_items: true, show_item_qty: true,
-  show_total: true, show_notes: false, title: "PICKUP SLIP",
+  show_total: true, show_due: true, show_notes: false, title: "PICKUP SLIP",
   custom_fields: [],
 };
 
