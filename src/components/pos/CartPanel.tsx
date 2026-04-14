@@ -14,20 +14,6 @@ import { printInvoice } from "./InvoicePrint";
 import type { Cart, CartItem, Payment, CustomerData } from "./types";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import { supabase } from "@/integrations/supabase/client";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { printInvoice } from "./InvoicePrint";
-import type { Cart, CartItem, Payment, CustomerData } from "./types";
-import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
-import { supabase } from "@/integrations/supabase/client";
 
 interface PathaoZone {
   zone_id: number;
