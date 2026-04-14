@@ -612,6 +612,9 @@ const Orders = () => {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setDetailOrderId(order.id)}>View Details</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleReprintOrder(order.id)}>
+                            <Printer className="h-4 w-4 mr-2" /> Print Invoice
+                          </DropdownMenuItem>
                           {order.status === "processing" && !order.consignment_id && canWrite && (
                             <DropdownMenuItem onClick={() => {
                               supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
