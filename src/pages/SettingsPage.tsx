@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Settings, Package, Plug, Store, RefreshCw, CheckCircle, AlertTriangle, FileText } from "lucide-react";
+import { Settings, Package, Plug, Store, RefreshCw, CheckCircle, AlertTriangle, FileText, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -10,12 +10,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useTheme } from "@/hooks/useTheme";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
+import AuditLogTab from "@/components/settings/AuditLogTab";
 
 const tabs = [
   { id: "general", label: "General", icon: Settings },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "invoice", label: "Invoice", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Plug },
+  { id: "audit", label: "Activity Log", icon: ScrollText },
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
@@ -236,6 +238,8 @@ const SettingsPage = () => {
               </div>
             </div>
           )}
+
+          {activeTab === "audit" && <AuditLogTab />}
         </div>
       </div>
     </div>

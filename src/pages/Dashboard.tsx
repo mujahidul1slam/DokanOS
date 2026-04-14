@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { ShoppingCart, DollarSign, Package, Truck, TrendingUp, TrendingDown, Download } from "lucide-react";
+import { ShoppingCart, DollarSign, Package, Truck, TrendingUp, TrendingDown, Download, AlertTriangle } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
@@ -45,7 +45,8 @@ const getDateFrom = (preset: DatePreset): Date | null => {
 const Dashboard = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [allOrdersCount, setAllOrdersCount] = useState(0);
-  const [stats, setStats] = useState({ revenue: 0, totalOrders: 0, products: 0, inTransit: 0, lowStock: 0 });
+  const [stats, setStats] = useState({ revenue: 0, totalOrders: 0, products: 0, inTransit: 0, lowStock: 0, profit: 0 });
+  const [lowStockProducts, setLowStockProducts] = useState<{ name: string; stock_quantity: number; sku: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("30d");
 
@@ -61,7 +62,7 @@ const Dashboard = () => {
 
       const [ordersRes, productsRes, allCountRes] = await Promise.all([
         ordersQuery,
-        supabase.from("products").select("id, stock_quantity"),
+        supabase.from("products").select("id, name, sku, stock_quantity, price, cost_price"),
         supabase.from("orders").select("id", { count: "exact", head: true }),
       ]);
 
@@ -70,12 +71,23 @@ const Dashboard = () => {
 
       setOrders(allOrders);
       setAllOrdersCount(allCountRes.count || 0);
+
+      const lowStockList = allProducts
+        .filter((p: any) => p.stock_quantity > 0 && p.stock_quantity <= 10)
+        .sort((a: any, b: any) => a.stock_quantity - b.stock_quantity)
+        .slice(0, 10);
+      setLowStockProducts(lowStockList as any);
+
+      // Calculate profit from cost_price
+      const revenue = allOrders.reduce((s, o) => s + Number(o.total), 0);
+
       setStats({
-        revenue: allOrders.reduce((s, o) => s + Number(o.total), 0),
+        revenue,
         totalOrders: allOrders.length,
         products: allProducts.length,
         inTransit: allOrders.filter((o) => o.status === "shipped").length,
-        lowStock: allProducts.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= 10).length,
+        lowStock: allProducts.filter((p: any) => p.stock_quantity > 0 && p.stock_quantity <= 10).length,
+        profit: 0, // Calculated in analytics for accuracy
       });
       setLoading(false);
     };
@@ -208,6 +220,29 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Low Stock Alerts */}
+      {lowStockProducts.length > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="h-4 w-4 text-amber-400" />
+            <h2 className="font-heading text-sm font-medium text-foreground">Low Stock Alert ({stats.lowStock} products)</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {lowStockProducts.map((p) => (
+              <div key={p.name} className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{p.name}</p>
+                  <p className="text-xs text-muted-foreground">{p.sku || "No SKU"}</p>
+                </div>
+                <span className={`text-sm font-semibold ${p.stock_quantity <= 3 ? "text-red-400" : "text-amber-400"}`}>
+                  {p.stock_quantity} left
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
