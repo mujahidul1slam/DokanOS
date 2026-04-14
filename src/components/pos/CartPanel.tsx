@@ -564,12 +564,12 @@ const CartPanel = ({
           {/* Complete */}
           <Button
             onClick={handleComplete}
-            disabled={cart.items.length === 0 || balance > 0}
+            disabled={cart.items.length === 0}
             className="w-full h-14 text-lg font-semibold gap-2"
           >
             <Check className="h-5 w-5" />
-            Complete — ৳{total.toLocaleString()}
-            {balance < 0 && <span className="text-sm opacity-80">(Change: ৳{Math.abs(balance).toLocaleString()})</span>}
+            {balance > 0 ? `Complete with ৳${balance.toLocaleString()} Due` : `Complete — ৳${total.toLocaleString()}`}
+            {balance < 0 && <span className="text-sm opacity-80">(Change: ৳${Math.abs(balance).toLocaleString()})</span>}
           </Button>
         </div>
       </div>
