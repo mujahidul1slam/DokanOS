@@ -69,6 +69,9 @@ export interface Cart {
   fulfillment: "walkin" | "pickup" | "delivery";
   shippingAddress: string;
   pathaoZone: string;
+  pathaoCityId?: number;
+  pathaoZoneId?: number;
+  pathaoAreaId?: number;
   discount: number;
   discountType: "flat" | "percent";
   shippingFee: number;
