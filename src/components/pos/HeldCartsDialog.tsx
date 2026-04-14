@@ -31,10 +31,10 @@ const HeldCartsDialog = ({ open, onClose, onRecall }: Props) => {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data } = await (supabase
       .from("held_carts" as any)
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }) as any);
     setHeldCarts((data || []) as HeldCartRow[]);
     setLoading(false);
   };
