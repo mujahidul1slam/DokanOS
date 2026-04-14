@@ -354,13 +354,17 @@ const POS = () => {
       }
     }
 
+    const totalPaid = cart.payments.reduce((s, p) => s + p.amount, 0);
+    const dueAmount = Math.max(0, total - totalPaid);
+    const paymentStatus = dueAmount > 0 ? "partial" : "paid";
+
     const { data: order } = await supabase
       .from("orders")
       .insert({
         order_number: orderNumber,
         source: "pos",
         status: "completed",
-        payment_status: "paid",
+        payment_status: paymentStatus,
         subtotal,
         discount: cartDiscount,
         shipping_cost: cart.fulfillment === "delivery" ? cart.shippingFee : 0,
@@ -371,6 +375,7 @@ const POS = () => {
         store_id: cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null),
         salesperson_id: cart.salespersonId || user?.id || null,
         salesperson_name: cart.salespersonName || user?.email || null,
+        amount_to_collect: dueAmount > 0 ? dueAmount : 0,
       })
       .select("id")
       .single();

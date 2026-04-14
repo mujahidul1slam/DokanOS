@@ -56,7 +56,8 @@ const RecentOrdersDialog = ({ open, onClose }: Props) => {
     o.order_number.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleReprint = async (order: RecentOrder, format: "thermal" | "a4") => {
+  const handleReprint = async (order: RecentOrder) => {
+    const format = invoiceSettings?.default_print_format || "thermal";
     // Fetch order items and payments
     const [itemsRes, paymentsRes, customerRes] = await Promise.all([
       supabase.from("order_items").select("*").eq("order_id", order.id),
@@ -151,11 +152,8 @@ const RecentOrdersDialog = ({ open, onClose }: Props) => {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => handleReprint(order, "thermal")} title="Thermal">
+                    <Button size="sm" variant="outline" onClick={() => handleReprint(order)} title="Print Invoice">
                       <Printer className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleReprint(order, "a4")} title="A4">
-                      <FileText className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>

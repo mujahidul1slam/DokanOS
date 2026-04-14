@@ -230,11 +230,14 @@ export type Database = {
           address: string | null
           business_name: string
           created_at: string
+          default_print_format: string
           email: string | null
           footer_text: string | null
           id: string
+          invoice_template: Json
           logo_url: string | null
           phone: string | null
+          pickup_slip_template: Json
           tagline: string | null
           terms_text: string | null
           updated_at: string
@@ -243,11 +246,14 @@ export type Database = {
           address?: string | null
           business_name?: string
           created_at?: string
+          default_print_format?: string
           email?: string | null
           footer_text?: string | null
           id?: string
+          invoice_template?: Json
           logo_url?: string | null
           phone?: string | null
+          pickup_slip_template?: Json
           tagline?: string | null
           terms_text?: string | null
           updated_at?: string
@@ -256,11 +262,14 @@ export type Database = {
           address?: string | null
           business_name?: string
           created_at?: string
+          default_print_format?: string
           email?: string | null
           footer_text?: string | null
           id?: string
+          invoice_template?: Json
           logo_url?: string | null
           phone?: string | null
+          pickup_slip_template?: Json
           tagline?: string | null
           terms_text?: string | null
           updated_at?: string

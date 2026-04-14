@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
-  PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck,
+  PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,8 @@ import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge,
 } from "@/components/orders/OrderBadges";
 import { TableSkeleton } from "@/components/ui/loading-states";
+import { printInvoice } from "@/components/pos/InvoicePrint";
+import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 
 interface OrderRow {
   id: string;
@@ -69,6 +71,7 @@ type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "deliv
 
 const Orders = () => {
   const { role } = useAuth();
+  const { settings: invoiceSettings } = useInvoiceSettings();
   const canWrite = role === "admin" || role === "staff";
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -356,6 +359,33 @@ const Orders = () => {
     } catch (err: any) { toast({ title: "Track failed", description: err.message, variant: "destructive" }); }
   };
 
+  /* ─── Reprint invoice for any order ─── */
+  const handleReprintOrder = async (orderId: string) => {
+    const [orderRes, itemsRes, paymentsRes] = await Promise.all([
+      supabase.from("orders").select("id, order_number, total, subtotal, discount, shipping_cost, notes, customer_id").eq("id", orderId).single(),
+      supabase.from("order_items").select("*").eq("order_id", orderId),
+      supabase.from("order_payments").select("*").eq("order_id", orderId),
+    ]);
+    const o = orderRes.data as any;
+    if (!o) return;
+    let customer = null;
+    if (o.customer_id) {
+      const { data: c } = await supabase.from("customers").select("name, phone, address, city, zone").eq("id", o.customer_id).single();
+      if (c) customer = { name: c.name, phone: c.phone || "", address: c.address || "", city: c.city || "", zone: c.zone || "" };
+    }
+    const items = (itemsRes.data || []).map((i: any) => ({
+      uid: i.id, productId: i.product_id || "", name: i.product_name, price: Number(i.unit_price), qty: i.quantity, customTailoring: false,
+    }));
+    const payments = (paymentsRes.data || []).map((p: any) => ({ id: p.id, method: p.method, amount: Number(p.amount) }));
+    const cart = {
+      id: o.id, label: o.order_number, items, customer, fulfillment: (Number(o.shipping_cost) > 0 ? "delivery" : "walkin") as "delivery" | "walkin",
+      shippingAddress: "", pathaoZone: "", discount: Number(o.discount) || 0, discountType: "flat" as const,
+      shippingFee: Number(o.shipping_cost) || 0, payments, notes: o.notes || "", taxRate: 0,
+    };
+    const fmt = invoiceSettings?.default_print_format || "thermal";
+    printInvoice({ orderNumber: o.order_number, cart, subtotal: Number(o.subtotal), total: Number(o.total), invoiceSettings }, fmt);
+  };
+
   if (loading) return (
     <div className="space-y-4">
       <div><h1 className="font-heading text-2xl font-semibold">Orders</h1></div>
@@ -582,6 +612,9 @@ const Orders = () => {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setDetailOrderId(order.id)}>View Details</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleReprintOrder(order.id)}>
+                            <Printer className="h-4 w-4 mr-2" /> Print Invoice
+                          </DropdownMenuItem>
                           {order.status === "processing" && !order.consignment_id && canWrite && (
                             <DropdownMenuItem onClick={() => {
                               supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
