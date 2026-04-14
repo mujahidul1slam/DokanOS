@@ -312,6 +312,22 @@ const ProductList = () => {
     }
   };
 
+
+  const bulkSetFeatured = async (featured: boolean) => {
+    if (selectedCount === 0) return;
+    setBulkBusy(true);
+    try {
+      for (const id of selectedIds) {
+        await supabase.from("products").update({ is_featured: featured } as any).eq("id", id);
+      }
+      toast({ title: `${selectedCount} products ${featured ? "marked as featured" : "unmarked"}` });
+      setSelected(new Set());
+      await loadProducts();
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   if (loading) return <TableSkeleton rows={10} cols={7} />;
 
   return (
