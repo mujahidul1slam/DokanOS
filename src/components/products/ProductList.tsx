@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download } from "lucide-react";
+import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,6 +26,8 @@ interface ProductRow {
   price: number;
   is_active: boolean;
   store_id: string | null;
+  is_featured: boolean;
+  sales_count: number;
   categoryNames?: string[];
   storeName?: string;
 }
@@ -82,7 +84,7 @@ const ProductList = () => {
     setLoading(true);
 
     const [{ data }, { data: pcData }, { data: cats }, { data: storeData }] = await Promise.all([
-      supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id").order("name"),
+      supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id, is_featured, sales_count").order("name"),
       supabase.from("product_categories").select("product_id, category_id"),
       supabase.from("categories").select("id, name"),
       supabase.from("stores").select("id, name"),
@@ -310,6 +312,22 @@ const ProductList = () => {
     }
   };
 
+
+  const bulkSetFeatured = async (featured: boolean) => {
+    if (selectedCount === 0) return;
+    setBulkBusy(true);
+    try {
+      for (const id of selectedIds) {
+        await supabase.from("products").update({ is_featured: featured } as any).eq("id", id);
+      }
+      toast({ title: `${selectedCount} products ${featured ? "marked as featured" : "unmarked"}` });
+      setSelected(new Set());
+      await loadProducts();
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   if (loading) return <TableSkeleton rows={10} cols={7} />;
 
   return (
@@ -381,6 +399,22 @@ const ProductList = () => {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => bulkSetActive(false)}>
                   <EyeOff className="h-3.5 w-3.5 mr-2" /> Deactivate
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5 h-8" disabled={bulkBusy}>
+                  <Star className="h-3.5 w-3.5" /> Featured
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => bulkSetFeatured(true)}>
+                  <Star className="h-3.5 w-3.5 mr-2 fill-yellow-400 text-yellow-400" /> Mark Featured
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => bulkSetFeatured(false)}>
+                  <Star className="h-3.5 w-3.5 mr-2" /> Unmark Featured
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -458,7 +492,10 @@ const ProductList = () => {
                       {p.image_url ? <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" /> : <ImageIcon className="h-4 w-4 text-muted-foreground" />}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-medium text-foreground truncate">{p.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-medium text-foreground truncate">{p.name}</p>
+                        {p.is_featured && <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 shrink-0" />}
+                      </div>
                       <p className="text-xs font-mono text-muted-foreground">{p.sku || "—"}</p>
                     </div>
                   </div>
@@ -481,6 +518,15 @@ const ProductList = () => {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => openEdit(p.id)}><Pencil className="h-3.5 w-3.5 mr-2" /> Edit</DropdownMenuItem>
+                      <DropdownMenuItem onClick={async () => {
+                        await supabase.from("products").update({ is_featured: !p.is_featured }).eq("id", p.id);
+                        toast({ title: p.is_featured ? "Removed from featured" : "Marked as featured" });
+                        loadProducts();
+                      }}>
+                        <Star className={`h-3.5 w-3.5 mr-2 ${p.is_featured ? "fill-yellow-400 text-yellow-400" : ""}`} />
+                        {p.is_featured ? "Unmark Featured" : "Mark Featured"}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(p.id)}><Trash2 className="h-3.5 w-3.5 mr-2" /> Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

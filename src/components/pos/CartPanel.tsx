@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Printer, FileText, Trash2, Minus, CreditCard, Banknote, Smartphone, Building2, Truck, Store, Search, ShoppingBag, Ruler, X, Check, User, Percent, Edit3 } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { Plus, Printer, FileText, Trash2, Minus, CreditCard, Banknote, Smartphone, Building2, Truck, Store, Search, ShoppingBag, Ruler, X, Check, User, Percent, Edit3, MapPin } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -9,9 +9,17 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { printInvoice } from "./InvoicePrint";
 import type { Cart, CartItem, Payment, CustomerData } from "./types";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
+import { supabase } from "@/integrations/supabase/client";
+
+interface PathaoZone {
+  zone_id: number;
+  zone_name: string;
+  city_id: number;
+}
 
 interface Props {
   carts: Cart[];
@@ -52,6 +60,24 @@ const CartPanel = ({
   const [newCustPhone, setNewCustPhone] = useState("");
   const [newCustAddress, setNewCustAddress] = useState("");
   const [editingItemPrice, setEditingItemPrice] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState("");
+
+  // Pathao zones
+  const [pathaoZones, setPathaoZones] = useState<PathaoZone[]>([]);
+  const [zoneSearch, setZoneSearch] = useState("");
+  const [showZoneDropdown, setShowZoneDropdown] = useState(false);
+
+  useEffect(() => {
+    supabase.from("pathao_zones").select("zone_id, zone_name, city_id").order("zone_name").then(({ data }) => {
+      setPathaoZones((data || []) as PathaoZone[]);
+    });
+  }, []);
+
+  const filteredZones = useMemo(() => {
+    if (!zoneSearch) return pathaoZones.slice(0, 20);
+    const q = zoneSearch.toLowerCase();
+    return pathaoZones.filter((z) => z.zone_name.toLowerCase().includes(q)).slice(0, 20);
+  }, [pathaoZones, zoneSearch]);
 
   const cart = carts.find((c) => c.id === activeCartId) || carts[0];
   if (!cart) return null;
@@ -74,6 +100,18 @@ const CartPanel = ({
   const total = afterDiscount + taxAmount + (cart.fulfillment === "delivery" ? cart.shippingFee : 0);
   const totalPaid = cart.payments.reduce((s, p) => s + p.amount, 0);
   const balance = total - totalPaid;
+
+  const validatePhone = (value: string) => {
+    const digits = value.replace(/\D/g, "");
+    if (digits.length > 0 && digits.length !== 11) {
+      setPhoneError("Phone must be 11 digits");
+    } else if (digits.length > 0 && !/^\d{11}$/.test(digits)) {
+      setPhoneError("Only numbers allowed");
+    } else {
+      setPhoneError("");
+    }
+    return digits;
+  };
 
   const addPayment = () => {
     const amt = parseFloat(payAmount);
@@ -99,6 +137,12 @@ const CartPanel = ({
   };
 
   const handleComplete = async () => {
+    // Validate phone
+    if (newCustPhone && !/^\d{11}$/.test(newCustPhone.replace(/\D/g, ""))) {
+      setPhoneError("Phone must be exactly 11 digits");
+      return;
+    }
+
     if (!cart.customer && newCustName) {
       const custData: CustomerData = {
         name: newCustName,
@@ -123,6 +167,7 @@ const CartPanel = ({
     setNewCustPhone("");
     setNewCustAddress("");
     setCustomerSearch("");
+    setPhoneError("");
   };
 
   const selectCustomer = (c: CustomerData) => {
@@ -140,6 +185,7 @@ const CartPanel = ({
     setNewCustPhone("");
     setNewCustAddress("");
     setCustomerSearch("");
+    setPhoneError("");
   };
 
   const handlePrint = (format: "thermal" | "a4") => {
@@ -218,7 +264,7 @@ const CartPanel = ({
                 placeholder="Customer name *"
                 className="h-9 text-sm bg-secondary"
               />
-              {showCustomerDropdown && customerSearch && customers.length > 0 && (
+              {showCustomerDropdown && (customerSearch || newCustPhone) && customers.length > 0 && (
                 <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-border bg-popover shadow-lg max-h-40 overflow-y-auto">
                   {customers.map((c) => (
                     <button
@@ -233,18 +279,24 @@ const CartPanel = ({
                 </div>
               )}
             </div>
-            <Input
-              value={newCustPhone}
-              onChange={(e) => {
-                setNewCustPhone(e.target.value);
-                if (e.target.value.length >= 3) {
-                  onSearchCustomers(e.target.value);
-                  setShowCustomerDropdown(true);
-                }
-              }}
-              placeholder="Phone number *"
-              className="h-9 text-sm bg-secondary"
-            />
+            <div>
+              <Input
+                value={newCustPhone}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
+                  setNewCustPhone(raw);
+                  validatePhone(raw);
+                  if (raw.length >= 3) {
+                    onSearchCustomers(raw);
+                    setShowCustomerDropdown(true);
+                  }
+                }}
+                placeholder="Phone number (11 digits) *"
+                className={`h-9 text-sm bg-secondary ${phoneError ? "border-destructive" : ""}`}
+                maxLength={11}
+              />
+              {phoneError && <p className="text-[10px] text-destructive mt-0.5">{phoneError}</p>}
+            </div>
           </div>
 
           {cart.customer && (
@@ -281,7 +333,39 @@ const CartPanel = ({
           {cart.fulfillment === "delivery" && (
             <div className="space-y-2">
               <Input value={newCustAddress} onChange={(e) => setNewCustAddress(e.target.value)} placeholder="Shipping address *" className="h-9 text-sm bg-secondary" />
-              <Input value={cart.pathaoZone} onChange={(e) => onUpdateCart(cart.id, { pathaoZone: e.target.value })} placeholder="Pathao zone..." className="h-9 text-sm bg-secondary" />
+              {/* Pathao Zone Searchable */}
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={zoneSearch || cart.pathaoZone}
+                  onChange={(e) => {
+                    setZoneSearch(e.target.value);
+                    setShowZoneDropdown(true);
+                    if (!e.target.value) onUpdateCart(cart.id, { pathaoZone: "" });
+                  }}
+                  onFocus={() => setShowZoneDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowZoneDropdown(false), 200)}
+                  placeholder="Search Pathao zone..."
+                  className="h-9 text-sm bg-secondary pl-9"
+                />
+                {showZoneDropdown && filteredZones.length > 0 && (
+                  <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-border bg-popover shadow-lg max-h-40 overflow-y-auto">
+                    {filteredZones.map((z) => (
+                      <button
+                        key={z.zone_id}
+                        onClick={() => {
+                          onUpdateCart(cart.id, { pathaoZone: z.zone_name });
+                          setZoneSearch("");
+                          setShowZoneDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                      >
+                        {z.zone_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -568,7 +652,7 @@ const CartPanel = ({
           >
             <Check className="h-5 w-5" />
             {balance > 0 ? `Complete with ৳${balance.toLocaleString()} Due` : `Complete — ৳${total.toLocaleString()}`}
-            {balance < 0 && <span className="text-sm opacity-80">(Change: ৳${Math.abs(balance).toLocaleString()})</span>}
+            {balance < 0 && <span className="text-sm opacity-80">(Change: ৳{Math.abs(balance).toLocaleString()})</span>}
           </Button>
         </div>
       </div>
