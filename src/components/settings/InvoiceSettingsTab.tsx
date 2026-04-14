@@ -208,6 +208,30 @@ const InvoiceSettingsTab = () => {
             </Select>
             <p className="text-xs text-muted-foreground">This will be used automatically when printing — no popup.</p>
           </div>
+          {/* Shipping Presets */}
+          <div className="space-y-1.5">
+            <Label>Shipping Charge Presets (for POS quick buttons)</Label>
+            <div className="flex items-center gap-2">
+              {(settings.shipping_presets || [80, 150]).map((amt, i) => (
+                <Input
+                  key={i}
+                  type="number"
+                  value={amt}
+                  onChange={(e) => {
+                    const presets = [...(settings.shipping_presets || [80, 150])];
+                    presets[i] = parseFloat(e.target.value) || 0;
+                    updateField("shipping_presets", presets);
+                  }}
+                  className="w-24"
+                  placeholder={`Preset ${i + 1}`}
+                />
+              ))}
+              <Button variant="outline" size="sm" onClick={() => updateField("shipping_presets", [...(settings.shipping_presets || []), 0])}>
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">These appear as quick-select buttons when Delivery is chosen in POS.</p>
+          </div>
           <div className="space-y-1.5"><Label>Footer Text</Label><Input value={settings.footer_text} onChange={(e) => updateField("footer_text", e.target.value)} /></div>
           <div className="space-y-1.5"><Label>Terms & Conditions</Label><Textarea value={settings.terms_text} onChange={(e) => updateField("terms_text", e.target.value)} rows={3} /></div>
         </div>
@@ -243,6 +267,7 @@ const InvoiceSettingsTab = () => {
             ["show_notes", "Order Notes"],
             ["show_terms", "Terms & Conditions"],
             ["show_footer", "Footer Text"],
+            ["show_due", "Due Amount"],
           ] as [keyof InvoiceTemplateConfig, string][]).map(([key, label]) => (
             <div key={key} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
               <span className="text-sm">{label}</span>
