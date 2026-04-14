@@ -212,9 +212,7 @@ const Orders = () => {
       const ids = Array.from(selected);
       await supabase.from("orders").update({ status: "ready_to_ship" }).in("id", ids);
       const timelineEntries = ids.map((id) => ({
-        order_id: id,
-        event: "status_changed",
-        description: "Marked as Ready to Ship",
+        order_id: id, event: "status_changed", description: "Marked as Ready to Ship",
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
       toast({ title: `${ids.length} order(s) marked Ready to Ship` });
@@ -222,9 +220,85 @@ const Orders = () => {
       loadOrders();
     } catch {
       toast({ title: "Update failed", variant: "destructive" });
-    } finally {
-      setBulkUpdating(false);
-    }
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Bulk Mark Completed ─── */
+  const handleBulkMarkCompleted = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("orders").update({ status: "completed" }).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "status_changed", description: "Marked as Completed",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) marked Completed` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Update failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Bulk Mark Paid ─── */
+  const handleBulkMarkPaid = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("orders").update({ payment_status: "paid" }).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "payment_updated", description: "Marked as Paid",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) marked Paid` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Update failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Bulk Cancel ─── */
+  const handleBulkCancel = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("orders").update({ status: "cancelled" }).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "status_changed", description: "Cancelled",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) cancelled` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Update failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Bulk Track Selected ─── */
+  const handleBulkTrackSelected = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const selectedWithConsignment = orders.filter((o) => selected.has(o.id) && o.consignment_id);
+      let updated = 0;
+      for (const o of selectedWithConsignment) {
+        try {
+          const { data } = await supabase.functions.invoke("pathao-courier", { body: { action: "track_order", consignment_id: o.consignment_id } });
+          if (data?.data?.order_status) updated++;
+        } catch {}
+      }
+      toast({ title: `Tracking updated for ${updated} of ${selectedWithConsignment.length} order(s)` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Tracking failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
   };
 
   /* ─── Pathao sync ─── */
