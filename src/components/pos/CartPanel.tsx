@@ -46,7 +46,6 @@ const CartPanel = ({
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [payMethod, setPayMethod] = useState<"cash" | "bkash" | "card" | "bank">("cash");
   const [payAmount, setPayAmount] = useState("");
-  const [showPrintModal, setShowPrintModal] = useState(false);
   const [completedOrderNumber, setCompletedOrderNumber] = useState("");
   const [completedCartSnapshot, setCompletedCartSnapshot] = useState<Cart | null>(null);
   const [newCustName, setNewCustName] = useState("");
