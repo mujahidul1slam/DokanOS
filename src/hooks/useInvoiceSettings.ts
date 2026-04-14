@@ -51,6 +51,7 @@ export interface InvoiceSettings {
   footer_text: string;
   terms_text: string;
   default_print_format: "thermal" | "a4";
+  pickup_slip_print_format: "thermal" | "a4";
   invoice_template: InvoiceTemplateConfig;
   pickup_slip_template: PickupSlipTemplateConfig;
   shipping_presets: number[];
@@ -84,6 +85,7 @@ const defaults: InvoiceSettings = {
   footer_text: "Thank you for shopping with us!",
   terms_text: "",
   default_print_format: "thermal",
+  pickup_slip_print_format: "thermal",
   invoice_template: defaultInvoiceTemplate,
   pickup_slip_template: defaultPickupSlipTemplate,
   shipping_presets: [80, 150],
@@ -104,6 +106,7 @@ export function useInvoiceSettings() {
           setSettings({
             ...defaults,
             ...data,
+            pickup_slip_print_format: data.pickup_slip_print_format || "thermal",
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
             pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
             shipping_presets: data.shipping_presets || [80, 150],
