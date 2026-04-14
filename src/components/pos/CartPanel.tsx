@@ -150,7 +150,6 @@ const CartPanel = ({
       const tot = sub - snap.discount + (snap.fulfillment === "delivery" ? snap.shippingFee : 0);
       printInvoice({ orderNumber: completedOrderNumber, cart: snap, subtotal: sub, total: tot, invoiceSettings }, format);
     }
-    setShowPrintModal(false);
   };
 
   const getItemLineTotal = (item: CartItem) => {
