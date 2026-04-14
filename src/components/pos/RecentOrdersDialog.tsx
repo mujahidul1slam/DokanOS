@@ -56,7 +56,8 @@ const RecentOrdersDialog = ({ open, onClose }: Props) => {
     o.order_number.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleReprint = async (order: RecentOrder, format: "thermal" | "a4") => {
+  const handleReprint = async (order: RecentOrder) => {
+    const format = invoiceSettings?.default_print_format || "thermal";
     // Fetch order items and payments
     const [itemsRes, paymentsRes, customerRes] = await Promise.all([
       supabase.from("order_items").select("*").eq("order_id", order.id),
