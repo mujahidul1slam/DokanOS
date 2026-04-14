@@ -347,10 +347,7 @@ const Orders = () => {
   const selectedOrders = orders.filter((o) => selected.has(o.id));
 
   /* ─── Determine which action buttons to show ─── */
-  const showMarkReady = canWrite && tab === "new" && selected.size > 0;
-  const showDispatch = canWrite && tab === "ready" && selected.size > 0;
-  const showPrintSlip = tab === "ready" && selected.size > 0;
-  const showTrackAll = ["pickup_pending", "in_transit", "on_hold"].includes(tab);
+  const hasSelection = selected.size > 0;
 
   return (
     <div className="space-y-4">
@@ -361,7 +358,7 @@ const Orders = () => {
           <p className="text-sm text-muted-foreground">Manage your order pipeline — from new orders to delivery</p>
         </div>
         <div className="flex items-center gap-2">
-          {showTrackAll && (
+          {["pickup_pending", "in_transit", "on_hold"].includes(tab) && (
             <Button variant="outline" size="sm" onClick={handleTrackAll} disabled={trackingLoading}>
               {trackingLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
               Update Tracking
@@ -379,25 +376,71 @@ const Orders = () => {
         </div>
       </div>
 
-      {/* Action Bar */}
-      {(showMarkReady || showDispatch || showPrintSlip) && (
+      {/* Action Bar — shown when any orders are selected */}
+      {hasSelection && (
         <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
           <CheckSquare className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-medium">{selected.size} order{selected.size > 1 ? "s" : ""} selected</span>
-          <div className="flex items-center gap-2 ml-auto">
-            {showMarkReady && (
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            {/* New Orders tab */}
+            {canWrite && tab === "new" && (
               <Button size="sm" onClick={handleMarkReadyToShip} disabled={bulkUpdating} className="gap-1.5">
                 {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
                 Mark Ready to Ship
               </Button>
             )}
-            {showPrintSlip && (
-              <PickupSlipPrint orders={selectedOrders} />
-            )}
-            {showDispatch && (
+            {/* Ready tab */}
+            {tab === "ready" && <PickupSlipPrint orders={selectedOrders} />}
+            {canWrite && tab === "ready" && (
               <Button size="sm" onClick={() => openDispatch(Array.from(selected))} className="gap-1.5">
                 <Send className="h-4 w-4" /> Dispatch to Pathao
               </Button>
+            )}
+            {/* Pickup Pending / In Transit tabs */}
+            {["pickup_pending", "in_transit"].includes(tab) && (
+              <Button size="sm" variant="outline" onClick={handleBulkTrackSelected} disabled={bulkUpdating} className="gap-1.5">
+                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Track Selected
+              </Button>
+            )}
+            {/* Delivered tab */}
+            {canWrite && tab === "delivered" && (
+              <>
+                <Button size="sm" onClick={handleBulkMarkCompleted} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
+                  Mark Completed
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleBulkMarkPaid} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                  Mark Paid
+                </Button>
+              </>
+            )}
+            {/* On Hold tab */}
+            {canWrite && tab === "on_hold" && (
+              <>
+                <Button size="sm" variant="outline" onClick={handleBulkTrackSelected} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Track Selected
+                </Button>
+                <Button size="sm" variant="destructive" onClick={handleBulkCancel} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  Cancel Orders
+                </Button>
+              </>
+            )}
+            {/* All tab — generic actions */}
+            {canWrite && tab === "all" && (
+              <>
+                <Button size="sm" onClick={handleBulkMarkPaid} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                  Mark Paid
+                </Button>
+                <Button size="sm" variant="destructive" onClick={handleBulkCancel} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  Cancel Orders
+                </Button>
+              </>
             )}
             <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
           </div>
