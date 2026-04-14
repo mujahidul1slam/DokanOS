@@ -22,6 +22,7 @@ interface InvoiceSettings {
   footer_text: string;
   terms_text: string;
   default_print_format: string;
+  pickup_slip_print_format: string;
   invoice_template: InvoiceTemplateConfig;
   pickup_slip_template: PickupSlipTemplateConfig;
   shipping_presets: number[];
@@ -61,6 +62,7 @@ const InvoiceSettingsTab = () => {
         if (data) {
           setSettings({
             ...data,
+            pickup_slip_print_format: data.pickup_slip_print_format || "thermal",
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
             pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
             shipping_presets: data.shipping_presets || [80, 150],
@@ -115,6 +117,7 @@ const InvoiceSettingsTab = () => {
         footer_text: settings.footer_text,
         terms_text: settings.terms_text,
         default_print_format: settings.default_print_format,
+        pickup_slip_print_format: settings.pickup_slip_print_format,
         invoice_template: settings.invoice_template,
         pickup_slip_template: settings.pickup_slip_template,
         shipping_presets: settings.shipping_presets,
@@ -198,7 +201,7 @@ const InvoiceSettingsTab = () => {
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Default Print Format</Label>
+            <Label>Default Invoice Print Format</Label>
             <Select value={settings.default_print_format} onValueChange={(v) => updateField("default_print_format", v)}>
               <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -206,31 +209,18 @@ const InvoiceSettingsTab = () => {
                 <SelectItem value="a4">A4 Full Page</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">This will be used automatically when printing — no popup.</p>
+            <p className="text-xs text-muted-foreground">Used automatically when printing invoices — no popup.</p>
           </div>
-          {/* Shipping Presets */}
           <div className="space-y-1.5">
-            <Label>Shipping Charge Presets (for POS quick buttons)</Label>
-            <div className="flex items-center gap-2">
-              {(settings.shipping_presets || [80, 150]).map((amt, i) => (
-                <Input
-                  key={i}
-                  type="number"
-                  value={amt}
-                  onChange={(e) => {
-                    const presets = [...(settings.shipping_presets || [80, 150])];
-                    presets[i] = parseFloat(e.target.value) || 0;
-                    updateField("shipping_presets", presets);
-                  }}
-                  className="w-24"
-                  placeholder={`Preset ${i + 1}`}
-                />
-              ))}
-              <Button variant="outline" size="sm" onClick={() => updateField("shipping_presets", [...(settings.shipping_presets || []), 0])}>
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">These appear as quick-select buttons when Delivery is chosen in POS.</p>
+            <Label>Default Pickup Slip Print Format</Label>
+            <Select value={settings.pickup_slip_print_format || "thermal"} onValueChange={(v) => updateField("pickup_slip_print_format", v)}>
+              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="thermal">Thermal (80mm)</SelectItem>
+                <SelectItem value="a4">A4 (8 slips per page, landscape)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">A4 prints 8 pickup slips horizontally on one page.</p>
           </div>
           <div className="space-y-1.5"><Label>Footer Text</Label><Input value={settings.footer_text} onChange={(e) => updateField("footer_text", e.target.value)} /></div>
           <div className="space-y-1.5"><Label>Terms & Conditions</Label><Textarea value={settings.terms_text} onChange={(e) => updateField("terms_text", e.target.value)} rows={3} /></div>
