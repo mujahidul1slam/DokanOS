@@ -71,6 +71,7 @@ type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "deliv
 
 const Orders = () => {
   const { role } = useAuth();
+  const { settings: invoiceSettings } = useInvoiceSettings();
   const canWrite = role === "admin" || role === "staff";
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
