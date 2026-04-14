@@ -152,11 +152,8 @@ const RecentOrdersDialog = ({ open, onClose }: Props) => {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => handleReprint(order, "thermal")} title="Thermal">
+                    <Button size="sm" variant="outline" onClick={() => handleReprint(order)} title="Print Invoice">
                       <Printer className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleReprint(order, "a4")} title="A4">
-                      <FileText className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
