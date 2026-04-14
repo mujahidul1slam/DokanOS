@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
-  PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2,
+  PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -212,9 +212,7 @@ const Orders = () => {
       const ids = Array.from(selected);
       await supabase.from("orders").update({ status: "ready_to_ship" }).in("id", ids);
       const timelineEntries = ids.map((id) => ({
-        order_id: id,
-        event: "status_changed",
-        description: "Marked as Ready to Ship",
+        order_id: id, event: "status_changed", description: "Marked as Ready to Ship",
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
       toast({ title: `${ids.length} order(s) marked Ready to Ship` });
@@ -222,9 +220,85 @@ const Orders = () => {
       loadOrders();
     } catch {
       toast({ title: "Update failed", variant: "destructive" });
-    } finally {
-      setBulkUpdating(false);
-    }
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Bulk Mark Completed ─── */
+  const handleBulkMarkCompleted = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("orders").update({ status: "completed" }).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "status_changed", description: "Marked as Completed",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) marked Completed` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Update failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Bulk Mark Paid ─── */
+  const handleBulkMarkPaid = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("orders").update({ payment_status: "paid" }).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "payment_updated", description: "Marked as Paid",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) marked Paid` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Update failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Bulk Cancel ─── */
+  const handleBulkCancel = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("orders").update({ status: "cancelled" }).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "status_changed", description: "Cancelled",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) cancelled` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Update failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Bulk Track Selected ─── */
+  const handleBulkTrackSelected = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const selectedWithConsignment = orders.filter((o) => selected.has(o.id) && o.consignment_id);
+      let updated = 0;
+      for (const o of selectedWithConsignment) {
+        try {
+          const { data } = await supabase.functions.invoke("pathao-courier", { body: { action: "track_order", consignment_id: o.consignment_id } });
+          if (data?.data?.order_status) updated++;
+        } catch {}
+      }
+      toast({ title: `Tracking updated for ${updated} of ${selectedWithConsignment.length} order(s)` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Tracking failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
   };
 
   /* ─── Pathao sync ─── */
@@ -273,10 +347,7 @@ const Orders = () => {
   const selectedOrders = orders.filter((o) => selected.has(o.id));
 
   /* ─── Determine which action buttons to show ─── */
-  const showMarkReady = canWrite && tab === "new" && selected.size > 0;
-  const showDispatch = canWrite && tab === "ready" && selected.size > 0;
-  const showPrintSlip = tab === "ready" && selected.size > 0;
-  const showTrackAll = ["pickup_pending", "in_transit", "on_hold"].includes(tab);
+  const hasSelection = selected.size > 0;
 
   return (
     <div className="space-y-4">
@@ -287,7 +358,7 @@ const Orders = () => {
           <p className="text-sm text-muted-foreground">Manage your order pipeline — from new orders to delivery</p>
         </div>
         <div className="flex items-center gap-2">
-          {showTrackAll && (
+          {["pickup_pending", "in_transit", "on_hold"].includes(tab) && (
             <Button variant="outline" size="sm" onClick={handleTrackAll} disabled={trackingLoading}>
               {trackingLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
               Update Tracking
@@ -305,25 +376,71 @@ const Orders = () => {
         </div>
       </div>
 
-      {/* Action Bar */}
-      {(showMarkReady || showDispatch || showPrintSlip) && (
+      {/* Action Bar — shown when any orders are selected */}
+      {hasSelection && (
         <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
           <CheckSquare className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-medium">{selected.size} order{selected.size > 1 ? "s" : ""} selected</span>
-          <div className="flex items-center gap-2 ml-auto">
-            {showMarkReady && (
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            {/* New Orders tab */}
+            {canWrite && tab === "new" && (
               <Button size="sm" onClick={handleMarkReadyToShip} disabled={bulkUpdating} className="gap-1.5">
                 {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
                 Mark Ready to Ship
               </Button>
             )}
-            {showPrintSlip && (
-              <PickupSlipPrint orders={selectedOrders} />
-            )}
-            {showDispatch && (
+            {/* Ready tab */}
+            {tab === "ready" && <PickupSlipPrint orders={selectedOrders} />}
+            {canWrite && tab === "ready" && (
               <Button size="sm" onClick={() => openDispatch(Array.from(selected))} className="gap-1.5">
                 <Send className="h-4 w-4" /> Dispatch to Pathao
               </Button>
+            )}
+            {/* Pickup Pending / In Transit tabs */}
+            {["pickup_pending", "in_transit"].includes(tab) && (
+              <Button size="sm" variant="outline" onClick={handleBulkTrackSelected} disabled={bulkUpdating} className="gap-1.5">
+                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Track Selected
+              </Button>
+            )}
+            {/* Delivered tab */}
+            {canWrite && tab === "delivered" && (
+              <>
+                <Button size="sm" onClick={handleBulkMarkCompleted} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
+                  Mark Completed
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleBulkMarkPaid} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                  Mark Paid
+                </Button>
+              </>
+            )}
+            {/* On Hold tab */}
+            {canWrite && tab === "on_hold" && (
+              <>
+                <Button size="sm" variant="outline" onClick={handleBulkTrackSelected} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Track Selected
+                </Button>
+                <Button size="sm" variant="destructive" onClick={handleBulkCancel} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  Cancel Orders
+                </Button>
+              </>
+            )}
+            {/* All tab — generic actions */}
+            {canWrite && tab === "all" && (
+              <>
+                <Button size="sm" onClick={handleBulkMarkPaid} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                  Mark Paid
+                </Button>
+                <Button size="sm" variant="destructive" onClick={handleBulkCancel} disabled={bulkUpdating} className="gap-1.5">
+                  {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  Cancel Orders
+                </Button>
+              </>
             )}
             <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
           </div>
@@ -413,9 +530,7 @@ const Orders = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-secondary hover:bg-secondary">
-                  {(tab === "new" || tab === "ready") && canWrite && (
-                    <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
-                  )}
+                  <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
                   <TableHead>Order Info</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead className="w-[240px]">Products</TableHead>
@@ -431,9 +546,7 @@ const Orders = () => {
               <TableBody>
                 {paginated.map((order) => (
                   <TableRow key={order.id} className={cn("group", selected.has(order.id) && "bg-primary/5")}>
-                    {(tab === "new" || tab === "ready") && canWrite && (
-                      <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
-                    )}
+                    <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
                     <TableCell>
                       <div className="font-medium text-foreground">#{order.order_number}</div>
                       <div className="text-xs text-muted-foreground">{format(new Date(order.created_at), "MMM d, yyyy · h:mm a")}</div>
