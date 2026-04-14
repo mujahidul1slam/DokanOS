@@ -280,6 +280,26 @@ const Orders = () => {
     } finally { setBulkUpdating(false); }
   };
 
+  /* ─── Bulk Status Change ─── */
+  const handleBulkStatusChange = async (newStatus: string) => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("orders").update({ status: newStatus }).in("id", ids);
+      const label = newStatus.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "status_changed", description: `Status changed to ${label}`,
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) → ${label}` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Update failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
   /* ─── Bulk Track Selected ─── */
   const handleBulkTrackSelected = async () => {
     if (selected.size === 0) return;
@@ -383,10 +403,22 @@ const Orders = () => {
           <span className="text-sm font-medium">{selected.size} order{selected.size > 1 ? "s" : ""} selected</span>
           <div className="flex items-center gap-2 ml-auto flex-wrap">
             {canWrite && (
-              <Button size="sm" onClick={handleMarkReadyToShip} disabled={bulkUpdating} className="gap-1.5">
-                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
-                Mark Ready
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" disabled={bulkUpdating} className="gap-1.5">
+                    <Package className="h-4 w-4" /> Change Status
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("processing")}><Package className="h-4 w-4 mr-2" /> Processing</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("ready_to_ship")}><PackageCheck className="h-4 w-4 mr-2" /> Ready to Ship</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("shipped")}><Truck className="h-4 w-4 mr-2" /> Shipped</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("delivered")}><CheckCircle2 className="h-4 w-4 mr-2" /> Delivered</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("completed")}><BadgeCheck className="h-4 w-4 mr-2" /> Completed</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("returned")}><Undo2 className="h-4 w-4 mr-2" /> Returned</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("cancelled")} className="text-destructive"><XCircle className="h-4 w-4 mr-2" /> Cancelled</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             <PickupSlipPrint orders={selectedOrders} />
             {canWrite && (
@@ -399,21 +431,9 @@ const Orders = () => {
               Track
             </Button>
             {canWrite && (
-              <Button size="sm" onClick={handleBulkMarkCompleted} disabled={bulkUpdating} className="gap-1.5">
-                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
-                Completed
-              </Button>
-            )}
-            {canWrite && (
               <Button size="sm" variant="outline" onClick={handleBulkMarkPaid} disabled={bulkUpdating} className="gap-1.5">
                 {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
                 Mark Paid
-              </Button>
-            )}
-            {canWrite && (
-              <Button size="sm" variant="destructive" onClick={handleBulkCancel} disabled={bulkUpdating} className="gap-1.5">
-                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-                Cancel
               </Button>
             )}
             <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
