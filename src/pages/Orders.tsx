@@ -280,6 +280,26 @@ const Orders = () => {
     } finally { setBulkUpdating(false); }
   };
 
+  /* ─── Bulk Status Change ─── */
+  const handleBulkStatusChange = async (newStatus: string) => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("orders").update({ status: newStatus }).in("id", ids);
+      const label = newStatus.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "status_changed", description: `Status changed to ${label}`,
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) → ${label}` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Update failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
   /* ─── Bulk Track Selected ─── */
   const handleBulkTrackSelected = async () => {
     if (selected.size === 0) return;
