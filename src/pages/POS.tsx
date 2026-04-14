@@ -205,7 +205,7 @@ const POS = () => {
   useEffect(() => {
     const load = async () => {
       const [prodRes, storeRes] = await Promise.all([
-        supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode").eq("is_active", true).order("name"),
+        supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode, is_featured, sales_count").eq("is_active", true).order("name"),
         supabase.from("stores").select("id, name"),
       ]);
       const prods = (prodRes.data || []) as any[];

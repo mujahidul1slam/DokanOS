@@ -26,6 +26,8 @@ interface ProductRow {
   price: number;
   is_active: boolean;
   store_id: string | null;
+  is_featured: boolean;
+  sales_count: number;
   categoryNames?: string[];
   storeName?: string;
 }
@@ -82,7 +84,7 @@ const ProductList = () => {
     setLoading(true);
 
     const [{ data }, { data: pcData }, { data: cats }, { data: storeData }] = await Promise.all([
-      supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id").order("name"),
+      supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id, is_featured, sales_count").order("name"),
       supabase.from("product_categories").select("product_id, category_id"),
       supabase.from("categories").select("id, name"),
       supabase.from("stores").select("id, name"),
