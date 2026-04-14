@@ -238,6 +238,7 @@ export type Database = {
           logo_url: string | null
           phone: string | null
           pickup_slip_template: Json
+          shipping_presets: Json
           tagline: string | null
           terms_text: string | null
           updated_at: string
@@ -254,6 +255,7 @@ export type Database = {
           logo_url?: string | null
           phone?: string | null
           pickup_slip_template?: Json
+          shipping_presets?: Json
           tagline?: string | null
           terms_text?: string | null
           updated_at?: string
@@ -270,6 +272,7 @@ export type Database = {
           logo_url?: string | null
           phone?: string | null
           pickup_slip_template?: Json
+          shipping_presets?: Json
           tagline?: string | null
           terms_text?: string | null
           updated_at?: string
@@ -408,6 +411,7 @@ export type Database = {
           customer_id: string | null
           delivery_type: number | null
           discount: number | null
+          fulfillment_type: string
           id: string
           item_qty: number | null
           item_type: number | null
@@ -441,6 +445,7 @@ export type Database = {
           customer_id?: string | null
           delivery_type?: number | null
           discount?: number | null
+          fulfillment_type?: string
           id?: string
           item_qty?: number | null
           item_type?: number | null
@@ -474,6 +479,7 @@ export type Database = {
           customer_id?: string | null
           delivery_type?: number | null
           discount?: number | null
+          fulfillment_type?: string
           id?: string
           item_qty?: number | null
           item_type?: number | null

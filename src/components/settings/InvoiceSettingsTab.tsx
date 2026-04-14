@@ -24,6 +24,7 @@ interface InvoiceSettings {
   default_print_format: string;
   invoice_template: InvoiceTemplateConfig;
   pickup_slip_template: PickupSlipTemplateConfig;
+  shipping_presets: number[];
 }
 
 const defaultInvoiceTemplate: InvoiceTemplateConfig = {
@@ -33,13 +34,14 @@ const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   show_subtotal: true, show_discount: true, show_shipping: true, show_tax: true,
   show_total: true, show_payments: true, show_notes: true, show_terms: true,
   show_footer: true, show_order_date: true, show_fulfillment: true,
+  show_due: true,
   custom_fields: [],
 };
 
 const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
   show_order_number: true, show_customer_name: true, show_customer_phone: true,
   show_customer_address: true, show_items: true, show_item_qty: true,
-  show_total: true, show_notes: false, title: "PICKUP SLIP",
+  show_total: true, show_due: true, show_notes: false, title: "PICKUP SLIP",
   custom_fields: [],
 };
 
@@ -61,6 +63,7 @@ const InvoiceSettingsTab = () => {
             ...data,
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
             pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
+            shipping_presets: data.shipping_presets || [80, 150],
           });
         }
       });
@@ -114,6 +117,7 @@ const InvoiceSettingsTab = () => {
         default_print_format: settings.default_print_format,
         invoice_template: settings.invoice_template,
         pickup_slip_template: settings.pickup_slip_template,
+        shipping_presets: settings.shipping_presets,
       } as any)
       .eq("id", settings.id);
     setSaving(false);
@@ -204,6 +208,30 @@ const InvoiceSettingsTab = () => {
             </Select>
             <p className="text-xs text-muted-foreground">This will be used automatically when printing — no popup.</p>
           </div>
+          {/* Shipping Presets */}
+          <div className="space-y-1.5">
+            <Label>Shipping Charge Presets (for POS quick buttons)</Label>
+            <div className="flex items-center gap-2">
+              {(settings.shipping_presets || [80, 150]).map((amt, i) => (
+                <Input
+                  key={i}
+                  type="number"
+                  value={amt}
+                  onChange={(e) => {
+                    const presets = [...(settings.shipping_presets || [80, 150])];
+                    presets[i] = parseFloat(e.target.value) || 0;
+                    updateField("shipping_presets", presets);
+                  }}
+                  className="w-24"
+                  placeholder={`Preset ${i + 1}`}
+                />
+              ))}
+              <Button variant="outline" size="sm" onClick={() => updateField("shipping_presets", [...(settings.shipping_presets || []), 0])}>
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">These appear as quick-select buttons when Delivery is chosen in POS.</p>
+          </div>
           <div className="space-y-1.5"><Label>Footer Text</Label><Input value={settings.footer_text} onChange={(e) => updateField("footer_text", e.target.value)} /></div>
           <div className="space-y-1.5"><Label>Terms & Conditions</Label><Textarea value={settings.terms_text} onChange={(e) => updateField("terms_text", e.target.value)} rows={3} /></div>
         </div>
@@ -239,6 +267,7 @@ const InvoiceSettingsTab = () => {
             ["show_notes", "Order Notes"],
             ["show_terms", "Terms & Conditions"],
             ["show_footer", "Footer Text"],
+            ["show_due", "Due Amount"],
           ] as [keyof InvoiceTemplateConfig, string][]).map(([key, label]) => (
             <div key={key} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
               <span className="text-sm">{label}</span>

@@ -21,6 +21,12 @@ interface PathaoZone {
   city_id: number;
 }
 
+interface PathaoArea {
+  area_id: number;
+  area_name: string;
+  zone_id: number;
+}
+
 interface Props {
   carts: Cart[];
   activeCartId: string;
@@ -42,8 +48,6 @@ const methodIcons: Record<string, React.ReactNode> = {
   bank: <Building2 className="h-4 w-4" />,
 };
 
-const QUICK_CASH = [500, 1000, 2000, 5000];
-
 const CartPanel = ({
   carts, activeCartId, onSetActiveCart, onAddCart, onRemoveCart,
   onUpdateCart, onUpdateItem, onRemoveItem, onCompleteOrder,
@@ -62,14 +66,20 @@ const CartPanel = ({
   const [editingItemPrice, setEditingItemPrice] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState("");
 
-  // Pathao zones
+  // Pathao zones & areas
   const [pathaoZones, setPathaoZones] = useState<PathaoZone[]>([]);
+  const [pathaoAreas, setPathaoAreas] = useState<PathaoArea[]>([]);
   const [zoneSearch, setZoneSearch] = useState("");
   const [showZoneDropdown, setShowZoneDropdown] = useState(false);
+  const [detectedZone, setDetectedZone] = useState<PathaoZone | null>(null);
 
   useEffect(() => {
-    supabase.from("pathao_zones").select("zone_id, zone_name, city_id").order("zone_name").then(({ data }) => {
-      setPathaoZones((data || []) as PathaoZone[]);
+    Promise.all([
+      supabase.from("pathao_zones").select("zone_id, zone_name, city_id").order("zone_name"),
+      supabase.from("pathao_areas").select("area_id, area_name, zone_id").order("area_name"),
+    ]).then(([zonesRes, areasRes]) => {
+      setPathaoZones((zonesRes.data || []) as PathaoZone[]);
+      setPathaoAreas((areasRes.data || []) as PathaoArea[]);
     });
   }, []);
 
@@ -79,8 +89,38 @@ const CartPanel = ({
     return pathaoZones.filter((z) => z.zone_name.toLowerCase().includes(q)).slice(0, 20);
   }, [pathaoZones, zoneSearch]);
 
+  // Auto-detect zone from address
+  const autoDetectZone = useCallback((address: string) => {
+    if (!address || address.length < 3) return;
+    const addrLower = address.toLowerCase();
+    
+    // Try matching area first (more specific)
+    for (const area of pathaoAreas) {
+      if (addrLower.includes(area.area_name.toLowerCase())) {
+        const zone = pathaoZones.find(z => z.zone_id === area.zone_id);
+        if (zone) {
+          setDetectedZone(zone);
+          return;
+        }
+      }
+    }
+    
+    // Then try matching zone name
+    for (const zone of pathaoZones) {
+      if (addrLower.includes(zone.zone_name.toLowerCase())) {
+        setDetectedZone(zone);
+        return;
+      }
+    }
+    
+    setDetectedZone(null);
+  }, [pathaoZones, pathaoAreas]);
+
   const cart = carts.find((c) => c.id === activeCartId) || carts[0];
   if (!cart) return null;
+
+  const QUICK_CASH = [500, 1000, 2000, 5000];
+  const shippingPresets = invoiceSettings?.shipping_presets || [80, 150];
 
   // Calculate totals with per-item discounts
   const subtotal = cart.items.reduce((s, i) => {
@@ -137,7 +177,6 @@ const CartPanel = ({
   };
 
   const handleComplete = async () => {
-    // Validate phone
     if (newCustPhone && !/^\d{11}$/.test(newCustPhone.replace(/\D/g, ""))) {
       setPhoneError("Phone must be exactly 11 digits");
       return;
@@ -157,7 +196,6 @@ const CartPanel = ({
     const orderNum = await onCompleteOrder(snapshot);
     setCompletedOrderNumber(orderNum);
 
-    // Auto-print using default format from settings (no popup)
     const fmt = invoiceSettings?.default_print_format || "thermal";
     const sub = snapshot.items.reduce((s, i) => s + i.price * i.qty, 0);
     const tot = sub - snapshot.discount + (snapshot.fulfillment === "delivery" ? snapshot.shippingFee : 0);
@@ -168,6 +206,7 @@ const CartPanel = ({
     setNewCustAddress("");
     setCustomerSearch("");
     setPhoneError("");
+    setDetectedZone(null);
   };
 
   const selectCustomer = (c: CustomerData) => {
@@ -177,6 +216,7 @@ const CartPanel = ({
     setNewCustAddress(c.address || "");
     setCustomerSearch("");
     setShowCustomerDropdown(false);
+    if (c.address) autoDetectZone(c.address);
   };
 
   const clearCustomer = () => {
@@ -186,6 +226,7 @@ const CartPanel = ({
     setNewCustAddress("");
     setCustomerSearch("");
     setPhoneError("");
+    setDetectedZone(null);
   };
 
   const handlePrint = (format: "thermal" | "a4") => {
@@ -332,7 +373,27 @@ const CartPanel = ({
 
           {cart.fulfillment === "delivery" && (
             <div className="space-y-2">
-              <Input value={newCustAddress} onChange={(e) => setNewCustAddress(e.target.value)} placeholder="Shipping address *" className="h-9 text-sm bg-secondary" />
+              <Input
+                value={newCustAddress}
+                onChange={(e) => {
+                  setNewCustAddress(e.target.value);
+                  autoDetectZone(e.target.value);
+                }}
+                placeholder="Shipping address *"
+                className="h-9 text-sm bg-secondary"
+              />
+              {/* Auto-detected zone hint */}
+              {detectedZone && !cart.pathaoZone && (
+                <button
+                  onClick={() => {
+                    onUpdateCart(cart.id, { pathaoZone: detectedZone.zone_name });
+                    setZoneSearch("");
+                  }}
+                  className="w-full text-left rounded-md bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 transition-colors"
+                >
+                  🎯 Detected zone: <strong>{detectedZone.zone_name}</strong> — click to apply
+                </button>
+              )}
               {/* Pathao Zone Searchable */}
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -530,16 +591,31 @@ const CartPanel = ({
             )}
 
             {cart.fulfillment === "delivery" && (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Shipping</span>
-                <Input
-                  type="number"
-                  value={cart.shippingFee || ""}
-                  onChange={(e) => onUpdateCart(cart.id, { shippingFee: parseFloat(e.target.value) || 0 })}
-                  placeholder="0"
-                  className="h-7 w-24 text-right text-sm bg-secondary"
-                />
-              </div>
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Shipping</span>
+                  <div className="flex items-center gap-1">
+                    {shippingPresets.map((amt) => (
+                      <Button
+                        key={amt}
+                        variant={cart.shippingFee === amt ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs px-2"
+                        onClick={() => onUpdateCart(cart.id, { shippingFee: amt })}
+                      >
+                        ৳{amt}
+                      </Button>
+                    ))}
+                    <Input
+                      type="number"
+                      value={cart.shippingFee || ""}
+                      onChange={(e) => onUpdateCart(cart.id, { shippingFee: parseFloat(e.target.value) || 0 })}
+                      placeholder="0"
+                      className="h-7 w-20 text-right text-sm bg-secondary"
+                    />
+                  </div>
+                </div>
+              </>
             )}
             <div className="flex justify-between font-semibold text-base pt-1 border-t border-border">
               <span>Total</span>

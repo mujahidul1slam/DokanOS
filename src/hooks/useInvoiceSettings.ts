@@ -23,6 +23,7 @@ export interface InvoiceTemplateConfig {
   show_footer: boolean;
   show_order_date: boolean;
   show_fulfillment: boolean;
+  show_due: boolean;
   custom_fields: { label: string; value: string }[];
 }
 
@@ -34,6 +35,7 @@ export interface PickupSlipTemplateConfig {
   show_items: boolean;
   show_item_qty: boolean;
   show_total: boolean;
+  show_due: boolean;
   show_notes: boolean;
   title: string;
   custom_fields: { label: string; value: string }[];
@@ -51,6 +53,7 @@ export interface InvoiceSettings {
   default_print_format: "thermal" | "a4";
   invoice_template: InvoiceTemplateConfig;
   pickup_slip_template: PickupSlipTemplateConfig;
+  shipping_presets: number[];
 }
 
 const defaultInvoiceTemplate: InvoiceTemplateConfig = {
@@ -60,13 +63,14 @@ const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   show_subtotal: true, show_discount: true, show_shipping: true, show_tax: true,
   show_total: true, show_payments: true, show_notes: true, show_terms: true,
   show_footer: true, show_order_date: true, show_fulfillment: true,
+  show_due: true,
   custom_fields: [],
 };
 
 const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
   show_order_number: true, show_customer_name: true, show_customer_phone: true,
   show_customer_address: true, show_items: true, show_item_qty: true,
-  show_total: true, show_notes: false, title: "PICKUP SLIP",
+  show_total: true, show_due: true, show_notes: false, title: "PICKUP SLIP",
   custom_fields: [],
 };
 
@@ -82,6 +86,7 @@ const defaults: InvoiceSettings = {
   default_print_format: "thermal",
   invoice_template: defaultInvoiceTemplate,
   pickup_slip_template: defaultPickupSlipTemplate,
+  shipping_presets: [80, 150],
 };
 
 export function useInvoiceSettings() {
@@ -101,6 +106,7 @@ export function useInvoiceSettings() {
             ...data,
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
             pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
+            shipping_presets: data.shipping_presets || [80, 150],
           });
         }
         setLoading(false);
