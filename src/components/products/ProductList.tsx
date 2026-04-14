@@ -387,6 +387,22 @@ const ProductList = () => {
               </DropdownMenuContent>
             </DropdownMenu>
 
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5 h-8" disabled={bulkBusy}>
+                  <Star className="h-3.5 w-3.5" /> Featured
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => bulkSetFeatured(true)}>
+                  <Star className="h-3.5 w-3.5 mr-2 fill-yellow-400 text-yellow-400" /> Mark Featured
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => bulkSetFeatured(false)}>
+                  <Star className="h-3.5 w-3.5 mr-2" /> Unmark Featured
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Button
               variant="outline"
               size="sm"
@@ -483,6 +499,15 @@ const ProductList = () => {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => openEdit(p.id)}><Pencil className="h-3.5 w-3.5 mr-2" /> Edit</DropdownMenuItem>
+                      <DropdownMenuItem onClick={async () => {
+                        await supabase.from("products").update({ is_featured: !p.is_featured }).eq("id", p.id);
+                        toast({ title: p.is_featured ? "Removed from featured" : "Marked as featured" });
+                        loadProducts();
+                      }}>
+                        <Star className={`h-3.5 w-3.5 mr-2 ${p.is_featured ? "fill-yellow-400 text-yellow-400" : ""}`} />
+                        {p.is_featured ? "Unmark Featured" : "Mark Featured"}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(p.id)}><Trash2 className="h-3.5 w-3.5 mr-2" /> Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
