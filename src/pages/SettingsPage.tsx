@@ -15,7 +15,7 @@ import AuditLogTab from "@/components/settings/AuditLogTab";
 const tabs = [
   { id: "general", label: "General", icon: Settings },
   { id: "inventory", label: "Inventory", icon: Package },
-  { id: "invoice", label: "Invoice", icon: FileText },
+  { id: "invoice", label: "Invoice/PickupSlip", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Plug },
   { id: "audit", label: "Activity Log", icon: ScrollText },
 ] as const;
