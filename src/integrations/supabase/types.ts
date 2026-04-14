@@ -237,6 +237,7 @@ export type Database = {
           invoice_template: Json
           logo_url: string | null
           phone: string | null
+          pickup_slip_print_format: string
           pickup_slip_template: Json
           shipping_presets: Json
           tagline: string | null
@@ -254,6 +255,7 @@ export type Database = {
           invoice_template?: Json
           logo_url?: string | null
           phone?: string | null
+          pickup_slip_print_format?: string
           pickup_slip_template?: Json
           shipping_presets?: Json
           tagline?: string | null
@@ -271,6 +273,7 @@ export type Database = {
           invoice_template?: Json
           logo_url?: string | null
           phone?: string | null
+          pickup_slip_print_format?: string
           pickup_slip_template?: Json
           shipping_presets?: Json
           tagline?: string | null

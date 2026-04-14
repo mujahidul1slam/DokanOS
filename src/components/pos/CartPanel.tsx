@@ -89,32 +89,141 @@ const CartPanel = ({
     return pathaoZones.filter((z) => z.zone_name.toLowerCase().includes(q)).slice(0, 20);
   }, [pathaoZones, zoneSearch]);
 
-  // Auto-detect zone from address
-  const autoDetectZone = useCallback((address: string) => {
-    if (!address || address.length < 3) return;
-    const addrLower = address.toLowerCase();
-    
-    // Try matching area first (more specific)
-    for (const area of pathaoAreas) {
-      if (addrLower.includes(area.area_name.toLowerCase())) {
-        const zone = pathaoZones.find(z => z.zone_id === area.zone_id);
-        if (zone) {
-          setDetectedZone(zone);
-          return;
+  // --- Pathao location matching (same logic as DispatchDialog) ---
+  const LOCATION_WORD_BLACKLIST = useMemo(() => new Set([
+    "address", "area", "bari", "bazar", "block", "building", "city", "district", "door", "flat",
+    "floor", "gate", "goli", "gram", "house", "lane", "market", "moor", "para", "post", "road",
+    "sector", "street", "thana", "union", "upazila", "village", "word", "zilla", "zip",
+  ]), []);
+
+  const LOCATION_ALIAS_GROUPS = useMemo(() => [
+    ["bbaria", "brahmanbaria"], ["barisal", "barishal"], ["bogra", "bogura"],
+    ["chittagong", "chattogram"], ["cumilla", "comilla"], ["jashore", "jessore"],
+    ["lakshmipur", "laxmipur", "lokkhipur"], ["munsiganj", "munshiganj"],
+    ["narshingdi", "narsingdi"], ["gopalgonj", "gopalganj"],
+  ], []);
+
+  const normalizeLocationText = useCallback((v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, ""), []);
+
+  const getEditDistance = useCallback((a: string, b: string): number => {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix: number[][] = [];
+    for (let i = 0; i <= a.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= a.length; i++)
+      for (let j = 1; j <= b.length; j++)
+        matrix[i][j] = Math.min(matrix[i-1][j]+1, matrix[i][j-1]+1, matrix[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+    return matrix[a.length][b.length];
+  }, []);
+
+  const expandLocationAliases = useCallback((value: string) => {
+    const normalized = normalizeLocationText(value);
+    const variants = new Set<string>();
+    if (!normalized) return variants;
+    variants.add(normalized);
+    for (const group of LOCATION_ALIAS_GROUPS) {
+      if (group.includes(normalized)) group.forEach((a) => variants.add(a));
+    }
+    return variants;
+  }, [normalizeLocationText, LOCATION_ALIAS_GROUPS]);
+
+  const buildLocationCandidates = useCallback((values: Array<string | null | undefined>) => {
+    const candidates: string[] = [];
+    const seen = new Set<string>();
+    const addCandidate = (v?: string | null) => {
+      const trimmed = v?.trim();
+      if (!trimmed) return;
+      const n = normalizeLocationText(trimmed);
+      if (!n || seen.has(n)) return;
+      seen.add(n);
+      candidates.push(trimmed);
+    };
+    for (const value of values) {
+      if (!value) continue;
+      addCandidate(value);
+      for (const segment of value.split(/[\n,]/)) {
+        const trimmed = segment.trim();
+        if (!trimmed) continue;
+        addCandidate(trimmed);
+        const afterColon = trimmed.includes(":") ? trimmed.split(":").slice(1).join(":").trim() : "";
+        addCandidate(afterColon);
+        addCandidate(trimmed.replace(/^(?:village|road|house|flat|sector|block|union|upazila|thana|zilla|district|city)\s*:?\s*/i, ""));
+        for (const word of trimmed.split(/\s+/)) {
+          const nw = normalizeLocationText(word);
+          if (nw.length >= 3 && !LOCATION_WORD_BLACKLIST.has(nw) && !/^\d+$/.test(nw)) addCandidate(word);
         }
       }
     }
-    
-    // Then try matching zone name
-    for (const zone of pathaoZones) {
-      if (addrLower.includes(zone.zone_name.toLowerCase())) {
-        setDetectedZone(zone);
-        return;
+    return candidates;
+  }, [normalizeLocationText, LOCATION_WORD_BLACKLIST]);
+
+  const getStrictLocationMatch = useCallback(<T,>(items: T[], getText: (item: T) => string, queries: string[]): T | undefined => {
+    const ranked = items.map((item) => {
+      const itemVariants = expandLocationAliases(getText(item));
+      let bestScore: number | null = null;
+      for (const rawQ of queries) {
+        const qVariants = expandLocationAliases(rawQ.trim());
+        for (const iv of itemVariants) {
+          for (const qv of qVariants) {
+            if (!qv || qv.length < 3) continue;
+            let score: number | null = null;
+            if (iv === qv) score = 0;
+            else if (Math.min(iv.length, qv.length) >= 5 && (iv.startsWith(qv) || qv.startsWith(iv))) score = 1;
+            else if (Math.min(iv.length, qv.length) >= 5 && (iv.includes(qv) || qv.includes(iv))) score = 2;
+            else {
+              const d = getEditDistance(iv, qv);
+              const th = Math.max(1, Math.floor(Math.max(iv.length, qv.length) * 0.18));
+              if (Math.min(iv.length, qv.length) >= 5 && d <= th) score = 10 + d;
+            }
+            if (score !== null && (bestScore === null || score < bestScore)) bestScore = score;
+          }
+        }
       }
+      return bestScore === null ? null : { item, score: bestScore, text: normalizeLocationText(getText(item)) };
+    }).filter((e): e is { item: T; score: number; text: string } => e !== null)
+      .sort((a, b) => a.score - b.score || a.text.localeCompare(b.text));
+    if (ranked.length === 0) return undefined;
+    if (ranked.length > 1 && ranked[0].score === ranked[1].score) return undefined;
+    return ranked[0].item;
+  }, [expandLocationAliases, getEditDistance, normalizeLocationText]);
+
+  const fuzzyMatch = useCallback(<T,>(items: T[], getText: (item: T) => string, queries: string[]): T | undefined => {
+    for (const rawQ of queries) {
+      const q = normalizeLocationText(rawQ);
+      if (!q) continue;
+      let best = items.find((item) => normalizeLocationText(getText(item)) === q);
+      if (best) return best;
+      best = items.find((item) => { const v = normalizeLocationText(getText(item)); return v.startsWith(q) || q.startsWith(v); });
+      if (best) return best;
+      best = items.find((item) => { const v = normalizeLocationText(getText(item)); return v.includes(q) || q.includes(v); });
+      if (best) return best;
+      let minD = Infinity; let closest: T | undefined;
+      for (const item of items) {
+        const d = getEditDistance(q, normalizeLocationText(getText(item)));
+        const th = Math.max(2, Math.floor(q.length * 0.35));
+        if (d < minD && d <= th) { minD = d; closest = item; }
+      }
+      if (closest) return closest;
     }
+    return undefined;
+  }, [getEditDistance, normalizeLocationText]);
+
+  // Auto-detect zone from address using same logic as dispatch
+  const autoDetectZone = useCallback((address: string) => {
+    if (!address || address.length < 3 || pathaoZones.length === 0) { setDetectedZone(null); return; }
+    const candidates = buildLocationCandidates([address]);
+    
+    // Try strict global zone match first
+    const zoneMatch = getStrictLocationMatch(pathaoZones, (z) => z.zone_name, candidates);
+    if (zoneMatch) { setDetectedZone(zoneMatch); return; }
+    
+    // Then fuzzy match
+    const fuzzyZone = fuzzyMatch(pathaoZones, (z) => z.zone_name, candidates);
+    if (fuzzyZone) { setDetectedZone(fuzzyZone); return; }
     
     setDetectedZone(null);
-  }, [pathaoZones, pathaoAreas]);
+  }, [pathaoZones, buildLocationCandidates, getStrictLocationMatch, fuzzyMatch]);
 
   const cart = carts.find((c) => c.id === activeCartId) || carts[0];
   if (!cart) return null;
@@ -386,7 +495,11 @@ const CartPanel = ({
               {detectedZone && !cart.pathaoZone && (
                 <button
                   onClick={() => {
-                    onUpdateCart(cart.id, { pathaoZone: detectedZone.zone_name });
+                    onUpdateCart(cart.id, { 
+                      pathaoZone: detectedZone.zone_name,
+                      pathaoZoneId: detectedZone.zone_id,
+                      pathaoCityId: detectedZone.city_id,
+                    });
                     setZoneSearch("");
                   }}
                   className="w-full text-left rounded-md bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 transition-colors"
@@ -415,7 +528,11 @@ const CartPanel = ({
                       <button
                         key={z.zone_id}
                         onClick={() => {
-                          onUpdateCart(cart.id, { pathaoZone: z.zone_name });
+                          onUpdateCart(cart.id, { 
+                            pathaoZone: z.zone_name,
+                            pathaoZoneId: z.zone_id,
+                            pathaoCityId: z.city_id,
+                          });
                           setZoneSearch("");
                           setShowZoneDropdown(false);
                         }}

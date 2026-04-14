@@ -36,6 +36,8 @@ interface OrderDetail {
   discount: number | null;
   shipping_cost: number | null;
   total: number;
+  tax_amount: number | null;
+  amount_to_collect: number | null;
   notes: string | null;
   consignment_id: string | null;
   tracking_status: string | null;
@@ -112,7 +114,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, notes, consignment_id, tracking_status, created_at, customers(id, name, phone, address, email, city)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customers(id, name, phone, address, email, city)")
         .eq("id", orderId)
         .single(),
       supabase
@@ -509,6 +511,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       <span>Total</span>
                       <span>৳{computedTotal.toLocaleString()}</span>
                     </div>
+                    {order && (order.amount_to_collect ?? 0) > 0 && (
+                      <div className="flex justify-between text-sm text-amber-400 font-medium">
+                        <span>Due Amount</span>
+                        <span>৳{Number(order.amount_to_collect).toLocaleString()}</span>
+                      </div>
+                    )}
+                    {payments.length > 0 && (
+                      <div className="flex justify-between text-sm text-muted-foreground">
+                        <span>Total Paid</span>
+                        <span>৳{payments.reduce((s, p) => s + Number(p.amount), 0).toLocaleString()}</span>
+                      </div>
+                    )}
                   </div>
                 </section>
 

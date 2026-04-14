@@ -376,6 +376,9 @@ const POS = () => {
         salesperson_id: cart.salespersonId || user?.id || null,
         salesperson_name: cart.salespersonName || user?.email || null,
         amount_to_collect: dueAmount > 0 ? dueAmount : 0,
+        fulfillment_type: cart.fulfillment || "walkin",
+        pathao_recipient_city: cart.pathaoCityId || null,
+        pathao_recipient_zone: cart.pathaoZoneId || null,
       })
       .select("id")
       .single();
