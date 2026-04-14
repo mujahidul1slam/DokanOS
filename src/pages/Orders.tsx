@@ -546,9 +546,7 @@ const Orders = () => {
               <TableBody>
                 {paginated.map((order) => (
                   <TableRow key={order.id} className={cn("group", selected.has(order.id) && "bg-primary/5")}>
-                    {(tab === "new" || tab === "ready") && canWrite && (
-                      <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
-                    )}
+                    <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
                     <TableCell>
                       <div className="font-medium text-foreground">#{order.order_number}</div>
                       <div className="text-xs text-muted-foreground">{format(new Date(order.created_at), "MMM d, yyyy · h:mm a")}</div>
