@@ -588,6 +588,9 @@ const Orders = () => {
                     {tab === "all" && <TableCell><SourceBadge source={order.source} /></TableCell>}
                     <TableCell className="text-right">
                       <div className="font-medium text-foreground">৳{Number(order.total).toLocaleString()}</div>
+                      {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (
+                        <div className="text-xs text-amber-400">Due: ৳{Number(order.amount_to_collect).toLocaleString()}</div>
+                      )}
                       <div className="mt-0.5"><PaymentBadge status={order.payment_status} /></div>
                     </TableCell>
                     <TableCell>
