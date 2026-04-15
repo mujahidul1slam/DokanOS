@@ -1,4 +1,16 @@
 import { Badge } from "@/components/ui/badge";
+import { ShoppingBag, Package, Truck } from "lucide-react";
+
+export function DeliveryBadge({ type }: { type: string }) {
+  switch (type) {
+    case "delivery":
+      return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/25 gap-1"><Truck className="h-3 w-3" />Delivery</Badge>;
+    case "pickup":
+      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25 gap-1"><Package className="h-3 w-3" />Pickup</Badge>;
+    default:
+      return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25 gap-1"><ShoppingBag className="h-3 w-3" />Walk-in</Badge>;
+  }
+}
 
 export function SourceBadge({ source }: { source: string }) {
   if (source === "pos") {
