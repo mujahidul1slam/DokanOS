@@ -180,7 +180,7 @@ const Orders = () => {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, dateRange, tab]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, dateRange, tab]);
   useEffect(() => { setSelected(new Set()); }, [tab]);
 
   const toggleSelect = (id: string) => {
