@@ -48,6 +48,7 @@ interface OrderRow {
   payment_status: string;
   consignment_id: string | null;
   tracking_status: string | null;
+  fulfillment_type: string;
   created_at: string;
   amount_to_collect: number | null;
   pathao_recipient_city: number | null;
