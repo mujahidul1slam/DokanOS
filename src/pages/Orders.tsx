@@ -33,7 +33,7 @@ import AddOrderDialog from "@/components/orders/AddOrderDialog";
 import DispatchDialog from "@/components/orders/DispatchDialog";
 import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
 import {
-  SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge,
+  SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { printInvoice } from "@/components/pos/InvoicePrint";
