@@ -95,7 +95,6 @@ const Orders = () => {
   const [dispatchOrderIds, setDispatchOrderIds] = useState<string[]>([]);
   // Add Order
   const [addOrderOpen, setAddOrderOpen] = useState(false);
-  const [dispatchOrderIds, setDispatchOrderIds] = useState<string[]>([]);
 
   // Tracking
   const [trackingLoading, setTrackingLoading] = useState(false);
