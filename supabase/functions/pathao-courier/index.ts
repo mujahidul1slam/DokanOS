@@ -69,11 +69,28 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
-
   try {
+    // Verify caller is authenticated
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const sb = supabaseAdmin();
+    const { data: { user: caller }, error: authErr } = await sb.auth.getUser(
+      authHeader.replace("Bearer ", "")
+    );
+    if (authErr || !caller) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { action, ...params } = await req.json();
     const token = await getAccessToken();
-    const sb = supabaseAdmin();
 
     let result: unknown;
 

@@ -66,6 +66,30 @@ Deno.serve(async (req) => {
       return jsonResp({ error: "Unknown store" }, 404);
     }
 
+    // Verify WooCommerce webhook signature using the store's consumer_secret
+    const signature = req.headers.get("x-wc-webhook-signature") || "";
+    if (store.consumer_secret && signature) {
+      const key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(store.consumer_secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+      const sig = new Uint8Array(
+        await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body))
+      );
+      const expected = btoa(String.fromCharCode(...sig));
+      if (signature !== expected) {
+        console.error("Webhook signature mismatch");
+        return jsonResp({ error: "Invalid signature" }, 401);
+      }
+    } else if (!signature) {
+      // No signature header — reject unless it's a known safe ping
+      console.warn("No webhook signature provided — rejecting");
+      return jsonResp({ error: "Missing signature" }, 401);
+    }
+
     const store_id = store.id;
 
     // Determine if this is a product or order webhook
