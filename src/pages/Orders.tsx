@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
-  PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer,
+  PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -29,10 +29,11 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
+import AddOrderDialog from "@/components/orders/AddOrderDialog";
 import DispatchDialog from "@/components/orders/DispatchDialog";
 import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
 import {
-  SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge,
+  SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { printInvoice } from "@/components/pos/InvoicePrint";
@@ -48,6 +49,7 @@ interface OrderRow {
   payment_status: string;
   consignment_id: string | null;
   tracking_status: string | null;
+  fulfillment_type: string;
   created_at: string;
   amount_to_collect: number | null;
   pathao_recipient_city: number | null;
@@ -81,6 +83,7 @@ const Orders = () => {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [deliveryFilter, setDeliveryFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
@@ -90,6 +93,8 @@ const Orders = () => {
   // Dispatch
   const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
   const [dispatchOrderIds, setDispatchOrderIds] = useState<string[]>([]);
+  // Add Order
+  const [addOrderOpen, setAddOrderOpen] = useState(false);
 
   // Tracking
   const [trackingLoading, setTrackingLoading] = useState(false);
@@ -102,7 +107,7 @@ const Orders = () => {
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
       .from("orders")
-      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, created_at, store_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id, product_name, quantity)")
+      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, store_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id, product_name, quantity)")
       .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
@@ -157,6 +162,7 @@ const Orders = () => {
       const matchPayment = paymentFilter === "all" || o.payment_status === paymentFilter;
       const matchSource = sourceFilter === "all" || o.source === sourceFilter;
       const matchStore = storeFilter === "all" || o.store_id === storeFilter;
+      const matchDelivery = deliveryFilter === "all" || o.fulfillment_type === deliveryFilter;
       let matchDate = true;
       if (dateRange?.from) {
         const d = new Date(o.created_at);
@@ -167,14 +173,14 @@ const Orders = () => {
           matchDate = matchDate && d <= end;
         }
       }
-      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate;
+      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery;
     });
-  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, dateRange, tab, getTabOrders]);
+  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, dateRange, tab, getTabOrders]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, dateRange, tab]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, dateRange, tab]);
   useEffect(() => { setSelected(new Set()); }, [tab]);
 
   const toggleSelect = (id: string) => {
@@ -408,6 +414,11 @@ const Orders = () => {
           <p className="text-sm text-muted-foreground">Manage your order pipeline — from new orders to delivery</p>
         </div>
         <div className="flex items-center gap-2">
+          {canWrite && (
+            <Button size="sm" onClick={() => setAddOrderOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add Order
+            </Button>
+          )}
           {["pickup_pending", "in_transit", "on_hold"].includes(tab) && (
             <Button variant="outline" size="sm" onClick={handleTrackAll} disabled={trackingLoading}>
               {trackingLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
@@ -537,6 +548,15 @@ const Orders = () => {
               </Select>
             </>
           )}
+          <Select value={deliveryFilter} onValueChange={setDeliveryFilter}>
+            <SelectTrigger className="w-[150px]"><SelectValue placeholder="Delivery" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Delivery</SelectItem>
+              <SelectItem value="walkin">Walk-in</SelectItem>
+              <SelectItem value="pickup">Pickup</SelectItem>
+              <SelectItem value="delivery">Delivery</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={storeFilter} onValueChange={setStoreFilter}>
             <SelectTrigger className="w-[160px]"><SelectValue placeholder="Store" /></SelectTrigger>
             <SelectContent>
@@ -560,6 +580,7 @@ const Orders = () => {
                   <TableHead className="w-[240px]">Products</TableHead>
                   {tab === "all" && <TableHead>Source</TableHead>}
                   <TableHead className="text-right">Total</TableHead>
+                  <TableHead>Delivery</TableHead>
                   <TableHead>Status</TableHead>
                   {["pickup_pending", "in_transit", "on_hold", "all"].includes(tab) && (
                     <TableHead>Courier</TableHead>
@@ -592,6 +613,9 @@ const Orders = () => {
                         <div className="text-xs text-amber-400">Due: ৳{Number(order.amount_to_collect).toLocaleString()}</div>
                       )}
                       <div className="mt-0.5"><PaymentBadge status={order.payment_status} /></div>
+                    </TableCell>
+                    <TableCell>
+                      <DeliveryBadge type={order.fulfillment_type} />
                     </TableCell>
                     <TableCell>
                       <FulfillmentBadge status={order.status} />
@@ -664,6 +688,12 @@ const Orders = () => {
         onOpenChange={setDispatchDialogOpen}
         orders={dispatchOrders}
         onDispatched={() => { setSelected(new Set()); loadOrders(); }}
+      />
+
+      <AddOrderDialog
+        open={addOrderOpen}
+        onOpenChange={setAddOrderOpen}
+        onCreated={loadOrders}
       />
     </div>
   );
