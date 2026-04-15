@@ -35,6 +35,7 @@ const Stores = () => {
   const { toast } = useToast();
 
   const loadStores = async () => {
+    // Admin-only page, but query the safe view as a defense-in-depth measure
     const { data: storesData } = await supabase.from("stores").select("id, name, url, status, last_synced_at");
     const storeRows: StoreRow[] = [];
     for (const s of storesData || []) {
