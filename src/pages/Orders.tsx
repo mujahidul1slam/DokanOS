@@ -162,6 +162,7 @@ const Orders = () => {
       const matchPayment = paymentFilter === "all" || o.payment_status === paymentFilter;
       const matchSource = sourceFilter === "all" || o.source === sourceFilter;
       const matchStore = storeFilter === "all" || o.store_id === storeFilter;
+      const matchDelivery = deliveryFilter === "all" || o.fulfillment_type === deliveryFilter;
       let matchDate = true;
       if (dateRange?.from) {
         const d = new Date(o.created_at);
@@ -172,9 +173,9 @@ const Orders = () => {
           matchDate = matchDate && d <= end;
         }
       }
-      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate;
+      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery;
     });
-  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, dateRange, tab, getTabOrders]);
+  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, dateRange, tab, getTabOrders]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
