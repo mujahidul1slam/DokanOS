@@ -414,6 +414,11 @@ const Orders = () => {
           <p className="text-sm text-muted-foreground">Manage your order pipeline — from new orders to delivery</p>
         </div>
         <div className="flex items-center gap-2">
+          {canWrite && (
+            <Button size="sm" onClick={() => setAddOrderOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add Order
+            </Button>
+          )}
           {["pickup_pending", "in_transit", "on_hold"].includes(tab) && (
             <Button variant="outline" size="sm" onClick={handleTrackAll} disabled={trackingLoading}>
               {trackingLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
