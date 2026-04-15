@@ -580,6 +580,7 @@ const Orders = () => {
                   <TableHead className="w-[240px]">Products</TableHead>
                   {tab === "all" && <TableHead>Source</TableHead>}
                   <TableHead className="text-right">Total</TableHead>
+                  <TableHead>Delivery</TableHead>
                   <TableHead>Status</TableHead>
                   {["pickup_pending", "in_transit", "on_hold", "all"].includes(tab) && (
                     <TableHead>Courier</TableHead>
@@ -612,6 +613,9 @@ const Orders = () => {
                         <div className="text-xs text-amber-400">Due: ৳{Number(order.amount_to_collect).toLocaleString()}</div>
                       )}
                       <div className="mt-0.5"><PaymentBadge status={order.payment_status} /></div>
+                    </TableCell>
+                    <TableCell>
+                      <DeliveryBadge type={order.fulfillment_type} />
                     </TableCell>
                     <TableCell>
                       <FulfillmentBadge status={order.status} />
