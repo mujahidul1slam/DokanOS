@@ -689,6 +689,12 @@ const Orders = () => {
         orders={dispatchOrders}
         onDispatched={() => { setSelected(new Set()); loadOrders(); }}
       />
+
+      <AddOrderDialog
+        open={addOrderOpen}
+        onOpenChange={setAddOrderOpen}
+        onCreated={loadOrders}
+      />
     </div>
   );
 };
