@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Settings, Package, Plug, Store, RefreshCw, CheckCircle, AlertTriangle, FileText, ScrollText, ShoppingCart } from "lucide-react";
+import { Settings, Package, Plug, Store, RefreshCw, CheckCircle, AlertTriangle, FileText, ScrollText, ShoppingCart, Tags } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -12,12 +12,14 @@ import { useTheme } from "@/hooks/useTheme";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
 import AuditLogTab from "@/components/settings/AuditLogTab";
+import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 
 const tabs = [
   { id: "general", label: "General", icon: Settings },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "pos", label: "POS Settings", icon: ShoppingCart },
   { id: "invoice", label: "Invoice/Pick up Slip", icon: FileText },
+  { id: "sources", label: "Order Sources", icon: Tags },
   { id: "integrations", label: "Integrations", icon: Plug },
   { id: "audit", label: "Activity Log", icon: ScrollText },
 ] as const;
@@ -184,6 +186,8 @@ const SettingsPage = () => {
           {activeTab === "pos" && <PosSettingsTab />}
 
           {activeTab === "invoice" && <InvoiceSettingsTab />}
+
+          {activeTab === "sources" && <OrderSourcesTab />}
 
           {activeTab === "integrations" && (
             <div className="space-y-4">
