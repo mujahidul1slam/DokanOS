@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
+import AddOrderDialog from "@/components/orders/AddOrderDialog";
 import DispatchDialog from "@/components/orders/DispatchDialog";
 import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
 import {
@@ -82,6 +83,7 @@ const Orders = () => {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [deliveryFilter, setDeliveryFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
@@ -90,6 +92,9 @@ const Orders = () => {
 
   // Dispatch
   const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
+  const [dispatchOrderIds, setDispatchOrderIds] = useState<string[]>([]);
+  // Add Order
+  const [addOrderOpen, setAddOrderOpen] = useState(false);
   const [dispatchOrderIds, setDispatchOrderIds] = useState<string[]>([]);
 
   // Tracking
