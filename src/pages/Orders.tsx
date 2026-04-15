@@ -548,6 +548,15 @@ const Orders = () => {
               </Select>
             </>
           )}
+          <Select value={deliveryFilter} onValueChange={setDeliveryFilter}>
+            <SelectTrigger className="w-[150px]"><SelectValue placeholder="Delivery" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Delivery</SelectItem>
+              <SelectItem value="walkin">Walk-in</SelectItem>
+              <SelectItem value="pickup">Pickup</SelectItem>
+              <SelectItem value="delivery">Delivery</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={storeFilter} onValueChange={setStoreFilter}>
             <SelectTrigger className="w-[160px]"><SelectValue placeholder="Store" /></SelectTrigger>
             <SelectContent>
