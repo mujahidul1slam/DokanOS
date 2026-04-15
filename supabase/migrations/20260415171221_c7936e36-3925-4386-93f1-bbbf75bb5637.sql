@@ -1,0 +1,1 @@
+ALTER TABLE public.orders DROP CONSTRAINT orders_source_check;
