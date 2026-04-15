@@ -93,6 +93,13 @@ export type Database = {
             referencedRelation: "stores"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "categories_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       customers: {
@@ -149,6 +156,13 @@ export type Database = {
             referencedRelation: "stores"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "customers_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       held_carts: {
@@ -194,6 +208,13 @@ export type Database = {
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "held_carts_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores_safe"
             referencedColumns: ["id"]
           },
         ]
@@ -524,6 +545,13 @@ export type Database = {
             referencedRelation: "stores"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "orders_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       pathao_areas: {
@@ -696,6 +724,13 @@ export type Database = {
             referencedRelation: "stores"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "pos_returns_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       pos_shifts: {
@@ -765,6 +800,13 @@ export type Database = {
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_shifts_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores_safe"
             referencedColumns: ["id"]
           },
         ]
@@ -933,6 +975,13 @@ export type Database = {
             referencedRelation: "stores"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "products_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       profiles: {
@@ -1018,7 +1067,36 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      stores_safe: {
+        Row: {
+          created_at: string | null
+          id: string | null
+          last_synced_at: string | null
+          name: string | null
+          status: string | null
+          updated_at: string | null
+          url: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string | null
+          last_synced_at?: string | null
+          name?: string | null
+          status?: string | null
+          updated_at?: string | null
+          url?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string | null
+          last_synced_at?: string | null
+          name?: string | null
+          status?: string | null
+          updated_at?: string | null
+          url?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       get_user_role: {
