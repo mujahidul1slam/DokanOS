@@ -392,6 +392,30 @@ export type Database = {
           },
         ]
       }
+      order_sources: {
+        Row: {
+          created_at: string
+          id: string
+          is_default: boolean
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       order_timeline: {
         Row: {
           created_at: string
