@@ -414,15 +414,7 @@ Deno.serve(async (req) => {
         summary.order_items = allItems.length;
       }
     }
-
-    await supabase
-      .from("stores")
-      .update({ status: "connected", last_synced_at: new Date().toISOString() })
-      .eq("id", store_id);
-
-    return new Response(JSON.stringify({ success: true, summary }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    } // end runFullSync
   } catch (err: any) {
     console.error("woo-sync error:", err);
     return new Response(JSON.stringify({ error: err.message }), {
