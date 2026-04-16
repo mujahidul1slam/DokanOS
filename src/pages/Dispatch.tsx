@@ -373,7 +373,7 @@ const Dispatch = () => {
       });
 
       const { data, error } = await supabase.functions.invoke("pathao-courier", {
-        body: { action: "create_bulk", orders: bulkPayload },
+        body: { action: "create_bulk", orders: bulkPayload, integration_id: selectedIntegration },
       });
 
       if (error) throw error;
