@@ -625,6 +625,45 @@ export type Database = {
         }
         Relationships: []
       }
+      pathao_integrations: {
+        Row: {
+          client_id: string
+          client_secret: string
+          created_at: string
+          environment: string
+          id: string
+          is_active: boolean
+          name: string
+          password: string
+          updated_at: string
+          username: string
+        }
+        Insert: {
+          client_id: string
+          client_secret: string
+          created_at?: string
+          environment?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          password: string
+          updated_at?: string
+          username: string
+        }
+        Update: {
+          client_id?: string
+          client_secret?: string
+          created_at?: string
+          environment?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          password?: string
+          updated_at?: string
+          username?: string
+        }
+        Relationships: []
+      }
       pathao_stores: {
         Row: {
           city_id: number | null

@@ -1,16 +1,37 @@
 import { useEffect, useState } from "react";
-import { Truck, CheckCircle, MapPin, RefreshCw, Loader2 } from "lucide-react";
+import { Truck, CheckCircle, MapPin, RefreshCw, Loader2, Eye, EyeOff, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 
-const PathaoDetail = () => {
+interface PathaoIntegration {
+  id: string;
+  name: string;
+  client_id: string;
+  client_secret: string;
+  username: string;
+  password: string;
+  environment: string;
+  is_active: boolean;
+}
+
+interface Props {
+  integration: PathaoIntegration;
+  onDelete: (id: string) => void;
+}
+
+const PathaoDetail = ({ integration, onDelete }: Props) => {
   const [cityCount, setCityCount] = useState(0);
   const [zoneCount, setZoneCount] = useState(0);
   const [areaCount, setAreaCount] = useState(0);
   const [storeCount, setStoreCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
 
   const loadStats = async () => {
@@ -44,6 +65,17 @@ const PathaoDetail = () => {
     }
   };
 
+  const toggleSecret = (key: string) => {
+    setShowSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const credentials = [
+    { key: "client_id", label: "Client ID", value: integration.client_id },
+    { key: "client_secret", label: "Client Secret", value: integration.client_secret },
+    { key: "username", label: "Username", value: integration.username },
+    { key: "password", label: "Password", value: integration.password },
+  ];
+
   return (
     <div className="space-y-4 max-w-2xl">
       {/* Connection Status */}
@@ -58,16 +90,43 @@ const PathaoDetail = () => {
         <div className="grid gap-3 text-sm">
           <div className="flex justify-between py-2 border-b border-border">
             <span className="text-muted-foreground">API Environment</span>
-            <span className="font-medium">Production</span>
+            <span className="font-medium capitalize">{integration.environment}</span>
           </div>
           <div className="flex justify-between py-2 border-b border-border">
-            <span className="text-muted-foreground">Credentials</span>
-            <span className="font-medium text-success">Configured</span>
+            <span className="text-muted-foreground">Status</span>
+            <span className={`font-medium ${integration.is_active ? "text-success" : "text-muted-foreground"}`}>
+              {integration.is_active ? "Active" : "Inactive"}
+            </span>
           </div>
           <div className="flex justify-between py-2">
             <span className="text-muted-foreground">Features</span>
             <span className="font-medium">Bulk Dispatch, Auto-tracking, Address Lookup</span>
           </div>
+        </div>
+      </div>
+
+      {/* API Credentials */}
+      <div className="rounded-lg border border-border bg-card p-6 space-y-3">
+        <h2 className="font-heading text-lg font-semibold">API Credentials</h2>
+        <div className="grid gap-2 text-sm">
+          {credentials.map((cred) => (
+            <div key={cred.key} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+              <span className="text-muted-foreground text-xs">{cred.label}</span>
+              <div className="flex items-center gap-2">
+                <code className="text-xs font-mono max-w-[200px] truncate">
+                  {showSecrets[cred.key] ? cred.value : "••••••••••••"}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => toggleSecret(cred.key)}
+                >
+                  {showSecrets[cred.key] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -99,20 +158,27 @@ const PathaoDetail = () => {
         </div>
       </div>
 
-      {/* Credential Info */}
-      <div className="rounded-lg border border-border bg-card p-6 space-y-3">
-        <h2 className="font-heading text-lg font-semibold">API Credentials</h2>
-        <p className="text-sm text-muted-foreground">
-          Pathao API credentials are securely stored as backend secrets. Contact your admin to update them.
-        </p>
-        <div className="grid gap-2 text-sm">
-          {["PATHAO_CLIENT_ID", "PATHAO_CLIENT_SECRET", "PATHAO_USERNAME", "PATHAO_PASSWORD"].map((key) => (
-            <div key={key} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
-              <code className="text-xs text-muted-foreground">{key}</code>
-              <Badge variant="secondary" className="text-xs">••••••</Badge>
-            </div>
-          ))}
-        </div>
+      {/* Actions */}
+      <div className="flex gap-3">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" className="gap-1.5">
+              <Trash2 className="h-4 w-4" /> Remove Integration
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove Pathao Integration</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will remove this Pathao connection. Cached location data will remain.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => onDelete(integration.id)}>Remove</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
