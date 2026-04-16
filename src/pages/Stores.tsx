@@ -35,7 +35,6 @@ const Stores = () => {
   const { toast } = useToast();
 
   const loadStores = async () => {
-    // Admin-only page, but query the safe view as a defense-in-depth measure
     const { data: storesData } = await supabase.from("stores").select("id, name, url, status, last_synced_at");
     const storeRows: StoreRow[] = [];
     for (const s of storesData || []) {
@@ -50,6 +49,14 @@ const Stores = () => {
   };
 
   useEffect(() => { loadStores(); }, []);
+
+  // Poll every 5s while any store is syncing so the UI updates when the background job finishes.
+  useEffect(() => {
+    const anySyncing = stores.some((s) => s.status === "syncing");
+    if (!anySyncing) return;
+    const id = setInterval(loadStores, 5000);
+    return () => clearInterval(id);
+  }, [stores]);
 
   const handleAddStore = async () => {
     if (!formData.name || !formData.url) return;
@@ -80,7 +87,7 @@ const Stores = () => {
       if (error) throw error;
       toast({
         title: "Sync started",
-        description: data?.message || "Sync is running in the background. Check back in a minute.",
+        description: data?.message || "Sync is running in the background. Status will update automatically.",
       });
       loadStores();
     } catch (err: any) {
