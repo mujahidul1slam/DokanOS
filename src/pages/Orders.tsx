@@ -726,6 +726,16 @@ const Orders = () => {
                               <RefreshCw className="h-4 w-4 mr-2" /> Refresh Tracking
                             </DropdownMenuItem>
                           )}
+                          {canWrite && tab === "trash" && (
+                            <DropdownMenuItem onClick={() => handleRestoreOrders([order.id])}>
+                              <RotateCcw className="h-4 w-4 mr-2" /> Restore
+                            </DropdownMenuItem>
+                          )}
+                          {canWrite && tab !== "trash" && (
+                            <DropdownMenuItem onClick={() => handleTrashOrders([order.id])} className="text-destructive focus:text-destructive">
+                              <Trash2 className="h-4 w-4 mr-2" /> Move to Trash
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
