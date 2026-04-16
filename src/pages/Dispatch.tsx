@@ -484,30 +484,41 @@ const Dispatch = () => {
         </div>
       </div>
 
-      {/* Pathao Store Selector */}
-      <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4">
-        <Label className="text-sm font-medium whitespace-nowrap">Pathao Store:</Label>
-        {pathaoStores.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No Pathao stores found.{" "}
-            <button onClick={syncPathaoStores} className="text-primary underline">
-              Sync now
-            </button>
-          </p>
-        ) : (
-          <Select value={selectedPathaoStore} onValueChange={setSelectedPathaoStore}>
-            <SelectTrigger className="w-[280px]">
-              <SelectValue placeholder="Select Pathao store" />
-            </SelectTrigger>
-            <SelectContent>
-              {pathaoStores.map((s) => (
-                <SelectItem key={s.pathao_store_id} value={String(s.pathao_store_id)}>
-                  {s.store_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+      {/* Pathao Integration + Store Selector */}
+      <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center gap-2">
+          <Label className="text-sm font-medium whitespace-nowrap">Pathao Account:</Label>
+          {pathaoIntegrations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No Pathao accounts. Add one in Integrations.</p>
+          ) : (
+            <Select value={selectedIntegration} onValueChange={setSelectedIntegration}>
+              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Select account" /></SelectTrigger>
+              <SelectContent>
+                {pathaoIntegrations.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Label className="text-sm font-medium whitespace-nowrap">Merchant Store:</Label>
+          {pathaoStores.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No stores.{" "}
+              <button onClick={syncPathaoStores} className="text-primary underline">Sync now</button>
+            </p>
+          ) : (
+            <Select value={selectedPathaoStore} onValueChange={setSelectedPathaoStore}>
+              <SelectTrigger className="w-[260px]"><SelectValue placeholder="Select Pathao store" /></SelectTrigger>
+              <SelectContent>
+                {pathaoStores.map((s) => (
+                  <SelectItem key={s.pathao_store_id} value={String(s.pathao_store_id)}>{s.store_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
