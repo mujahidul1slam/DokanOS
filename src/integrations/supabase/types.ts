@@ -1187,6 +1187,7 @@ export type Database = {
           merged_phone: string
         }[]
       }
+      purge_trashed_orders: { Args: never; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "staff" | "viewer"
