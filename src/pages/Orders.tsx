@@ -52,6 +52,7 @@ interface OrderRow {
   tracking_status: string | null;
   fulfillment_type: string;
   created_at: string;
+  deleted_at: string | null;
   amount_to_collect: number | null;
   pathao_recipient_city: number | null;
   pathao_recipient_zone: number | null;
@@ -60,6 +61,7 @@ interface OrderRow {
   item_weight: number | null;
   special_instruction: string | null;
   store_id: string | null;
+  woo_order_id: number | null;
   customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
