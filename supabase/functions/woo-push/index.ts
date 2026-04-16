@@ -319,3 +319,36 @@ function reverseMapStatus(status: string): string {
   };
   return map[status] || "processing";
 }
+
+/* ====== TRASH ORDER in WooCommerce ====== */
+async function trashOrder(supabase: any, orderId: string) {
+  const ctx = await getStoreForOrder(supabase, orderId);
+  if (!ctx) {
+    return new Response(JSON.stringify({ error: "Order not linked to a WooCommerce store" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const { order, store } = ctx;
+
+  // DELETE with force=false moves to trash in WooCommerce
+  const url = `${baseUrl(store)}/wp-json/wc/v3/orders/${order.woo_order_id}?force=false`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Authorization: wooAuth(store), "Content-Type": "application/json" },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`WooCommerce trash order error: ${res.status}`, text);
+    return new Response(JSON.stringify({ error: `WooCommerce API error: ${res.status}` }), {
+      status: 502,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
