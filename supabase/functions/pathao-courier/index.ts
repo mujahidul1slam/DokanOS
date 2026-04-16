@@ -164,11 +164,30 @@ Deno.serve(async (req) => {
 
       // ── Fetch & cache Pathao merchant stores ──
       case "get_stores": {
+        const { integration_id } = params;
         const data = await pathaoGet(
           token,
           "/aladdin/api/v1/stores"
         );
-        const stores = data.data?.data || data.data || [];
+        const allStores = data.data?.data || data.data || [];
+
+        // Filter stores by allowed_store_ids from the integration config
+        let allowed: number[] = [];
+        if (integration_id) {
+          const { data: integ } = await sb
+            .from("pathao_integrations")
+            .select("allowed_store_ids")
+            .eq("id", integration_id)
+            .single();
+          if (integ?.allowed_store_ids && Array.isArray(integ.allowed_store_ids) && integ.allowed_store_ids.length > 0) {
+            allowed = integ.allowed_store_ids;
+          }
+        }
+
+        const stores = allowed.length > 0
+          ? allStores.filter((s: any) => allowed.includes(s.store_id))
+          : allStores;
+
         if (stores.length > 0) {
           await sb.from("pathao_stores").upsert(
             stores.map((s: any) => ({
