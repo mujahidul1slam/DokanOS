@@ -1,12 +1,10 @@
-import { useState, useEffect } from "react";
-import { Settings, Package, Store, RefreshCw, CheckCircle, AlertTriangle, FileText, ScrollText, ShoppingCart, Tags } from "lucide-react";
+import { useState } from "react";
+import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useTheme } from "@/hooks/useTheme";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
@@ -25,20 +23,10 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 
-interface StoreRow {
-  id: string;
-  name: string;
-  url: string;
-  status: string;
-  last_synced_at: string | null;
-}
-
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState<TabId>("general");
   const [globalStock, setGlobalStock] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [stores, setStores] = useState<StoreRow[]>([]);
-  const [syncingStoreId, setSyncingStoreId] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
 
   // Business settings
@@ -46,36 +34,11 @@ const SettingsPage = () => {
   const [currency, setCurrency] = useState(() => localStorage.getItem("omnisync-currency") || "৳");
   const [timezone, setTimezone] = useState(() => localStorage.getItem("omnisync-timezone") || "Asia/Dhaka");
 
-  useEffect(() => {
-    supabase.from("stores").select("id, name, url, status, last_synced_at").order("name").then(({ data }) => {
-      setStores((data || []) as StoreRow[]);
-    });
-  }, []);
-
   const handleSaveGeneral = () => {
     localStorage.setItem("omnisync-business-name", businessName);
     localStorage.setItem("omnisync-currency", currency);
     localStorage.setItem("omnisync-timezone", timezone);
     toast.success("Settings saved");
-  };
-
-  const handleSaveInventory = () => {
-    setSaving(true);
-    localStorage.setItem("omnisync-global-stock", String(globalStock));
-    setTimeout(() => { setSaving(false); toast.success("Inventory settings saved"); }, 400);
-  };
-
-  const handleSyncStore = async (storeId: string) => {
-    setSyncingStoreId(storeId);
-    try {
-      await supabase.functions.invoke("woo-sync", { body: { store_id: storeId } });
-      toast.success("Sync completed");
-      const { data } = await supabase.from("stores").select("id, name, url, status, last_synced_at").order("name");
-      setStores((data || []) as StoreRow[]);
-    } catch {
-      toast.error("Sync failed");
-    }
-    setSyncingStoreId(null);
   };
 
   return (
