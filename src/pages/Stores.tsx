@@ -201,15 +201,15 @@ const Stores = () => {
                   size="sm"
                   variant="outline"
                   className="flex-1"
-                  disabled={syncingId === store.id}
+                  disabled={syncingId === store.id || store.status === "syncing"}
                   onClick={() => handleSync(store.id)}
                 >
-                  {syncingId === store.id ? (
+                  {syncingId === store.id || store.status === "syncing" ? (
                     <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                   ) : (
                     <RefreshCw className="h-4 w-4 mr-1" />
                   )}
-                  Sync Now
+                  {store.status === "syncing" ? "Syncing..." : "Sync Now"}
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
