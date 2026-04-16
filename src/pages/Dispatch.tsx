@@ -28,6 +28,7 @@ interface DispatchOrder {
   order_number: string;
   total: number;
   status: string;
+  store_id: string | null;
   customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
@@ -42,9 +43,22 @@ interface DispatchOrder {
   special_instruction: string | null;
 }
 
+interface PathaoIntegration {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
 interface PathaoStore {
   pathao_store_id: number;
   store_name: string;
+  integration_id: string | null;
+}
+
+interface StoreLink {
+  woo_store_id: string;
+  pathao_integration_id: string;
+  default_pathao_store_id: number | null;
 }
 
 interface City { city_id: number; city_name: string }
