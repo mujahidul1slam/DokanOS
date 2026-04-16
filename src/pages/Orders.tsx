@@ -539,7 +539,7 @@ const Orders = () => {
               </Button>
             )}
             {canWrite && tab !== "trash" && (
-              <Button size="sm" variant="outline" onClick={() => handleTrashOrders(Array.from(selected))} disabled={bulkUpdating} className="gap-1.5 text-destructive hover:text-destructive">
+              <Button size="sm" variant="outline" onClick={() => { setPendingTrashIds(Array.from(selected)); setTrashConfirmOpen(true); }} disabled={bulkUpdating} className="gap-1.5 text-destructive hover:text-destructive">
                 <Trash2 className="h-4 w-4" /> Trash
               </Button>
             )}
@@ -736,7 +736,7 @@ const Orders = () => {
                             </DropdownMenuItem>
                           )}
                           {canWrite && tab !== "trash" && (
-                            <DropdownMenuItem onClick={() => handleTrashOrders([order.id])} className="text-destructive focus:text-destructive">
+                            <DropdownMenuItem onClick={() => { setPendingTrashIds([order.id]); setTrashConfirmOpen(true); }} className="text-destructive focus:text-destructive">
                               <Trash2 className="h-4 w-4 mr-2" /> Move to Trash
                             </DropdownMenuItem>
                           )}
