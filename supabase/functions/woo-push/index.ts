@@ -30,6 +30,8 @@ Deno.serve(async (req) => {
       return await pushOrder(supabase, order_id);
     } else if (action === "push_stock" && product_id) {
       return await pushStock(supabase, product_id);
+    } else if (action === "trash_order" && order_id) {
+      return await trashOrder(supabase, order_id);
     }
 
     return new Response(JSON.stringify({ error: "Invalid action or missing ID" }), {

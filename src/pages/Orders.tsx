@@ -782,6 +782,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
     in_transit: { icon: Truck, text: "No orders in transit" },
     delivered: { icon: CheckCircle2, text: "No delivered orders" },
     on_hold: { icon: AlertTriangle, text: "No orders on hold or returned" },
+    trash: { icon: Trash2, text: "Trash is empty — deleted orders appear here for 15 days" },
   };
   const config = configs[tab];
   return (
