@@ -105,6 +105,9 @@ const Orders = () => {
 
   // Bulk actions
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  // Trash confirm
+  const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
+  const [pendingTrashIds, setPendingTrashIds] = useState<string[]>([]);
 
   const { toast } = useToast();
 
