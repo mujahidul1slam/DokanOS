@@ -77,6 +77,14 @@ const Integrations = () => {
 
   useEffect(() => { loadData(); }, []);
 
+  // Poll while any store is syncing in the background
+  useEffect(() => {
+    const anySyncing = stores.some((s) => s.status === "syncing");
+    if (!anySyncing) return;
+    const id = setInterval(loadData, 5000);
+    return () => clearInterval(id);
+  }, [stores]);
+
   const handleAddStore = async () => {
     if (!formData.name || !formData.url) return;
     setSaving(true);
