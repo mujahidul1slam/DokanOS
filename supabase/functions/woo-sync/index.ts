@@ -289,23 +289,51 @@ Deno.serve(async (req) => {
     }
 
     // --- Sync Customers ---
+    // Dedupe by phone within the batch (last write wins) to avoid intra-batch conflicts,
+    // and use per-row upsert with onConflict on phone so cross-store collisions update instead of failing.
     const wooCustomers = await wooFetchAll("customers");
     if (wooCustomers.length > 0) {
-      const rows = wooCustomers.map((c: any) => ({
-        store_id,
-        woo_customer_id: c.id,
-        name: `${c.first_name || ""} ${c.last_name || ""}`.trim() || c.username || "Guest",
-        email: c.email || null,
-        phone: c.billing?.phone || null,
-        address: [c.billing?.address_1, c.billing?.address_2].filter(Boolean).join(", ") || null,
-        city: c.billing?.city || null,
-      }));
+      const byPhone = new Map<string, any>();
+      const noPhone: any[] = [];
+      for (const c of wooCustomers) {
+        const phone = c.billing?.phone?.trim() || null;
+        const row = {
+          store_id,
+          woo_customer_id: c.id,
+          name: `${c.first_name || ""} ${c.last_name || ""}`.trim() || c.username || "Guest",
+          email: c.email || null,
+          phone,
+          address: [c.billing?.address_1, c.billing?.address_2].filter(Boolean).join(", ") || null,
+          city: c.billing?.city || null,
+        };
+        if (phone) byPhone.set(phone, row);
+        else noPhone.push(row);
+      }
+      const rows = [...byPhone.values(), ...noPhone];
 
-      const { error } = await supabase
-        .from("customers")
-        .upsert(rows, { onConflict: "woo_customer_id,store_id", ignoreDuplicates: false });
-      if (error) console.error("Customers upsert error:", error);
-      else summary.customers = rows.length;
+      // Upsert in chunks. Use phone as conflict target since that's the unique constraint causing failures.
+      // Rows without a phone are inserted normally (no conflict possible).
+      let okCount = 0;
+      const withPhone = rows.filter(r => r.phone);
+      const withoutPhone = rows.filter(r => !r.phone);
+
+      for (let i = 0; i < withPhone.length; i += 200) {
+        const chunk = withPhone.slice(i, i + 200);
+        const { error } = await supabase
+          .from("customers")
+          .upsert(chunk, { onConflict: "phone", ignoreDuplicates: false });
+        if (error) console.error("Customers (phone) upsert error:", error);
+        else okCount += chunk.length;
+      }
+      for (let i = 0; i < withoutPhone.length; i += 200) {
+        const chunk = withoutPhone.slice(i, i + 200);
+        const { error } = await supabase
+          .from("customers")
+          .upsert(chunk, { onConflict: "woo_customer_id,store_id", ignoreDuplicates: false });
+        if (error) console.error("Customers (no-phone) upsert error:", error);
+        else okCount += chunk.length;
+      }
+      summary.customers = okCount;
     }
 
     // --- Sync Orders ---
