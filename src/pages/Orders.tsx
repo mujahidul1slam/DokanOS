@@ -201,13 +201,14 @@ const Orders = () => {
 
   /* ─── Tab counts ─── */
   const counts = useMemo(() => ({
-    all: orders.length,
+    all: orders.filter((o) => !o.deleted_at).length,
     new: getTabOrders("new").length,
     ready: getTabOrders("ready").length,
     pickup_pending: getTabOrders("pickup_pending").length,
     in_transit: getTabOrders("in_transit").length,
     delivered: getTabOrders("delivered").length,
     on_hold: getTabOrders("on_hold").length,
+    trash: getTabOrders("trash").length,
   }), [orders, getTabOrders]);
 
   /* ─── Dispatch helpers ─── */
