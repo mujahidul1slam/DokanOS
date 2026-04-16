@@ -457,6 +457,7 @@ export type Database = {
           consignment_id: string | null
           created_at: string
           customer_id: string | null
+          deleted_at: string | null
           delivery_type: number | null
           discount: number | null
           fulfillment_type: string
@@ -491,6 +492,7 @@ export type Database = {
           consignment_id?: string | null
           created_at?: string
           customer_id?: string | null
+          deleted_at?: string | null
           delivery_type?: number | null
           discount?: number | null
           fulfillment_type?: string
@@ -525,6 +527,7 @@ export type Database = {
           consignment_id?: string | null
           created_at?: string
           customer_id?: string | null
+          deleted_at?: string | null
           delivery_type?: number | null
           discount?: number | null
           fulfillment_type?: string
