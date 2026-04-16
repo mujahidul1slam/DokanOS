@@ -545,6 +545,7 @@ const Orders = () => {
             <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
             <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
             <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold / Return ({counts.on_hold})</TabsTrigger>
+            {counts.trash > 0 && <TabsTrigger value="trash" className="gap-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Trash ({counts.trash})</TabsTrigger>}
           </TabsList>
         </div>
 
