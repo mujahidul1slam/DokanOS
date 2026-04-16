@@ -15,7 +15,7 @@ const navItems = [
   { icon: Users, label: "Customers", path: "/customers", roles: ["admin", "staff", "viewer"] },
   { icon: Monitor, label: "POS", path: "/pos", roles: ["admin", "staff"] },
   { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin"] },
-  { icon: Store, label: "Stores", path: "/stores", roles: ["admin"] },
+  { icon: Store, label: "Integrations", path: "/integrations", roles: ["admin"] },
   { icon: UsersRound, label: "Team", path: "/team", roles: ["admin"] },
   { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },
 ];

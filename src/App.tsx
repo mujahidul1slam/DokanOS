@@ -14,7 +14,7 @@ import Customers from "./pages/Customers";
 import Products from "./pages/Products";
 import POS from "./pages/POS";
 import Analytics from "./pages/Analytics";
-import Stores from "./pages/Stores";
+import Integrations from "./pages/Integrations";
 import SettingsPage from "./pages/SettingsPage";
 import TeamManagement from "./pages/TeamManagement";
 import Login from "./pages/Login";
@@ -85,9 +85,9 @@ const AppRoutes = () => {
             <Analytics />
           </RoleGuard>
         } />
-        <Route path="/stores" element={
+        <Route path="/integrations" element={
           <RoleGuard allowedRoles={["admin"]}>
-            <Stores />
+            <Integrations />
           </RoleGuard>
         } />
         <Route path="/settings" element={
