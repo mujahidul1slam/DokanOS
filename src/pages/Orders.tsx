@@ -298,6 +298,49 @@ const Orders = () => {
     } finally { setBulkUpdating(false); }
   };
 
+  /* ─── Move to Trash ─── */
+  const handleTrashOrders = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkUpdating(true);
+    try {
+      const now = new Date().toISOString();
+      await supabase.from("orders").update({ deleted_at: now } as any).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "trashed", description: "Order moved to trash",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      const wooOrders = orders.filter((o) => ids.includes(o.id) && o.woo_order_id && o.store_id);
+      for (const o of wooOrders) {
+        try {
+          await supabase.functions.invoke("woo-push", { body: { action: "trash_order", order_id: o.id } });
+        } catch {}
+      }
+      toast({ title: `${ids.length} order(s) moved to trash` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Failed to trash orders", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Restore from Trash ─── */
+  const handleRestoreOrders = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkUpdating(true);
+    try {
+      await supabase.from("orders").update({ deleted_at: null } as any).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "restored", description: "Order restored from trash",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) restored` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Failed to restore orders", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
   /* ─── Bulk Status Change ─── */
   const handleBulkStatusChange = async (newStatus: string) => {
     if (selected.size === 0) return;
