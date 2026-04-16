@@ -126,8 +126,8 @@ const Integrations = () => {
       });
       if (error) throw error;
       toast({
-        title: "Sync complete",
-        description: `Products: ${data.summary.products}, Orders: ${data.summary.orders}, Customers: ${data.summary.customers}`,
+        title: "Sync started",
+        description: data?.message || "Sync is running in the background. Check back in a minute.",
       });
       loadData();
     } catch (err: any) {
