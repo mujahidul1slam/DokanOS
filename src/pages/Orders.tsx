@@ -5,6 +5,7 @@ import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
+  Trash2, RotateCcw,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -69,7 +70,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 20;
 
-type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold";
+type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "trash";
 
 const Orders = () => {
   const { role } = useAuth();
