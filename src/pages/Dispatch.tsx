@@ -79,9 +79,12 @@ const Dispatch = () => {
   const [dispatchOrders, setDispatchOrders] = useState<DispatchOrder[]>([]);
   const [dispatching, setDispatching] = useState(false);
 
-  // Pathao stores
+  // Pathao integrations + stores
+  const [pathaoIntegrations, setPathaoIntegrations] = useState<PathaoIntegration[]>([]);
+  const [selectedIntegration, setSelectedIntegration] = useState<string>("");
   const [pathaoStores, setPathaoStores] = useState<PathaoStore[]>([]);
   const [selectedPathaoStore, setSelectedPathaoStore] = useState<string>("");
+  const [storeLinks, setStoreLinks] = useState<StoreLink[]>([]);
 
   // Location data
   const [cities, setCities] = useState<City[]>([]);
@@ -105,12 +108,12 @@ const Dispatch = () => {
     const [{ data: pending }, { data: shipped }] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, total, status, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
+        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
         .eq("status", "processing")
         .order("created_at", { ascending: false }),
       supabase
         .from("orders")
-        .select("id, order_number, total, status, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
+        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
         .not("consignment_id", "is", null)
         .not("status", "in", '("delivered","completed","cancelled","returned")')
         .order("created_at", { ascending: false }),
@@ -129,17 +132,34 @@ const Dispatch = () => {
     setLoading(false);
   }, []);
 
-  /* ─── Load Pathao stores from cache ─── */
-  const loadPathaoStores = useCallback(async () => {
+  /* ─── Load Pathao integrations + linked stores ─── */
+  const loadPathaoData = useCallback(async () => {
+    const [{ data: integrations }, { data: links }] = await Promise.all([
+      supabase.from("pathao_integrations").select("id, name, is_active").eq("is_active", true).order("name"),
+      supabase.from("pathao_store_links").select("woo_store_id, pathao_integration_id, default_pathao_store_id"),
+    ]);
+    setPathaoIntegrations((integrations || []) as PathaoIntegration[]);
+    setStoreLinks((links || []) as StoreLink[]);
+    if (integrations && integrations.length > 0 && !selectedIntegration) {
+      setSelectedIntegration(integrations[0].id);
+    }
+  }, [selectedIntegration]);
+
+  /* ─── Load Pathao merchant stores for selected integration ─── */
+  const loadPathaoStores = useCallback(async (integrationId: string) => {
+    if (!integrationId) { setPathaoStores([]); return; }
     const { data } = await supabase
       .from("pathao_stores")
-      .select("pathao_store_id, store_name")
-      .eq("is_active", true);
-    setPathaoStores(data || []);
-    if (data && data.length > 0 && !selectedPathaoStore) {
+      .select("pathao_store_id, store_name, integration_id")
+      .eq("is_active", true)
+      .eq("integration_id", integrationId);
+    setPathaoStores((data || []) as PathaoStore[]);
+    if (data && data.length > 0) {
       setSelectedPathaoStore(String(data[0].pathao_store_id));
+    } else {
+      setSelectedPathaoStore("");
     }
-  }, [selectedPathaoStore]);
+  }, []);
 
   /* ─── Load cities from cache ─── */
   const loadCities = useCallback(async () => {
