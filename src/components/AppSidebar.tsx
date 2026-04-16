@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, ShoppingCart, Package, Users, Monitor, Store,
+  LayoutDashboard, ShoppingCart, Package, Users, Monitor, Plug,
   Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,7 +15,7 @@ const navItems = [
   { icon: Users, label: "Customers", path: "/customers", roles: ["admin", "staff", "viewer"] },
   { icon: Monitor, label: "POS", path: "/pos", roles: ["admin", "staff"] },
   { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin"] },
-  { icon: Store, label: "Integrations", path: "/integrations", roles: ["admin"] },
+  { icon: Plug, label: "Integrations", path: "/integrations", roles: ["admin"] },
   { icon: UsersRound, label: "Team", path: "/team", roles: ["admin"] },
   { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },
 ];
