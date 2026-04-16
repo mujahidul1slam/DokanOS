@@ -339,37 +339,53 @@ Deno.serve(async (req) => {
     // --- Sync Orders ---
     const wooOrders = await wooFetchAll("orders");
     if (wooOrders.length > 0) {
-      const { data: dbCustomers } = await supabase
-        .from("customers")
-        .select("id, woo_customer_id, phone")
-        .eq("store_id", store_id);
-      const custByWooId = new Map(
-        (dbCustomers || []).filter((c: any) => c.woo_customer_id).map((c: any) => [c.woo_customer_id, c.id])
-      );
-      const custByPhone = new Map(
-        (dbCustomers || []).filter((c: any) => c.phone).map((c: any) => [c.phone, c.id])
-      );
+      // Pull customers for THIS store + any customer matching phones we'll need
+      // (because the phone unique constraint may have placed a customer under another store).
+      const orderPhones = Array.from(new Set(
+        wooOrders.map((o: any) => o.billing?.phone?.trim()).filter(Boolean)
+      ));
 
+      const [{ data: storeCustomers }, { data: phoneCustomers }] = await Promise.all([
+        supabase.from("customers").select("id, woo_customer_id, phone").eq("store_id", store_id),
+        orderPhones.length > 0
+          ? supabase.from("customers").select("id, woo_customer_id, phone").in("phone", orderPhones)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+
+      const allCusts = [...(storeCustomers || []), ...(phoneCustomers || [])];
+      const custByWooId = new Map<number, string>();
+      const custByPhone = new Map<string, string>();
+      for (const c of allCusts) {
+        if (c.woo_customer_id) custByWooId.set(c.woo_customer_id, c.id);
+        if (c.phone) custByPhone.set(c.phone, c.id);
+      }
+
+      // Create guest customers for orders without a linked WooCommerce account.
       for (const o of wooOrders) {
         if ((!o.customer_id || o.customer_id === 0) && (o.billing?.phone || o.billing?.email)) {
-          const phone = o.billing?.phone || null;
+          const phone = o.billing?.phone?.trim() || null;
           if (phone && custByPhone.has(phone)) {
-            custByWooId.set(-o.id, custByPhone.get(phone));
+            custByWooId.set(-o.id, custByPhone.get(phone)!);
             continue;
           }
           const guestName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "Guest";
-          const { data: guestCust } = await supabase
-            .from("customers")
-            .insert({
-              store_id,
-              name: guestName,
-              email: o.billing?.email || null,
-              phone,
-              address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
-              city: o.billing?.city || null,
-            })
-            .select("id")
-            .single();
+          const guestRow = {
+            store_id,
+            name: guestName,
+            email: o.billing?.email || null,
+            phone,
+            address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
+            city: o.billing?.city || null,
+          };
+          // Use upsert on phone if present, else plain insert
+          const query = phone
+            ? supabase.from("customers").upsert(guestRow, { onConflict: "phone", ignoreDuplicates: false }).select("id").single()
+            : supabase.from("customers").insert(guestRow).select("id").single();
+          const { data: guestCust, error: gErr } = await query;
+          if (gErr) {
+            console.warn("Guest customer create failed:", gErr.message);
+            continue;
+          }
           if (guestCust) {
             custByWooId.set(-o.id, guestCust.id);
             if (phone) custByPhone.set(phone, guestCust.id);
@@ -386,9 +402,12 @@ Deno.serve(async (req) => {
       );
 
       const orderRows = wooOrders.map((o: any) => {
-        const customerId = o.customer_id && o.customer_id > 0
-          ? custByWooId.get(o.customer_id) || null
-          : custByWooId.get(-o.id) || null;
+        const phone = o.billing?.phone?.trim() || null;
+        const customerId =
+          (o.customer_id && o.customer_id > 0 ? custByWooId.get(o.customer_id) : null) ||
+          custByWooId.get(-o.id) ||
+          (phone ? custByPhone.get(phone) : null) ||
+          null;
 
         return {
           store_id,
@@ -408,11 +427,15 @@ Deno.serve(async (req) => {
         };
       });
 
-      const { error } = await supabase
-        .from("orders")
-        .upsert(orderRows, { onConflict: "woo_order_id,store_id", ignoreDuplicates: false });
-      if (error) console.error("Orders upsert error:", error);
-      else summary.orders = orderRows.length;
+      // Upsert orders in chunks
+      for (let i = 0; i < orderRows.length; i += 500) {
+        const chunk = orderRows.slice(i, i + 500);
+        const { error } = await supabase
+          .from("orders")
+          .upsert(chunk, { onConflict: "woo_order_id,store_id", ignoreDuplicates: false });
+        if (error) console.error("Orders upsert error:", error);
+      }
+      summary.orders = orderRows.length;
 
       const { data: dbOrders } = await supabase
         .from("orders")
@@ -422,36 +445,28 @@ Deno.serve(async (req) => {
         (dbOrders || []).map((o: any) => [o.woo_order_id, o.id])
       );
 
-      const orderIdsToRefresh: string[] = [];
-      const allItems: any[] = [];
+      // Process order items per-order: delete then insert atomically per order to avoid
+      // duplication if a sync gets re-triggered. Each line_item is inserted once.
+      let itemCount = 0;
       for (const o of wooOrders) {
         const orderId = orderMap.get(o.id);
         if (!orderId) continue;
-        orderIdsToRefresh.push(orderId);
-        for (const li of o.line_items || []) {
-          allItems.push({
-            order_id: orderId,
-            product_id: prodMap.get(li.product_id) || null,
-            product_name: li.name,
-            quantity: li.quantity,
-            unit_price: parseFloat(li.price) || 0,
-            line_total: parseFloat(li.total) || 0,
-          });
+        const items = (o.line_items || []).map((li: any) => ({
+          order_id: orderId,
+          product_id: prodMap.get(li.product_id) || null,
+          product_name: li.name,
+          quantity: li.quantity,
+          unit_price: parseFloat(li.price) || 0,
+          line_total: parseFloat(li.total) || 0,
+        }));
+        await supabase.from("order_items").delete().eq("order_id", orderId);
+        if (items.length > 0) {
+          const { error: itemErr } = await supabase.from("order_items").insert(items);
+          if (itemErr) console.error(`Order items insert error for order ${o.id}:`, itemErr);
+          else itemCount += items.length;
         }
       }
-
-      if (orderIdsToRefresh.length > 0) {
-        await supabase.from("order_items").delete().in("order_id", orderIdsToRefresh);
-      }
-
-      if (allItems.length > 0) {
-        for (let i = 0; i < allItems.length; i += 500) {
-          const chunk = allItems.slice(i, i + 500);
-          const { error: itemErr } = await supabase.from("order_items").insert(chunk);
-          if (itemErr) console.error("Order items insert error:", itemErr);
-        }
-        summary.order_items = allItems.length;
-      }
+      summary.order_items = itemCount;
     }
     } // end runFullSync
   } catch (err: any) {
