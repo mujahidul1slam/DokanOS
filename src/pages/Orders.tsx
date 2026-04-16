@@ -772,6 +772,16 @@ const Orders = () => {
         onOpenChange={setAddOrderOpen}
         onCreated={loadOrders}
       />
+
+      <ConfirmDialog
+        open={trashConfirmOpen}
+        onOpenChange={setTrashConfirmOpen}
+        title="Move to Trash?"
+        description={`${pendingTrashIds.length} order(s) will be moved to trash and automatically deleted after 15 days.${orders.some((o) => pendingTrashIds.includes(o.id) && o.woo_order_id) ? " WooCommerce orders will also be trashed on the store." : ""}`}
+        confirmLabel="Move to Trash"
+        variant="destructive"
+        onConfirm={() => { handleTrashOrders(pendingTrashIds); setTrashConfirmOpen(false); }}
+      />
     </div>
   );
 };
