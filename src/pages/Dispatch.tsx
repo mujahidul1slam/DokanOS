@@ -200,9 +200,13 @@ const Dispatch = () => {
 
   /* ─── Fetch & sync cities ─── */
   const syncCities = async () => {
+    if (!selectedIntegration) {
+      toast({ title: "Select a Pathao integration first", variant: "destructive" });
+      return;
+    }
     try {
       const { data } = await supabase.functions.invoke("pathao-courier", {
-        body: { action: "get_cities" },
+        body: { action: "get_cities", integration_id: selectedIntegration },
       });
       await loadCities();
       toast({ title: `${(data?.data || []).length} cities synced` });
@@ -226,7 +230,7 @@ const Dispatch = () => {
     }
     // Fetch from API
     const { data } = await supabase.functions.invoke("pathao-courier", {
-      body: { action: "get_zones", city_id: cityId },
+      body: { action: "get_zones", city_id: cityId, integration_id: selectedIntegration },
     });
     const zones = data?.data || [];
     setZonesMap((prev) => ({ ...prev, [cityId]: zones.map((z: any) => ({ zone_id: z.zone_id, zone_name: z.zone_name })) }));
@@ -245,7 +249,7 @@ const Dispatch = () => {
       return;
     }
     const { data } = await supabase.functions.invoke("pathao-courier", {
-      body: { action: "get_areas", zone_id: zoneId },
+      body: { action: "get_areas", zone_id: zoneId, integration_id: selectedIntegration },
     });
     const areas = data?.data || [];
     setAreasMap((prev) => ({ ...prev, [zoneId]: areas.map((a: any) => ({ area_id: a.area_id, area_name: a.area_name })) }));
@@ -278,9 +282,26 @@ const Dispatch = () => {
   };
 
   /* ─── Open dispatch dialog ─── */
-  const openDispatch = (orderIds: string[]) => {
+  const openDispatch = async (orderIds: string[]) => {
     const toDispatch = orders.filter((o) => orderIds.includes(o.id));
     setDispatchOrders(toDispatch);
+
+    // Auto-pick integration based on the FIRST order's WooCommerce store link
+    let inferredIntegration = selectedIntegration;
+    let inferredPathaoStore = "";
+    const firstWooId = toDispatch[0]?.store_id;
+    if (firstWooId) {
+      const link = storeLinks.find((l) => l.woo_store_id === firstWooId);
+      if (link) {
+        inferredIntegration = link.pathao_integration_id;
+        if (link.default_pathao_store_id) inferredPathaoStore = String(link.default_pathao_store_id);
+      }
+    }
+    if (inferredIntegration !== selectedIntegration) {
+      setSelectedIntegration(inferredIntegration);
+      await loadPathaoStores(inferredIntegration);
+    }
+    if (inferredPathaoStore) setSelectedPathaoStore(inferredPathaoStore);
 
     // Initialize overrides with customer data
     const overrides: typeof orderOverrides = {};
@@ -303,6 +324,10 @@ const Dispatch = () => {
 
   /* ─── Dispatch orders to Pathao ─── */
   const handleDispatch = async () => {
+    if (!selectedIntegration) {
+      toast({ title: "Select a Pathao integration first", variant: "destructive" });
+      return;
+    }
     if (!selectedPathaoStore) {
       toast({ title: "Select a Pathao store first", variant: "destructive" });
       return;
