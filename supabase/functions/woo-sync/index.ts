@@ -92,6 +92,17 @@ Deno.serve(async (req) => {
 
     const summary = { products: 0, orders: 0, order_items: 0, customers: 0, categories: 0, variations: 0 };
 
+    // If a sync is already running for this store, don't kick off another one.
+    if (store.status === "syncing") {
+      return new Response(
+        JSON.stringify({ success: true, status: "already_running", message: "A sync is already in progress for this store." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Mark store as syncing immediately so the UI can poll for completion.
+    await supabase.from("stores").update({ status: "syncing" }).eq("id", store_id);
+
     // Run the heavy sync in the background so the HTTP request doesn't hit the 150s idle timeout.
     const syncTask = (async () => {
       try {
