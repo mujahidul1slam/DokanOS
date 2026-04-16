@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Settings, Package, Plug, Store, RefreshCw, CheckCircle, AlertTriangle, FileText, ScrollText, ShoppingCart, Tags } from "lucide-react";
+import { Settings, Package, Store, RefreshCw, CheckCircle, AlertTriangle, FileText, ScrollText, ShoppingCart, Tags } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,6 @@ const tabs = [
   { id: "pos", label: "POS Settings", icon: ShoppingCart },
   { id: "invoice", label: "Invoice/Pick up Slip", icon: FileText },
   { id: "sources", label: "Order Sources", icon: Tags },
-  { id: "integrations", label: "Integrations", icon: Plug },
   { id: "audit", label: "Activity Log", icon: ScrollText },
 ] as const;
 
@@ -189,63 +188,6 @@ const SettingsPage = () => {
 
           {activeTab === "sources" && <OrderSourcesTab />}
 
-          {activeTab === "integrations" && (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-border bg-card p-6">
-                <h2 className="font-heading text-lg font-semibold mb-1">Integrations</h2>
-                <p className="text-sm text-muted-foreground mb-6">Manage connected WooCommerce stores and API services.</p>
-
-                {stores.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Store className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No stores connected yet. Go to Stores page to add one.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {stores.map((s) => (
-                      <div key={s.id} className="flex items-center justify-between rounded-lg border border-border p-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <Store className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm font-medium">{s.name}</span>
-                            <Badge variant={s.status === "connected" ? "default" : "secondary"} className={s.status === "connected" ? "bg-success/15 text-success border-0" : ""}>
-                              {s.status === "connected" ? <><CheckCircle className="h-3 w-3 mr-1" /> Connected</> : s.status}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground">{s.url}</p>
-                          {s.last_synced_at && (
-                            <p className="text-xs text-muted-foreground">
-                              Last synced: {new Date(s.last_synced_at).toLocaleString()}
-                            </p>
-                          )}
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={syncingStoreId === s.id}
-                          onClick={() => handleSyncStore(s.id)}
-                          className="gap-1.5"
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 ${syncingStoreId === s.id ? "animate-spin" : ""}`} />
-                          Sync
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-lg border border-border bg-card p-6">
-                <h3 className="text-sm font-semibold mb-3">Pathao Courier</h3>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-success/15 text-success border-0">
-                    <CheckCircle className="h-3 w-3 mr-1" /> Connected
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">Production API</span>
-                </div>
-              </div>
-            </div>
-          )}
 
           {activeTab === "audit" && <AuditLogTab />}
         </div>
