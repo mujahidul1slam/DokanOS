@@ -28,6 +28,7 @@ interface DispatchOrder {
   order_number: string;
   total: number;
   status: string;
+  store_id: string | null;
   customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
@@ -42,9 +43,22 @@ interface DispatchOrder {
   special_instruction: string | null;
 }
 
+interface PathaoIntegration {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
 interface PathaoStore {
   pathao_store_id: number;
   store_name: string;
+  integration_id: string | null;
+}
+
+interface StoreLink {
+  woo_store_id: string;
+  pathao_integration_id: string;
+  default_pathao_store_id: number | null;
 }
 
 interface City { city_id: number; city_name: string }
@@ -65,9 +79,12 @@ const Dispatch = () => {
   const [dispatchOrders, setDispatchOrders] = useState<DispatchOrder[]>([]);
   const [dispatching, setDispatching] = useState(false);
 
-  // Pathao stores
+  // Pathao integrations + stores
+  const [pathaoIntegrations, setPathaoIntegrations] = useState<PathaoIntegration[]>([]);
+  const [selectedIntegration, setSelectedIntegration] = useState<string>("");
   const [pathaoStores, setPathaoStores] = useState<PathaoStore[]>([]);
   const [selectedPathaoStore, setSelectedPathaoStore] = useState<string>("");
+  const [storeLinks, setStoreLinks] = useState<StoreLink[]>([]);
 
   // Location data
   const [cities, setCities] = useState<City[]>([]);
@@ -91,12 +108,12 @@ const Dispatch = () => {
     const [{ data: pending }, { data: shipped }] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, total, status, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
+        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
         .eq("status", "processing")
         .order("created_at", { ascending: false }),
       supabase
         .from("orders")
-        .select("id, order_number, total, status, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
+        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
         .not("consignment_id", "is", null)
         .not("status", "in", '("delivered","completed","cancelled","returned")')
         .order("created_at", { ascending: false }),
@@ -115,17 +132,34 @@ const Dispatch = () => {
     setLoading(false);
   }, []);
 
-  /* ─── Load Pathao stores from cache ─── */
-  const loadPathaoStores = useCallback(async () => {
+  /* ─── Load Pathao integrations + linked stores ─── */
+  const loadPathaoData = useCallback(async () => {
+    const [{ data: integrations }, { data: links }] = await Promise.all([
+      supabase.from("pathao_integrations").select("id, name, is_active").eq("is_active", true).order("name"),
+      supabase.from("pathao_store_links").select("woo_store_id, pathao_integration_id, default_pathao_store_id"),
+    ]);
+    setPathaoIntegrations((integrations || []) as PathaoIntegration[]);
+    setStoreLinks((links || []) as StoreLink[]);
+    if (integrations && integrations.length > 0 && !selectedIntegration) {
+      setSelectedIntegration(integrations[0].id);
+    }
+  }, [selectedIntegration]);
+
+  /* ─── Load Pathao merchant stores for selected integration ─── */
+  const loadPathaoStores = useCallback(async (integrationId: string) => {
+    if (!integrationId) { setPathaoStores([]); return; }
     const { data } = await supabase
       .from("pathao_stores")
-      .select("pathao_store_id, store_name")
-      .eq("is_active", true);
-    setPathaoStores(data || []);
-    if (data && data.length > 0 && !selectedPathaoStore) {
+      .select("pathao_store_id, store_name, integration_id")
+      .eq("is_active", true)
+      .eq("integration_id", integrationId);
+    setPathaoStores((data || []) as PathaoStore[]);
+    if (data && data.length > 0) {
       setSelectedPathaoStore(String(data[0].pathao_store_id));
+    } else {
+      setSelectedPathaoStore("");
     }
-  }, [selectedPathaoStore]);
+  }, []);
 
   /* ─── Load cities from cache ─── */
   const loadCities = useCallback(async () => {
@@ -138,17 +172,26 @@ const Dispatch = () => {
 
   useEffect(() => {
     loadOrders();
-    loadPathaoStores();
+    loadPathaoData();
     loadCities();
-  }, [loadOrders, loadPathaoStores, loadCities]);
+  }, [loadOrders, loadPathaoData, loadCities]);
+
+  // Reload merchant stores whenever the selected integration changes
+  useEffect(() => {
+    if (selectedIntegration) loadPathaoStores(selectedIntegration);
+  }, [selectedIntegration, loadPathaoStores]);
 
   /* ─── Fetch & sync Pathao stores from API ─── */
   const syncPathaoStores = async () => {
+    if (!selectedIntegration) {
+      toast({ title: "Select a Pathao integration first", variant: "destructive" });
+      return;
+    }
     try {
       await supabase.functions.invoke("pathao-courier", {
-        body: { action: "get_stores" },
+        body: { action: "get_stores", integration_id: selectedIntegration },
       });
-      await loadPathaoStores();
+      await loadPathaoStores(selectedIntegration);
       toast({ title: "Pathao stores synced" });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -157,9 +200,13 @@ const Dispatch = () => {
 
   /* ─── Fetch & sync cities ─── */
   const syncCities = async () => {
+    if (!selectedIntegration) {
+      toast({ title: "Select a Pathao integration first", variant: "destructive" });
+      return;
+    }
     try {
       const { data } = await supabase.functions.invoke("pathao-courier", {
-        body: { action: "get_cities" },
+        body: { action: "get_cities", integration_id: selectedIntegration },
       });
       await loadCities();
       toast({ title: `${(data?.data || []).length} cities synced` });
@@ -183,7 +230,7 @@ const Dispatch = () => {
     }
     // Fetch from API
     const { data } = await supabase.functions.invoke("pathao-courier", {
-      body: { action: "get_zones", city_id: cityId },
+      body: { action: "get_zones", city_id: cityId, integration_id: selectedIntegration },
     });
     const zones = data?.data || [];
     setZonesMap((prev) => ({ ...prev, [cityId]: zones.map((z: any) => ({ zone_id: z.zone_id, zone_name: z.zone_name })) }));
@@ -202,7 +249,7 @@ const Dispatch = () => {
       return;
     }
     const { data } = await supabase.functions.invoke("pathao-courier", {
-      body: { action: "get_areas", zone_id: zoneId },
+      body: { action: "get_areas", zone_id: zoneId, integration_id: selectedIntegration },
     });
     const areas = data?.data || [];
     setAreasMap((prev) => ({ ...prev, [zoneId]: areas.map((a: any) => ({ area_id: a.area_id, area_name: a.area_name })) }));
@@ -235,9 +282,26 @@ const Dispatch = () => {
   };
 
   /* ─── Open dispatch dialog ─── */
-  const openDispatch = (orderIds: string[]) => {
+  const openDispatch = async (orderIds: string[]) => {
     const toDispatch = orders.filter((o) => orderIds.includes(o.id));
     setDispatchOrders(toDispatch);
+
+    // Auto-pick integration based on the FIRST order's WooCommerce store link
+    let inferredIntegration = selectedIntegration;
+    let inferredPathaoStore = "";
+    const firstWooId = toDispatch[0]?.store_id;
+    if (firstWooId) {
+      const link = storeLinks.find((l) => l.woo_store_id === firstWooId);
+      if (link) {
+        inferredIntegration = link.pathao_integration_id;
+        if (link.default_pathao_store_id) inferredPathaoStore = String(link.default_pathao_store_id);
+      }
+    }
+    if (inferredIntegration !== selectedIntegration) {
+      setSelectedIntegration(inferredIntegration);
+      await loadPathaoStores(inferredIntegration);
+    }
+    if (inferredPathaoStore) setSelectedPathaoStore(inferredPathaoStore);
 
     // Initialize overrides with customer data
     const overrides: typeof orderOverrides = {};
@@ -260,6 +324,10 @@ const Dispatch = () => {
 
   /* ─── Dispatch orders to Pathao ─── */
   const handleDispatch = async () => {
+    if (!selectedIntegration) {
+      toast({ title: "Select a Pathao integration first", variant: "destructive" });
+      return;
+    }
     if (!selectedPathaoStore) {
       toast({ title: "Select a Pathao store first", variant: "destructive" });
       return;
@@ -305,7 +373,7 @@ const Dispatch = () => {
       });
 
       const { data, error } = await supabase.functions.invoke("pathao-courier", {
-        body: { action: "create_bulk", orders: bulkPayload },
+        body: { action: "create_bulk", orders: bulkPayload, integration_id: selectedIntegration },
       });
 
       if (error) throw error;
@@ -416,30 +484,41 @@ const Dispatch = () => {
         </div>
       </div>
 
-      {/* Pathao Store Selector */}
-      <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4">
-        <Label className="text-sm font-medium whitespace-nowrap">Pathao Store:</Label>
-        {pathaoStores.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No Pathao stores found.{" "}
-            <button onClick={syncPathaoStores} className="text-primary underline">
-              Sync now
-            </button>
-          </p>
-        ) : (
-          <Select value={selectedPathaoStore} onValueChange={setSelectedPathaoStore}>
-            <SelectTrigger className="w-[280px]">
-              <SelectValue placeholder="Select Pathao store" />
-            </SelectTrigger>
-            <SelectContent>
-              {pathaoStores.map((s) => (
-                <SelectItem key={s.pathao_store_id} value={String(s.pathao_store_id)}>
-                  {s.store_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+      {/* Pathao Integration + Store Selector */}
+      <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center gap-2">
+          <Label className="text-sm font-medium whitespace-nowrap">Pathao Account:</Label>
+          {pathaoIntegrations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No Pathao accounts. Add one in Integrations.</p>
+          ) : (
+            <Select value={selectedIntegration} onValueChange={setSelectedIntegration}>
+              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Select account" /></SelectTrigger>
+              <SelectContent>
+                {pathaoIntegrations.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Label className="text-sm font-medium whitespace-nowrap">Merchant Store:</Label>
+          {pathaoStores.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No stores.{" "}
+              <button onClick={syncPathaoStores} className="text-primary underline">Sync now</button>
+            </p>
+          ) : (
+            <Select value={selectedPathaoStore} onValueChange={setSelectedPathaoStore}>
+              <SelectTrigger className="w-[260px]"><SelectValue placeholder="Select Pathao store" /></SelectTrigger>
+              <SelectContent>
+                {pathaoStores.map((s) => (
+                  <SelectItem key={s.pathao_store_id} value={String(s.pathao_store_id)}>{s.store_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}

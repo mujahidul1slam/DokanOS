@@ -10,6 +10,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import PathaoStoreLinks from "./PathaoStoreLinks";
 
 interface PathaoIntegration {
   id: string;
@@ -51,7 +52,7 @@ const PathaoDetail = ({ integration, onDelete, onRefresh }: Props) => {
       supabase.from("pathao_cities").select("city_id", { count: "exact", head: true }),
       supabase.from("pathao_zones").select("zone_id", { count: "exact", head: true }),
       supabase.from("pathao_areas").select("area_id", { count: "exact", head: true }),
-      supabase.from("pathao_stores").select("id", { count: "exact", head: true }),
+      supabase.from("pathao_stores").select("id", { count: "exact", head: true }).eq("integration_id", integration.id),
     ]);
     setCityCount(cities.count || 0);
     setZoneCount(zones.count || 0);
@@ -65,10 +66,9 @@ const PathaoDetail = ({ integration, onDelete, onRefresh }: Props) => {
     setRefreshing(true);
     try {
       const { error } = await supabase.functions.invoke("pathao-courier", {
-        body: { action: "get_cities" },
+        body: { action: "get_cities", integration_id: integration.id },
       });
       if (error) throw error;
-      // Also refresh stores with integration_id filter
       await supabase.functions.invoke("pathao-courier", {
         body: { action: "get_stores", integration_id: integration.id },
       });
@@ -228,6 +228,9 @@ const PathaoDetail = ({ integration, onDelete, onRefresh }: Props) => {
           ))}
         </div>
       </div>
+
+      {/* Linked WooCommerce Stores */}
+      <PathaoStoreLinks integrationId={integration.id} />
 
       {/* Actions */}
       <div className="flex gap-3">

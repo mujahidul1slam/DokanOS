@@ -467,6 +467,7 @@ export type Database = {
           item_weight: number | null
           notes: string | null
           order_number: string
+          pathao_integration_id: string | null
           pathao_recipient_area: number | null
           pathao_recipient_city: number | null
           pathao_recipient_zone: number | null
@@ -502,6 +503,7 @@ export type Database = {
           item_weight?: number | null
           notes?: string | null
           order_number: string
+          pathao_integration_id?: string | null
           pathao_recipient_area?: number | null
           pathao_recipient_city?: number | null
           pathao_recipient_zone?: number | null
@@ -537,6 +539,7 @@ export type Database = {
           item_weight?: number | null
           notes?: string | null
           order_number?: string
+          pathao_integration_id?: string | null
           pathao_recipient_area?: number | null
           pathao_recipient_city?: number | null
           pathao_recipient_zone?: number | null
@@ -563,6 +566,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_pathao_integration_id_fkey"
+            columns: ["pathao_integration_id"]
+            isOneToOne: false
+            referencedRelation: "pathao_integrations"
             referencedColumns: ["id"]
           },
           {
@@ -670,12 +680,62 @@ export type Database = {
         }
         Relationships: []
       }
+      pathao_store_links: {
+        Row: {
+          created_at: string
+          default_pathao_store_id: number | null
+          id: string
+          pathao_integration_id: string
+          updated_at: string
+          woo_store_id: string
+        }
+        Insert: {
+          created_at?: string
+          default_pathao_store_id?: number | null
+          id?: string
+          pathao_integration_id: string
+          updated_at?: string
+          woo_store_id: string
+        }
+        Update: {
+          created_at?: string
+          default_pathao_store_id?: number | null
+          id?: string
+          pathao_integration_id?: string
+          updated_at?: string
+          woo_store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pathao_store_links_pathao_integration_id_fkey"
+            columns: ["pathao_integration_id"]
+            isOneToOne: false
+            referencedRelation: "pathao_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pathao_store_links_woo_store_id_fkey"
+            columns: ["woo_store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pathao_store_links_woo_store_id_fkey"
+            columns: ["woo_store_id"]
+            isOneToOne: true
+            referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pathao_stores: {
         Row: {
           city_id: number | null
           fetched_at: string
           hub_id: number | null
           id: string
+          integration_id: string | null
           is_active: boolean | null
           pathao_store_id: number
           store_address: string | null
@@ -687,6 +747,7 @@ export type Database = {
           fetched_at?: string
           hub_id?: number | null
           id?: string
+          integration_id?: string | null
           is_active?: boolean | null
           pathao_store_id: number
           store_address?: string | null
@@ -698,13 +759,22 @@ export type Database = {
           fetched_at?: string
           hub_id?: number | null
           id?: string
+          integration_id?: string | null
           is_active?: boolean | null
           pathao_store_id?: number
           store_address?: string | null
           store_name?: string
           zone_id?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "pathao_stores_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "pathao_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pathao_zones: {
         Row: {
