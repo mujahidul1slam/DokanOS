@@ -161,7 +161,7 @@ const PathaoStoreLinks = ({ integrationId }: Props) => {
           )}
 
           {pathaoStores.length === 0 && (
-            <p className="text-xs text-amber-500">
+            <p className="text-xs text-warning-foreground bg-warning/15 rounded px-2 py-1.5">
               Refresh location data above to load this account's Pathao merchant stores first.
             </p>
           )}
