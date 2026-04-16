@@ -92,6 +92,36 @@ Deno.serve(async (req) => {
 
     const summary = { products: 0, orders: 0, order_items: 0, customers: 0, categories: 0, variations: 0 };
 
+    // Run the heavy sync in the background so the HTTP request doesn't hit the 150s idle timeout.
+    const syncTask = (async () => {
+      try {
+        await runFullSync();
+        await supabase
+          .from("stores")
+          .update({ status: "connected", last_synced_at: new Date().toISOString() })
+          .eq("id", store_id);
+        console.log("woo-sync completed for store", store_id, summary);
+      } catch (e: any) {
+        console.error("woo-sync background error:", e?.message || e);
+        await supabase
+          .from("stores")
+          .update({ status: "error" })
+          .eq("id", store_id);
+      }
+    })();
+
+    // @ts-ignore - EdgeRuntime is available in Supabase Edge Runtime
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(syncTask);
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, status: "started", message: "Sync running in background. Check back in a minute." }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+
+    async function runFullSync() {
     // --- Sync Categories ---
     const wooCategories = await wooFetchAll("products/categories");
     if (wooCategories.length > 0) {
@@ -384,15 +414,7 @@ Deno.serve(async (req) => {
         summary.order_items = allItems.length;
       }
     }
-
-    await supabase
-      .from("stores")
-      .update({ status: "connected", last_synced_at: new Date().toISOString() })
-      .eq("id", store_id);
-
-    return new Response(JSON.stringify({ success: true, summary }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    } // end runFullSync
   } catch (err: any) {
     console.error("woo-sync error:", err);
     return new Response(JSON.stringify({ error: err.message }), {
