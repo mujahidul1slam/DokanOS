@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Truck, CheckCircle, MapPin, RefreshCw, Loader2, Eye, EyeOff, Trash2 } from "lucide-react";
+import { CheckCircle, MapPin, RefreshCw, Loader2, Eye, EyeOff, Trash2, Pencil, Save, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -23,15 +25,25 @@ interface PathaoIntegration {
 interface Props {
   integration: PathaoIntegration;
   onDelete: (id: string) => void;
+  onRefresh: () => void;
 }
 
-const PathaoDetail = ({ integration, onDelete }: Props) => {
+const PathaoDetail = ({ integration, onDelete, onRefresh }: Props) => {
   const [cityCount, setCityCount] = useState(0);
   const [zoneCount, setZoneCount] = useState(0);
   const [areaCount, setAreaCount] = useState(0);
   const [storeCount, setStoreCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: integration.name,
+    client_id: integration.client_id,
+    client_secret: integration.client_secret,
+    username: integration.username,
+    password: integration.password,
+  });
   const { toast } = useToast();
 
   const loadStats = async () => {
@@ -62,6 +74,25 @@ const PathaoDetail = ({ integration, onDelete }: Props) => {
       toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await supabase.from("pathao_integrations").update({
+      name: form.name,
+      client_id: form.client_id,
+      client_secret: form.client_secret,
+      username: form.username,
+      password: form.password,
+    }).eq("id", integration.id);
+    setSaving(false);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Pathao integration updated" });
+      setEditing(false);
+      onRefresh();
     }
   };
 
@@ -107,27 +138,63 @@ const PathaoDetail = ({ integration, onDelete }: Props) => {
 
       {/* API Credentials */}
       <div className="rounded-lg border border-border bg-card p-6 space-y-3">
-        <h2 className="font-heading text-lg font-semibold">API Credentials</h2>
-        <div className="grid gap-2 text-sm">
-          {credentials.map((cred) => (
-            <div key={cred.key} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-              <span className="text-muted-foreground text-xs">{cred.label}</span>
-              <div className="flex items-center gap-2">
-                <code className="text-xs font-mono max-w-[200px] truncate">
-                  {showSecrets[cred.key] ? cred.value : "••••••••••••"}
-                </code>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => toggleSecret(cred.key)}
-                >
-                  {showSecrets[cred.key] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-            </div>
-          ))}
+        <div className="flex items-center justify-between">
+          <h2 className="font-heading text-lg font-semibold">API Credentials</h2>
+          {!editing && (
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="gap-1.5">
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+          )}
         </div>
+
+        {editing ? (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Integration Name</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Client ID</Label>
+              <Input value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Client Secret</Label>
+              <Input type="password" value={form.client_secret} onChange={(e) => setForm({ ...form, client_secret: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Username</Label>
+              <Input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Password</Label>
+              <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { setEditing(false); setForm({ name: integration.name, client_id: integration.client_id, client_secret: integration.client_secret, username: integration.username, password: integration.password }); }}>
+                <X className="h-3.5 w-3.5 mr-1" /> Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-2 text-sm">
+            {credentials.map((cred) => (
+              <div key={cred.key} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                <span className="text-muted-foreground text-xs">{cred.label}</span>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs font-mono max-w-[200px] truncate">
+                    {showSecrets[cred.key] ? cred.value : "••••••••••••"}
+                  </code>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleSecret(cred.key)}>
+                    {showSecrets[cred.key] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Cached Location Data */}
