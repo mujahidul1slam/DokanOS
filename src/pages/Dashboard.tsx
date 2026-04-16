@@ -55,7 +55,7 @@ const Dashboard = () => {
       setLoading(true);
       const dateFrom = getDateFrom(datePreset);
 
-      let ordersQuery = supabase.from("orders").select("id, order_number, total, status, source, created_at, customers(name)").order("created_at", { ascending: false });
+      let ordersQuery = supabase.from("orders").select("id, order_number, total, status, source, created_at, customers(name)").is("deleted_at", null).order("created_at", { ascending: false });
       if (dateFrom) {
         ordersQuery = ordersQuery.gte("created_at", dateFrom.toISOString());
       }
