@@ -172,17 +172,26 @@ const Dispatch = () => {
 
   useEffect(() => {
     loadOrders();
-    loadPathaoStores();
+    loadPathaoData();
     loadCities();
-  }, [loadOrders, loadPathaoStores, loadCities]);
+  }, [loadOrders, loadPathaoData, loadCities]);
+
+  // Reload merchant stores whenever the selected integration changes
+  useEffect(() => {
+    if (selectedIntegration) loadPathaoStores(selectedIntegration);
+  }, [selectedIntegration, loadPathaoStores]);
 
   /* ─── Fetch & sync Pathao stores from API ─── */
   const syncPathaoStores = async () => {
+    if (!selectedIntegration) {
+      toast({ title: "Select a Pathao integration first", variant: "destructive" });
+      return;
+    }
     try {
       await supabase.functions.invoke("pathao-courier", {
-        body: { action: "get_stores" },
+        body: { action: "get_stores", integration_id: selectedIntegration },
       });
-      await loadPathaoStores();
+      await loadPathaoStores(selectedIntegration);
       toast({ title: "Pathao stores synced" });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
