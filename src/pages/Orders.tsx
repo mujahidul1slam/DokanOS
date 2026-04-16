@@ -5,6 +5,7 @@ import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
+  Trash2, RotateCcw,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +52,7 @@ interface OrderRow {
   tracking_status: string | null;
   fulfillment_type: string;
   created_at: string;
+  deleted_at: string | null;
   amount_to_collect: number | null;
   pathao_recipient_city: number | null;
   pathao_recipient_zone: number | null;
@@ -59,6 +61,7 @@ interface OrderRow {
   item_weight: number | null;
   special_instruction: string | null;
   store_id: string | null;
+  woo_order_id: number | null;
   customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
@@ -69,7 +72,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 20;
 
-type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold";
+type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "trash";
 
 const Orders = () => {
   const { role } = useAuth();
@@ -107,7 +110,7 @@ const Orders = () => {
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
       .from("orders")
-      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, store_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id, product_name, quantity)")
+      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id, product_name, quantity)")
       .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
@@ -130,7 +133,12 @@ const Orders = () => {
 
   /* ─── Tab-based filtering ─── */
   const getTabOrders = useCallback((tabKey: TabKey) => {
-    return orders.filter((o) => {
+    if (tabKey === "trash") {
+      return orders.filter((o) => !!o.deleted_at);
+    }
+    // All non-trash tabs exclude trashed orders
+    const active = orders.filter((o) => !o.deleted_at);
+    return active.filter((o) => {
       switch (tabKey) {
         case "new":
           return o.status === "processing" && !o.consignment_id;
@@ -193,13 +201,14 @@ const Orders = () => {
 
   /* ─── Tab counts ─── */
   const counts = useMemo(() => ({
-    all: orders.length,
+    all: orders.filter((o) => !o.deleted_at).length,
     new: getTabOrders("new").length,
     ready: getTabOrders("ready").length,
     pickup_pending: getTabOrders("pickup_pending").length,
     in_transit: getTabOrders("in_transit").length,
     delivered: getTabOrders("delivered").length,
     on_hold: getTabOrders("on_hold").length,
+    trash: getTabOrders("trash").length,
   }), [orders, getTabOrders]);
 
   /* ─── Dispatch helpers ─── */
@@ -286,6 +295,49 @@ const Orders = () => {
       loadOrders();
     } catch {
       toast({ title: "Update failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Move to Trash ─── */
+  const handleTrashOrders = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkUpdating(true);
+    try {
+      const now = new Date().toISOString();
+      await supabase.from("orders").update({ deleted_at: now } as any).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "trashed", description: "Order moved to trash",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      const wooOrders = orders.filter((o) => ids.includes(o.id) && o.woo_order_id && o.store_id);
+      for (const o of wooOrders) {
+        try {
+          await supabase.functions.invoke("woo-push", { body: { action: "trash_order", order_id: o.id } });
+        } catch {}
+      }
+      toast({ title: `${ids.length} order(s) moved to trash` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Failed to trash orders", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
+  /* ─── Restore from Trash ─── */
+  const handleRestoreOrders = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkUpdating(true);
+    try {
+      await supabase.from("orders").update({ deleted_at: null } as any).in("id", ids);
+      const timelineEntries = ids.map((id) => ({
+        order_id: id, event: "restored", description: "Order restored from trash",
+      }));
+      await supabase.from("order_timeline").insert(timelineEntries);
+      toast({ title: `${ids.length} order(s) restored` });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Failed to restore orders", variant: "destructive" });
     } finally { setBulkUpdating(false); }
   };
 
@@ -477,6 +529,16 @@ const Orders = () => {
                 Mark Paid
               </Button>
             )}
+            {canWrite && tab === "trash" && (
+              <Button size="sm" variant="outline" onClick={() => handleRestoreOrders(Array.from(selected))} disabled={bulkUpdating} className="gap-1.5">
+                <RotateCcw className="h-4 w-4" /> Restore
+              </Button>
+            )}
+            {canWrite && tab !== "trash" && (
+              <Button size="sm" variant="outline" onClick={() => handleTrashOrders(Array.from(selected))} disabled={bulkUpdating} className="gap-1.5 text-destructive hover:text-destructive">
+                <Trash2 className="h-4 w-4" /> Trash
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
           </div>
         </div>
@@ -493,6 +555,7 @@ const Orders = () => {
             <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
             <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
             <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold / Return ({counts.on_hold})</TabsTrigger>
+            {counts.trash > 0 && <TabsTrigger value="trash" className="gap-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Trash ({counts.trash})</TabsTrigger>}
           </TabsList>
         </div>
 
@@ -663,6 +726,16 @@ const Orders = () => {
                               <RefreshCw className="h-4 w-4 mr-2" /> Refresh Tracking
                             </DropdownMenuItem>
                           )}
+                          {canWrite && tab === "trash" && (
+                            <DropdownMenuItem onClick={() => handleRestoreOrders([order.id])}>
+                              <RotateCcw className="h-4 w-4 mr-2" /> Restore
+                            </DropdownMenuItem>
+                          )}
+                          {canWrite && tab !== "trash" && (
+                            <DropdownMenuItem onClick={() => handleTrashOrders([order.id])} className="text-destructive focus:text-destructive">
+                              <Trash2 className="h-4 w-4 mr-2" /> Move to Trash
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -709,6 +782,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
     in_transit: { icon: Truck, text: "No orders in transit" },
     delivered: { icon: CheckCircle2, text: "No delivered orders" },
     on_hold: { icon: AlertTriangle, text: "No orders on hold or returned" },
+    trash: { icon: Trash2, text: "Trash is empty — deleted orders appear here for 15 days" },
   };
   const config = configs[tab];
   return (
