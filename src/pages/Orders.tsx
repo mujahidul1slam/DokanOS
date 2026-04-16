@@ -37,6 +37,7 @@ import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
 import { TableSkeleton } from "@/components/ui/loading-states";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { printInvoice } from "@/components/pos/InvoicePrint";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 
