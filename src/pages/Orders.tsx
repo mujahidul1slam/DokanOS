@@ -37,6 +37,7 @@ import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
 import { TableSkeleton } from "@/components/ui/loading-states";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { printInvoice } from "@/components/pos/InvoicePrint";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 
@@ -104,6 +105,9 @@ const Orders = () => {
 
   // Bulk actions
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  // Trash confirm
+  const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
+  const [pendingTrashIds, setPendingTrashIds] = useState<string[]>([]);
 
   const { toast } = useToast();
 
@@ -535,7 +539,7 @@ const Orders = () => {
               </Button>
             )}
             {canWrite && tab !== "trash" && (
-              <Button size="sm" variant="outline" onClick={() => handleTrashOrders(Array.from(selected))} disabled={bulkUpdating} className="gap-1.5 text-destructive hover:text-destructive">
+              <Button size="sm" variant="outline" onClick={() => { setPendingTrashIds(Array.from(selected)); setTrashConfirmOpen(true); }} disabled={bulkUpdating} className="gap-1.5 text-destructive hover:text-destructive">
                 <Trash2 className="h-4 w-4" /> Trash
               </Button>
             )}
@@ -732,7 +736,7 @@ const Orders = () => {
                             </DropdownMenuItem>
                           )}
                           {canWrite && tab !== "trash" && (
-                            <DropdownMenuItem onClick={() => handleTrashOrders([order.id])} className="text-destructive focus:text-destructive">
+                            <DropdownMenuItem onClick={() => { setPendingTrashIds([order.id]); setTrashConfirmOpen(true); }} className="text-destructive focus:text-destructive">
                               <Trash2 className="h-4 w-4 mr-2" /> Move to Trash
                             </DropdownMenuItem>
                           )}
@@ -767,6 +771,16 @@ const Orders = () => {
         open={addOrderOpen}
         onOpenChange={setAddOrderOpen}
         onCreated={loadOrders}
+      />
+
+      <ConfirmDialog
+        open={trashConfirmOpen}
+        onOpenChange={setTrashConfirmOpen}
+        title="Move to Trash?"
+        description={`${pendingTrashIds.length} order(s) will be moved to trash and automatically deleted after 15 days.${orders.some((o) => pendingTrashIds.includes(o.id) && o.woo_order_id) ? " WooCommerce orders will also be trashed on the store." : ""}`}
+        confirmLabel="Move to Trash"
+        variant="destructive"
+        onConfirm={() => { handleTrashOrders(pendingTrashIds); setTrashConfirmOpen(false); }}
       />
     </div>
   );
