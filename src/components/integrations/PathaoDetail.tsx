@@ -229,6 +229,9 @@ const PathaoDetail = ({ integration, onDelete, onRefresh }: Props) => {
         </div>
       </div>
 
+      {/* Linked WooCommerce Stores */}
+      <PathaoStoreLinks integrationId={integration.id} />
+
       {/* Actions */}
       <div className="flex gap-3">
         <AlertDialog>
