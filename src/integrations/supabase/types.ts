@@ -627,6 +627,7 @@ export type Database = {
       }
       pathao_integrations: {
         Row: {
+          allowed_store_ids: Json
           client_id: string
           client_secret: string
           created_at: string
@@ -639,6 +640,7 @@ export type Database = {
           username: string
         }
         Insert: {
+          allowed_store_ids?: Json
           client_id: string
           client_secret: string
           created_at?: string
@@ -651,6 +653,7 @@ export type Database = {
           username: string
         }
         Update: {
+          allowed_store_ids?: Json
           client_id?: string
           client_secret?: string
           created_at?: string

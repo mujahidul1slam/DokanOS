@@ -68,6 +68,10 @@ const PathaoDetail = ({ integration, onDelete, onRefresh }: Props) => {
         body: { action: "get_cities" },
       });
       if (error) throw error;
+      // Also refresh stores with integration_id filter
+      await supabase.functions.invoke("pathao-courier", {
+        body: { action: "get_stores", integration_id: integration.id },
+      });
       toast({ title: "Pathao data refreshed" });
       loadStats();
     } catch (err: any) {
