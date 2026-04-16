@@ -529,6 +529,16 @@ const Orders = () => {
                 Mark Paid
               </Button>
             )}
+            {canWrite && tab === "trash" && (
+              <Button size="sm" variant="outline" onClick={() => handleRestoreOrders(Array.from(selected))} disabled={bulkUpdating} className="gap-1.5">
+                <RotateCcw className="h-4 w-4" /> Restore
+              </Button>
+            )}
+            {canWrite && tab !== "trash" && (
+              <Button size="sm" variant="outline" onClick={() => handleTrashOrders(Array.from(selected))} disabled={bulkUpdating} className="gap-1.5 text-destructive hover:text-destructive">
+                <Trash2 className="h-4 w-4" /> Trash
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
           </div>
         </div>
