@@ -27,6 +27,8 @@ interface StoreRow {
   last_synced_at: string | null;
   orderCount: number;
   productCount: number;
+  consumer_key?: string;
+  consumer_secret?: string;
 }
 
 interface PathaoRow {
@@ -56,7 +58,7 @@ const Integrations = () => {
 
   const loadData = async () => {
     const [storesRes, pathaoRes] = await Promise.all([
-      supabase.from("stores").select("id, name, url, status, last_synced_at"),
+      supabase.from("stores").select("id, name, url, status, last_synced_at, consumer_key, consumer_secret"),
       supabase.from("pathao_integrations").select("*"),
     ]);
 
@@ -185,6 +187,7 @@ const Integrations = () => {
           <PathaoDetail
             integration={detailView.integration}
             onDelete={handleDeletePathao}
+            onRefresh={loadData}
           />
         )}
       </div>
