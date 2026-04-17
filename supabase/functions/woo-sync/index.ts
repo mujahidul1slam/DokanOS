@@ -427,6 +427,30 @@ Deno.serve(async (req) => {
         };
       });
 
+      // Refresh customer billing fields from order data — keeps linked customers
+      // in sync with the latest billing info (esp. when phone-match links to a
+      // POS-created customer that has no real name/address yet).
+      for (const o of wooOrders) {
+        const phone = o.billing?.phone?.trim() || null;
+        const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
+        const cId =
+          (o.customer_id && o.customer_id > 0 ? custByWooId.get(o.customer_id) : null) ||
+          custByWooId.get(-o.id) ||
+          (phone ? custByPhone.get(phone) : null);
+        if (!cId) continue;
+        const patch: Record<string, any> = {};
+        if (o.customer_id && o.customer_id > 0) patch.woo_customer_id = o.customer_id;
+        if (billingName) patch.name = billingName;
+        if (o.billing?.email) patch.email = o.billing.email;
+        if (phone) patch.phone = phone;
+        const addr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ");
+        if (addr) patch.address = addr;
+        if (o.billing?.city) patch.city = o.billing.city;
+        if (Object.keys(patch).length > 0) {
+          await supabase.from("customers").update(patch).eq("id", cId);
+        }
+      }
+
       // Upsert orders in chunks
       for (let i = 0; i < orderRows.length; i += 500) {
         const chunk = orderRows.slice(i, i + 500);
