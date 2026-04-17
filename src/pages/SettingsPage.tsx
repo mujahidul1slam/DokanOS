@@ -138,7 +138,7 @@ const SettingsPage = () => {
               </div>
 
               <div className="flex justify-end pt-2">
-                <Button onClick={handleSaveInventory} disabled={saving}>
+                <Button onClick={() => { setSaving(true); localStorage.setItem("omnisync-global-stock", String(globalStock)); toast.success("Inventory settings saved"); setSaving(false); }} disabled={saving}>
                   {saving ? "Saving…" : "Save Changes"}
                 </Button>
               </div>
