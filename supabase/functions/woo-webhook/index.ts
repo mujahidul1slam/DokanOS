@@ -208,75 +208,7 @@ async function handleProductWebhook(supabase: any, store_id: string, p: any) {
 
 /* ====== ORDER WEBHOOK ====== */
 async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
-  // Upsert customer
-  let customer_id: string | null = null;
-  const hasCustomerInfo = o.billing?.phone || o.billing?.first_name || o.billing?.email;
-
-  if (o.customer_id && o.customer_id > 0) {
-    const custData = {
-      store_id,
-      woo_customer_id: o.customer_id,
-      name: `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "Guest",
-      email: o.billing?.email || null,
-      phone: o.billing?.phone || null,
-      address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
-      city: o.billing?.city || null,
-    };
-
-    const { data: existingCust } = await supabase
-      .from("customers")
-      .select("id")
-      .eq("woo_customer_id", o.customer_id)
-      .eq("store_id", store_id)
-      .maybeSingle();
-
-    if (existingCust) {
-      await supabase.from("customers").update(custData).eq("id", existingCust.id);
-      customer_id = existingCust.id;
-    } else {
-      const { data: newCust } = await supabase
-        .from("customers")
-        .insert(custData)
-        .select("id")
-        .single();
-      customer_id = newCust?.id || null;
-    }
-  } else if (hasCustomerInfo) {
-    const guestName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "Guest";
-    const guestPhone = o.billing?.phone || null;
-    // Check for existing customer by phone first
-    if (guestPhone) {
-      const { data: existingByPhone } = await supabase
-        .from("customers")
-        .select("id")
-        .eq("phone", guestPhone)
-        .maybeSingle();
-      if (existingByPhone) {
-        customer_id = existingByPhone.id;
-        await supabase.from("customers").update({
-          name: guestName,
-          email: o.billing?.email || null,
-          address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
-          city: o.billing?.city || null,
-        }).eq("id", existingByPhone.id);
-      }
-    }
-    if (!customer_id) {
-      const { data: guestCust } = await supabase
-        .from("customers")
-        .insert({
-          store_id,
-          name: guestName,
-          email: o.billing?.email || null,
-          phone: guestPhone,
-          address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
-          city: o.billing?.city || null,
-        })
-        .select("id")
-        .single();
-      customer_id = guestCust?.id || null;
-    }
-  }
+  const customer_id = await resolveCustomer(supabase, store_id, o);
 
   // Product lookup
   const { data: dbProducts } = await supabase
