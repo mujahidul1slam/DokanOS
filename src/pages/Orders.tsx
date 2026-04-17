@@ -63,6 +63,11 @@ interface OrderRow {
   special_instruction: string | null;
   store_id: string | null;
   woo_order_id: number | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  customer_city: string | null;
+  customer_email: string | null;
   customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
@@ -114,7 +119,7 @@ const Orders = () => {
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
       .from("orders")
-      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id, product_name, quantity)")
+      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, customers(name, phone, address, city, zone, area), stores(name), order_items(id, product_name, quantity)")
       .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({

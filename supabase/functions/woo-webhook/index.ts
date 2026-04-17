@@ -218,6 +218,8 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   const prodMap = new Map((dbProducts || []).map((p: any) => [p.woo_product_id, p.id]));
 
   const paymentStatus = derivePaymentStatus(o);
+  const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
+  const billingAddr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;
 
   const orderData = {
     store_id,
@@ -232,6 +234,11 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     shipping_cost: parseFloat(o.shipping_total) || 0,
     total: parseFloat(o.total) || 0,
     customer_id,
+    customer_name: billingName || null,
+    customer_phone: o.billing?.phone?.trim() || null,
+    customer_email: o.billing?.email || null,
+    customer_address: billingAddr,
+    customer_city: o.billing?.city || null,
     notes: o.customer_note || null,
   };
 
