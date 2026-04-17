@@ -408,6 +408,8 @@ Deno.serve(async (req) => {
           custByWooId.get(-o.id) ||
           (phone ? custByPhone.get(phone) : null) ||
           null;
+        const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
+        const billingAddr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;
 
         return {
           store_id,
@@ -422,6 +424,11 @@ Deno.serve(async (req) => {
           shipping_cost: parseFloat(o.shipping_total) || 0,
           total: parseFloat(o.total) || 0,
           customer_id: customerId,
+          customer_name: billingName || null,
+          customer_phone: phone,
+          customer_email: o.billing?.email || null,
+          customer_address: billingAddr,
+          customer_city: o.billing?.city || null,
           notes: o.customer_note || null,
           created_at: o.date_created_gmt ? o.date_created_gmt + "Z" : undefined,
         };
