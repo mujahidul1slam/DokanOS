@@ -42,6 +42,11 @@ interface OrderDetail {
   consignment_id: string | null;
   tracking_status: string | null;
   created_at: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  customer_email: string | null;
+  customer_city: string | null;
   customers: { id: string; name: string; phone: string | null; address: string | null; email: string | null; city: string | null } | null;
 }
 
@@ -114,7 +119,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customers(id, name, phone, address, email, city)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, customers(id, name, phone, address, email, city)")
         .eq("id", orderId)
         .single(),
       supabase
