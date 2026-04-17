@@ -339,28 +339,22 @@ Deno.serve(async (req) => {
     // --- Sync Orders ---
     const wooOrders = await wooFetchAll("orders");
     if (wooOrders.length > 0) {
-      // Pull customers for THIS store + any customer matching phones we'll need
-      // (because the phone unique constraint may have placed a customer under another store).
-      const orderPhones = Array.from(new Set(
-        wooOrders.map((o: any) => o.billing?.phone?.trim()).filter(Boolean)
-      ));
+      // Per-store customer lookup ONLY. Never resolve cross-store by phone — same phone in
+      // a different store is treated as a separate customer record.
+      const { data: storeCustomers } = await supabase
+        .from("customers")
+        .select("id, woo_customer_id, phone")
+        .eq("store_id", store_id);
 
-      const [{ data: storeCustomers }, { data: phoneCustomers }] = await Promise.all([
-        supabase.from("customers").select("id, woo_customer_id, phone").eq("store_id", store_id),
-        orderPhones.length > 0
-          ? supabase.from("customers").select("id, woo_customer_id, phone").in("phone", orderPhones)
-          : Promise.resolve({ data: [] as any[] }),
-      ]);
-
-      const allCusts = [...(storeCustomers || []), ...(phoneCustomers || [])];
       const custByWooId = new Map<number, string>();
       const custByPhone = new Map<string, string>();
-      for (const c of allCusts) {
+      for (const c of (storeCustomers || [])) {
         if (c.woo_customer_id) custByWooId.set(c.woo_customer_id, c.id);
         if (c.phone) custByPhone.set(c.phone, c.id);
       }
 
-      // Create guest customers for orders without a linked WooCommerce account.
+      // Create guest customers (per-store) for orders without a linked Woo customer
+      // and where no existing customer in THIS store matches the phone.
       for (const o of wooOrders) {
         if ((!o.customer_id || o.customer_id === 0) && (o.billing?.phone || o.billing?.email)) {
           const phone = o.billing?.phone?.trim() || null;
@@ -377,13 +371,25 @@ Deno.serve(async (req) => {
             address: [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null,
             city: o.billing?.city || null,
           };
-          // Use upsert on phone if present, else plain insert
-          const query = phone
-            ? supabase.from("customers").upsert(guestRow, { onConflict: "phone", ignoreDuplicates: false }).select("id").single()
-            : supabase.from("customers").insert(guestRow).select("id").single();
-          const { data: guestCust, error: gErr } = await query;
+          const { data: guestCust, error: gErr } = await supabase
+            .from("customers")
+            .insert(guestRow)
+            .select("id")
+            .single();
           if (gErr) {
-            console.warn("Guest customer create failed:", gErr.message);
+            // Likely (phone, store_id) collision raced with another insert — re-fetch.
+            if (phone) {
+              const { data: retry } = await supabase
+                .from("customers")
+                .select("id")
+                .eq("store_id", store_id)
+                .eq("phone", phone)
+                .maybeSingle();
+              if (retry) {
+                custByWooId.set(-o.id, retry.id);
+                custByPhone.set(phone, retry.id);
+              }
+            }
             continue;
           }
           if (guestCust) {
@@ -424,6 +430,7 @@ Deno.serve(async (req) => {
           shipping_cost: parseFloat(o.shipping_total) || 0,
           total: parseFloat(o.total) || 0,
           customer_id: customerId,
+          // Per-order snapshot — frozen at sync time, never derived from customer record.
           customer_name: billingName || null,
           customer_phone: phone,
           customer_email: o.billing?.email || null,
@@ -434,29 +441,9 @@ Deno.serve(async (req) => {
         };
       });
 
-      // Refresh customer billing fields from order data — keeps linked customers
-      // in sync with the latest billing info (esp. when phone-match links to a
-      // POS-created customer that has no real name/address yet).
-      for (const o of wooOrders) {
-        const phone = o.billing?.phone?.trim() || null;
-        const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
-        const cId =
-          (o.customer_id && o.customer_id > 0 ? custByWooId.get(o.customer_id) : null) ||
-          custByWooId.get(-o.id) ||
-          (phone ? custByPhone.get(phone) : null);
-        if (!cId) continue;
-        const patch: Record<string, any> = {};
-        if (o.customer_id && o.customer_id > 0) patch.woo_customer_id = o.customer_id;
-        if (billingName) patch.name = billingName;
-        if (o.billing?.email) patch.email = o.billing.email;
-        if (phone) patch.phone = phone;
-        const addr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ");
-        if (addr) patch.address = addr;
-        if (o.billing?.city) patch.city = o.billing.city;
-        if (Object.keys(patch).length > 0) {
-          await supabase.from("customers").update(patch).eq("id", cId);
-        }
-      }
+      // NOTE: We intentionally do NOT update the linked customer record from order data.
+      // Each order carries its own immutable snapshot of billing details. The customers
+      // table is only seeded on first encounter (above) — never overwritten by later orders.
 
       // Upsert orders in chunks
       for (let i = 0; i < orderRows.length; i += 500) {
