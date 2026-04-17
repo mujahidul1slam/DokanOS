@@ -288,13 +288,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // --- Sync Customers ---
-    // Dedupe by phone within the batch (last write wins) to avoid intra-batch conflicts,
-    // and use per-row upsert with onConflict on phone so cross-store collisions update instead of failing.
+    // --- Sync Customers (per-store; never overwrite cross-store) ---
+    // Customers are scoped per store. The same phone can exist in multiple stores.
+    // We dedupe within this store on woo_customer_id; phone duplicates within store are
+    // prevented by the partial unique index (phone, store_id).
     const wooCustomers = await wooFetchAll("customers");
     if (wooCustomers.length > 0) {
-      const byPhone = new Map<string, any>();
-      const noPhone: any[] = [];
+      // Dedupe within batch by phone (last write wins) to avoid intra-batch conflicts on (phone, store_id).
+      const seenPhones = new Map<string, any>();
+      const rows: any[] = [];
       for (const c of wooCustomers) {
         const phone = c.billing?.phone?.trim() || null;
         const row = {
@@ -306,32 +308,30 @@ Deno.serve(async (req) => {
           address: [c.billing?.address_1, c.billing?.address_2].filter(Boolean).join(", ") || null,
           city: c.billing?.city || null,
         };
-        if (phone) byPhone.set(phone, row);
-        else noPhone.push(row);
+        if (phone) {
+          seenPhones.set(phone, row); // keep last
+        } else {
+          rows.push(row);
+        }
       }
-      const rows = [...byPhone.values(), ...noPhone];
+      rows.push(...seenPhones.values());
 
-      // Upsert in chunks. Use phone as conflict target since that's the unique constraint causing failures.
-      // Rows without a phone are inserted normally (no conflict possible).
       let okCount = 0;
-      const withPhone = rows.filter(r => r.phone);
-      const withoutPhone = rows.filter(r => !r.phone);
-
-      for (let i = 0; i < withPhone.length; i += 200) {
-        const chunk = withPhone.slice(i, i + 200);
-        const { error } = await supabase
-          .from("customers")
-          .upsert(chunk, { onConflict: "phone", ignoreDuplicates: false });
-        if (error) console.error("Customers (phone) upsert error:", error);
-        else okCount += chunk.length;
-      }
-      for (let i = 0; i < withoutPhone.length; i += 200) {
-        const chunk = withoutPhone.slice(i, i + 200);
+      for (let i = 0; i < rows.length; i += 200) {
+        const chunk = rows.slice(i, i + 200);
         const { error } = await supabase
           .from("customers")
           .upsert(chunk, { onConflict: "woo_customer_id,store_id", ignoreDuplicates: false });
-        if (error) console.error("Customers (no-phone) upsert error:", error);
-        else okCount += chunk.length;
+        if (error) {
+          console.error("Customers upsert error:", error);
+          // Fallback: insert one-by-one, swallowing per-store phone conflicts (existing record stays).
+          for (const r of chunk) {
+            const { error: insErr } = await supabase.from("customers").insert(r);
+            if (!insErr) okCount += 1;
+          }
+        } else {
+          okCount += chunk.length;
+        }
       }
       summary.customers = okCount;
     }
