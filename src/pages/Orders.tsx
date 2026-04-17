@@ -644,6 +644,7 @@ const Orders = () => {
                   <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
                   <TableHead>Order Info</TableHead>
                   <TableHead>Customer</TableHead>
+                  <TableHead>Store</TableHead>
                   <TableHead className="w-[240px]">Products</TableHead>
                   {tab === "all" && <TableHead>Source</TableHead>}
                   <TableHead className="text-right">Total</TableHead>
@@ -669,6 +670,9 @@ const Orders = () => {
                       {(tab === "ready" || tab === "new") && order.customers?.address && (
                         <div className="text-xs text-muted-foreground max-w-[180px] truncate mt-0.5">{order.customers.address}</div>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm text-foreground">{order.stores?.name || (order.source === "pos" ? "POS" : "—")}</span>
                     </TableCell>
                     <TableCell>
                       <ProductsList items={order.productItems} />
