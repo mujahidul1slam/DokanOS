@@ -644,6 +644,7 @@ const Orders = () => {
                   <TableHead className="w-10"><Checkbox checked={paginated.length > 0 && selected.size === paginated.length} onCheckedChange={toggleAll} /></TableHead>
                   <TableHead>Order Info</TableHead>
                   <TableHead>Customer</TableHead>
+                  <TableHead>Store</TableHead>
                   <TableHead className="w-[240px]">Products</TableHead>
                   {tab === "all" && <TableHead>Source</TableHead>}
                   <TableHead className="text-right">Total</TableHead>
