@@ -295,6 +295,104 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   return jsonResp({ success: true, order_id: orderId });
 }
 
+/* ====== Customer resolution ======
+ * Robustly resolves a customer for an incoming Woo order.
+ * Order of resolution:
+ *   1. By (woo_customer_id, store_id)        — registered Woo customer in this store
+ *   2. By phone (global)                     — any existing customer with same phone
+ *   3. Insert new                            — fall back to creating a guest record
+ * Whenever we find/create a customer we OVERWRITE its billing fields with the
+ * latest data from the Woo order — but we never blank out a name with "Guest"
+ * if the order has no billing name.
+ */
+async function resolveCustomer(supabase: any, store_id: string, o: any): Promise<string | null> {
+  const phone = o.billing?.phone?.trim() || null;
+  const email = o.billing?.email || null;
+  const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
+  const address = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;
+  const city = o.billing?.city || null;
+  const wooCustomerId = o.customer_id && o.customer_id > 0 ? o.customer_id : null;
+
+  if (!wooCustomerId && !phone && !email && !billingName) {
+    return null; // truly no customer info
+  }
+
+  // 1. Try by woo_customer_id within this store
+  let existing: { id: string; name?: string } | null = null;
+  if (wooCustomerId) {
+    const { data } = await supabase
+      .from("customers")
+      .select("id, name")
+      .eq("woo_customer_id", wooCustomerId)
+      .eq("store_id", store_id)
+      .maybeSingle();
+    existing = data || null;
+  }
+
+  // 2. Try by phone (global — phone is unique constraint)
+  if (!existing && phone) {
+    const { data } = await supabase
+      .from("customers")
+      .select("id, name")
+      .eq("phone", phone)
+      .maybeSingle();
+    existing = data || null;
+  }
+
+  // Build patch — only overwrite fields where we have new info
+  const patch: Record<string, any> = {};
+  if (wooCustomerId) patch.woo_customer_id = wooCustomerId;
+  if (billingName) patch.name = billingName;
+  if (email) patch.email = email;
+  if (phone) patch.phone = phone;
+  if (address) patch.address = address;
+  if (city) patch.city = city;
+
+  if (existing) {
+    if (Object.keys(patch).length > 0) {
+      const { error } = await supabase.from("customers").update(patch).eq("id", existing.id);
+      if (error) console.warn("Customer update failed:", error.message);
+    }
+    return existing.id;
+  }
+
+  // 3. Insert new
+  const insertRow = {
+    store_id,
+    woo_customer_id: wooCustomerId,
+    name: billingName || "Guest",
+    email,
+    phone,
+    address,
+    city,
+  };
+  const { data: created, error: insertErr } = await supabase
+    .from("customers")
+    .insert(insertRow)
+    .select("id")
+    .single();
+
+  if (insertErr || !created) {
+    // Most likely cause: phone collision with another store. Re-resolve by phone.
+    console.warn("Customer insert failed, retrying by phone:", insertErr?.message);
+    if (phone) {
+      const { data: byPhone } = await supabase
+        .from("customers")
+        .select("id")
+        .eq("phone", phone)
+        .maybeSingle();
+      if (byPhone) {
+        if (Object.keys(patch).length > 0) {
+          await supabase.from("customers").update(patch).eq("id", byPhone.id);
+        }
+        return byPhone.id;
+      }
+    }
+    return null;
+  }
+  return created.id;
+}
+
 /* ====== Helpers ====== */
 function mapWooStatus(status: string): string {
   const map: Record<string, string> = {
