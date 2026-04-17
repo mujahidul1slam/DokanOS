@@ -672,6 +672,9 @@ const Orders = () => {
                       )}
                     </TableCell>
                     <TableCell>
+                      <span className="text-sm text-foreground">{order.stores?.name || (order.source === "pos" ? "POS" : "—")}</span>
+                    </TableCell>
+                    <TableCell>
                       <ProductsList items={order.productItems} />
                     </TableCell>
                     {tab === "all" && <TableCell><SourceBadge source={order.source} /></TableCell>}
