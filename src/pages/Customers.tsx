@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import {
-  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, X, Download,
+  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, Download, RefreshCw, Loader2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/exportCsv";
@@ -12,39 +12,35 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { FulfillmentBadge, PaymentBadge, SourceBadge } from "@/components/orders/OrderBadges";
 import { TableSkeleton } from "@/components/ui/loading-states";
+import { useToast } from "@/hooks/use-toast";
 
-interface CustomerRow {
-  id: string;
-  name: string;
+interface AliasRow { type: "name" | "email" | "address"; value: string; source_store_id: string | null; }
+
+interface UnifiedCustomer {
+  id: string; // keeper customer row id
   phone: string | null;
-  email: string | null;
-  address: string | null;
+  primaryName: string;
+  primaryEmail: string | null;
+  primaryAddress: string | null;
   city: string | null;
-  zone: string | null;
-  area: string | null;
-  store_id: string | null;
   source: string;
   created_at: string;
+  store_id: string | null;
+  names: AliasRow[];
+  emails: AliasRow[];
+  addresses: AliasRow[];
   order_count: number;
   total_spent: number;
 }
 
 interface CustomerOrder {
-  id: string;
-  order_number: string;
-  total: number;
-  status: string;
-  source: string;
-  payment_status: string;
-  created_at: string;
+  id: string; order_number: string; total: number; status: string;
+  source: string; payment_status: string; created_at: string;
 }
 
 interface StoreOption { id: string; name: string }
@@ -52,31 +48,32 @@ interface StoreOption { id: string; name: string }
 const PAGE_SIZE = 15;
 
 const Customers = () => {
-  const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const [customers, setCustomers] = useState<UnifiedCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [storeFilter, setStoreFilter] = useState("all");
-  const [sourceFilter, setSourceFilter] = useState("all");
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [page, setPage] = useState(1);
+  const [syncing, setSyncing] = useState(false);
 
-  // Detail sheet
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null);
+  const [selected, setSelected] = useState<UnifiedCustomer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const { toast } = useToast();
+
+  const storeName = useCallback((id: string | null) => stores.find((s) => s.id === id)?.name || "—", [stores]);
 
   const loadCustomers = useCallback(async () => {
-    const { data } = await supabase
-      .from("customers")
-      .select("id, name, phone, email, address, city, zone, area, store_id, source, created_at")
-      .order("created_at", { ascending: false });
+    const [{ data: custs }, { data: aliases }, { data: stats }] = await Promise.all([
+      supabase.from("customers").select("id, name, phone, email, address, city, store_id, source, created_at").order("created_at", { ascending: false }),
+      supabase.from("customer_aliases").select("customer_id, type, value, source_store_id"),
+      supabase.from("orders").select("customer_id, total"),
+    ]);
 
-    if (!data) { setLoading(false); return; }
-
-    // Fetch order stats per customer
-    const { data: stats } = await supabase
-      .from("orders")
-      .select("customer_id, total");
+    const aliasMap = new Map<string, AliasRow[]>();
+    (aliases || []).forEach((a: any) => {
+      if (!aliasMap.has(a.customer_id)) aliasMap.set(a.customer_id, []);
+      aliasMap.get(a.customer_id)!.push({ type: a.type, value: a.value, source_store_id: a.source_store_id });
+    });
 
     const statsMap: Record<string, { count: number; spent: number }> = {};
     (stats || []).forEach((o: any) => {
@@ -86,11 +83,28 @@ const Customers = () => {
       statsMap[o.customer_id].spent += Number(o.total || 0);
     });
 
-    setCustomers(data.map((c: any) => ({
-      ...c,
-      order_count: statsMap[c.id]?.count || 0,
-      total_spent: statsMap[c.id]?.spent || 0,
-    })));
+    const rows: UnifiedCustomer[] = (custs || []).map((c: any) => {
+      const ax = aliasMap.get(c.id) || [];
+      const names = ax.filter((a) => a.type === "name");
+      const emails = ax.filter((a) => a.type === "email");
+      const addresses = ax.filter((a) => a.type === "address");
+      return {
+        id: c.id,
+        phone: c.phone,
+        primaryName: c.name,
+        primaryEmail: c.email,
+        primaryAddress: c.address,
+        city: c.city,
+        source: c.source,
+        created_at: c.created_at,
+        store_id: c.store_id,
+        names, emails, addresses,
+        order_count: statsMap[c.id]?.count || 0,
+        total_spent: statsMap[c.id]?.spent || 0,
+      };
+    });
+
+    setCustomers(rows);
     setLoading(false);
   }, []);
 
@@ -101,35 +115,60 @@ const Customers = () => {
 
   useEffect(() => { loadCustomers(); loadStores(); }, [loadCustomers, loadStores]);
 
-  const openCustomerDetail = async (customer: CustomerRow) => {
-    setSelectedCustomer(customer);
+  const handleSyncCustomers = async () => {
+    setSyncing(true);
+    try {
+      const { data: storeRows } = await supabase.from("stores").select("id, name");
+      if (!storeRows || storeRows.length === 0) {
+        toast({ title: "No stores connected", variant: "destructive" });
+        return;
+      }
+      let started = 0;
+      for (const s of storeRows) {
+        const { error } = await supabase.functions.invoke("woo-sync", {
+          body: { store_id: s.id, sync_customers: true },
+        });
+        if (!error) started++;
+      }
+      toast({
+        title: `Customer sync started for ${started} store(s)`,
+        description: "Running in background. Refresh in a minute to see updates.",
+      });
+    } catch (err: any) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const openDetail = async (c: UnifiedCustomer) => {
+    setSelected(c);
     setOrdersLoading(true);
     const { data } = await supabase
       .from("orders")
       .select("id, order_number, total, status, source, payment_status, created_at")
-      .eq("customer_id", customer.id)
+      .eq("customer_id", c.id)
       .order("created_at", { ascending: false });
     setCustomerOrders((data || []) as CustomerOrder[]);
     setOrdersLoading(false);
   };
 
   const filtered = useMemo(() => {
+    const q = search.toLowerCase();
     return customers.filter((c) => {
-      const q = search.toLowerCase();
-      const matchSearch = !q ||
-        c.name.toLowerCase().includes(q) ||
+      if (!q) return true;
+      return c.primaryName.toLowerCase().includes(q) ||
         (c.phone || "").toLowerCase().includes(q) ||
-        (c.email || "").toLowerCase().includes(q);
-      const matchStore = storeFilter === "all" || c.store_id === storeFilter;
-      const matchSource = sourceFilter === "all" || c.source === sourceFilter;
-      return matchSearch && matchStore && matchSource;
+        (c.primaryEmail || "").toLowerCase().includes(q) ||
+        c.names.some((n) => n.value.toLowerCase().includes(q)) ||
+        c.emails.some((e) => e.value.toLowerCase().includes(q));
     });
-  }, [customers, search, storeFilter, sourceFilter]);
+  }, [customers, search]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, storeFilter, sourceFilter]);
+  useEffect(() => { setPage(1); }, [search]);
 
   if (loading) return (
     <div className="space-y-4">
@@ -140,38 +179,28 @@ const Customers = () => {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h1 className="font-heading text-2xl font-semibold">Customers</h1>
-        <p className="text-sm text-muted-foreground">{customers.length} customers across all channels</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-heading text-2xl font-semibold">Customers</h1>
+          <p className="text-sm text-muted-foreground">{customers.length} unique customers (grouped by phone)</p>
+        </div>
+        <Button variant="outline" size="sm" className="gap-2" onClick={handleSyncCustomers} disabled={syncing}>
+          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          Sync Customers
+        </Button>
       </div>
 
-      {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, phone, or email..." className="pl-9" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search any name, phone, or email..." className="pl-9" />
         </div>
-        <Select value={storeFilter} onValueChange={setStoreFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Store" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Stores</SelectItem>
-            {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={sourceFilter} onValueChange={setSourceFilter}>
-          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Source" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Sources</SelectItem>
-            <SelectItem value="online">WooCommerce</SelectItem>
-            <SelectItem value="pos">POS</SelectItem>
-          </SelectContent>
-        </Select>
         <Button variant="outline" size="sm" className="gap-2" onClick={() => {
-          const headers = ["Name", "Phone", "Email", "Address", "City", "Source", "Orders", "Total Spent", "Joined"];
+          const headers = ["Name", "Phone", "Email", "Address", "City", "Names Count", "Emails Count", "Addresses Count", "Orders", "Total Spent", "Joined"];
           const rows = filtered.map((c) => [
-            c.name, c.phone || "", c.email || "", c.address || "", c.city || "",
-            c.source, String(c.order_count), String(c.total_spent),
+            c.primaryName, c.phone || "", c.primaryEmail || "", c.primaryAddress || "", c.city || "",
+            String(c.names.length), String(c.emails.length), String(c.addresses.length),
+            String(c.order_count), String(c.total_spent),
             format(new Date(c.created_at), "yyyy-MM-dd"),
           ]);
           downloadCsv(`customers-${format(new Date(), "yyyy-MM-dd")}.csv`, headers, rows);
@@ -180,14 +209,12 @@ const Customers = () => {
         </Button>
       </div>
 
-      {/* Table */}
       <div className="rounded-lg border border-border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-secondary hover:bg-secondary">
               <TableHead>Customer</TableHead>
               <TableHead>Contact</TableHead>
-              <TableHead>Source</TableHead>
               <TableHead>Location</TableHead>
               <TableHead className="text-center">Orders</TableHead>
               <TableHead className="text-right">Total Spent</TableHead>
@@ -198,66 +225,59 @@ const Customers = () => {
           <TableBody>
             {paginated.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
-                  <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  No customers found
+                <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <Users className="h-8 w-8 mx-auto mb-2 opacity-50" /> No customers found
                 </TableCell>
               </TableRow>
-            ) : paginated.map((customer) => (
-              <TableRow
-                key={customer.id}
-                className="group cursor-pointer hover:bg-muted/50"
-                onClick={() => openCustomerDetail(customer)}
-              >
+            ) : paginated.map((c) => (
+              <TableRow key={c.id} className="group cursor-pointer hover:bg-muted/50" onClick={() => openDetail(c)}>
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-                      {customer.name.charAt(0).toUpperCase()}
+                      {c.primaryName.charAt(0).toUpperCase()}
                     </div>
-                    <span className="font-medium text-foreground">{customer.name}</span>
+                    <span className="font-medium text-foreground">
+                      {c.primaryName}{c.names.length > 1 && <span className="text-muted-foreground">, .....</span>}
+                    </span>
                   </div>
                 </TableCell>
                 <TableCell>
                   <div className="space-y-0.5">
-                    {customer.phone && (
+                    {c.phone && (
                       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Phone className="h-3 w-3" />{customer.phone}
+                        <Phone className="h-3 w-3" />{c.phone}
                       </div>
                     )}
-                    {customer.email && (
+                    {c.primaryEmail && (
                       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Mail className="h-3 w-3" />{customer.email}
+                        <Mail className="h-3 w-3" />{c.primaryEmail}{c.emails.length > 1 && <span>, .....</span>}
                       </div>
                     )}
-                    {!customer.phone && !customer.email && <span className="text-sm text-muted-foreground">—</span>}
+                    {!c.phone && !c.primaryEmail && <span className="text-sm text-muted-foreground">—</span>}
                   </div>
                 </TableCell>
                 <TableCell>
-                  <SourceBadge source={customer.source} />
-                </TableCell>
-                <TableCell>
-                  {customer.city || customer.area ? (
+                  {c.city ? (
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <MapPin className="h-3 w-3" />
-                      {[customer.area, customer.zone, customer.city].filter(Boolean).join(", ")}
+                      <MapPin className="h-3 w-3" />{c.city}
                     </div>
                   ) : <span className="text-sm text-muted-foreground">—</span>}
                 </TableCell>
                 <TableCell className="text-center">
-                  {customer.order_count > 0 ? (
+                  {c.order_count > 0 ? (
                     <Badge variant="outline" className="gap-1">
-                      <ShoppingCart className="h-3 w-3" />{customer.order_count}
+                      <ShoppingCart className="h-3 w-3" />{c.order_count}
                     </Badge>
                   ) : <span className="text-sm text-muted-foreground">0</span>}
                 </TableCell>
                 <TableCell className="text-right font-medium text-foreground">
-                  ৳{customer.total_spent.toLocaleString()}
+                  ৳{c.total_spent.toLocaleString()}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {format(new Date(customer.created_at), "MMM d, yyyy")}
+                  {format(new Date(c.created_at), "MMM d, yyyy")}
                 </TableCell>
                 <TableCell>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
                 </TableCell>
               </TableRow>
             ))}
@@ -265,106 +285,122 @@ const Customers = () => {
         </Table>
       </div>
 
-      {/* Pagination */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to {Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
         <div className="flex items-center gap-1">
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
-          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-            let pageNum: number;
-            if (totalPages <= 5) pageNum = i + 1;
-            else if (page <= 3) pageNum = i + 1;
-            else if (page >= totalPages - 2) pageNum = totalPages - 4 + i;
-            else pageNum = page - 2 + i;
-            return <Button key={pageNum} variant={page === pageNum ? "default" : "outline"} size="sm" className="w-9" onClick={() => setPage(pageNum)}>{pageNum}</Button>;
-          })}
           <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</Button>
         </div>
       </div>
 
-      {/* Customer Detail Sheet */}
-      <Sheet open={!!selectedCustomer} onOpenChange={(open) => { if (!open) setSelectedCustomer(null); }}>
-        <SheetContent className="sm:max-w-lg overflow-y-auto">
-          {selectedCustomer && (
+      <Sheet open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null); }}>
+        <SheetContent className="sm:max-w-xl overflow-y-auto">
+          {selected && (
             <>
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
-                    {selectedCustomer.name.charAt(0).toUpperCase()}
+                    {selected.primaryName.charAt(0).toUpperCase()}
                   </div>
-                  {selectedCustomer.name}
+                  {selected.primaryName}
                 </SheetTitle>
               </SheetHeader>
 
               <div className="mt-6 space-y-6">
-                {/* Contact Info */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-medium text-foreground">Contact Information</h3>
-                  <div className="grid grid-cols-1 gap-2 text-sm">
-                    {selectedCustomer.phone && (
-                      <div className="flex items-center gap-2 text-muted-foreground"><Phone className="h-4 w-4" />{selectedCustomer.phone}</div>
-                    )}
-                    {selectedCustomer.email && (
-                      <div className="flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" />{selectedCustomer.email}</div>
-                    )}
-                    {selectedCustomer.address && (
-                      <div className="flex items-center gap-2 text-muted-foreground"><MapPin className="h-4 w-4" />{selectedCustomer.address}</div>
-                    )}
-                    {(selectedCustomer.city || selectedCustomer.area) && (
-                      <div className="text-muted-foreground pl-6">
-                        {[selectedCustomer.area, selectedCustomer.zone, selectedCustomer.city].filter(Boolean).join(", ")}
-                      </div>
-                    )}
+                  <h3 className="text-sm font-medium">Phone</h3>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Phone className="h-4 w-4" />{selected.phone || "—"}
                   </div>
                 </div>
 
                 <Separator />
 
-                {/* Stats */}
+                {selected.names.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Names ({selected.names.length})</h3>
+                    <div className="space-y-1.5">
+                      {selected.names.map((n, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span className="text-foreground">{n.value}</span>
+                          <Badge variant="outline" className="text-xs">{storeName(n.source_store_id)}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selected.emails.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Emails ({selected.emails.length})</h3>
+                    <div className="space-y-1.5">
+                      {selected.emails.map((e, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span className="text-foreground">{e.value}</span>
+                          <Badge variant="outline" className="text-xs">{storeName(e.source_store_id)}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selected.addresses.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Addresses ({selected.addresses.length})</h3>
+                    <div className="space-y-1.5">
+                      {selected.addresses.map((a, i) => (
+                        <div key={i} className="flex items-start justify-between text-sm gap-3">
+                          <span className="text-foreground flex-1">{a.value}</span>
+                          <Badge variant="outline" className="text-xs shrink-0">{storeName(a.source_store_id)}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <Separator />
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="rounded-lg border border-border p-3 text-center">
-                    <div className="text-2xl font-semibold text-foreground">{selectedCustomer.order_count}</div>
+                    <div className="text-2xl font-semibold">{selected.order_count}</div>
                     <div className="text-xs text-muted-foreground">Total Orders</div>
                   </div>
                   <div className="rounded-lg border border-border p-3 text-center">
-                    <div className="text-2xl font-semibold text-foreground">৳{selectedCustomer.total_spent.toLocaleString()}</div>
+                    <div className="text-2xl font-semibold">৳{selected.total_spent.toLocaleString()}</div>
                     <div className="text-xs text-muted-foreground">Total Spent</div>
                   </div>
                 </div>
 
                 <Separator />
 
-                {/* Order History */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-medium text-foreground">Order History</h3>
-                  {ordersLoading ? (
-                    <p className="text-sm text-muted-foreground">Loading orders...</p>
-                  ) : customerOrders.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No orders yet</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {customerOrders.map((order) => (
-                        <div key={order.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm text-foreground">#{order.order_number}</span>
-                              <SourceBadge source={order.source} />
+                  <h3 className="text-sm font-medium">Order History</h3>
+                  {ordersLoading ? <p className="text-sm text-muted-foreground">Loading...</p>
+                    : customerOrders.length === 0 ? <p className="text-sm text-muted-foreground">No orders yet</p>
+                    : (
+                      <div className="space-y-2">
+                        {customerOrders.map((o) => (
+                          <div key={o.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">#{o.order_number}</span>
+                                <SourceBadge source={o.source} />
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {format(new Date(o.created_at), "MMM d, yyyy")}
+                              </div>
                             </div>
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              {format(new Date(order.created_at), "MMM d, yyyy")}
+                            <div className="text-right space-y-1">
+                              <div className="font-medium text-sm">৳{Number(o.total).toLocaleString()}</div>
+                              <div className="flex items-center gap-1.5 justify-end">
+                                <FulfillmentBadge status={o.status} />
+                                <PaymentBadge status={o.payment_status} />
+                              </div>
                             </div>
                           </div>
-                          <div className="text-right space-y-1">
-                            <div className="font-medium text-sm text-foreground">৳{Number(order.total).toLocaleString()}</div>
-                            <div className="flex items-center gap-1.5 justify-end">
-                              <FulfillmentBadge status={order.status} />
-                              <PaymentBadge status={order.payment_status} />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
                 </div>
               </div>
             </>
