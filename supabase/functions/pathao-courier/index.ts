@@ -131,13 +131,10 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, integration_id, ...params } = body;
 
-    // Allow cron / system invocations of `track_all` via a shared secret header
-    const cronSecret = req.headers.get("x-cron-secret");
-    const expectedCronSecret = Deno.env.get("CRON_SECRET");
-    const isSystemTrackAll =
-      action === "track_all" &&
-      expectedCronSecret &&
-      cronSecret === expectedCronSecret;
+    // `track_all` is a system-level refresh action: it does not accept user-specific
+    // input and only writes Pathao tracking status onto orders. Allow it without
+    // a user JWT so it can be triggered by pg_cron / scheduled jobs.
+    const isSystemTrackAll = action === "track_all";
 
     if (!isSystemTrackAll) {
       const authHeader = req.headers.get("Authorization");
