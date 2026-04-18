@@ -29,7 +29,10 @@ interface DispatchOrder {
   total: number;
   status: string;
   store_id: string | null;
-  customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  customer_city: string | null;
   stores: { name: string } | null;
   itemCount: number;
   consignment_id: string | null;
@@ -108,12 +111,12 @@ const Dispatch = () => {
     const [{ data: pending }, { data: shipped }] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
+        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, stores(name), order_items(id)")
         .eq("status", "processing")
         .order("created_at", { ascending: false }),
       supabase
         .from("orders")
-        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customers(name, phone, address, city, zone, area), stores(name), order_items(id)")
+        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, stores(name), order_items(id)")
         .not("consignment_id", "is", null)
         .not("status", "in", '("delivered","completed","cancelled","returned")')
         .order("created_at", { ascending: false }),
@@ -122,7 +125,6 @@ const Dispatch = () => {
     const mapOrders = (data: any[]) =>
       data.map((o: any) => ({
         ...o,
-        customers: o.customers,
         stores: o.stores,
         itemCount: o.order_items?.length || 0,
       }));
@@ -261,8 +263,8 @@ const Dispatch = () => {
     const q = search.toLowerCase();
     return (
       o.order_number.toLowerCase().includes(q) ||
-      (o.customers?.name || "").toLowerCase().includes(q) ||
-      (o.customers?.phone || "").toLowerCase().includes(q)
+      (o.customer_name || "").toLowerCase().includes(q) ||
+      (o.customer_phone || "").toLowerCase().includes(q)
     );
   });
 
@@ -313,9 +315,9 @@ const Dispatch = () => {
         amount_to_collect: String(o.amount_to_collect || o.total || 0),
         item_weight: String(o.item_weight || 0.5),
         special_instruction: o.special_instruction || "",
-        recipient_name: o.customers?.name || "",
-        recipient_phone: o.customers?.phone || "",
-        recipient_address: o.customers?.address || "",
+        recipient_name: o.customer_name || "",
+        recipient_phone: o.customer_phone || "",
+        recipient_address: o.customer_address || "",
       };
     }
     setOrderOverrides(overrides);
@@ -594,12 +596,12 @@ const Dispatch = () => {
                         #{order.order_number}
                       </TableCell>
                       <TableCell>
-                        <div className="text-foreground">{order.customers?.name || "—"}</div>
-                        <div className="text-xs text-muted-foreground">{order.customers?.phone || ""}</div>
+                        <div className="text-foreground">{order.customer_name || "—"}</div>
+                        <div className="text-xs text-muted-foreground">{order.customer_phone || ""}</div>
                       </TableCell>
                       <TableCell>
                         <div className="text-sm text-muted-foreground max-w-[200px] truncate">
-                          {order.customers?.address || "—"}
+                          {order.customer_address || "—"}
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
@@ -653,8 +655,8 @@ const Dispatch = () => {
                     <TableRow key={order.id}>
                       <TableCell className="font-medium">#{order.order_number}</TableCell>
                       <TableCell>
-                        <div className="text-foreground">{order.customers?.name || "—"}</div>
-                        <div className="text-xs text-muted-foreground">{order.customers?.phone || ""}</div>
+                        <div className="text-foreground">{order.customer_name || "—"}</div>
+                        <div className="text-xs text-muted-foreground">{order.customer_phone || ""}</div>
                       </TableCell>
                       <TableCell>
                         {order.consignment_id ? (
