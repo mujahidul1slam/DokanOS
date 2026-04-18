@@ -99,6 +99,7 @@ const Orders = () => {
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("new");
   const [stores, setStores] = useState<StoreOption[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Dispatch
   const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
