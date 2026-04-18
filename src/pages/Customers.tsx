@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import {
   Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, Download, RefreshCw, Loader2, Trash2,
@@ -59,6 +60,7 @@ const Customers = () => {
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const storeName = useCallback((id: string | null) => stores.find((s) => s.id === id)?.name || "—", [stores]);
 
@@ -417,7 +419,11 @@ const Customers = () => {
                     : (
                       <div className="space-y-2">
                         {customerOrders.map((o) => (
-                          <div key={o.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                          <div
+                            key={o.id}
+                            className="flex items-center justify-between rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                            onClick={() => navigate(`/orders?order=${o.id}`)}
+                          >
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="font-medium text-sm">#{o.order_number}</span>

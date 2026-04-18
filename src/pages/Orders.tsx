@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import {
@@ -98,6 +99,7 @@ const Orders = () => {
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("new");
   const [stores, setStores] = useState<StoreOption[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Dispatch
   const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
@@ -115,6 +117,16 @@ const Orders = () => {
   const [pendingTrashIds, setPendingTrashIds] = useState<string[]>([]);
 
   const { toast } = useToast();
+
+  // Open detail sheet from ?order=ID URL param (e.g., from Customer profile)
+  useEffect(() => {
+    const orderParam = searchParams.get("order");
+    if (orderParam) {
+      setDetailOrderId(orderParam);
+      searchParams.delete("order");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
