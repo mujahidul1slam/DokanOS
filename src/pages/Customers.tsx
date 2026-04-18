@@ -153,6 +153,28 @@ const Customers = () => {
     setOrdersLoading(false);
   };
 
+  const deleteAlias = async (alias: AliasRow) => {
+    if (!alias.id || !selected) return;
+    if (!confirm(`Delete this ${alias.type}?\n\n${alias.value}`)) return;
+    const { error } = await supabase.from("customer_aliases").delete().eq("id", alias.id);
+    if (error) {
+      toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
+      return;
+    }
+    // Update local state
+    setCustomers((prev) => prev.map((c) => {
+      if (c.id !== selected.id) return c;
+      const filterFn = (a: AliasRow) => a.id !== alias.id;
+      return { ...c, names: c.names.filter(filterFn), emails: c.emails.filter(filterFn), addresses: c.addresses.filter(filterFn) };
+    }));
+    setSelected((prev) => {
+      if (!prev) return prev;
+      const filterFn = (a: AliasRow) => a.id !== alias.id;
+      return { ...prev, names: prev.names.filter(filterFn), emails: prev.emails.filter(filterFn), addresses: prev.addresses.filter(filterFn) };
+    });
+    toast({ title: `${alias.type} deleted` });
+  };
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return customers.filter((c) => {
