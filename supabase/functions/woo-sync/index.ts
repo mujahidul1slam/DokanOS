@@ -329,7 +329,7 @@ Deno.serve(async (req) => {
       const prodMap = new Map((dbProducts || []).map((p: any) => [p.woo_product_id, p.id]));
 
       const orderRows = wooOrders.map((o: any) => {
-        const phone = o.billing?.phone?.trim() || null;
+        const phone = normalizePhone(o.billing?.phone);
         const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
         const billingAddr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;
 
