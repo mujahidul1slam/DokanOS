@@ -314,16 +314,7 @@ Deno.serve(async (req) => {
         const order_status = info.order_status || info.status;
 
         if (consignment_id) {
-          const statusMap: Record<string, string> = {
-            "Pending": "shipped", "Pickup Pending": "shipped", "Assigned for Pickup": "shipped",
-            "Picked": "shipped", "Picked Up": "shipped", "At Sorting Hub": "shipped",
-            "In Transit": "shipped", "Out for Delivery": "shipped",
-            "Delivered": "delivered", "Partial Delivered": "delivered",
-            "Return": "returned", "Returned": "returned",
-            "Exchange": "processing", "On Hold": "processing",
-            "Cancelled": "cancelled", "Payment Invoice": "delivered",
-          };
-          const mappedStatus = statusMap[order_status] || undefined;
+          const mappedStatus = mapPathaoStatus(order_status);
           const updateData: any = { tracking_status: order_status };
           if (mappedStatus) updateData.status = mappedStatus;
           await sb.from("orders").update(updateData).eq("consignment_id", consignment_id);
