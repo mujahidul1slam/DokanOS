@@ -419,7 +419,11 @@ const Customers = () => {
                     : (
                       <div className="space-y-2">
                         {customerOrders.map((o) => (
-                          <div key={o.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                          <div
+                            key={o.id}
+                            className="flex items-center justify-between rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                            onClick={() => navigate(`/orders?order=${o.id}`)}
+                          >
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="font-medium text-sm">#{o.order_number}</span>
