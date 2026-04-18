@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import {
-  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, Download, RefreshCw, Loader2,
+  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, Download, RefreshCw, Loader2, Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/exportCsv";
@@ -19,7 +19,7 @@ import { FulfillmentBadge, PaymentBadge, SourceBadge } from "@/components/orders
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { useToast } from "@/hooks/use-toast";
 
-interface AliasRow { type: "name" | "email" | "address"; value: string; source_store_id: string | null; }
+interface AliasRow { id?: string; type: "name" | "email" | "address"; value: string; source_store_id: string | null; }
 
 interface UnifiedCustomer {
   id: string; // keeper customer row id
@@ -65,14 +65,14 @@ const Customers = () => {
   const loadCustomers = useCallback(async () => {
     const [{ data: custs }, { data: aliases }, { data: stats }] = await Promise.all([
       supabase.from("customers").select("id, name, phone, email, address, city, store_id, source, created_at").order("created_at", { ascending: false }),
-      supabase.from("customer_aliases").select("customer_id, type, value, source_store_id"),
+      supabase.from("customer_aliases").select("id, customer_id, type, value, source_store_id"),
       supabase.from("orders").select("customer_id, total"),
     ]);
 
     const aliasMap = new Map<string, AliasRow[]>();
     (aliases || []).forEach((a: any) => {
       if (!aliasMap.has(a.customer_id)) aliasMap.set(a.customer_id, []);
-      aliasMap.get(a.customer_id)!.push({ type: a.type, value: a.value, source_store_id: a.source_store_id });
+      aliasMap.get(a.customer_id)!.push({ id: a.id, type: a.type, value: a.value, source_store_id: a.source_store_id });
     });
 
     const statsMap: Record<string, { count: number; spent: number }> = {};
@@ -151,6 +151,28 @@ const Customers = () => {
       .order("created_at", { ascending: false });
     setCustomerOrders((data || []) as CustomerOrder[]);
     setOrdersLoading(false);
+  };
+
+  const deleteAlias = async (alias: AliasRow) => {
+    if (!alias.id || !selected) return;
+    if (!confirm(`Delete this ${alias.type}?\n\n${alias.value}`)) return;
+    const { error } = await supabase.from("customer_aliases").delete().eq("id", alias.id);
+    if (error) {
+      toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
+      return;
+    }
+    // Update local state
+    setCustomers((prev) => prev.map((c) => {
+      if (c.id !== selected.id) return c;
+      const filterFn = (a: AliasRow) => a.id !== alias.id;
+      return { ...c, names: c.names.filter(filterFn), emails: c.emails.filter(filterFn), addresses: c.addresses.filter(filterFn) };
+    }));
+    setSelected((prev) => {
+      if (!prev) return prev;
+      const filterFn = (a: AliasRow) => a.id !== alias.id;
+      return { ...prev, names: prev.names.filter(filterFn), emails: prev.emails.filter(filterFn), addresses: prev.addresses.filter(filterFn) };
+    });
+    toast({ title: `${alias.type} deleted` });
   };
 
   const filtered = useMemo(() => {
@@ -321,9 +343,14 @@ const Customers = () => {
                     <h3 className="text-sm font-medium">Names ({selected.names.length})</h3>
                     <div className="space-y-1.5">
                       {selected.names.map((n, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <span className="text-foreground">{n.value}</span>
+                        <div key={n.id || i} className="flex items-center justify-between text-sm gap-2">
+                          <span className="text-foreground flex-1">{n.value}</span>
                           <Badge variant="outline" className="text-xs">{storeName(n.source_store_id)}</Badge>
+                          {selected.names.length > 1 && n.id && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(n)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -335,9 +362,14 @@ const Customers = () => {
                     <h3 className="text-sm font-medium">Emails ({selected.emails.length})</h3>
                     <div className="space-y-1.5">
                       {selected.emails.map((e, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <span className="text-foreground">{e.value}</span>
+                        <div key={e.id || i} className="flex items-center justify-between text-sm gap-2">
+                          <span className="text-foreground flex-1">{e.value}</span>
                           <Badge variant="outline" className="text-xs">{storeName(e.source_store_id)}</Badge>
+                          {selected.emails.length > 1 && e.id && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(e)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -349,9 +381,14 @@ const Customers = () => {
                     <h3 className="text-sm font-medium">Addresses ({selected.addresses.length})</h3>
                     <div className="space-y-1.5">
                       {selected.addresses.map((a, i) => (
-                        <div key={i} className="flex items-start justify-between text-sm gap-3">
+                        <div key={a.id || i} className="flex items-start justify-between text-sm gap-2">
                           <span className="text-foreground flex-1">{a.value}</span>
                           <Badge variant="outline" className="text-xs shrink-0">{storeName(a.source_store_id)}</Badge>
+                          {selected.addresses.length > 1 && a.id && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(a)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       ))}
                     </div>

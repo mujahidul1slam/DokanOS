@@ -145,7 +145,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     total: parseFloat(o.total) || 0,
     customer_id,
     customer_name: billingName || null,
-    customer_phone: o.billing?.phone?.trim() || null,
+    customer_phone: normalizePhone(o.billing?.phone),
     customer_email: o.billing?.email || null,
     customer_address: billingAddr,
     customer_city: o.billing?.city || null,
@@ -187,8 +187,17 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
  * Order's billing snapshot is recorded as aliases (name/email/address) the first time we see it.
  * The customers row itself is NEVER overwritten by later orders — its first-seen values stick.
  */
+function normalizePhone(raw: any): string | null {
+  if (!raw) return null;
+  let p = String(raw).replace(/[^0-9]/g, "");
+  if (!p) return null;
+  if (p.startsWith("880") && p.length >= 13) p = p.slice(3);
+  if (p.length === 10 && p.startsWith("1")) p = "0" + p;
+  return p;
+}
+
 async function resolveOrCreateCustomer(supabase: any, store_id: string, o: any): Promise<string | null> {
-  const phone = o.billing?.phone?.trim() || null;
+  const phone = normalizePhone(o.billing?.phone);
   const email = o.billing?.email?.trim() || null;
   const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || null;
   const address = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;

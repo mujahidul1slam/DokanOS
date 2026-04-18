@@ -1324,6 +1324,7 @@ export type Database = {
           merged_phone: string
         }[]
       }
+      normalize_bd_phone: { Args: { _phone: string }; Returns: string }
       purge_trashed_orders: { Args: never; Returns: undefined }
     }
     Enums: {
