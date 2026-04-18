@@ -127,18 +127,27 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
     const sb = supabaseAdmin();
-    const bearer = authHeader.replace("Bearer ", "");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    // Allow service-role calls (e.g. from pg_cron) to bypass user auth
-    if (bearer !== serviceKey) {
+    const body = await req.json();
+    const { action, integration_id, ...params } = body;
+
+    // Allow cron / system invocations of `track_all` via a shared secret header
+    const cronSecret = req.headers.get("x-cron-secret");
+    const expectedCronSecret = Deno.env.get("CRON_SECRET");
+    const isSystemTrackAll =
+      action === "track_all" &&
+      expectedCronSecret &&
+      cronSecret === expectedCronSecret;
+
+    if (!isSystemTrackAll) {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader?.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const bearer = authHeader.replace("Bearer ", "");
       const { data: { user: caller }, error: authErr } = await sb.auth.getUser(bearer);
       if (authErr || !caller) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -148,7 +157,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { action, integration_id, ...params } = await req.json();
     const creds = await loadIntegration(sb, integration_id);
     const token = await getAccessToken(creds);
 
