@@ -121,6 +121,7 @@ const Customers = () => {
         total_spent: statsMap[c.id]?.spent || 0,
       };
     });
+    rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     setCustomers(rows);
     setLoading(false);
