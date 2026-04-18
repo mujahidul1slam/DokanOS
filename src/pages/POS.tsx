@@ -16,6 +16,15 @@ import POSToolbar from "@/components/pos/POSToolbar";
 import KeyboardShortcutsHelp from "@/components/pos/KeyboardShortcutsHelp";
 import type { Product, Cart, CartItem, CustomerData } from "@/components/pos/types";
 
+const normalizeBdPhone = (raw?: string | null) => {
+  if (!raw) return null;
+  let p = String(raw).replace(/\D/g, "");
+  if (!p) return null;
+  if (p.startsWith("880") && p.length >= 13) p = p.slice(3);
+  if (p.length === 10 && p.startsWith("1")) p = `0${p}`;
+  return p;
+};
+
 const createEmptyCart = (label: string): Cart => ({
   id: crypto.randomUUID(),
   label,
@@ -328,26 +337,28 @@ const POS = () => {
 
     const orderNumber = `POS-${Date.now().toString(36).toUpperCase()}`;
 
+    const normalizedCustomerPhone = normalizeBdPhone(cart.customer?.phone);
     let customerId: string | null = cart.customer?.id || null;
     if (cart.customer && !cart.customer.id && cart.customer.name) {
-      if (cart.customer.phone) {
+      if (normalizedCustomerPhone) {
         const { data: existing } = await supabase
           .from("customers")
           .select("id")
-          .eq("phone", cart.customer.phone)
+          .eq("phone", normalizedCustomerPhone)
           .maybeSingle();
         if (existing) {
           customerId = existing.id;
           await supabase.from("customers").update({
             name: cart.customer.name,
             address: cart.customer.address || null,
+            phone: normalizedCustomerPhone,
           }).eq("id", existing.id);
         }
       }
       if (!customerId) {
         const { data: newCust } = await supabase
           .from("customers")
-          .insert({ name: cart.customer.name, phone: cart.customer.phone || null, address: cart.customer.address || null, source: 'pos' })
+          .insert({ name: cart.customer.name, phone: normalizedCustomerPhone, address: cart.customer.address || null, source: 'pos' })
           .select("id")
           .single();
         if (newCust) customerId = newCust.id;
@@ -371,6 +382,10 @@ const POS = () => {
         total,
         tax_amount: taxAmount,
         customer_id: customerId,
+        customer_name: cart.customer?.name || null,
+        customer_phone: normalizedCustomerPhone,
+        customer_address: cart.customer?.address || null,
+        customer_city: null,
         notes: cart.notes || null,
         store_id: cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null),
         salesperson_id: cart.salespersonId || user?.id || null,

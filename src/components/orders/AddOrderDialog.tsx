@@ -17,6 +17,15 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 
+const normalizeBdPhone = (raw?: string | null) => {
+  if (!raw) return null;
+  let p = String(raw).replace(/\D/g, "");
+  if (!p) return null;
+  if (p.startsWith("880") && p.length >= 13) p = p.slice(3);
+  if (p.length === 10 && p.startsWith("1")) p = `0${p}`;
+  return p;
+};
+
 interface ProductRow {
   id: string;
   name: string;
@@ -206,53 +215,59 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     if (items.length === 0) { toast.error("Add at least one product"); return; }
     setSaving(true);
     try {
-      let customerId: string | null = null;
-      if (customerName || customerPhone) {
-        if (customerPhone) {
-          const { data: existing } = await supabase.from("customers").select("id").eq("phone", customerPhone).limit(1).single();
-          if (existing) {
-            customerId = existing.id;
-            await supabase.from("customers").update({
-              name: customerName || undefined,
-              address: customerAddress || undefined,
-              city: cities.find(c => c.city_id === selectedCity)?.city_name || undefined,
-              zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || undefined,
-              area: areas.find(a => a.area_id === selectedArea)?.area_name || undefined,
-            }).eq("id", customerId);
+        let customerId: string | null = null;
+        const normalizedCustomerPhone = normalizeBdPhone(customerPhone);
+        if (customerName || normalizedCustomerPhone) {
+          if (normalizedCustomerPhone) {
+            const { data: existing } = await supabase.from("customers").select("id").eq("phone", normalizedCustomerPhone).limit(1).maybeSingle();
+            if (existing) {
+              customerId = existing.id;
+              await supabase.from("customers").update({
+                name: customerName || undefined,
+                phone: normalizedCustomerPhone,
+                address: customerAddress || undefined,
+                city: cities.find(c => c.city_id === selectedCity)?.city_name || undefined,
+                zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || undefined,
+                area: areas.find(a => a.area_id === selectedArea)?.area_name || undefined,
+              }).eq("id", customerId);
+            }
+          }
+          if (!customerId) {
+            const { data: newC } = await supabase.from("customers").insert({
+              name: customerName || "Customer",
+              phone: normalizedCustomerPhone,
+              address: customerAddress || null,
+              city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
+              zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || null,
+              area: areas.find(a => a.area_id === selectedArea)?.area_name || null,
+              source,
+            }).select("id").single();
+            customerId = newC?.id || null;
           }
         }
-        if (!customerId) {
-          const { data: newC } = await supabase.from("customers").insert({
-            name: customerName || "Customer",
-            phone: customerPhone || null,
-            address: customerAddress || null,
-            city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
-            zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || null,
-            area: areas.find(a => a.area_id === selectedArea)?.area_name || null,
-            source,
-          }).select("id").single();
-          customerId = newC?.id || null;
-        }
-      }
 
-      const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
+        const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
 
-      const { data: order, error } = await supabase.from("orders").insert({
-        order_number: orderNumber,
-        source,
-        status: "processing",
-        payment_status: "unpaid",
-        fulfillment_type: fulfillment,
-        customer_id: customerId,
-        subtotal,
-        discount,
-        shipping_cost: shippingCost,
-        total,
-        notes: notes || null,
-        pathao_recipient_city: selectedCity,
-        pathao_recipient_zone: selectedZone,
-        pathao_recipient_area: selectedArea,
-      }).select("id").single();
+        const { data: order, error } = await supabase.from("orders").insert({
+          order_number: orderNumber,
+          source,
+          status: "processing",
+          payment_status: "unpaid",
+          fulfillment_type: fulfillment,
+          customer_id: customerId,
+          customer_name: customerName || null,
+          customer_phone: normalizedCustomerPhone,
+          customer_address: customerAddress || null,
+          customer_city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
+          subtotal,
+          discount,
+          shipping_cost: shippingCost,
+          total,
+          notes: notes || null,
+          pathao_recipient_city: selectedCity,
+          pathao_recipient_zone: selectedZone,
+          pathao_recipient_area: selectedArea,
+        }).select("id").single();
 
       if (error) throw error;
 
