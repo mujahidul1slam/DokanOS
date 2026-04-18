@@ -41,9 +41,9 @@ export default function PickupSlipPrint({ orders }: Props) {
           ${tpl.show_order_number ? `<div class="header"><h2>${tpl.title || "PICKUP SLIP"}</h2><div class="order-num">#${order.order_number}</div></div>` : `<div class="header"><h2>${tpl.title || "PICKUP SLIP"}</h2></div>`}
           ${tpl.show_customer_name || tpl.show_customer_phone || tpl.show_customer_address ? `<div class="section">
             <div class="section-title">Customer</div>
-            ${tpl.show_customer_name ? `<div class="customer-name">${order.customers?.name || "Walk-in"}</div>` : ""}
-            ${tpl.show_customer_phone && order.customers?.phone ? `<div class="customer-detail">📞 ${order.customers.phone}</div>` : ""}
-            ${tpl.show_customer_address && order.customers?.address ? `<div class="customer-detail">📍 ${order.customers.address}</div>` : ""}
+            ${tpl.show_customer_name ? `<div class="customer-name">${order.customer_name || "Walk-in"}</div>` : ""}
+            ${tpl.show_customer_phone && order.customer_phone ? `<div class="customer-detail">📞 ${order.customer_phone}</div>` : ""}
+            ${tpl.show_customer_address && order.customer_address ? `<div class="customer-detail">📍 ${order.customer_address}</div>` : ""}
           </div>` : ""}
           ${tpl.show_items ? `<div class="section"><div class="section-title">Items</div>
             <table><thead><tr><th>Product</th>${tpl.show_item_qty ? '<th class="qty">Qty</th>' : ""}</tr></thead><tbody>

@@ -18,7 +18,10 @@ interface DispatchOrder {
   order_number: string;
   total: number;
   itemCount: number;
-  customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  customer_city: string | null;
   pathao_recipient_city: number | null;
   pathao_recipient_zone: number | null;
   pathao_recipient_area: number | null;

@@ -118,7 +118,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, customers(id, name, phone, address, email, city)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city")
         .eq("id", orderId)
         .single(),
       supabase
@@ -142,10 +142,10 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setOrder(o);
       setStatus(o.status);
       setPaymentStatus(o.payment_status);
-      setCustomerName(o.customers?.name || "");
-      setCustomerPhone(o.customers?.phone || "");
-      setCustomerAddress(o.customers?.address || "");
-      setCustomerEmail(o.customers?.email || "");
+      setCustomerName(o.customer_name || "");
+      setCustomerPhone(o.customer_phone || "");
+      setCustomerAddress(o.customer_address || "");
+      setCustomerEmail(o.customer_email || "");
       setDiscount(o.discount || 0);
       setShippingCost(o.shipping_cost || 0);
       setNotes(o.notes || "");
@@ -185,12 +185,15 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     if (!order) return;
     setSaving(true);
     try {
-      // Update order
       await supabase
         .from("orders")
         .update({
           status,
           payment_status: paymentStatus,
+          customer_name: customerName || null,
+          customer_phone: customerPhone || null,
+          customer_address: customerAddress || null,
+          customer_email: customerEmail || null,
           discount,
           shipping_cost: shippingCost,
           subtotal: computedSubtotal,
@@ -198,14 +201,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           notes,
         })
         .eq("id", order.id);
-
-      // Update customer
-      if (order.customers?.id) {
-        await supabase
-          .from("customers")
-          .update({ name: customerName, phone: customerPhone, address: customerAddress, email: customerEmail })
-          .eq("id", order.customers.id);
-      }
 
       // Delete removed items
       if (deletedItemIds.length > 0) {
