@@ -51,11 +51,11 @@ const CommandPalette = () => {
       return;
     }
     const [ordersRes, customersRes, productsRes] = await Promise.all([
-      supabase.from("orders").select("id, order_number, customers(name)").or(`order_number.ilike.%${q}%`).limit(5),
+      supabase.from("orders").select("id, order_number, customer_name").or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%`).limit(5),
       supabase.from("customers").select("id, name, phone").or(`name.ilike.%${q}%,phone.ilike.%${q}%`).limit(5),
       supabase.from("products").select("id, name, sku").or(`name.ilike.%${q}%,sku.ilike.%${q}%`).limit(5),
     ]);
-    setOrders((ordersRes.data || []).map((o: any) => ({ id: o.id, order_number: o.order_number, customer_name: o.customers?.name || "" })));
+    setOrders((ordersRes.data || []).map((o: any) => ({ id: o.id, order_number: o.order_number, customer_name: o.customer_name || "" })));
     setCustomers((customersRes.data || []) as any);
     setProducts((productsRes.data || []) as any);
   }, []);

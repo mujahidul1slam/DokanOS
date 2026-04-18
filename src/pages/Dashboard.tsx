@@ -16,7 +16,7 @@ interface OrderRow {
   status: string;
   source: string;
   created_at: string;
-  customers: { name: string } | null;
+  customer_name: string | null;
 }
 
 type DatePreset = "today" | "7d" | "30d" | "90d" | "year" | "all";
@@ -55,7 +55,7 @@ const Dashboard = () => {
       setLoading(true);
       const dateFrom = getDateFrom(datePreset);
 
-      let ordersQuery = supabase.from("orders").select("id, order_number, total, status, source, created_at, customers(name)").is("deleted_at", null).order("created_at", { ascending: false });
+      let ordersQuery = supabase.from("orders").select("id, order_number, total, status, source, created_at, customer_name").is("deleted_at", null).order("created_at", { ascending: false });
       if (dateFrom) {
         ordersQuery = ordersQuery.gte("created_at", dateFrom.toISOString());
       }
@@ -108,7 +108,7 @@ const Dashboard = () => {
   const handleExportCSV = () => {
     const headers = "Order Number,Customer,Total,Status,Source,Date\n";
     const csv = orders.map((o) =>
-      `${o.order_number},"${o.customers?.name || ""}",${o.total},${o.status},${o.source},${new Date(o.created_at).toLocaleDateString()}`
+      `${o.order_number},"${o.customer_name || ""}",${o.total},${o.status},${o.source},${new Date(o.created_at).toLocaleDateString()}`
     ).join("\n");
     const blob = new Blob([headers + csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -209,7 +209,7 @@ const Dashboard = () => {
               <div key={order.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2.5">
                 <div className="min-w-0">
                   <p className="text-sm text-card-foreground">{order.order_number}</p>
-                  <p className="truncate text-xs text-muted-foreground">{order.customers?.name || "Walk-in"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{order.customer_name || "Walk-in"}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium text-card-foreground">৳{Number(order.total).toLocaleString()}</span>

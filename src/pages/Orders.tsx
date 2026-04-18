@@ -63,12 +63,12 @@ interface OrderRow {
   special_instruction: string | null;
   store_id: string | null;
   woo_order_id: number | null;
+  customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
   customer_address: string | null;
   customer_city: string | null;
   customer_email: string | null;
-  customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
   productItems: { name: string; qty: number }[];
@@ -118,9 +118,9 @@ const Orders = () => {
 
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
-      .from("orders")
-      .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, customers(name, phone, address, city, zone, area), stores(name), order_items(id, product_name, quantity)")
-      .order("created_at", { ascending: false });
+        .from("orders")
+        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, stores(name), order_items(id, product_name, quantity)")
+        .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
       ...o,
@@ -173,8 +173,8 @@ const Orders = () => {
       const q = search.toLowerCase();
       const matchSearch = !q ||
         o.order_number.toLowerCase().includes(q) ||
-        (o.customers?.name || "").toLowerCase().includes(q) ||
-        (o.customers?.phone || "").toLowerCase().includes(q);
+        (o.customer_name || "").toLowerCase().includes(q) ||
+        (o.customer_phone || "").toLowerCase().includes(q);
       const matchStatus = tab !== "all" || statusFilter === "all" || o.status === statusFilter;
       const matchPayment = paymentFilter === "all" || o.payment_status === paymentFilter;
       const matchSource = sourceFilter === "all" || o.source === sourceFilter;
@@ -429,17 +429,19 @@ const Orders = () => {
   /* ─── Reprint invoice for any order ─── */
   const handleReprintOrder = async (orderId: string) => {
     const [orderRes, itemsRes, paymentsRes] = await Promise.all([
-      supabase.from("orders").select("id, order_number, total, subtotal, discount, shipping_cost, notes, customer_id").eq("id", orderId).single(),
+      supabase.from("orders").select("id, order_number, total, subtotal, discount, shipping_cost, notes, customer_name, customer_phone, customer_address, customer_city").eq("id", orderId).single(),
       supabase.from("order_items").select("*").eq("order_id", orderId),
       supabase.from("order_payments").select("*").eq("order_id", orderId),
     ]);
     const o = orderRes.data as any;
     if (!o) return;
-    let customer = null;
-    if (o.customer_id) {
-      const { data: c } = await supabase.from("customers").select("name, phone, address, city, zone").eq("id", o.customer_id).single();
-      if (c) customer = { name: c.name, phone: c.phone || "", address: c.address || "", city: c.city || "", zone: c.zone || "" };
-    }
+    const customer = {
+      name: o.customer_name || "",
+      phone: o.customer_phone || "",
+      address: o.customer_address || "",
+      city: o.customer_city || "",
+      zone: "",
+    };
     const items = (itemsRes.data || []).map((i: any) => ({
       uid: i.id, productId: i.product_id || "", name: i.product_name, price: Number(i.unit_price), qty: i.quantity, customTailoring: false,
     }));
@@ -670,10 +672,10 @@ const Orders = () => {
                       <div className="text-xs text-muted-foreground">{format(new Date(order.created_at), "MMM d, yyyy · h:mm a")}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium text-foreground">{order.customers?.name || "—"}</div>
-                      <div className="text-xs text-muted-foreground">{order.customers?.phone || "—"}</div>
-                      {(tab === "ready" || tab === "new") && order.customers?.address && (
-                        <div className="text-xs text-muted-foreground max-w-[180px] truncate mt-0.5">{order.customers.address}</div>
+                      <div className="font-medium text-foreground">{order.customer_name || "—"}</div>
+                      <div className="text-xs text-muted-foreground">{order.customer_phone || "—"}</div>
+                      {(tab === "ready" || tab === "new") && order.customer_address && (
+                        <div className="text-xs text-muted-foreground max-w-[180px] truncate mt-0.5">{order.customer_address}</div>
                       )}
                     </TableCell>
                     <TableCell>
