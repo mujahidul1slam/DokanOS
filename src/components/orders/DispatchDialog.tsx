@@ -469,10 +469,12 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         <div className="flex items-center gap-3 pb-2">
           <Label className="text-sm font-medium whitespace-nowrap">Pathao Store:</Label>
           <Select value={selectedPathaoStore} onValueChange={setSelectedPathaoStore}>
-            <SelectTrigger className="w-[260px]"><SelectValue placeholder="Select Pathao store" /></SelectTrigger>
+            <SelectTrigger className="w-[320px]"><SelectValue placeholder="Select Pathao store" /></SelectTrigger>
             <SelectContent>
               {pathaoStores.map((s) => (
-                <SelectItem key={s.pathao_store_id} value={String(s.pathao_store_id)}>{s.store_name}</SelectItem>
+                <SelectItem key={`${s.integration_id || "env"}-${s.pathao_store_id}`} value={String(s.pathao_store_id)}>
+                  {s.store_name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
