@@ -208,9 +208,9 @@ async function handleProductWebhook(supabase: any, store_id: string, p: any) {
 
 /* ====== ORDER WEBHOOK ====== */
 async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
+  // Keep a lightweight customer link if possible, but order snapshots are the source of truth.
   const customer_id = await resolveCustomer(supabase, store_id, o);
 
-  // Product lookup
   const { data: dbProducts } = await supabase
     .from("products")
     .select("id, woo_product_id")
@@ -220,6 +220,9 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   const paymentStatus = derivePaymentStatus(o);
   const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
   const billingAddr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;
+  const billingPhone = o.billing?.phone?.trim() || null;
+  const billingEmail = o.billing?.email || null;
+  const billingCity = o.billing?.city || null;
 
   const orderData = {
     store_id,
@@ -234,15 +237,15 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     shipping_cost: parseFloat(o.shipping_total) || 0,
     total: parseFloat(o.total) || 0,
     customer_id,
+    // Always persist the exact WooCommerce billing snapshot on the order.
     customer_name: billingName || null,
-    customer_phone: o.billing?.phone?.trim() || null,
-    customer_email: o.billing?.email || null,
+    customer_phone: billingPhone,
+    customer_email: billingEmail,
     customer_address: billingAddr,
-    customer_city: o.billing?.city || null,
+    customer_city: billingCity,
     notes: o.customer_note || null,
   };
 
-  // Check if order exists
   const { data: existingOrder } = await supabase
     .from("orders")
     .select("id")
@@ -263,7 +266,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
       return jsonResp({ error: "Failed to update order" }, 500);
     }
     orderId = existingOrder.id;
-    console.log(`Updated order ${orderId} (woo_id: ${o.id})`);
+    console.log(`Updated order ${orderId} (woo_id: ${o.id}) with fresh Woo billing snapshot`);
   } else {
     const orderInsert = {
       ...orderData,
@@ -280,10 +283,9 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
       return jsonResp({ error: "Failed to insert order" }, 500);
     }
     orderId = inserted.id;
-    console.log(`Inserted order ${orderId} (woo_id: ${o.id})`);
+    console.log(`Inserted order ${orderId} (woo_id: ${o.id}) with Woo billing snapshot`);
   }
 
-  // Delete old items and insert new
   await supabase.from("order_items").delete().eq("order_id", orderId);
 
   const items = (o.line_items || []).map((li: any) => ({

@@ -47,7 +47,6 @@ interface OrderDetail {
   customer_address: string | null;
   customer_email: string | null;
   customer_city: string | null;
-  customers: { id: string; name: string; phone: string | null; address: string | null; email: string | null; city: string | null } | null;
 }
 
 interface LineItem {

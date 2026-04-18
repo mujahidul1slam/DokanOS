@@ -16,7 +16,7 @@ interface OrderRow {
   status: string;
   source: string;
   created_at: string;
-  customers: { name: string } | null;
+  customer_name: string | null;
 }
 
 type DatePreset = "today" | "7d" | "30d" | "90d" | "year" | "all";

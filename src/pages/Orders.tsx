@@ -63,12 +63,12 @@ interface OrderRow {
   special_instruction: string | null;
   store_id: string | null;
   woo_order_id: number | null;
+  customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
   customer_address: string | null;
   customer_city: string | null;
   customer_email: string | null;
-  customers: { name: string; phone: string | null; address: string | null; city: string | null; zone: string | null; area: string | null } | null;
   stores: { name: string } | null;
   itemCount: number;
   productItems: { name: string; qty: number }[];

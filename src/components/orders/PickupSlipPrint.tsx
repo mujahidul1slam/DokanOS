@@ -7,7 +7,9 @@ interface SlipOrder {
   order_number: string;
   total: number;
   amount_to_collect?: number | null;
-  customers: { name: string; phone: string | null; address: string | null } | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_address?: string | null;
   productItems: { name: string; qty: number }[];
 }
 
