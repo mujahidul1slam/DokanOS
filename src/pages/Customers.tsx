@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import {
-  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, Download, RefreshCw, Loader2,
+  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, Download, RefreshCw, Loader2, Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/exportCsv";
@@ -19,7 +19,7 @@ import { FulfillmentBadge, PaymentBadge, SourceBadge } from "@/components/orders
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { useToast } from "@/hooks/use-toast";
 
-interface AliasRow { type: "name" | "email" | "address"; value: string; source_store_id: string | null; }
+interface AliasRow { id?: string; type: "name" | "email" | "address"; value: string; source_store_id: string | null; }
 
 interface UnifiedCustomer {
   id: string; // keeper customer row id
@@ -65,14 +65,14 @@ const Customers = () => {
   const loadCustomers = useCallback(async () => {
     const [{ data: custs }, { data: aliases }, { data: stats }] = await Promise.all([
       supabase.from("customers").select("id, name, phone, email, address, city, store_id, source, created_at").order("created_at", { ascending: false }),
-      supabase.from("customer_aliases").select("customer_id, type, value, source_store_id"),
+      supabase.from("customer_aliases").select("id, customer_id, type, value, source_store_id"),
       supabase.from("orders").select("customer_id, total"),
     ]);
 
     const aliasMap = new Map<string, AliasRow[]>();
     (aliases || []).forEach((a: any) => {
       if (!aliasMap.has(a.customer_id)) aliasMap.set(a.customer_id, []);
-      aliasMap.get(a.customer_id)!.push({ type: a.type, value: a.value, source_store_id: a.source_store_id });
+      aliasMap.get(a.customer_id)!.push({ id: a.id, type: a.type, value: a.value, source_store_id: a.source_store_id });
     });
 
     const statsMap: Record<string, { count: number; spent: number }> = {};
