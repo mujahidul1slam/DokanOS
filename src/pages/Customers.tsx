@@ -60,6 +60,7 @@ const Customers = () => {
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const storeName = useCallback((id: string | null) => stores.find((s) => s.id === id)?.name || "—", [stores]);
 
