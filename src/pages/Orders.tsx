@@ -118,6 +118,16 @@ const Orders = () => {
 
   const { toast } = useToast();
 
+  // Open detail sheet from ?order=ID URL param (e.g., from Customer profile)
+  useEffect(() => {
+    const orderParam = searchParams.get("order");
+    if (orderParam) {
+      setDetailOrderId(orderParam);
+      searchParams.delete("order");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
         .from("orders")
