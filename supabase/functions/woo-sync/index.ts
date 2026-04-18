@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { store_id } = await req.json();
+    const { store_id, sync_customers: forceCustomers = false } = await req.json();
     if (!store_id) {
       return new Response(JSON.stringify({ error: "store_id is required" }), {
         status: 400,
