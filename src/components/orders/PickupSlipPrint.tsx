@@ -129,9 +129,9 @@ export default function PickupSlipPrint({ orders }: Props) {
               {(tpl.show_customer_name || tpl.show_customer_phone || tpl.show_customer_address) && (
                 <div className="section">
                   <div className="section-title">Customer</div>
-                  {tpl.show_customer_name && <div className="customer-name">{order.customers?.name || "Walk-in"}</div>}
-                  {tpl.show_customer_phone && order.customers?.phone && <div className="customer-detail">📞 {order.customers.phone}</div>}
-                  {tpl.show_customer_address && order.customers?.address && <div className="customer-detail">📍 {order.customers.address}</div>}
+                  {tpl.show_customer_name && <div className="customer-name">{order.customer_name || "Walk-in"}</div>}
+                  {tpl.show_customer_phone && order.customer_phone && <div className="customer-detail">📞 {order.customer_phone}</div>}
+                  {tpl.show_customer_address && order.customer_address && <div className="customer-detail">📍 {order.customer_address}</div>}
                 </div>
               )}
               {tpl.show_items && (

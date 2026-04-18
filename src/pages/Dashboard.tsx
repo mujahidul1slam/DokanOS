@@ -108,7 +108,7 @@ const Dashboard = () => {
   const handleExportCSV = () => {
     const headers = "Order Number,Customer,Total,Status,Source,Date\n";
     const csv = orders.map((o) =>
-      `${o.order_number},"${o.customers?.name || ""}",${o.total},${o.status},${o.source},${new Date(o.created_at).toLocaleDateString()}`
+      `${o.order_number},"${o.customer_name || ""}",${o.total},${o.status},${o.source},${new Date(o.created_at).toLocaleDateString()}`
     ).join("\n");
     const blob = new Blob([headers + csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -209,7 +209,7 @@ const Dashboard = () => {
               <div key={order.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2.5">
                 <div className="min-w-0">
                   <p className="text-sm text-card-foreground">{order.order_number}</p>
-                  <p className="truncate text-xs text-muted-foreground">{order.customers?.name || "Walk-in"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{order.customer_name || "Walk-in"}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium text-card-foreground">৳{Number(order.total).toLocaleString()}</span>

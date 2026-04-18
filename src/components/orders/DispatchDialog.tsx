@@ -344,13 +344,13 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           amount_to_collect: String(order.amount_to_collect || order.total || 0),
           item_weight: String(order.item_weight || 0.5),
           special_instruction: order.special_instruction || "",
-          recipient_name: order.customers?.name || "",
-          recipient_phone: order.customers?.phone || "",
-          recipient_address: order.customers?.address || "",
+          recipient_name: order.customer_name || "",
+          recipient_phone: order.customer_phone || "",
+          recipient_address: order.customer_address || "",
         };
 
-        const cityCandidates = buildLocationCandidates([order.customers?.city, base.recipient_address]);
-        const zoneCandidates = buildLocationCandidates([order.customers?.zone, order.customers?.area, base.recipient_address]);
+        const cityCandidates = buildLocationCandidates([order.customer_city, base.recipient_address]);
+        const zoneCandidates = buildLocationCandidates([base.recipient_address]);
 
         if (!base.zone_id && allZones.length > 0) {
           const globalZoneMatch = getStrictLocationMatch(allZones, (zone) => zone.zone_name, zoneCandidates);
@@ -377,7 +377,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         }
 
         const areas = base.zone_id ? await fetchAreas(Number(base.zone_id)) : [];
-        const areaCandidates = buildLocationCandidates([order.customers?.area, base.recipient_address]);
+        const areaCandidates = buildLocationCandidates([base.recipient_address]);
         if (!base.area_id && areas.length > 0) {
           const areaMatch = fuzzyMatch(areas, (area) => area.area_name, areaCandidates);
           if (areaMatch) {
