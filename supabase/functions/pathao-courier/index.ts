@@ -11,6 +11,26 @@ const PATHAO_BASE = "https://api-hermes.pathao.com";
 // In-memory token cache per integration (lives for the function's runtime)
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
+// Maps any Pathao tracking status to one of our 5 internal buckets:
+// Pickup Pending + In Transit -> "shipped" | Delivered -> "delivered"
+// On Hold -> "processing" | Returned -> "returned" | Cancelled -> "cancelled"
+function mapPathaoStatus(status: string | null | undefined): string | undefined {
+  if (!status) return undefined;
+  const s = status.trim().toLowerCase();
+  if ([
+    "pending","pickup pending","pickup requested","assigned for pickup",
+    "picked","picked up","pickup cancel","pickup cancelled","pickup canceled",
+  ].includes(s)) return "shipped";
+  if ([
+    "at sorting hub","in transit","on the way to delivery hub","at delivery hub","out for delivery",
+  ].includes(s)) return "shipped";
+  if (["delivered","partial delivered","payment invoice"].includes(s)) return "delivered";
+  if (["on hold","hold","exchange"].includes(s)) return "processing";
+  if (["return","returned","delivery failed","customer refused"].includes(s)) return "returned";
+  if (["cancelled","canceled"].includes(s)) return "cancelled";
+  return undefined;
+}
+
 interface PathaoCreds {
   id: string;
   client_id: string;
