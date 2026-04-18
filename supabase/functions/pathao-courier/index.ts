@@ -135,14 +135,17 @@ Deno.serve(async (req) => {
       });
     }
     const sb = supabaseAdmin();
-    const { data: { user: caller }, error: authErr } = await sb.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
-    if (authErr || !caller) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const bearer = authHeader.replace("Bearer ", "");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    // Allow service-role calls (e.g. from pg_cron) to bypass user auth
+    if (bearer !== serviceKey) {
+      const { data: { user: caller }, error: authErr } = await sb.auth.getUser(bearer);
+      if (authErr || !caller) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const { action, integration_id, ...params } = await req.json();
