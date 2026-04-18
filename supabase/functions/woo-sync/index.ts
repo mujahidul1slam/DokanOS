@@ -127,12 +127,22 @@ Deno.serve(async (req) => {
       }
     }
 
+    function normalizePhone(raw: any): string | null {
+      if (!raw) return null;
+      let p = String(raw).replace(/[^0-9]/g, "");
+      if (!p) return null;
+      if (p.startsWith("880") && p.length >= 13) p = p.slice(3);
+      if (p.length === 10 && p.startsWith("1")) p = "0" + p;
+      return p;
+    }
+
     /** Find-or-create customer GLOBALLY by phone (then email). Never overwrites existing. */
     async function findOrCreateCustomer(args: {
       phone: string | null; email: string | null; name: string | null;
       address: string | null; city: string | null; wooCustomerId?: number | null;
     }): Promise<string | null> {
-      const { phone, email, name, address, city, wooCustomerId } = args;
+      const { phone: rawPhone, email, name, address, city, wooCustomerId } = args;
+      const phone = normalizePhone(rawPhone);
       if (!phone && !email && !name) return null;
 
       let customerId: string | null = null;
