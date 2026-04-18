@@ -102,6 +102,55 @@ export type Database = {
           },
         ]
       }
+      customer_aliases: {
+        Row: {
+          created_at: string
+          customer_id: string
+          id: string
+          source_store_id: string | null
+          type: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          id?: string
+          source_store_id?: string | null
+          type: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          id?: string
+          source_store_id?: string | null
+          type?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_aliases_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_aliases_source_store_id_fkey"
+            columns: ["source_store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_aliases_source_store_id_fkey"
+            columns: ["source_store_id"]
+            isOneToOne: false
+            referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           address: string | null
@@ -1170,6 +1219,7 @@ export type Database = {
           consumer_key: string | null
           consumer_secret: string | null
           created_at: string
+          customers_synced_at: string | null
           id: string
           last_synced_at: string | null
           name: string
@@ -1181,6 +1231,7 @@ export type Database = {
           consumer_key?: string | null
           consumer_secret?: string | null
           created_at?: string
+          customers_synced_at?: string | null
           id?: string
           last_synced_at?: string | null
           name: string
@@ -1192,6 +1243,7 @@ export type Database = {
           consumer_key?: string | null
           consumer_secret?: string | null
           created_at?: string
+          customers_synced_at?: string | null
           id?: string
           last_synced_at?: string | null
           name?: string
