@@ -343,9 +343,14 @@ const Customers = () => {
                     <h3 className="text-sm font-medium">Names ({selected.names.length})</h3>
                     <div className="space-y-1.5">
                       {selected.names.map((n, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <span className="text-foreground">{n.value}</span>
+                        <div key={n.id || i} className="flex items-center justify-between text-sm gap-2">
+                          <span className="text-foreground flex-1">{n.value}</span>
                           <Badge variant="outline" className="text-xs">{storeName(n.source_store_id)}</Badge>
+                          {selected.names.length > 1 && n.id && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(n)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -357,9 +362,14 @@ const Customers = () => {
                     <h3 className="text-sm font-medium">Emails ({selected.emails.length})</h3>
                     <div className="space-y-1.5">
                       {selected.emails.map((e, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <span className="text-foreground">{e.value}</span>
+                        <div key={e.id || i} className="flex items-center justify-between text-sm gap-2">
+                          <span className="text-foreground flex-1">{e.value}</span>
                           <Badge variant="outline" className="text-xs">{storeName(e.source_store_id)}</Badge>
+                          {selected.emails.length > 1 && e.id && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(e)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -371,9 +381,14 @@ const Customers = () => {
                     <h3 className="text-sm font-medium">Addresses ({selected.addresses.length})</h3>
                     <div className="space-y-1.5">
                       {selected.addresses.map((a, i) => (
-                        <div key={i} className="flex items-start justify-between text-sm gap-3">
+                        <div key={a.id || i} className="flex items-start justify-between text-sm gap-2">
                           <span className="text-foreground flex-1">{a.value}</span>
                           <Badge variant="outline" className="text-xs shrink-0">{storeName(a.source_store_id)}</Badge>
+                          {selected.addresses.length > 1 && a.id && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(a)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       ))}
                     </div>
