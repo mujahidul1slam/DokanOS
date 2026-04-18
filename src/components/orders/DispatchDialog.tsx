@@ -33,7 +33,7 @@ interface DispatchOrder {
 interface City { city_id: number; city_name: string }
 interface Zone { zone_id: number; zone_name: string; city_id: number }
 interface Area { area_id: number; area_name: string }
-interface PathaoStore { pathao_store_id: number; store_name: string }
+interface PathaoStore { pathao_store_id: number; store_name: string; integration_id: string | null }
 
 const LOCATION_WORD_BLACKLIST = new Set([
   "address", "area", "bari", "bazar", "block", "building", "city", "district", "door", "flat",
@@ -80,11 +80,11 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     if (!open) return;
     (async () => {
       const [{ data: stores }, { data: citiesData }, { data: zonesData }] = await Promise.all([
-        supabase.from("pathao_stores").select("pathao_store_id, store_name").eq("is_active", true),
+        supabase.from("pathao_stores").select("pathao_store_id, store_name, integration_id").eq("is_active", true),
         supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
         supabase.from("pathao_zones").select("zone_id, zone_name, city_id").order("zone_name"),
       ]);
-      setPathaoStores(stores || []);
+      setPathaoStores((stores || []) as PathaoStore[]);
       setCities(citiesData || []);
       setAllZones(zonesData || []);
       if (stores?.length && !selectedPathaoStore) {
@@ -430,10 +430,12 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           },
         };
       });
+      const selectedStore = pathaoStores.find((s) => String(s.pathao_store_id) === selectedPathaoStore);
+      const integrationId = selectedStore?.integration_id || undefined;
       const allResults: any[] = [];
       for (let i = 0; i < allPayloads.length; i += BATCH_SIZE) {
         const batch = allPayloads.slice(i, i + BATCH_SIZE);
-        const { data, error } = await supabase.functions.invoke("pathao-courier", { body: { action: "create_bulk", orders: batch } });
+        const { data, error } = await supabase.functions.invoke("pathao-courier", { body: { action: "create_bulk", orders: batch, integration_id: integrationId } });
         if (error) throw error;
         const batchResults = data?.data?.results || [];
         allResults.push(...batchResults);
