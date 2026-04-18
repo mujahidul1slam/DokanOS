@@ -65,10 +65,26 @@ const Customers = () => {
   const storeName = useCallback((id: string | null) => stores.find((s) => s.id === id)?.name || "—", [stores]);
 
   const loadCustomers = useCallback(async () => {
-    const [{ data: custs }, { data: aliases }, { data: stats }] = await Promise.all([
-      supabase.from("customers").select("id, name, phone, email, address, city, store_id, source, created_at").order("created_at", { ascending: false }),
-      supabase.from("customer_aliases").select("id, customer_id, type, value, source_store_id"),
-      supabase.from("orders").select("customer_id, total"),
+    // Paginated fetch to bypass Supabase 1000-row default limit
+    const fetchAll = async <T,>(table: string, columns: string): Promise<T[]> => {
+      const PAGE = 1000;
+      let from = 0;
+      const all: T[] = [];
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { data, error } = await supabase.from(table as any).select(columns).range(from, from + PAGE - 1);
+        if (error || !data || data.length === 0) break;
+        all.push(...(data as T[]));
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+      return all;
+    };
+
+    const [custs, aliases, stats] = await Promise.all([
+      fetchAll<any>("customers", "id, name, phone, email, address, city, store_id, source, created_at"),
+      fetchAll<any>("customer_aliases", "id, customer_id, type, value, source_store_id"),
+      fetchAll<any>("orders", "customer_id, total"),
     ]);
 
     const aliasMap = new Map<string, AliasRow[]>();
