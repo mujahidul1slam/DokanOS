@@ -320,6 +320,8 @@ Deno.serve(async (req) => {
             description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
             metadata: { consignment_id, integration_id: creds.id },
           });
+
+          await postWooOrderNote(order_id, `[OmniSync] Dispatched to Pathao. Consignment: ${consignment_id}`);
         }
 
         result = { consignment_id, raw: data };
@@ -353,6 +355,8 @@ Deno.serve(async (req) => {
                     description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
                     metadata: { consignment_id, integration_id: creds.id },
                   });
+
+                  await postWooOrderNote(entry.order_id, `[OmniSync] Dispatched to Pathao. Consignment: ${consignment_id}`);
                 }
 
                 return { order_id: entry.order_id, success: true, consignment_id };
@@ -439,6 +443,8 @@ Deno.serve(async (req) => {
                 description: `Pathao status: ${order_status}`,
                 metadata: { tracking_status: order_status },
               });
+
+              await postWooOrderNote(order.id, `[OmniSync] Pathao status update: ${order_status}`);
 
               // If newly delivered, push status back to WooCommerce as "completed"
               if (mappedStatus === "delivered") {
