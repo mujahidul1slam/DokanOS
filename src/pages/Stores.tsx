@@ -108,6 +108,52 @@ const Stores = () => {
     }
   };
 
+  const handleBackfillCompleted = async (storeId: string) => {
+    setBackfillingId(storeId);
+    try {
+      const { data: orders, error } = await supabase
+        .from("orders")
+        .select("id, order_number, status, woo_order_id")
+        .eq("store_id", storeId)
+        .not("woo_order_id", "is", null)
+        .in("status", ["delivered", "completed"]);
+      if (error) throw error;
+
+      const candidates = orders || [];
+      if (candidates.length === 0) {
+        toast({ title: "Nothing to backfill", description: "No delivered/completed orders linked to WooCommerce." });
+        return;
+      }
+
+      toast({ title: `Backfilling ${candidates.length} orders...`, description: "This may take a moment." });
+
+      let success = 0;
+      let failed = 0;
+      for (const o of candidates) {
+        try {
+          const { error: pushErr } = await supabase.functions.invoke("woo-push", {
+            body: { action: "push_order", order_id: o.id },
+          });
+          if (pushErr) throw pushErr;
+          success++;
+        } catch (e) {
+          console.error(`Backfill failed for order ${o.order_number}:`, e);
+          failed++;
+        }
+      }
+
+      toast({
+        title: "Backfill complete",
+        description: `${success} pushed to WooCommerce${failed > 0 ? `, ${failed} failed` : ""}.`,
+        variant: failed > 0 ? "destructive" : "default",
+      });
+    } catch (err: any) {
+      toast({ title: "Backfill failed", description: err.message, variant: "destructive" });
+    } finally {
+      setBackfillingId(null);
+    }
+  };
+
   if (loading) return (
     <div className="space-y-6">
       <div><h1 className="font-heading text-2xl font-semibold">Stores</h1></div>
