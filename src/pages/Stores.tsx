@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import StatusBadge from "@/components/StatusBadge";
+import { logAction } from "@/lib/auditLog";
 import { StatsSkeleton } from "@/components/ui/loading-states";
 
 interface StoreRow {
@@ -72,6 +73,7 @@ const Stores = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      await logAction("create", "store", undefined, { name: formData.name, url: formData.url });
       toast({ title: "Store added" });
       setDialogOpen(false);
       setFormData({ name: "", url: "", consumer_key: "", consumer_secret: "" });
@@ -103,6 +105,7 @@ const Stores = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      await logAction("delete", "store", storeId);
       toast({ title: "Store deleted" });
       loadStores();
     }

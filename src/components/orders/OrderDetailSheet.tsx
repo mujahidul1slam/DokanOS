@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { logAction } from "@/lib/auditLog";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 
 import {
@@ -236,6 +237,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           event: "status_changed",
           description: `Status changed from "${order.status}" to "${status}"`,
         });
+        await logAction("update", "order_status", order.id, { from: order.status, to: status, order_number: order.order_number });
       }
 
       if (paymentStatus !== order.payment_status) {
@@ -244,7 +246,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           event: "payment_status_changed",
           description: `Payment status changed from "${order.payment_status}" to "${paymentStatus}"`,
         });
+        await logAction("update", "order_payment_status", order.id, { from: order.payment_status, to: paymentStatus, order_number: order.order_number });
       }
+
+      await logAction("update", "order", order.id, {
+        order_number: order.order_number, total: computedTotal, discount, shipping_cost: shippingCost,
+      });
 
       // Push status/notes change to WooCommerce if linked
       if (order.id) {
@@ -282,6 +289,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       order_id: order.id,
       event: "payment_logged",
       description: `Payment of ৳${parseFloat(payAmount).toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}`,
+    });
+    await logAction("create", "order_payment", order.id, {
+      order_number: order.order_number, method: payMethod, amount: parseFloat(payAmount), trx_id: payTrxId || null,
     });
     setPayAmount("");
     setPayTrxId("");
@@ -330,6 +340,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         event: "returned",
         description: "Order returned — inventory restocked",
       });
+      await logAction("update", "order_returned", order.id, { order_number: order.order_number });
 
       toast.success("Order returned & inventory restocked");
       onSaved?.();

@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
+import { logAction } from "@/lib/auditLog";
 
 const PosSettingsTab = () => {
   const [shippingPresets, setShippingPresets] = useState<number[]>([80, 150]);
@@ -33,8 +34,9 @@ const PosSettingsTab = () => {
       .update({ shipping_presets: shippingPresets } as any)
       .eq("id", settingsId);
     setSaving(false);
-    if (error) toast.error("Failed to save");
-    else toast.success("POS settings saved");
+    if (error) { toast.error("Failed to save"); return; }
+    await logAction("update", "pos_settings", settingsId, { shipping_presets: shippingPresets });
+    toast.success("POS settings saved");
   };
 
   return (

@@ -21,7 +21,7 @@ export default function PickupSlipPrint({ orders }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
   const { settings } = useInvoiceSettings();
   const tpl: PickupSlipTemplateConfig = settings.pickup_slip_template;
-  const format = settings.default_print_format;
+  const format = settings.pickup_slip_print_format || "thermal";
 
   const handlePrint = () => {
     const content = printRef.current;

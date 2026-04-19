@@ -9,6 +9,7 @@ import {
   Trash2, RotateCcw, Hourglass, Tags,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { logAction } from "@/lib/auditLog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -354,6 +355,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         order_id: id, event: "status_changed", description: "Marked as Ready to Ship",
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
+      await logAction("update", "order_status_bulk", undefined, { ids, to: "ready_to_ship" });
       toast({ title: `${ids.length} order(s) marked Ready to Ship` });
       setSelected(new Set());
       loadOrders();
@@ -373,6 +375,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         order_id: id, event: "status_changed", description: "Marked as Completed",
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
+      await logAction("update", "order_status_bulk", undefined, { ids, to: "completed" });
       toast({ title: `${ids.length} order(s) marked Completed` });
       setSelected(new Set());
       loadOrders();
@@ -392,6 +395,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         order_id: id, event: "payment_updated", description: "Marked as Paid",
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
+      await logAction("update", "order_payment_bulk", undefined, { ids, to: "paid" });
       toast({ title: `${ids.length} order(s) marked Paid` });
       setSelected(new Set());
       loadOrders();
@@ -411,6 +415,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         order_id: id, event: "status_changed", description: "Cancelled",
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
+      await logAction("update", "order_status_bulk", undefined, { ids, to: "cancelled" });
       toast({ title: `${ids.length} order(s) cancelled` });
       setSelected(new Set());
       loadOrders();
@@ -436,6 +441,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           await supabase.functions.invoke("woo-push", { body: { action: "trash_order", order_id: o.id } });
         } catch {}
       }
+      await logAction("delete", "order_trash_bulk", undefined, { ids });
       toast({ title: `${ids.length} order(s) moved to trash` });
       setSelected(new Set());
       loadOrders();
@@ -454,6 +460,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         order_id: id, event: "restored", description: "Order restored from trash",
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
+      await logAction("update", "order_restore_bulk", undefined, { ids });
       toast({ title: `${ids.length} order(s) restored` });
       setSelected(new Set());
       loadOrders();
@@ -474,6 +481,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         order_id: id, event: "status_changed", description: `Status changed to ${label}`,
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
+      await logAction("update", "order_status_bulk", undefined, { ids, to: newStatus });
       toast({ title: `${ids.length} order(s) → ${label}` });
       setSelected(new Set());
       loadOrders();
