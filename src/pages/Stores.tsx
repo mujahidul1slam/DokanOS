@@ -30,6 +30,7 @@ const Stores = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [backfillingId, setBackfillingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: "", url: "", consumer_key: "", consumer_secret: "" });
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
