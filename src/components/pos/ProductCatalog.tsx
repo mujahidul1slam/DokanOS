@@ -190,7 +190,24 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
             >
               <div className="relative aspect-square bg-secondary flex items-center justify-center overflow-hidden">
                 {p.image_url ? (
-                  <img src={p.image_url} alt={p.name} className="h-full w-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
+                  <>
+                    <img
+                      src={p.image_url}
+                      alt={p.name}
+                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        const img = e.currentTarget;
+                        img.style.display = "none";
+                        const fb = img.nextElementSibling as HTMLElement | null;
+                        if (fb) fb.style.display = "flex";
+                      }}
+                    />
+                    <span className="hidden absolute inset-0 items-center justify-center bg-secondary">
+                      <Package className="h-10 w-10 text-muted-foreground/40" />
+                    </span>
+                  </>
                 ) : (
                   <Package className="h-10 w-10 text-muted-foreground/40" />
                 )}

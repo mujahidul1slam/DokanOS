@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -514,24 +515,47 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">City</Label>
-                    <Select value={ov.city_id} onValueChange={(val) => { updateOverride(order.id, "city_id", val); updateOverride(order.id, "zone_id", ""); updateOverride(order.id, "area_id", ""); fetchZones(Number(val)); }}>
-                      <SelectTrigger><SelectValue placeholder="City" /></SelectTrigger>
-                      <SelectContent>{cities.map((c) => <SelectItem key={c.city_id} value={String(c.city_id)}>{c.city_name}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      options={cities.map((c) => ({ value: String(c.city_id), label: c.city_name }))}
+                      value={ov.city_id}
+                      onChange={(val) => {
+                        updateOverride(order.id, "city_id", val);
+                        updateOverride(order.id, "zone_id", "");
+                        updateOverride(order.id, "area_id", "");
+                        if (val) fetchZones(Number(val));
+                      }}
+                      placeholder="City"
+                      searchPlaceholder="Search cities..."
+                      emptyText="No city found"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Zone</Label>
-                    <Select value={ov.zone_id} onValueChange={(val) => { updateOverride(order.id, "zone_id", val); updateOverride(order.id, "area_id", ""); fetchAreas(Number(val)); }} disabled={!ov.city_id}>
-                      <SelectTrigger><SelectValue placeholder="Zone" /></SelectTrigger>
-                      <SelectContent>{zones.map((z) => <SelectItem key={z.zone_id} value={String(z.zone_id)}>{z.zone_name}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      options={zones.map((z) => ({ value: String(z.zone_id), label: z.zone_name }))}
+                      value={ov.zone_id}
+                      onChange={(val) => {
+                        updateOverride(order.id, "zone_id", val);
+                        updateOverride(order.id, "area_id", "");
+                        if (val) fetchAreas(Number(val));
+                      }}
+                      placeholder="Zone"
+                      searchPlaceholder="Search zones..."
+                      emptyText="No zone found"
+                      disabled={!ov.city_id}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Area</Label>
-                    <Select value={ov.area_id} onValueChange={(val) => updateOverride(order.id, "area_id", val)} disabled={!ov.zone_id}>
-                      <SelectTrigger><SelectValue placeholder="Area" /></SelectTrigger>
-                      <SelectContent>{areas.map((a) => <SelectItem key={a.area_id} value={String(a.area_id)}>{a.area_name}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      options={areas.map((a) => ({ value: String(a.area_id), label: a.area_name }))}
+                      value={ov.area_id}
+                      onChange={(val) => updateOverride(order.id, "area_id", val)}
+                      placeholder="Area"
+                      searchPlaceholder="Search areas..."
+                      emptyText="No area found"
+                      disabled={!ov.zone_id}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
