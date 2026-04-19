@@ -79,7 +79,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 20;
 
-type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "trash";
+type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
 const Orders = () => {
   const { role } = useAuth();
@@ -172,7 +172,9 @@ const Orders = () => {
         case "delivered":
           return !!o.consignment_id && ["Delivered","Partial Delivered","Payment Invoice"].includes(o.tracking_status || "");
         case "on_hold":
-          return !!o.consignment_id && ["On Hold","Hold","Exchange","Return","Returned","Delivery Failed","Customer Refused","Cancelled"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["On Hold","Hold","Exchange","Cancelled"].includes(o.tracking_status || "");
+        case "returned":
+          return !!o.consignment_id && ["Return","Returned","Delivery Failed","Customer Refused"].includes(o.tracking_status || "");
         default:
           return true;
       }
@@ -229,6 +231,7 @@ const Orders = () => {
     in_transit: getTabOrders("in_transit").length,
     delivered: getTabOrders("delivered").length,
     on_hold: getTabOrders("on_hold").length,
+    returned: getTabOrders("returned").length,
     trash: getTabOrders("trash").length,
   }), [orders, getTabOrders]);
 
@@ -494,7 +497,7 @@ const Orders = () => {
               <Plus className="h-4 w-4 mr-1" /> Add Order
             </Button>
           )}
-          {["pickup_pending", "in_transit", "on_hold"].includes(tab) && (
+          {["pickup_pending", "in_transit", "on_hold", "returned"].includes(tab) && (
             <Button variant="outline" size="sm" onClick={handleTrackAll} disabled={trackingLoading}>
               {trackingLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
               Update Tracking
@@ -577,7 +580,8 @@ const Orders = () => {
             <TabsTrigger value="pickup_pending" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Pickup Pending ({counts.pickup_pending})</TabsTrigger>
             <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
             <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
-            <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold / Return ({counts.on_hold})</TabsTrigger>
+            <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold ({counts.on_hold})</TabsTrigger>
+            <TabsTrigger value="returned" className="gap-1.5 text-xs"><Undo2 className="h-3.5 w-3.5" />Returned ({counts.returned})</TabsTrigger>
             {counts.trash > 0 && <TabsTrigger value="trash" className="gap-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Trash ({counts.trash})</TabsTrigger>}
           </TabsList>
         </div>
