@@ -760,10 +760,10 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                 {categoryFilter.size === 0 ? "Categories" : `${categoryFilter.size} Categor${categoryFilter.size === 1 ? "y" : "ies"}`}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-60 max-h-80 overflow-y-auto">
+            <DropdownMenuContent align="start" className="w-64 max-h-96 overflow-y-auto">
               {scopedCategories.length === 0 ? (
                 <div className="px-2 py-3 text-xs text-muted-foreground">
-                  {storeFilter === "all" ? "Pick a store to filter categories" : "No categories for this store"}
+                  No categories available
                 </div>
               ) : (
                 <>
@@ -772,22 +772,49 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                       Clear all
                     </DropdownMenuItem>
                   )}
-                  {scopedCategories.map((c) => (
-                    <DropdownMenuCheckboxItem
-                      key={c.id}
-                      checked={categoryFilter.has(c.id)}
-                      onCheckedChange={(checked) => {
-                        setCategoryFilter((prev) => {
-                          const next = new Set(prev);
-                          if (checked) next.add(c.id); else next.delete(c.id);
-                          return next;
-                        });
-                      }}
-                      onSelect={(e) => e.preventDefault()}
-                    >
-                      {c.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
+                  {storeFilter === "all" ? (
+                    groupedCategories.map((group, idx) => (
+                      <div key={group.storeId ?? `none-${idx}`}>
+                        {idx > 0 && <DropdownMenuSeparator />}
+                        <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">
+                          {group.storeName}
+                        </DropdownMenuLabel>
+                        {group.cats.map((c) => (
+                          <DropdownMenuCheckboxItem
+                            key={c.id}
+                            checked={categoryFilter.has(c.id)}
+                            onCheckedChange={(checked) => {
+                              setCategoryFilter((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(c.id); else next.delete(c.id);
+                                return next;
+                              });
+                            }}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            {c.name}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </div>
+                    ))
+                  ) : (
+                    scopedCategories.map((c) => (
+                      <DropdownMenuCheckboxItem
+                        key={c.id}
+                        checked={categoryFilter.has(c.id)}
+                        onCheckedChange={(checked) => {
+                          setCategoryFilter((prev) => {
+                            const next = new Set(prev);
+                            if (checked) next.add(c.id); else next.delete(c.id);
+                            return next;
+                          });
+                        }}
+                        onSelect={(e) => e.preventDefault()}
+                      >
+                        {c.name}
+                      </DropdownMenuCheckboxItem>
+                    ))
+                  )}
                 </>
               )}
             </DropdownMenuContent>
