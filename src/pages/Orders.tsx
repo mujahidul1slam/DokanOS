@@ -73,6 +73,7 @@ interface OrderRow {
   stores: { name: string } | null;
   itemCount: number;
   productItems: { name: string; qty: number }[];
+  hasBackorder: boolean;
 }
 
 interface StoreOption { id: string; name: string }
