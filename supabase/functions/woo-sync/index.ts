@@ -371,6 +371,20 @@ Deno.serve(async (req) => {
       const orderMap = new Map((dbOrders || []).map((o: any) => [o.woo_order_id, o.id]));
 
       let itemCount = 0;
+      // Load measurement field name -> group info map for Woo meta detection
+      const { data: mFields } = await supabase
+        .from("measurement_fields")
+        .select("name, group_id, measurement_groups(name, display_format, unit)");
+      const fieldMap = new Map<string, { groupName: string; displayFormat: string; unit: string; fieldName: string }>();
+      ((mFields as any[]) || []).forEach((f: any) => {
+        const g = f.measurement_groups;
+        if (!g) return;
+        fieldMap.set(String(f.name).toLowerCase().trim(), {
+          groupName: g.name, displayFormat: g.display_format || "label_value",
+          unit: g.unit || "in", fieldName: f.name,
+        });
+      });
+
       for (const o of wooOrders) {
         const orderId = orderMap.get(o.id);
         if (!orderId) continue;
@@ -383,10 +397,38 @@ Deno.serve(async (req) => {
           line_total: parseFloat(li.total) || 0,
         }));
         await supabase.from("order_items").delete().eq("order_id", orderId);
+        await supabase.from("order_item_measurements").delete().eq("order_id", orderId).eq("source", "woo");
+        let insertedItems: any[] = [];
         if (items.length > 0) {
-          const { error: itemErr } = await supabase.from("order_items").insert(items);
+          const { data: ins, error: itemErr } = await supabase.from("order_items").insert(items).select("id");
           if (itemErr) console.error(`Order items insert error for order ${o.id}:`, itemErr);
-          else itemCount += items.length;
+          else { itemCount += items.length; insertedItems = ins || []; }
+        }
+
+        // Extract measurements from line item meta_data
+        const measRows: any[] = [];
+        (o.line_items || []).forEach((li: any, idx: number) => {
+          const dbItem = insertedItems[idx];
+          const groups = extractMeasurementsFromMeta(li.meta_data || [], fieldMap);
+          groups.forEach((g) => {
+            measRows.push({
+              order_id: orderId, order_item_id: dbItem?.id || null,
+              group_name: g.groupName, display_format: g.displayFormat,
+              unit: g.unit, values: g.values, source: "woo",
+            });
+          });
+        });
+        const orderGroups = extractMeasurementsFromMeta(o.meta_data || [], fieldMap);
+        orderGroups.forEach((g) => {
+          measRows.push({
+            order_id: orderId, order_item_id: null,
+            group_name: g.groupName, display_format: g.displayFormat,
+            unit: g.unit, values: g.values, source: "woo",
+          });
+        });
+        if (measRows.length > 0) {
+          const { error: mErr } = await supabase.from("order_item_measurements").insert(measRows);
+          if (mErr) console.warn(`Measurements insert warn for order ${o.id}:`, mErr.message);
         }
       }
       summary.order_items = itemCount;
