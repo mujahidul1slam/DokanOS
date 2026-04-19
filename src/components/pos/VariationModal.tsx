@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import type { Product, Variation, CartItem, CustomMeasurements } from "./types";
+import { getGroupsForProduct, type MeasurementGroup } from "@/lib/measurements";
+import type { Product, Variation, CartItem, MeasurementGroupCapture } from "./types";
 
 interface Props {
   product: Product | null;
@@ -17,19 +18,12 @@ interface Props {
   onAddToCart: (item: CartItem) => void;
 }
 
-const emptyMeasurements: CustomMeasurements = { chest: "", length: "", sleeves: "", shoulders: "", waist: "", notes: "" };
-
-interface ParsedAttr {
-  key: string;
-  value: string;
-}
+interface ParsedAttr { key: string; value: string; }
 
 function parseAttributes(attrs: any): ParsedAttr[] {
   if (!Array.isArray(attrs)) return [];
   return attrs.map((a: any) => {
-    // Format: {key: "size", value: "L"}
     if (a.key && a.value) return { key: a.key, value: a.value };
-    // Format: {size: "L"}
     const k = Object.keys(a).find((k) => k !== "key" && k !== "value");
     if (k) return { key: k, value: a[k] };
     return null;
@@ -41,50 +35,74 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
   const [loading, setLoading] = useState(false);
   const [selectedVar, setSelectedVar] = useState<Variation | null>(null);
   const [customTailoring, setCustomTailoring] = useState(false);
-  const [measurements, setMeasurements] = useState<CustomMeasurements>(emptyMeasurements);
   const [qty, setQty] = useState(1);
+
+  // Dynamic measurement groups
+  const [globalEnabled, setGlobalEnabled] = useState(true);
+  const [groups, setGroups] = useState<MeasurementGroup[]>([]);
+  // Map of groupId -> { fieldId: value }
+  const [groupValues, setGroupValues] = useState<Record<string, Record<string, string>>>({});
+  const [groupNotes, setGroupNotes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!product || !open) return;
     setSelectedVar(null);
     setCustomTailoring(false);
-    setMeasurements(emptyMeasurements);
     setQty(1);
+    setGroupValues({});
+    setGroupNotes({});
     setLoading(true);
 
-    supabase
-      .from("product_variations")
-      .select("id, product_id, name, sku, price, stock_quantity, attributes")
-      .eq("product_id", product.id)
-      .then(({ data }) => {
-        setVariations((data || []) as Variation[]);
-        setLoading(false);
-      });
+    Promise.all([
+      supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes").eq("product_id", product.id),
+      supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled").limit(1).single(),
+      getGroupsForProduct(product.id),
+    ]).then(([vars, settings, grps]) => {
+      setVariations((vars.data || []) as Variation[]);
+      setGlobalEnabled(((settings as any).data?.pos_custom_measurements_enabled) !== false);
+      setGroups(grps);
+      setLoading(false);
+    });
   }, [product, open]);
 
   if (!product) return null;
 
-  // Group attributes by key for display
   const attrGroups: Record<string, { value: string; variations: Variation[] }[]> = {};
   variations.forEach((v) => {
-    const parsed = parseAttributes(v.attributes);
-    parsed.forEach((attr) => {
+    parseAttributes(v.attributes).forEach((attr) => {
       if (!attrGroups[attr.key]) attrGroups[attr.key] = [];
       const existing = attrGroups[attr.key].find((x) => x.value === attr.value);
-      if (existing) {
-        existing.variations.push(v);
-      } else {
-        attrGroups[attr.key].push({ value: attr.value, variations: [v] });
-      }
+      if (existing) existing.variations.push(v);
+      else attrGroups[attr.key].push({ value: attr.value, variations: [v] });
     });
   });
 
   const attrKeys = Object.keys(attrGroups);
   const hasVariations = variations.length > 0;
-
   const finalPrice = selectedVar ? Number(selectedVar.price) : Number(product.price);
+  const showMeasurementToggle = globalEnabled && groups.length > 0;
 
   const handleAdd = () => {
+    const measurementGroups: MeasurementGroupCapture[] = customTailoring
+      ? groups
+          .map((g) => {
+            const vals = groupValues[g.id] || {};
+            const filled = g.fields
+              .map((f) => ({ name: f.name, value: vals[f.id] || "" }))
+              .filter((v) => v.value.trim() !== "");
+            if (filled.length === 0 && !groupNotes[g.id]) return null;
+            return {
+              groupId: g.id,
+              groupName: g.name,
+              displayFormat: g.display_format,
+              unit: g.unit,
+              values: filled,
+              notes: groupNotes[g.id] || undefined,
+            };
+          })
+          .filter(Boolean) as MeasurementGroupCapture[]
+      : [];
+
     const item: CartItem = {
       uid: crypto.randomUUID(),
       productId: product.id,
@@ -94,7 +112,7 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
       price: finalPrice,
       qty,
       customTailoring,
-      measurements: customTailoring ? measurements : undefined,
+      measurementGroups: measurementGroups.length > 0 ? measurementGroups : undefined,
     };
     onAddToCart(item);
     onClose();
@@ -110,14 +128,10 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Loading state */}
         {loading && (
-          <div className="py-4 text-center text-sm text-muted-foreground animate-pulse">
-            Loading variations...
-          </div>
+          <div className="py-4 text-center text-sm text-muted-foreground animate-pulse">Loading…</div>
         )}
 
-        {/* Variation selectors grouped by attribute */}
         {!loading && hasVariations && attrKeys.length > 0 && (
           <div className="space-y-4">
             {attrKeys.map((key) => (
@@ -127,13 +141,11 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {attrGroups[key].map((opt) => {
-                    // Find if any variation matching this option is currently selected
                     const isSelected = selectedVar && opt.variations.some((v) => v.id === selectedVar.id);
                     return (
                       <button
                         key={opt.value}
                         onClick={() => {
-                          // Find the matching variation
                           const match = opt.variations[0];
                           setSelectedVar(selectedVar?.id === match.id ? null : match);
                         }}
@@ -159,7 +171,6 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
           </div>
         )}
 
-        {/* Fallback: show flat variation buttons if no structured attributes */}
         {!loading && hasVariations && attrKeys.length === 0 && (
           <div className="space-y-4">
             <p className="text-sm font-medium flex items-center gap-2">
@@ -186,7 +197,6 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
           </div>
         )}
 
-        {/* No variations message */}
         {!loading && !hasVariations && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
             <ShoppingCart className="h-4 w-4" />
@@ -194,43 +204,58 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
           </div>
         )}
 
-        {/* Custom tailoring toggle */}
-        <div className="flex items-center justify-between rounded-lg border border-border bg-secondary p-4">
-          <div className="flex items-center gap-3">
-            <Ruler className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-medium">Custom Tailoring</p>
-              <p className="text-xs text-muted-foreground">Add measurements for bespoke fit</p>
+        {/* Custom measurements toggle (only if assigned groups exist) */}
+        {showMeasurementToggle && (
+          <div className="flex items-center justify-between rounded-lg border border-border bg-secondary p-4">
+            <div className="flex items-center gap-3">
+              <Ruler className="h-5 w-5 text-primary" />
+              <div>
+                <p className="text-sm font-medium">Custom Measurements</p>
+                <p className="text-xs text-muted-foreground">
+                  {groups.length === 1 ? `Add ${groups[0].name}` : `${groups.length} measurement groups available`}
+                </p>
+              </div>
             </div>
+            <Switch checked={customTailoring} onCheckedChange={setCustomTailoring} />
           </div>
-          <Switch checked={customTailoring} onCheckedChange={setCustomTailoring} />
-        </div>
+        )}
 
-        {/* Measurement fields */}
-        {customTailoring && (
-          <div className="space-y-3 rounded-lg border border-border p-4 bg-card">
-            <div className="grid grid-cols-2 gap-3">
-              {(["chest", "length", "sleeves", "shoulders", "waist"] as const).map((field) => (
-                <div key={field}>
-                  <Label className="text-xs capitalize">{field} (inches)</Label>
-                  <Input
-                    value={measurements[field]}
-                    onChange={(e) => setMeasurements({ ...measurements, [field]: e.target.value })}
-                    placeholder="0.0"
-                    className="h-9 mt-1 bg-secondary"
+        {/* Measurement field groups */}
+        {customTailoring && showMeasurementToggle && (
+          <div className="space-y-3">
+            {groups.map((g) => (
+              <div key={g.id} className="space-y-3 rounded-lg border border-border p-4 bg-card">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">{g.name}</h4>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{g.unit}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {g.fields.map((f) => (
+                    <div key={f.id}>
+                      <Label className="text-xs">{f.name}</Label>
+                      <Input
+                        value={groupValues[g.id]?.[f.id] || ""}
+                        onChange={(e) => setGroupValues({
+                          ...groupValues,
+                          [g.id]: { ...(groupValues[g.id] || {}), [f.id]: e.target.value },
+                        })}
+                        placeholder="0.0"
+                        className="h-9 mt-1 bg-secondary"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <Label className="text-xs">Notes</Label>
+                  <Textarea
+                    value={groupNotes[g.id] || ""}
+                    onChange={(e) => setGroupNotes({ ...groupNotes, [g.id]: e.target.value })}
+                    placeholder="Special instructions..."
+                    className="mt-1 bg-secondary min-h-[50px]"
                   />
                 </div>
-              ))}
-            </div>
-            <div>
-              <Label className="text-xs">Notes</Label>
-              <Textarea
-                value={measurements.notes}
-                onChange={(e) => setMeasurements({ ...measurements, notes: e.target.value })}
-                placeholder="Special instructions..."
-                className="mt-1 bg-secondary min-h-[60px]"
-              />
-            </div>
+              </div>
+            ))}
           </div>
         )}
 
