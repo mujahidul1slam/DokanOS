@@ -106,6 +106,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [discount, setDiscount] = useState(0);
   const [shippingCost, setShippingCost] = useState(0);
   const [notes, setNotes] = useState("");
+  const [fulfillmentType, setFulfillmentType] = useState<string>("delivery");
 
   // Payment form
   const [payMethod, setPayMethod] = useState("bkash");
@@ -119,7 +120,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type")
         .eq("id", orderId)
         .single(),
       supabase
@@ -150,6 +151,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setDiscount(o.discount || 0);
       setShippingCost(o.shipping_cost || 0);
       setNotes(o.notes || "");
+      setFulfillmentType(o.fulfillment_type || "delivery");
     }
     const li = (itemsRes.data || []) as unknown as LineItem[];
     setItems(li);
@@ -200,6 +202,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           subtotal: computedSubtotal,
           total: computedTotal,
           notes,
+          fulfillment_type: fulfillmentType,
         })
         .eq("id", order.id);
 
@@ -383,7 +386,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 {/* Payment & Source Info */}
                 <section>
                   <h3 className="text-sm font-semibold text-foreground mb-3">Payment & Source</h3>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Method</Label>
                       <p className="text-sm font-medium">{order?.payment_method || "N/A"}</p>
@@ -399,6 +402,19 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                           <SelectItem value="partial">Partial</SelectItem>
                           <SelectItem value="paid">Paid</SelectItem>
                           <SelectItem value="refunded">Refunded</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Delivery Method</Label>
+                      <Select value={fulfillmentType} onValueChange={setFulfillmentType}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="delivery">Delivery</SelectItem>
+                          <SelectItem value="pickup">Pickup</SelectItem>
+                          <SelectItem value="walkin">Walk-in</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
