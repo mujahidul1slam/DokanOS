@@ -82,11 +82,7 @@ const PAGE_SIZE = 20;
 
 type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
-interface OrdersProps {
-  preOrderMode?: boolean;
-}
-
-const Orders = ({ preOrderMode = false }: OrdersProps) => {
+const Orders = () => {
   const { role } = useAuth();
   const { settings: invoiceSettings } = useInvoiceSettings();
   const canWrite = role === "admin" || role === "staff";
@@ -102,7 +98,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabKey>(preOrderMode ? "pre_order" : "new");
+  const [tab, setTab] = useState<TabKey>("new");
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -133,13 +129,13 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       searchParams.delete("order");
       changed = true;
     }
-    if (tabParam && !preOrderMode) {
+    if (tabParam) {
       setTab(tabParam);
       searchParams.delete("tab");
       changed = true;
     }
     if (changed) setSearchParams(searchParams, { replace: true });
-  }, [searchParams, setSearchParams, preOrderMode]);
+  }, [searchParams, setSearchParams]);
 
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
@@ -491,7 +487,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
 
   if (loading) return (
     <div className="space-y-4">
-      <div><h1 className="font-heading text-2xl font-semibold">{preOrderMode ? "Pre-Orders" : "Orders"}</h1></div>
+      <div><h1 className="font-heading text-2xl font-semibold">Orders</h1></div>
       <TableSkeleton rows={10} cols={7} />
     </div>
   );
@@ -507,8 +503,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-semibold">{preOrderMode ? "Pre-Orders" : "Orders"}</h1>
-          <p className="text-sm text-muted-foreground">{preOrderMode ? "Orders containing items on backorder — fulfill once stock arrives" : "Manage your order pipeline — from new orders to delivery"}</p>
+          <h1 className="font-heading text-2xl font-semibold">Orders</h1>
+          <p className="text-sm text-muted-foreground">Manage your order pipeline — from new orders to delivery</p>
         </div>
         <div className="flex items-center gap-2">
           {canWrite && (
@@ -591,22 +587,20 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-        {!preOrderMode && (
-          <div className="overflow-x-auto">
-            <TabsList className="inline-flex w-auto min-w-full">
-              <TabsTrigger value="all" className="gap-1.5 text-xs"><ShoppingCart className="h-3.5 w-3.5" />All ({counts.all})</TabsTrigger>
-              <TabsTrigger value="new" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />New Orders ({counts.new})</TabsTrigger>
-              <TabsTrigger value="ready" className="gap-1.5 text-xs"><PackageCheck className="h-3.5 w-3.5" />Ready to Ship ({counts.ready})</TabsTrigger>
-              <TabsTrigger value="pre_order" className="gap-1.5 text-xs"><Hourglass className="h-3.5 w-3.5" />Pre-Order ({counts.pre_order})</TabsTrigger>
-              <TabsTrigger value="pickup_pending" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Pickup Pending ({counts.pickup_pending})</TabsTrigger>
-              <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
-              <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
-              <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold ({counts.on_hold})</TabsTrigger>
-              <TabsTrigger value="returned" className="gap-1.5 text-xs"><Undo2 className="h-3.5 w-3.5" />Returned ({counts.returned})</TabsTrigger>
-              {counts.trash > 0 && <TabsTrigger value="trash" className="gap-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Trash ({counts.trash})</TabsTrigger>}
-            </TabsList>
-          </div>
-        )}
+        <div className="overflow-x-auto">
+          <TabsList className="inline-flex w-auto min-w-full">
+            <TabsTrigger value="all" className="gap-1.5 text-xs"><ShoppingCart className="h-3.5 w-3.5" />All ({counts.all})</TabsTrigger>
+            <TabsTrigger value="new" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />New Orders ({counts.new})</TabsTrigger>
+            <TabsTrigger value="ready" className="gap-1.5 text-xs"><PackageCheck className="h-3.5 w-3.5" />Ready to Ship ({counts.ready})</TabsTrigger>
+            <TabsTrigger value="pre_order" className="gap-1.5 text-xs"><Hourglass className="h-3.5 w-3.5" />Pre-Order ({counts.pre_order})</TabsTrigger>
+            <TabsTrigger value="pickup_pending" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Pickup Pending ({counts.pickup_pending})</TabsTrigger>
+            <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
+            <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
+            <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold ({counts.on_hold})</TabsTrigger>
+            <TabsTrigger value="returned" className="gap-1.5 text-xs"><Undo2 className="h-3.5 w-3.5" />Returned ({counts.returned})</TabsTrigger>
+            {counts.trash > 0 && <TabsTrigger value="trash" className="gap-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Trash ({counts.trash})</TabsTrigger>}
+          </TabsList>
+        </div>
         {/* Search & Filters — shared across all tabs */}
         <div className="flex flex-wrap items-center gap-3 mt-4">
           <div className="relative flex-1 min-w-[240px]">

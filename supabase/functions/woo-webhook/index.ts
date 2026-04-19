@@ -13,6 +13,18 @@ function fromWooStockStatus(status: string): string {
   return map[status] || "in_stock";
 }
 
+/** Maps a WooCommerce order's shipping_lines into our fulfillment_type. */
+function fromWooShipping(o: any): string {
+  const lines = Array.isArray(o?.shipping_lines) ? o.shipping_lines : [];
+  if (lines.length === 0) return "delivery"; // online order with no shipping line — still not walk-in
+  const title = String(lines[0]?.method_title || "").toLowerCase();
+  const id = String(lines[0]?.method_id || "").toLowerCase();
+  if (title.includes("pickup") || title.includes("showroom") || id.includes("pickup") || id.includes("local_pickup")) {
+    return "pickup";
+  }
+  return "delivery";
+}
+
 function jsonResp(body: any, status = 200) {
   return new Response(JSON.stringify(body), {
     status, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -139,6 +151,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     status: mapWooStatus(o.status),
     payment_method: o.payment_method_title || o.payment_method || null,
     payment_status: derivePaymentStatus(o),
+    fulfillment_type: fromWooShipping(o),
     subtotal: parseFloat(o.total) - parseFloat(o.shipping_total || "0") + parseFloat(o.discount_total || "0"),
     discount: parseFloat(o.discount_total) || 0,
     shipping_cost: parseFloat(o.shipping_total) || 0,

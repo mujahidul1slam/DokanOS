@@ -341,6 +341,7 @@ Deno.serve(async (req) => {
           status: mapWooStatus(o.status),
           payment_method: o.payment_method_title || o.payment_method || null,
           payment_status: derivePaymentStatus(o),
+          fulfillment_type: fromWooShipping(o),
           subtotal: parseFloat(o.total) - parseFloat(o.shipping_total || "0") + parseFloat(o.discount_total || "0"),
           discount: parseFloat(o.discount_total) || 0,
           shipping_cost: parseFloat(o.shipping_total) || 0,
@@ -421,4 +422,16 @@ function derivePaymentStatus(o: any): string {
   if (method === "cod" || (o.payment_method_title || "").toLowerCase().includes("cash on delivery")) return "cod";
   if (status === "completed" || status === "processing") return "paid";
   return "unpaid";
+}
+
+/** Maps a WooCommerce order's shipping_lines into our fulfillment_type. */
+function fromWooShipping(o: any): string {
+  const lines = Array.isArray(o?.shipping_lines) ? o.shipping_lines : [];
+  if (lines.length === 0) return "delivery";
+  const title = String(lines[0]?.method_title || "").toLowerCase();
+  const id = String(lines[0]?.method_id || "").toLowerCase();
+  if (title.includes("pickup") || title.includes("showroom") || id.includes("pickup") || id.includes("local_pickup")) {
+    return "pickup";
+  }
+  return "delivery";
 }

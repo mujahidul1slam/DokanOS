@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ShoppingCart, Package, Users, Monitor, Plug,
-  Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3, Hourglass,
+  Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/", roles: ["admin", "staff", "viewer"] },
   { icon: ShoppingCart, label: "Orders", path: "/orders", roles: ["admin", "staff", "viewer"] },
-  { icon: Hourglass, label: "Pre-Orders", path: "/pre-orders", roles: ["admin", "staff", "viewer"] },
   { icon: Package, label: "Products", path: "/products", roles: ["admin", "staff"] },
   { icon: Users, label: "Customers", path: "/customers", roles: ["admin", "staff", "viewer"] },
   { icon: Monitor, label: "POS", path: "/pos", roles: ["admin", "staff"] },
