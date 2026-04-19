@@ -385,18 +385,21 @@ Deno.serve(async (req) => {
           if (mappedStatus) updateData.status = mappedStatus;
           await sb.from("orders").update(updateData).eq("consignment_id", consignment_id);
 
+          const { data: ord } = await sb
+            .from("orders")
+            .select("id, woo_order_id, store_id, tracking_status")
+            .eq("consignment_id", consignment_id)
+            .maybeSingle();
+
+          if (ord?.id && ord.tracking_status !== order_status) {
+            await postWooOrderNote(ord.id, `[OmniSync] Pathao status update: ${order_status}`);
+          }
+
           // If newly delivered, push status back to WooCommerce as "completed"
-          if (mappedStatus === "delivered") {
-            const { data: ord } = await sb
-              .from("orders")
-              .select("id, woo_order_id, store_id")
-              .eq("consignment_id", consignment_id)
-              .maybeSingle();
-            if (ord?.woo_order_id && ord?.store_id) {
-              await pushOrderStatusToWoo(sb, ord.id).catch((e) =>
-                console.warn(`woo-push from track_order failed: ${e?.message || e}`)
-              );
-            }
+          if (mappedStatus === "delivered" && ord?.woo_order_id && ord?.store_id) {
+            await pushOrderStatusToWoo(sb, ord.id).catch((e) =>
+              console.warn(`woo-push from track_order failed: ${e?.message || e}`)
+            );
           }
         }
         result = info;
