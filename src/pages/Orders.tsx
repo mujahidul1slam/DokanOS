@@ -822,7 +822,8 @@ function EmptyState({ tab }: { tab: TabKey }) {
     pickup_pending: { icon: Clock, text: "No orders waiting for pickup" },
     in_transit: { icon: Truck, text: "No orders in transit" },
     delivered: { icon: CheckCircle2, text: "No delivered orders" },
-    on_hold: { icon: AlertTriangle, text: "No orders on hold or returned" },
+    on_hold: { icon: AlertTriangle, text: "No orders on hold" },
+    returned: { icon: Undo2, text: "No returned orders" },
     trash: { icon: Trash2, text: "Trash is empty — deleted orders appear here for 15 days" },
   };
   const config = configs[tab];
