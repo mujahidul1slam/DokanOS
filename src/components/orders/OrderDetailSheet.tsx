@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
+import { postWooOrderNote } from "@/lib/wooNotes";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -262,6 +263,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         } catch (e) {
           console.warn("WooCommerce order push failed:", e);
         }
+
+        // Mirror changes as Woo order notes
+        const noteParts: string[] = [];
+        if (status !== order.status) noteParts.push(`Status: ${order.status} → ${status}`);
+        if (paymentStatus !== order.payment_status) noteParts.push(`Payment: ${order.payment_status} → ${paymentStatus}`);
+        if (noteParts.length > 0) {
+          postWooOrderNote(order.id, `[OmniSync] ${noteParts.join(" · ")}`);
+        }
       }
 
       toast.success("Order updated & synced");
@@ -293,6 +302,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     await logAction("create", "order_payment", order.id, {
       order_number: order.order_number, method: payMethod, amount: parseFloat(payAmount), trx_id: payTrxId || null,
     });
+    postWooOrderNote(order.id, `[OmniSync] Payment logged: ৳${parseFloat(payAmount).toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}`);
     setPayAmount("");
     setPayTrxId("");
     setPayNotes("");

@@ -50,6 +50,21 @@ async function pushOrderStatusToWoo(sb: any, orderId: string): Promise<void> {
   }
 }
 
+// Post a note on the WooCommerce order (silently no-ops if not Woo-linked)
+async function postWooOrderNote(orderId: string, note: string): Promise<void> {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    await fetch(`${supabaseUrl}/functions/v1/woo-push`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify({ action: "post_note", order_id: orderId, note }),
+    });
+  } catch (e) {
+    console.warn("postWooOrderNote failed:", e);
+  }
+}
+
 interface PathaoCreds {
   id: string;
   client_id: string;
@@ -305,6 +320,8 @@ Deno.serve(async (req) => {
             description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
             metadata: { consignment_id, integration_id: creds.id },
           });
+
+          await postWooOrderNote(order_id, `[OmniSync] Dispatched to Pathao. Consignment: ${consignment_id}`);
         }
 
         result = { consignment_id, raw: data };
@@ -338,6 +355,8 @@ Deno.serve(async (req) => {
                     description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
                     metadata: { consignment_id, integration_id: creds.id },
                   });
+
+                  await postWooOrderNote(entry.order_id, `[OmniSync] Dispatched to Pathao. Consignment: ${consignment_id}`);
                 }
 
                 return { order_id: entry.order_id, success: true, consignment_id };
@@ -366,18 +385,21 @@ Deno.serve(async (req) => {
           if (mappedStatus) updateData.status = mappedStatus;
           await sb.from("orders").update(updateData).eq("consignment_id", consignment_id);
 
+          const { data: ord } = await sb
+            .from("orders")
+            .select("id, woo_order_id, store_id, tracking_status")
+            .eq("consignment_id", consignment_id)
+            .maybeSingle();
+
+          if (ord?.id && ord.tracking_status !== order_status) {
+            await postWooOrderNote(ord.id, `[OmniSync] Pathao status update: ${order_status}`);
+          }
+
           // If newly delivered, push status back to WooCommerce as "completed"
-          if (mappedStatus === "delivered") {
-            const { data: ord } = await sb
-              .from("orders")
-              .select("id, woo_order_id, store_id")
-              .eq("consignment_id", consignment_id)
-              .maybeSingle();
-            if (ord?.woo_order_id && ord?.store_id) {
-              await pushOrderStatusToWoo(sb, ord.id).catch((e) =>
-                console.warn(`woo-push from track_order failed: ${e?.message || e}`)
-              );
-            }
+          if (mappedStatus === "delivered" && ord?.woo_order_id && ord?.store_id) {
+            await pushOrderStatusToWoo(sb, ord.id).catch((e) =>
+              console.warn(`woo-push from track_order failed: ${e?.message || e}`)
+            );
           }
         }
         result = info;
@@ -424,6 +446,8 @@ Deno.serve(async (req) => {
                 description: `Pathao status: ${order_status}`,
                 metadata: { tracking_status: order_status },
               });
+
+              await postWooOrderNote(order.id, `[OmniSync] Pathao status update: ${order_status}`);
 
               // If newly delivered, push status back to WooCommerce as "completed"
               if (mappedStatus === "delivered") {
