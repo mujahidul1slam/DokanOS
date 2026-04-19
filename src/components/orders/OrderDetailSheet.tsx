@@ -47,6 +47,7 @@ interface OrderDetail {
   customer_address: string | null;
   customer_email: string | null;
   customer_city: string | null;
+  fulfillment_type: string;
 }
 
 interface LineItem {
