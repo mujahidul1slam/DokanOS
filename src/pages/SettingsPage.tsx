@@ -115,6 +115,8 @@ const SettingsPage = () => {
             </div>
           )}
 
+          {activeTab === "business" && <BusinessProfileTab />}
+
           {activeTab === "inventory" && (
             <div className="rounded-lg border border-border bg-card p-6 space-y-6">
               <div>
@@ -144,7 +146,7 @@ const SettingsPage = () => {
               </div>
 
               <div className="flex justify-end pt-2">
-                <Button onClick={() => { setSaving(true); localStorage.setItem("omnisync-global-stock", String(globalStock)); toast.success("Inventory settings saved"); setSaving(false); }} disabled={saving}>
+                <Button onClick={() => { setSaving(true); localStorage.setItem("omnisync-global-stock", String(globalStock)); logAction("update", "settings_inventory", undefined, { globalStock }); toast.success("Inventory settings saved"); setSaving(false); }} disabled={saving}>
                   {saving ? "Saving…" : "Save Changes"}
                 </Button>
               </div>
