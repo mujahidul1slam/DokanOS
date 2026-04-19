@@ -31,6 +31,24 @@ function mapPathaoStatus(status: string | null | undefined): string | undefined 
   return undefined;
 }
 
+// Invoke woo-push edge function to sync order status back to WooCommerce.
+// Used when a Pathao tracking update transitions an order to "delivered".
+async function pushOrderStatusToWoo(sb: any, orderId: string): Promise<void> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const res = await fetch(`${supabaseUrl}/functions/v1/woo-push`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({ action: "push_order", order_id: orderId }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`woo-push responded ${res.status}: ${text}`);
+  }
+
 interface PathaoCreds {
   id: string;
   client_id: string;
