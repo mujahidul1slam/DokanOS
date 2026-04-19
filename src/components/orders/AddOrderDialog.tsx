@@ -79,7 +79,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
-  const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">("delivery");
+  const [fulfillment, setFulfillment] = useState<"walkin" | "pickup" | "delivery">("delivery");
   const [source, setSource] = useState("phone");
   const [sources, setSources] = useState<{ id: string; name: string }[]>([]);
   const [shippingCost, setShippingCost] = useState(0);
