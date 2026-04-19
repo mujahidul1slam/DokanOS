@@ -227,7 +227,12 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         case "in_transit":
           return !!o.consignment_id && ["At Sorting Hub","In Transit","On the Way To Delivery Hub","At Delivery Hub","Out for Delivery"].includes(o.tracking_status || "");
         case "delivered":
-          return !!o.consignment_id && ["Delivered","Partial Delivered","Payment Invoice"].includes(o.tracking_status || "");
+          // Delivered: any order whose internal status is delivered/completed,
+          // OR a dispatched parcel whose Pathao tracking reports a delivered state.
+          return (
+            ["delivered","completed"].includes(o.status) ||
+            (!!o.consignment_id && ["Delivered","Partial Delivered","Payment Invoice"].includes(o.tracking_status || ""))
+          );
         case "on_hold":
           return !!o.consignment_id && ["On Hold","Hold","Exchange","Cancelled"].includes(o.tracking_status || "");
         case "returned":

@@ -31,6 +31,25 @@ function mapPathaoStatus(status: string | null | undefined): string | undefined 
   return undefined;
 }
 
+// Invoke woo-push edge function to sync order status back to WooCommerce.
+// Used when a Pathao tracking update transitions an order to "delivered".
+async function pushOrderStatusToWoo(sb: any, orderId: string): Promise<void> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const res = await fetch(`${supabaseUrl}/functions/v1/woo-push`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({ action: "push_order", order_id: orderId }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`woo-push responded ${res.status}: ${text}`);
+  }
+}
+
 interface PathaoCreds {
   id: string;
   client_id: string;
@@ -346,6 +365,20 @@ Deno.serve(async (req) => {
           const updateData: any = { tracking_status: order_status };
           if (mappedStatus) updateData.status = mappedStatus;
           await sb.from("orders").update(updateData).eq("consignment_id", consignment_id);
+
+          // If newly delivered, push status back to WooCommerce as "completed"
+          if (mappedStatus === "delivered") {
+            const { data: ord } = await sb
+              .from("orders")
+              .select("id, woo_order_id, store_id")
+              .eq("consignment_id", consignment_id)
+              .maybeSingle();
+            if (ord?.woo_order_id && ord?.store_id) {
+              await pushOrderStatusToWoo(sb, ord.id).catch((e) =>
+                console.warn(`woo-push from track_order failed: ${e?.message || e}`)
+              );
+            }
+          }
         }
         result = info;
         break;
@@ -391,6 +424,13 @@ Deno.serve(async (req) => {
                 description: `Pathao status: ${order_status}`,
                 metadata: { tracking_status: order_status },
               });
+
+              // If newly delivered, push status back to WooCommerce as "completed"
+              if (mappedStatus === "delivered") {
+                await pushOrderStatusToWoo(sb, order.id).catch((e) =>
+                  console.warn(`woo-push from track_all failed for ${order.id}: ${e?.message || e}`)
+                );
+              }
             }
 
             trackResults.push({
