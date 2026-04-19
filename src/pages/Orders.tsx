@@ -122,11 +122,19 @@ const Orders = () => {
   // Open detail sheet from ?order=ID URL param (e.g., from Customer profile)
   useEffect(() => {
     const orderParam = searchParams.get("order");
+    const tabParam = searchParams.get("tab") as TabKey | null;
+    let changed = false;
     if (orderParam) {
       setDetailOrderId(orderParam);
       searchParams.delete("order");
-      setSearchParams(searchParams, { replace: true });
+      changed = true;
     }
+    if (tabParam) {
+      setTab(tabParam);
+      searchParams.delete("tab");
+      changed = true;
+    }
+    if (changed) setSearchParams(searchParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
   const loadOrders = useCallback(async () => {
