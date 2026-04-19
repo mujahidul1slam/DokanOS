@@ -148,7 +148,11 @@ const ProductList = () => {
 
   useEffect(() => { loadProducts(); }, []);
 
-  const categoryTree = useMemo(() => buildCategoryTree(dbCategories), [dbCategories]);
+  const scopedDbCategories = useMemo(
+    () => storeFilter === "all" ? dbCategories : dbCategories.filter(c => c.store_id === storeFilter),
+    [dbCategories, storeFilter]
+  );
+  const categoryTree = useMemo(() => buildCategoryTree(scopedDbCategories), [scopedDbCategories]);
   const flatCategories = useMemo(() => flattenCategoryTree(categoryTree), [categoryTree]);
 
   const filtered = useMemo(() => {
