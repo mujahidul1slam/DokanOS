@@ -50,6 +50,21 @@ async function pushOrderStatusToWoo(sb: any, orderId: string): Promise<void> {
   }
 }
 
+// Post a note on the WooCommerce order (silently no-ops if not Woo-linked)
+async function postWooOrderNote(orderId: string, note: string): Promise<void> {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    await fetch(`${supabaseUrl}/functions/v1/woo-push`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify({ action: "post_note", order_id: orderId, note }),
+    });
+  } catch (e) {
+    console.warn("postWooOrderNote failed:", e);
+  }
+}
+
 interface PathaoCreds {
   id: string;
   client_id: string;
