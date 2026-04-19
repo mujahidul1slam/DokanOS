@@ -166,9 +166,11 @@ const Orders = () => {
     return active.filter((o) => {
       switch (tabKey) {
         case "new":
-          return o.status === "processing" && !o.consignment_id;
+          return o.status === "processing" && !o.consignment_id && !o.hasBackorder;
         case "ready":
-          return o.status === "ready_to_ship" && !o.consignment_id;
+          return o.status === "ready_to_ship" && !o.consignment_id && !o.hasBackorder;
+        case "pre_order":
+          return o.hasBackorder && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status);
         case "pickup_pending":
           return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up","Pickup Cancel","Pickup Cancelled"].includes(o.tracking_status || "");
         case "in_transit":
