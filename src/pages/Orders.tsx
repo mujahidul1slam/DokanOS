@@ -491,7 +491,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
 
   if (loading) return (
     <div className="space-y-4">
-      <div><h1 className="font-heading text-2xl font-semibold">Orders</h1></div>
+      <div><h1 className="font-heading text-2xl font-semibold">{preOrderMode ? "Pre-Orders" : "Orders"}</h1></div>
       <TableSkeleton rows={10} cols={7} />
     </div>
   );
