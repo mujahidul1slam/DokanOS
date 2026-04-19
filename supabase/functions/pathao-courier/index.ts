@@ -346,6 +346,20 @@ Deno.serve(async (req) => {
           const updateData: any = { tracking_status: order_status };
           if (mappedStatus) updateData.status = mappedStatus;
           await sb.from("orders").update(updateData).eq("consignment_id", consignment_id);
+
+          // If newly delivered, push status back to WooCommerce as "completed"
+          if (mappedStatus === "delivered") {
+            const { data: ord } = await sb
+              .from("orders")
+              .select("id, woo_order_id, store_id")
+              .eq("consignment_id", consignment_id)
+              .maybeSingle();
+            if (ord?.woo_order_id && ord?.store_id) {
+              await pushOrderStatusToWoo(sb, ord.id).catch((e) =>
+                console.warn(`woo-push from track_order failed: ${e?.message || e}`)
+              );
+            }
+          }
         }
         result = info;
         break;
@@ -391,6 +405,13 @@ Deno.serve(async (req) => {
                 description: `Pathao status: ${order_status}`,
                 metadata: { tracking_status: order_status },
               });
+
+              // If newly delivered, push status back to WooCommerce as "completed"
+              if (mappedStatus === "delivered") {
+                await pushOrderStatusToWoo(sb, order.id).catch((e) =>
+                  console.warn(`woo-push from track_all failed for ${order.id}: ${e?.message || e}`)
+                );
+              }
             }
 
             trackResults.push({
