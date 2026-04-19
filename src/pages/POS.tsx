@@ -46,7 +46,7 @@ const POS = () => {
   const { toast } = useToast();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; store_id: string | null }[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<CustomerData[]>([]);
@@ -213,13 +213,14 @@ const POS = () => {
 
   useEffect(() => {
     const load = async () => {
-      const [prodRes, storeRes] = await Promise.all([
+      const [prodRes, storeRes, catRes] = await Promise.all([
         supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode, is_featured, sales_count").eq("is_active", true).order("name"),
         supabase.from("stores").select("id, name"),
+        supabase.from("categories").select("id, name, store_id").order("name"),
       ]);
       const prods = (prodRes.data || []) as any[];
       setProducts(prods);
-      setCategories([...new Set(prods.map((p) => p.category).filter(Boolean))] as string[]);
+      setCategories((catRes.data || []) as any);
       setStores((storeRes.data || []) as { id: string; name: string }[]);
       setLoading(false);
     };

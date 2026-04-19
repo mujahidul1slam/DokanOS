@@ -10,7 +10,7 @@ import type { Product } from "./types";
 
 interface Props {
   products: Product[];
-  categories: string[];
+  categories: { id: string; name: string; store_id: string | null }[];
   stores: { id: string; name: string }[];
   onSelectProduct: (p: Product) => void;
   onAddCustomItem: () => void;
@@ -104,9 +104,11 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-            ))}
+            {categories
+              .filter((c) => selectedStore === "all" || c.store_id === selectedStore)
+              .map((cat) => (
+                <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+              ))}
           </SelectContent>
         </Select>
 
