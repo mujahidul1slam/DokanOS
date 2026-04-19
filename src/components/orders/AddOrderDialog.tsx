@@ -290,7 +290,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       });
 
       await logAction("create", "order", order.id, {
-        order_number: orderNumber, source, total: order.total ?? null,
+        order_number: orderNumber, source,
       });
 
       toast.success(`Order ${orderNumber} created`);
