@@ -82,11 +82,15 @@ const PAGE_SIZE = 20;
 
 type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
-const Orders = () => {
+interface OrdersProps { preOrderMode?: boolean }
+
+const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const { role } = useAuth();
   const { settings: invoiceSettings } = useInvoiceSettings();
   const canWrite = role === "admin" || role === "staff";
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [orderCategoryMap, setOrderCategoryMap] = useState<Map<string, Set<string>>>(new Map());
+  const [allCategories, setAllCategories] = useState<{ id: string; name: string; store_id: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -95,10 +99,11 @@ const Orders = () => {
   const [storeFilter, setStoreFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [deliveryFilter, setDeliveryFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabKey>("new");
+  const [tab, setTab] = useState<TabKey>(preOrderMode ? "pre_order" : "new");
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
 
