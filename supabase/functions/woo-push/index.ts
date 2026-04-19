@@ -312,7 +312,9 @@ function reverseMapStatus(status: string): string {
   const map: Record<string, string> = {
     pending: "pending",
     processing: "processing",
+    ready_to_ship: "processing",
     completed: "completed",
+    delivered: "completed",
     cancelled: "cancelled",
     returned: "refunded",
     shipped: "completed",
