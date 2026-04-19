@@ -133,13 +133,13 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       searchParams.delete("order");
       changed = true;
     }
-    if (tabParam) {
+    if (tabParam && !preOrderMode) {
       setTab(tabParam);
       searchParams.delete("tab");
       changed = true;
     }
     if (changed) setSearchParams(searchParams, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, preOrderMode]);
 
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
