@@ -12,11 +12,15 @@ export function DeliveryBadge({ type }: { type: string }) {
   }
 }
 
-export function SourceBadge({ source }: { source: string }) {
+export function SourceBadge({ source, storeName }: { source: string; storeName?: string | null }) {
   if (source === "pos") {
     return <Badge className="bg-purple-500/15 text-purple-400 border-purple-500/20 hover:bg-purple-500/25">POS</Badge>;
   }
-  return <Badge className="bg-primary/15 text-primary border-primary/20 hover:bg-primary/25">WooCommerce</Badge>;
+  return (
+    <Badge className="bg-primary/15 text-primary border-primary/20 hover:bg-primary/25">
+      WooCommerce{storeName ? ` [${storeName}]` : ""}
+    </Badge>
+  );
 }
 
 export function PaymentBadge({ status }: { status: string }) {

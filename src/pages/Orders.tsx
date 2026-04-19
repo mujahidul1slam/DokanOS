@@ -6,7 +6,7 @@ import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
-  Trash2, RotateCcw, Hourglass,
+  Trash2, RotateCcw, Hourglass, Tags,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -82,11 +82,15 @@ const PAGE_SIZE = 20;
 
 type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
-const Orders = () => {
+interface OrdersProps { preOrderMode?: boolean }
+
+const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const { role } = useAuth();
   const { settings: invoiceSettings } = useInvoiceSettings();
   const canWrite = role === "admin" || role === "staff";
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [orderCategoryMap, setOrderCategoryMap] = useState<Map<string, Set<string>>>(new Map());
+  const [allCategories, setAllCategories] = useState<{ id: string; name: string; store_id: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -95,10 +99,11 @@ const Orders = () => {
   const [storeFilter, setStoreFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [deliveryFilter, setDeliveryFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabKey>("new");
+  const [tab, setTab] = useState<TabKey>(preOrderMode ? "pre_order" : "new");
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -140,7 +145,7 @@ const Orders = () => {
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
         .from("orders")
-        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, stores(name), order_items(id, product_name, quantity, products(stock_status))")
+        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, stores(name), order_items(id, product_id, product_name, quantity, products(stock_status))")
         .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
@@ -154,12 +159,45 @@ const Orders = () => {
       ),
     }));
     setOrders(mapped as OrderRow[]);
+
+    // Build order -> category-id set map for filtering
+    const productIds = Array.from(new Set(
+      (data || []).flatMap((o: any) => (o.order_items || []).map((i: any) => i.product_id).filter(Boolean))
+    ));
+    if (productIds.length > 0) {
+      const { data: pcData } = await supabase
+        .from("product_categories")
+        .select("product_id, category_id")
+        .in("product_id", productIds);
+      const productCatMap = new Map<string, Set<string>>();
+      (pcData || []).forEach((pc: any) => {
+        if (!productCatMap.has(pc.product_id)) productCatMap.set(pc.product_id, new Set());
+        productCatMap.get(pc.product_id)!.add(pc.category_id);
+      });
+      const orderCatMap = new Map<string, Set<string>>();
+      (data || []).forEach((o: any) => {
+        const set = new Set<string>();
+        (o.order_items || []).forEach((i: any) => {
+          const cats = productCatMap.get(i.product_id);
+          if (cats) cats.forEach((c) => set.add(c));
+        });
+        orderCatMap.set(o.id, set);
+      });
+      setOrderCategoryMap(orderCatMap);
+    } else {
+      setOrderCategoryMap(new Map());
+    }
+
     setLoading(false);
   }, []);
 
   const loadStores = useCallback(async () => {
-    const { data } = await supabase.from("stores").select("id, name").order("name");
-    setStores(data || []);
+    const [{ data: storeData }, { data: catData }] = await Promise.all([
+      supabase.from("stores").select("id, name").order("name"),
+      supabase.from("categories").select("id, name, store_id").order("name"),
+    ]);
+    setStores(storeData || []);
+    setAllCategories((catData || []) as any);
   }, []);
 
   useEffect(() => { loadOrders(); loadStores(); }, [loadOrders, loadStores]);
@@ -195,6 +233,12 @@ const Orders = () => {
     });
   }, [orders]);
 
+  // Categories scoped to currently selected store filter
+  const scopedCategories = useMemo(() => {
+    if (storeFilter === "all") return allCategories;
+    return allCategories.filter((c) => c.store_id === storeFilter);
+  }, [allCategories, storeFilter]);
+
   const filtered = useMemo(() => {
     const tabOrders = getTabOrders(tab);
     return tabOrders.filter((o) => {
@@ -208,6 +252,11 @@ const Orders = () => {
       const matchSource = sourceFilter === "all" || o.source === sourceFilter;
       const matchStore = storeFilter === "all" || o.store_id === storeFilter;
       const matchDelivery = deliveryFilter === "all" || o.fulfillment_type === deliveryFilter;
+      let matchCategory = true;
+      if (categoryFilter.size > 0) {
+        const orderCats = orderCategoryMap.get(o.id);
+        matchCategory = !!orderCats && Array.from(categoryFilter).some((c) => orderCats.has(c));
+      }
       let matchDate = true;
       if (dateRange?.from) {
         const d = new Date(o.created_at);
@@ -218,14 +267,24 @@ const Orders = () => {
           matchDate = matchDate && d <= end;
         }
       }
-      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery;
+      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery && matchCategory;
     });
-  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, dateRange, tab, getTabOrders]);
+  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, dateRange, tab]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, categoryFilter, dateRange, tab]);
+
+  // When store filter changes, drop category selections that no longer belong
+  useEffect(() => {
+    if (storeFilter === "all") return;
+    setCategoryFilter((prev) => {
+      const allowed = new Set(scopedCategories.map((c) => c.id));
+      const next = new Set(Array.from(prev).filter((id) => allowed.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [storeFilter, scopedCategories]);
   useEffect(() => { setSelected(new Set()); }, [tab]);
 
   const toggleSelect = (id: string) => {
@@ -503,30 +562,36 @@ const Orders = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-semibold">Orders</h1>
-          <p className="text-sm text-muted-foreground">Manage your order pipeline — from new orders to delivery</p>
+          <h1 className="font-heading text-2xl font-semibold">{preOrderMode ? "Pre-Orders" : "Orders"}</h1>
+          <p className="text-sm text-muted-foreground">
+            {preOrderMode
+              ? "Orders containing backordered products awaiting stock"
+              : "Manage your order pipeline — from new orders to delivery"}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          {canWrite && (
+          {canWrite && !preOrderMode && (
             <Button size="sm" onClick={() => setAddOrderOpen(true)}>
               <Plus className="h-4 w-4 mr-1" /> Add Order
             </Button>
           )}
-          {["pickup_pending", "in_transit", "on_hold", "returned"].includes(tab) && (
+          {!preOrderMode && ["pickup_pending", "in_transit", "on_hold", "returned"].includes(tab) && (
             <Button variant="outline" size="sm" onClick={handleTrackAll} disabled={trackingLoading}>
               {trackingLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
               Update Tracking
             </Button>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm"><MapPin className="h-4 w-4 mr-1" /> Pathao</Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={syncPathaoStores}><RefreshCw className="h-4 w-4 mr-2" /> Sync Stores</DropdownMenuItem>
-              <DropdownMenuItem onClick={syncCities}><MapPin className="h-4 w-4 mr-2" /> Sync Locations</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {!preOrderMode && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm"><MapPin className="h-4 w-4 mr-1" /> Pathao</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={syncPathaoStores}><RefreshCw className="h-4 w-4 mr-2" /> Sync Stores</DropdownMenuItem>
+                <DropdownMenuItem onClick={syncCities}><MapPin className="h-4 w-4 mr-2" /> Sync Locations</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -587,27 +652,29 @@ const Orders = () => {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-        <div className="overflow-x-auto">
-          <TabsList className="inline-flex w-auto min-w-full">
-            <TabsTrigger value="all" className="gap-1.5 text-xs"><ShoppingCart className="h-3.5 w-3.5" />All ({counts.all})</TabsTrigger>
-            <TabsTrigger value="new" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />New Orders ({counts.new})</TabsTrigger>
-            <TabsTrigger value="ready" className="gap-1.5 text-xs"><PackageCheck className="h-3.5 w-3.5" />Ready to Ship ({counts.ready})</TabsTrigger>
-            <TabsTrigger value="pre_order" className="gap-1.5 text-xs"><Hourglass className="h-3.5 w-3.5" />Pre-Order ({counts.pre_order})</TabsTrigger>
-            <TabsTrigger value="pickup_pending" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Pickup Pending ({counts.pickup_pending})</TabsTrigger>
-            <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
-            <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
-            <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold ({counts.on_hold})</TabsTrigger>
-            <TabsTrigger value="returned" className="gap-1.5 text-xs"><Undo2 className="h-3.5 w-3.5" />Returned ({counts.returned})</TabsTrigger>
-            {counts.trash > 0 && <TabsTrigger value="trash" className="gap-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Trash ({counts.trash})</TabsTrigger>}
-          </TabsList>
-        </div>
+        {!preOrderMode && (
+          <div className="overflow-x-auto">
+            <TabsList className="inline-flex w-auto min-w-full">
+              <TabsTrigger value="all" className="gap-1.5 text-xs"><ShoppingCart className="h-3.5 w-3.5" />All ({counts.all})</TabsTrigger>
+              <TabsTrigger value="new" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />New Orders ({counts.new})</TabsTrigger>
+              <TabsTrigger value="ready" className="gap-1.5 text-xs"><PackageCheck className="h-3.5 w-3.5" />Ready to Ship ({counts.ready})</TabsTrigger>
+              <TabsTrigger value="pre_order" className="gap-1.5 text-xs"><Hourglass className="h-3.5 w-3.5" />Pre-Order ({counts.pre_order})</TabsTrigger>
+              <TabsTrigger value="pickup_pending" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Pickup Pending ({counts.pickup_pending})</TabsTrigger>
+              <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
+              <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
+              <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold ({counts.on_hold})</TabsTrigger>
+              <TabsTrigger value="returned" className="gap-1.5 text-xs"><Undo2 className="h-3.5 w-3.5" />Returned ({counts.returned})</TabsTrigger>
+              {counts.trash > 0 && <TabsTrigger value="trash" className="gap-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Trash ({counts.trash})</TabsTrigger>}
+            </TabsList>
+          </div>
+        )}
         {/* Search & Filters — shared across all tabs */}
         <div className="flex flex-wrap items-center gap-3 mt-4">
           <div className="relative flex-1 min-w-[240px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order #, name, or phone..." className="pl-9" />
           </div>
-          {tab === "all" && (
+          {(tab === "all" || preOrderMode) && (
             <>
               <Popover>
                 <PopoverTrigger asChild>
@@ -620,19 +687,21 @@ const Orders = () => {
                   <Calendar mode="range" selected={dateRange} onSelect={setDateRange} numberOfMonths={2} className="p-3 pointer-events-auto" />
                 </PopoverContent>
               </Popover>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="processing">New Order</SelectItem>
-                  <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
-                  <SelectItem value="shipped">Shipped</SelectItem>
-                  <SelectItem value="delivered">Delivered</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="returned">Returned</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
+              {tab === "all" && !preOrderMode && (
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="processing">New Order</SelectItem>
+                    <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
+                    <SelectItem value="shipped">Shipped</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="returned">Returned</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={paymentFilter} onValueChange={setPaymentFilter}>
                 <SelectTrigger className="w-[140px]"><SelectValue placeholder="Payment" /></SelectTrigger>
                 <SelectContent>
@@ -669,6 +738,46 @@ const Orders = () => {
               {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
+          {/* Multi-select Category Filter (scoped to selected store) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2 text-sm font-normal">
+                <Tags className="h-4 w-4" />
+                {categoryFilter.size === 0 ? "Categories" : `${categoryFilter.size} Categor${categoryFilter.size === 1 ? "y" : "ies"}`}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-60 max-h-80 overflow-y-auto">
+              {scopedCategories.length === 0 ? (
+                <div className="px-2 py-3 text-xs text-muted-foreground">
+                  {storeFilter === "all" ? "Pick a store to filter categories" : "No categories for this store"}
+                </div>
+              ) : (
+                <>
+                  {categoryFilter.size > 0 && (
+                    <DropdownMenuItem onClick={() => setCategoryFilter(new Set())} className="text-xs text-muted-foreground">
+                      Clear all
+                    </DropdownMenuItem>
+                  )}
+                  {scopedCategories.map((c) => (
+                    <DropdownMenuCheckboxItem
+                      key={c.id}
+                      checked={categoryFilter.has(c.id)}
+                      onCheckedChange={(checked) => {
+                        setCategoryFilter((prev) => {
+                          const next = new Set(prev);
+                          if (checked) next.add(c.id); else next.delete(c.id);
+                          return next;
+                        });
+                      }}
+                      onSelect={(e) => e.preventDefault()}
+                    >
+                      {c.name}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* ── Shared Table ── */}
@@ -715,7 +824,7 @@ const Orders = () => {
                     <TableCell>
                       <ProductsList items={order.productItems} />
                     </TableCell>
-                    {tab === "all" && <TableCell><SourceBadge source={order.source} /></TableCell>}
+                    {tab === "all" && <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} /></TableCell>}
                     <TableCell className="text-right">
                       <div className="font-medium text-foreground">৳{Number(order.total).toLocaleString()}</div>
                       {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (

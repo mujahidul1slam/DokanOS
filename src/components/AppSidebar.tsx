@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ShoppingCart, Package, Users, Monitor, Plug,
-  Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3,
+  Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3, Hourglass,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/", roles: ["admin", "staff", "viewer"] },
-  { icon: ShoppingCart, label: "Orders", path: "/orders", roles: ["admin", "staff", "viewer"] },
+  { icon: ShoppingCart, label: "Orders", path: "/orders", roles: ["admin", "staff", "viewer"], children: [
+    { icon: Hourglass, label: "Pre-Orders", path: "/pre-orders", roles: ["admin", "staff", "viewer"] },
+  ] },
   { icon: Package, label: "Products", path: "/products", roles: ["admin", "staff"] },
   { icon: Users, label: "Customers", path: "/customers", roles: ["admin", "staff", "viewer"] },
   { icon: Monitor, label: "POS", path: "/pos", roles: ["admin", "staff"] },
@@ -63,20 +65,40 @@ const AppSidebar = () => {
       <nav className="flex-1 space-y-0.5 px-3 py-1">
         {visibleItems.map((item) => {
           const isActive = location.pathname === item.path;
+          const children = (item as any).children?.filter((c: any) => role && c.roles.includes(role)) || [];
           return (
-            <Link
-              key={item.path}
-              to={item.path}
-              onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
-                isActive
-                  ? "bg-sidebar-accent text-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
-              }`}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
+            <div key={item.path}>
+              <Link
+                to={item.path}
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
+                  isActive
+                    ? "bg-sidebar-accent text-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+                }`}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+              {children.map((child: any) => {
+                const childActive = location.pathname === child.path;
+                return (
+                  <Link
+                    key={child.path}
+                    to={child.path}
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-3 rounded-md pl-9 pr-3 py-1.5 text-xs transition-colors ${
+                      childActive
+                        ? "bg-sidebar-accent text-foreground"
+                        : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+                    }`}
+                  >
+                    <child.icon className="h-3.5 w-3.5" />
+                    {child.label}
+                  </Link>
+                );
+              })}
+            </div>
           );
         })}
       </nav>
