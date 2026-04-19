@@ -233,6 +233,7 @@ const Orders = () => {
     all: orders.filter((o) => !o.deleted_at).length,
     new: getTabOrders("new").length,
     ready: getTabOrders("ready").length,
+    pre_order: getTabOrders("pre_order").length,
     pickup_pending: getTabOrders("pickup_pending").length,
     in_transit: getTabOrders("in_transit").length,
     delivered: getTabOrders("delivered").length,
