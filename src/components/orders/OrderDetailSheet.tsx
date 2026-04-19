@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2 } from "lucide-react";
+import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { printMeasurementSlip } from "./MeasurementSlipPrint";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
