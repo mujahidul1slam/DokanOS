@@ -477,3 +477,32 @@ function fromWooShipping(o: any): string {
   }
   return "delivery";
 }
+
+/**
+ * Scan WooCommerce meta_data for entries whose key matches a known measurement field name.
+ * Skips hidden meta (keys starting with `_`) and entries with empty values.
+ * Returns measurements grouped by their parent measurement_group.
+ */
+function extractMeasurementsFromMeta(
+  meta: any[],
+  fieldMap: Map<string, { groupName: string; displayFormat: string; unit: string; fieldName: string }>
+): Array<{ groupName: string; displayFormat: string; unit: string; values: { name: string; value: string }[] }> {
+  if (!Array.isArray(meta) || meta.length === 0 || fieldMap.size === 0) return [];
+  const grouped = new Map<string, { displayFormat: string; unit: string; values: { name: string; value: string }[] }>();
+  for (const m of meta) {
+    const rawKey = String(m?.key ?? m?.display_key ?? "").trim();
+    if (!rawKey || rawKey.startsWith("_")) continue;
+    const key = rawKey.toLowerCase();
+    const match = fieldMap.get(key);
+    if (!match) continue;
+    const value = String(m?.value ?? m?.display_value ?? "").trim();
+    if (!value) continue;
+    if (!grouped.has(match.groupName)) {
+      grouped.set(match.groupName, { displayFormat: match.displayFormat, unit: match.unit, values: [] });
+    }
+    grouped.get(match.groupName)!.values.push({ name: match.fieldName, value });
+  }
+  return Array.from(grouped.entries()).map(([groupName, info]) => ({
+    groupName, displayFormat: info.displayFormat, unit: info.unit, values: info.values,
+  }));
+}
