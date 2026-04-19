@@ -46,7 +46,8 @@ const POS = () => {
   const { toast } = useToast();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<{ id: string; name: string; store_id: string | null }[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; parent_id: string | null; store_id: string | null }[]>([]);
+  const [productCatMap, setProductCatMap] = useState<Map<string, Set<string>>>(new Map());
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<CustomerData[]>([]);
@@ -213,15 +214,22 @@ const POS = () => {
 
   useEffect(() => {
     const load = async () => {
-      const [prodRes, storeRes, catRes] = await Promise.all([
+      const [prodRes, storeRes, catRes, pcRes] = await Promise.all([
         supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode, is_featured, sales_count").eq("is_active", true).order("name"),
         supabase.from("stores").select("id, name"),
-        supabase.from("categories").select("id, name, store_id").order("name"),
+        supabase.from("categories").select("id, name, parent_id, store_id").order("name"),
+        supabase.from("product_categories").select("product_id, category_id"),
       ]);
       const prods = (prodRes.data || []) as any[];
       setProducts(prods);
       setCategories((catRes.data || []) as any);
       setStores((storeRes.data || []) as { id: string; name: string }[]);
+      const map = new Map<string, Set<string>>();
+      (pcRes.data || []).forEach((pc: any) => {
+        if (!map.has(pc.product_id)) map.set(pc.product_id, new Set());
+        map.get(pc.product_id)!.add(pc.category_id);
+      });
+      setProductCatMap(map);
       setLoading(false);
     };
     load();
