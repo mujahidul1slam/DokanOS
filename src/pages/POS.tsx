@@ -15,6 +15,8 @@ import ShiftDialog from "@/components/pos/ShiftDialog";
 import POSToolbar from "@/components/pos/POSToolbar";
 import KeyboardShortcutsHelp from "@/components/pos/KeyboardShortcutsHelp";
 import type { Product, Cart, CartItem, CustomerData } from "@/components/pos/types";
+import { saveOrderItemMeasurements } from "@/lib/measurements";
+import { printMeasurementSlip } from "@/components/orders/MeasurementSlipPrint";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
@@ -419,7 +421,43 @@ const POS = () => {
           ? (i.price * i.qty * (i.discountValue || 0) / 100)
           : (i.discountValue || 0),
       }));
-      await supabase.from("order_items").insert(items);
+      const { data: insertedItems } = await supabase.from("order_items").insert(items).select("id");
+
+      // Persist measurements per inserted item
+      let hasMeasurements = false;
+      if (insertedItems) {
+        for (let idx = 0; idx < cart.items.length; idx++) {
+          const cartItem = cart.items[idx];
+          const dbItem = insertedItems[idx];
+          if (cartItem.measurementGroups && cartItem.measurementGroups.length > 0 && dbItem) {
+            hasMeasurements = true;
+            await saveOrderItemMeasurements(order.id, dbItem.id, cartItem.measurementGroups.map((g) => ({
+              groupName: g.groupName,
+              displayFormat: g.displayFormat,
+              unit: g.unit,
+              values: g.values,
+              notes: g.notes,
+              source: "pos",
+            })));
+          }
+        }
+      }
+
+      // Toast with print action if measurements were captured
+      if (hasMeasurements) {
+        toast({
+          title: "Order completed with measurements",
+          description: "Click to print measurement slip",
+          action: (
+            <button
+              onClick={() => printMeasurementSlip(order.id)}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Print Slip
+            </button>
+          ) as any,
+        });
+      }
 
       if (cart.payments.length > 0) {
         const payments = cart.payments.map((p) => ({

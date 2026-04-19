@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags } from "lucide-react";
+import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -11,11 +11,13 @@ import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
 import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
+import MeasurementsTab from "@/components/settings/MeasurementsTab";
 
 const tabs = [
   { id: "general", label: "General", icon: Settings },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "pos", label: "POS Settings", icon: ShoppingCart },
+  { id: "measurements", label: "Measurements", icon: Ruler },
   { id: "invoice", label: "Invoice/Pick up Slip", icon: FileText },
   { id: "sources", label: "Order Sources", icon: Tags },
   { id: "audit", label: "Activity Log", icon: ScrollText },
@@ -151,6 +153,7 @@ const SettingsPage = () => {
 
           {activeTab === "sources" && <OrderSourcesTab />}
 
+          {activeTab === "measurements" && <MeasurementsTab />}
 
           {activeTab === "audit" && <AuditLogTab />}
         </div>

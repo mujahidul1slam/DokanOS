@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2 } from "lucide-react";
+import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { printMeasurementSlip } from "./MeasurementSlipPrint";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -91,6 +92,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
+  const [measurements, setMeasurements] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -117,7 +119,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const load = useCallback(async () => {
     if (!orderId) return;
     setLoading(true);
-    const [orderRes, itemsRes, timelineRes, paymentsRes] = await Promise.all([
+    const [orderRes, itemsRes, timelineRes, paymentsRes, measRes] = await Promise.all([
       supabase
         .from("orders")
         .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type")
@@ -137,6 +139,10 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .select("id, method, amount, trx_id, notes, created_at")
         .eq("order_id", orderId)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("order_item_measurements" as any)
+        .select("id, order_item_id, group_name, display_format, unit, values, notes, source")
+        .eq("order_id", orderId),
     ]);
 
     const o = orderRes.data as unknown as OrderDetail | null;
@@ -159,6 +165,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     setDeletedItemIds([]);
     setTimeline((timelineRes.data || []) as unknown as TimelineEntry[]);
     setPayments((paymentsRes.data || []) as unknown as PaymentEntry[]);
+    setMeasurements(((measRes as any).data || []) as any[]);
     setLoading(false);
   }, [orderId]);
 

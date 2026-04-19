@@ -306,9 +306,11 @@ export type Database = {
           id: string
           invoice_template: Json
           logo_url: string | null
+          measurement_slip_template: Json
           phone: string | null
           pickup_slip_print_format: string
           pickup_slip_template: Json
+          pos_custom_measurements_enabled: boolean
           shipping_presets: Json
           tagline: string | null
           terms_text: string | null
@@ -324,9 +326,11 @@ export type Database = {
           id?: string
           invoice_template?: Json
           logo_url?: string | null
+          measurement_slip_template?: Json
           phone?: string | null
           pickup_slip_print_format?: string
           pickup_slip_template?: Json
+          pos_custom_measurements_enabled?: boolean
           shipping_presets?: Json
           tagline?: string | null
           terms_text?: string | null
@@ -342,15 +346,179 @@ export type Database = {
           id?: string
           invoice_template?: Json
           logo_url?: string | null
+          measurement_slip_template?: Json
           phone?: string | null
           pickup_slip_print_format?: string
           pickup_slip_template?: Json
+          pos_custom_measurements_enabled?: boolean
           shipping_presets?: Json
           tagline?: string | null
           terms_text?: string | null
           updated_at?: string
         }
         Relationships: []
+      }
+      measurement_assignments: {
+        Row: {
+          category_id: string | null
+          created_at: string
+          group_id: string
+          id: string
+          product_id: string | null
+        }
+        Insert: {
+          category_id?: string | null
+          created_at?: string
+          group_id: string
+          id?: string
+          product_id?: string | null
+        }
+        Update: {
+          category_id?: string | null
+          created_at?: string
+          group_id?: string
+          id?: string
+          product_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "measurement_assignments_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "measurement_assignments_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "measurement_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "measurement_assignments_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      measurement_fields: {
+        Row: {
+          created_at: string
+          group_id: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          group_id: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          group_id?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "measurement_fields_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "measurement_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      measurement_groups: {
+        Row: {
+          created_at: string
+          display_format: string
+          id: string
+          name: string
+          sort_order: number
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_format?: string
+          id?: string
+          name: string
+          sort_order?: number
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_format?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      order_item_measurements: {
+        Row: {
+          created_at: string
+          display_format: string
+          group_name: string
+          id: string
+          notes: string | null
+          order_id: string
+          order_item_id: string | null
+          source: string
+          unit: string
+          values: Json
+        }
+        Insert: {
+          created_at?: string
+          display_format?: string
+          group_name: string
+          id?: string
+          notes?: string | null
+          order_id: string
+          order_item_id?: string | null
+          source?: string
+          unit?: string
+          values?: Json
+        }
+        Update: {
+          created_at?: string
+          display_format?: string
+          group_name?: string
+          id?: string
+          notes?: string | null
+          order_id?: string
+          order_item_id?: string | null
+          source?: string
+          unit?: string
+          values?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_item_measurements_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_item_measurements_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       order_items: {
         Row: {
