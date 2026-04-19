@@ -182,6 +182,8 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   }
 
   await supabase.from("order_items").delete().eq("order_id", orderId);
+  await supabase.from("order_item_measurements").delete().eq("order_id", orderId).eq("source", "woo");
+
   const items = (o.line_items || []).map((li: any) => ({
     order_id: orderId,
     product_id: prodMap.get(li.product_id) || null,
@@ -190,9 +192,74 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     unit_price: parseFloat(li.price) || 0,
     line_total: parseFloat(li.total) || 0,
   }));
-  if (items.length > 0) await supabase.from("order_items").insert(items);
+  let insertedItems: any[] = [];
+  if (items.length > 0) {
+    const { data: ins } = await supabase.from("order_items").insert(items).select("id");
+    insertedItems = ins || [];
+  }
+
+  // Import measurement metadata
+  const { data: mFields } = await supabase
+    .from("measurement_fields")
+    .select("name, group_id, measurement_groups(name, display_format, unit)");
+  const fieldMap = new Map<string, { groupName: string; displayFormat: string; unit: string; fieldName: string }>();
+  ((mFields as any[]) || []).forEach((f: any) => {
+    const g = f.measurement_groups;
+    if (!g) return;
+    fieldMap.set(String(f.name).toLowerCase().trim(), {
+      groupName: g.name, displayFormat: g.display_format || "label_value",
+      unit: g.unit || "in", fieldName: f.name,
+    });
+  });
+
+  const measRows: any[] = [];
+  (o.line_items || []).forEach((li: any, idx: number) => {
+    const dbItem = insertedItems[idx];
+    extractMeasurementsFromMeta(li.meta_data || [], fieldMap).forEach((g) => {
+      measRows.push({
+        order_id: orderId, order_item_id: dbItem?.id || null,
+        group_name: g.groupName, display_format: g.displayFormat,
+        unit: g.unit, values: g.values, source: "woo",
+      });
+    });
+  });
+  extractMeasurementsFromMeta(o.meta_data || [], fieldMap).forEach((g) => {
+    measRows.push({
+      order_id: orderId, order_item_id: null,
+      group_name: g.groupName, display_format: g.displayFormat,
+      unit: g.unit, values: g.values, source: "woo",
+    });
+  });
+  if (measRows.length > 0) {
+    const { error: mErr } = await supabase.from("order_item_measurements").insert(measRows);
+    if (mErr) console.warn("Measurement insert warn:", mErr.message);
+  }
 
   return jsonResp({ success: true, order_id: orderId });
+}
+
+function extractMeasurementsFromMeta(
+  meta: any[],
+  fieldMap: Map<string, { groupName: string; displayFormat: string; unit: string; fieldName: string }>
+): Array<{ groupName: string; displayFormat: string; unit: string; values: { name: string; value: string }[] }> {
+  if (!Array.isArray(meta) || meta.length === 0 || fieldMap.size === 0) return [];
+  const grouped = new Map<string, { displayFormat: string; unit: string; values: { name: string; value: string }[] }>();
+  for (const m of meta) {
+    const rawKey = String(m?.key ?? m?.display_key ?? "").trim();
+    if (!rawKey || rawKey.startsWith("_")) continue;
+    const key = rawKey.toLowerCase();
+    const match = fieldMap.get(key);
+    if (!match) continue;
+    const value = String(m?.value ?? m?.display_value ?? "").trim();
+    if (!value) continue;
+    if (!grouped.has(match.groupName)) {
+      grouped.set(match.groupName, { displayFormat: match.displayFormat, unit: match.unit, values: [] });
+    }
+    grouped.get(match.groupName)!.values.push({ name: match.fieldName, value });
+  }
+  return Array.from(grouped.entries()).map(([groupName, info]) => ({
+    groupName, displayFormat: info.displayFormat, unit: info.unit, values: info.values,
+  }));
 }
 
 /* ====== Customer resolution: GLOBAL phone-based, alias-aware ======
