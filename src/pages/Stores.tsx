@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Globe, Wifi, WifiOff, Plus, RefreshCw, Trash2, Loader2 } from "lucide-react";
+import { Globe, Wifi, WifiOff, Plus, RefreshCw, Trash2, Loader2, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,7 @@ const Stores = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [backfillingId, setBackfillingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: "", url: "", consumer_key: "", consumer_secret: "" });
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
@@ -104,6 +105,52 @@ const Stores = () => {
     } else {
       toast({ title: "Store deleted" });
       loadStores();
+    }
+  };
+
+  const handleBackfillCompleted = async (storeId: string) => {
+    setBackfillingId(storeId);
+    try {
+      const { data: orders, error } = await supabase
+        .from("orders")
+        .select("id, order_number, status, woo_order_id")
+        .eq("store_id", storeId)
+        .not("woo_order_id", "is", null)
+        .in("status", ["delivered", "completed"]);
+      if (error) throw error;
+
+      const candidates = orders || [];
+      if (candidates.length === 0) {
+        toast({ title: "Nothing to backfill", description: "No delivered/completed orders linked to WooCommerce." });
+        return;
+      }
+
+      toast({ title: `Backfilling ${candidates.length} orders...`, description: "This may take a moment." });
+
+      let success = 0;
+      let failed = 0;
+      for (const o of candidates) {
+        try {
+          const { error: pushErr } = await supabase.functions.invoke("woo-push", {
+            body: { action: "push_order", order_id: o.id },
+          });
+          if (pushErr) throw pushErr;
+          success++;
+        } catch (e) {
+          console.error(`Backfill failed for order ${o.order_number}:`, e);
+          failed++;
+        }
+      }
+
+      toast({
+        title: "Backfill complete",
+        description: `${success} pushed to WooCommerce${failed > 0 ? `, ${failed} failed` : ""}.`,
+        variant: failed > 0 ? "destructive" : "default",
+      });
+    } catch (err: any) {
+      toast({ title: "Backfill failed", description: err.message, variant: "destructive" });
+    } finally {
+      setBackfillingId(null);
     }
   };
 
@@ -210,6 +257,19 @@ const Stores = () => {
                     <RefreshCw className="h-4 w-4 mr-1" />
                   )}
                   {store.status === "syncing" ? "Syncing..." : "Sync Now"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  title="Push locally delivered/completed orders to WooCommerce as Completed"
+                  disabled={backfillingId === store.id}
+                  onClick={() => handleBackfillCompleted(store.id)}
+                >
+                  {backfillingId === store.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
