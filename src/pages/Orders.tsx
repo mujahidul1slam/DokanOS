@@ -240,6 +240,19 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     return allCategories.filter((c) => c.store_id === storeFilter);
   }, [allCategories, storeFilter]);
 
+  // Categories grouped by store name (used when "All Stores" is selected)
+  const groupedCategories = useMemo(() => {
+    const storeNameMap = new Map(stores.map((s) => [s.id, s.name]));
+    const groups = new Map<string, { storeId: string | null; storeName: string; cats: { id: string; name: string; store_id: string | null }[] }>();
+    scopedCategories.forEach((c) => {
+      const key = c.store_id ?? "__none__";
+      const storeName = c.store_id ? (storeNameMap.get(c.store_id) || "Unknown Store") : "Uncategorized";
+      if (!groups.has(key)) groups.set(key, { storeId: c.store_id, storeName, cats: [] });
+      groups.get(key)!.cats.push(c);
+    });
+    return Array.from(groups.values()).sort((a, b) => a.storeName.localeCompare(b.storeName));
+  }, [scopedCategories, stores]);
+
   const filtered = useMemo(() => {
     const tabOrders = getTabOrders(tab);
     return tabOrders.filter((o) => {
