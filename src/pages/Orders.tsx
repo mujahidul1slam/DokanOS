@@ -562,30 +562,36 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-semibold">Orders</h1>
-          <p className="text-sm text-muted-foreground">Manage your order pipeline — from new orders to delivery</p>
+          <h1 className="font-heading text-2xl font-semibold">{preOrderMode ? "Pre-Orders" : "Orders"}</h1>
+          <p className="text-sm text-muted-foreground">
+            {preOrderMode
+              ? "Orders containing backordered products awaiting stock"
+              : "Manage your order pipeline — from new orders to delivery"}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          {canWrite && (
+          {canWrite && !preOrderMode && (
             <Button size="sm" onClick={() => setAddOrderOpen(true)}>
               <Plus className="h-4 w-4 mr-1" /> Add Order
             </Button>
           )}
-          {["pickup_pending", "in_transit", "on_hold", "returned"].includes(tab) && (
+          {!preOrderMode && ["pickup_pending", "in_transit", "on_hold", "returned"].includes(tab) && (
             <Button variant="outline" size="sm" onClick={handleTrackAll} disabled={trackingLoading}>
               {trackingLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
               Update Tracking
             </Button>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm"><MapPin className="h-4 w-4 mr-1" /> Pathao</Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={syncPathaoStores}><RefreshCw className="h-4 w-4 mr-2" /> Sync Stores</DropdownMenuItem>
-              <DropdownMenuItem onClick={syncCities}><MapPin className="h-4 w-4 mr-2" /> Sync Locations</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {!preOrderMode && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm"><MapPin className="h-4 w-4 mr-1" /> Pathao</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={syncPathaoStores}><RefreshCw className="h-4 w-4 mr-2" /> Sync Stores</DropdownMenuItem>
+                <DropdownMenuItem onClick={syncCities}><MapPin className="h-4 w-4 mr-2" /> Sync Locations</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
