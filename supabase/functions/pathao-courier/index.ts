@@ -48,6 +48,7 @@ async function pushOrderStatusToWoo(sb: any, orderId: string): Promise<void> {
     const text = await res.text();
     throw new Error(`woo-push responded ${res.status}: ${text}`);
   }
+}
 
 interface PathaoCreds {
   id: string;
