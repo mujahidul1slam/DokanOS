@@ -827,6 +827,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
     all: { icon: ShoppingCart, text: "No orders found" },
     new: { icon: Package, text: "No new orders to process" },
     ready: { icon: PackageCheck, text: "No orders ready to ship — mark orders as Ready from the New Orders tab" },
+    pre_order: { icon: Hourglass, text: "No pre-orders — orders containing backordered products will appear here" },
     pickup_pending: { icon: Clock, text: "No orders waiting for pickup" },
     in_transit: { icon: Truck, text: "No orders in transit" },
     delivered: { icon: CheckCircle2, text: "No delivered orders" },
