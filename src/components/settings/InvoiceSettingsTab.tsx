@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Upload, X, FileText, Plus, Trash2 } from "lucide-react";
+import { logAction } from "@/lib/auditLog";
 import type { InvoiceTemplateConfig, PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
 
 interface InvoiceSettings {
@@ -124,8 +125,12 @@ const InvoiceSettingsTab = () => {
       } as any)
       .eq("id", settings.id);
     setSaving(false);
-    if (error) toast.error("Failed to save");
-    else toast.success("Invoice settings saved");
+    if (error) { toast.error("Failed to save"); return; }
+    await logAction("update", "invoice_settings", settings.id, {
+      default_print_format: settings.default_print_format,
+      pickup_slip_print_format: settings.pickup_slip_print_format,
+    });
+    toast.success("Invoice settings saved");
   };
 
   if (!settings) {
