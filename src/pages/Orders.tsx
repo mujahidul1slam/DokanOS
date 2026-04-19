@@ -102,7 +102,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabKey>("new");
+  const [tab, setTab] = useState<TabKey>(preOrderMode ? "pre_order" : "new");
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
 
