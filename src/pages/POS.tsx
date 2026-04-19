@@ -478,6 +478,16 @@ const POS = () => {
           amount: p.amount,
         }));
         await supabase.from("order_payments").insert(payments);
+        for (const p of cart.payments) {
+          await supabase.from("order_timeline").insert({
+            order_id: order.id,
+            event: "payment_logged",
+            description: `Payment of ৳${p.amount.toLocaleString()} via ${p.method}`,
+          });
+        }
+        await logAction("create", "order_payment", order.id, {
+          order_number: orderNumber, payments: cart.payments.map((p) => ({ method: p.method, amount: p.amount })),
+        });
       }
 
       // Update shift stats
