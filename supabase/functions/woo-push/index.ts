@@ -11,10 +11,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { action, product_id, order_id } = await req.json();
+    const body = await req.json();
+    const { action, product_id, order_id, note, customer_note } = body;
 
     if (!action) {
-      return new Response(JSON.stringify({ error: "action is required (push_product, push_order, push_stock)" }), {
+      return new Response(JSON.stringify({ error: "action is required (push_product, push_order, push_stock, trash_order, post_note)" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -32,12 +33,8 @@ Deno.serve(async (req) => {
       return await pushStock(supabase, product_id);
     } else if (action === "trash_order" && order_id) {
       return await trashOrder(supabase, order_id);
-    } else if (action === "post_note" && order_id) {
-      const { note, customer_note } = await (async () => {
-        try { return { note: (arguments as any)[0]?.note, customer_note: false }; } catch { return { note: undefined, customer_note: false }; }
-      })();
-      // Re-parse body since we already consumed it; fall back via closure
-      return await postOrderNote(supabase, order_id, (globalThis as any).__lastNote || "", false);
+    } else if (action === "post_note" && order_id && note) {
+      return await postOrderNote(supabase, order_id, String(note), Boolean(customer_note));
     }
 
     return new Response(JSON.stringify({ error: "Invalid action or missing ID" }), {
