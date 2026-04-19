@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/", roles: ["admin", "staff", "viewer"] },
   { icon: ShoppingCart, label: "Orders", path: "/orders", roles: ["admin", "staff", "viewer"] },
-  { icon: Hourglass, label: "Pre-Orders", path: "/orders?tab=pre_order", roles: ["admin", "staff", "viewer"] },
+  { icon: Hourglass, label: "Pre-Orders", path: "/pre-orders", roles: ["admin", "staff", "viewer"] },
   { icon: Package, label: "Products", path: "/products", roles: ["admin", "staff"] },
   { icon: Users, label: "Customers", path: "/customers", roles: ["admin", "staff", "viewer"] },
   { icon: Monitor, label: "POS", path: "/pos", roles: ["admin", "staff"] },
