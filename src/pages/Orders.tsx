@@ -652,27 +652,29 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-        <div className="overflow-x-auto">
-          <TabsList className="inline-flex w-auto min-w-full">
-            <TabsTrigger value="all" className="gap-1.5 text-xs"><ShoppingCart className="h-3.5 w-3.5" />All ({counts.all})</TabsTrigger>
-            <TabsTrigger value="new" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />New Orders ({counts.new})</TabsTrigger>
-            <TabsTrigger value="ready" className="gap-1.5 text-xs"><PackageCheck className="h-3.5 w-3.5" />Ready to Ship ({counts.ready})</TabsTrigger>
-            <TabsTrigger value="pre_order" className="gap-1.5 text-xs"><Hourglass className="h-3.5 w-3.5" />Pre-Order ({counts.pre_order})</TabsTrigger>
-            <TabsTrigger value="pickup_pending" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Pickup Pending ({counts.pickup_pending})</TabsTrigger>
-            <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
-            <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
-            <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold ({counts.on_hold})</TabsTrigger>
-            <TabsTrigger value="returned" className="gap-1.5 text-xs"><Undo2 className="h-3.5 w-3.5" />Returned ({counts.returned})</TabsTrigger>
-            {counts.trash > 0 && <TabsTrigger value="trash" className="gap-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Trash ({counts.trash})</TabsTrigger>}
-          </TabsList>
-        </div>
+        {!preOrderMode && (
+          <div className="overflow-x-auto">
+            <TabsList className="inline-flex w-auto min-w-full">
+              <TabsTrigger value="all" className="gap-1.5 text-xs"><ShoppingCart className="h-3.5 w-3.5" />All ({counts.all})</TabsTrigger>
+              <TabsTrigger value="new" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />New Orders ({counts.new})</TabsTrigger>
+              <TabsTrigger value="ready" className="gap-1.5 text-xs"><PackageCheck className="h-3.5 w-3.5" />Ready to Ship ({counts.ready})</TabsTrigger>
+              <TabsTrigger value="pre_order" className="gap-1.5 text-xs"><Hourglass className="h-3.5 w-3.5" />Pre-Order ({counts.pre_order})</TabsTrigger>
+              <TabsTrigger value="pickup_pending" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Pickup Pending ({counts.pickup_pending})</TabsTrigger>
+              <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
+              <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
+              <TabsTrigger value="on_hold" className="gap-1.5 text-xs"><AlertTriangle className="h-3.5 w-3.5" />On Hold ({counts.on_hold})</TabsTrigger>
+              <TabsTrigger value="returned" className="gap-1.5 text-xs"><Undo2 className="h-3.5 w-3.5" />Returned ({counts.returned})</TabsTrigger>
+              {counts.trash > 0 && <TabsTrigger value="trash" className="gap-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Trash ({counts.trash})</TabsTrigger>}
+            </TabsList>
+          </div>
+        )}
         {/* Search & Filters — shared across all tabs */}
         <div className="flex flex-wrap items-center gap-3 mt-4">
           <div className="relative flex-1 min-w-[240px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order #, name, or phone..." className="pl-9" />
           </div>
-          {tab === "all" && (
+          {(tab === "all" || preOrderMode) && (
             <>
               <Popover>
                 <PopoverTrigger asChild>
@@ -685,19 +687,21 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                   <Calendar mode="range" selected={dateRange} onSelect={setDateRange} numberOfMonths={2} className="p-3 pointer-events-auto" />
                 </PopoverContent>
               </Popover>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="processing">New Order</SelectItem>
-                  <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
-                  <SelectItem value="shipped">Shipped</SelectItem>
-                  <SelectItem value="delivered">Delivered</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="returned">Returned</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
+              {tab === "all" && !preOrderMode && (
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="processing">New Order</SelectItem>
+                    <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
+                    <SelectItem value="shipped">Shipped</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="returned">Returned</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={paymentFilter} onValueChange={setPaymentFilter}>
                 <SelectTrigger className="w-[140px]"><SelectValue placeholder="Payment" /></SelectTrigger>
                 <SelectContent>
@@ -734,6 +738,46 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
+          {/* Multi-select Category Filter (scoped to selected store) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2 text-sm font-normal">
+                <Tags className="h-4 w-4" />
+                {categoryFilter.size === 0 ? "Categories" : `${categoryFilter.size} Categor${categoryFilter.size === 1 ? "y" : "ies"}`}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-60 max-h-80 overflow-y-auto">
+              {scopedCategories.length === 0 ? (
+                <div className="px-2 py-3 text-xs text-muted-foreground">
+                  {storeFilter === "all" ? "Pick a store to filter categories" : "No categories for this store"}
+                </div>
+              ) : (
+                <>
+                  {categoryFilter.size > 0 && (
+                    <DropdownMenuItem onClick={() => setCategoryFilter(new Set())} className="text-xs text-muted-foreground">
+                      Clear all
+                    </DropdownMenuItem>
+                  )}
+                  {scopedCategories.map((c) => (
+                    <DropdownMenuCheckboxItem
+                      key={c.id}
+                      checked={categoryFilter.has(c.id)}
+                      onCheckedChange={(checked) => {
+                        setCategoryFilter((prev) => {
+                          const next = new Set(prev);
+                          if (checked) next.add(c.id); else next.delete(c.id);
+                          return next;
+                        });
+                      }}
+                      onSelect={(e) => e.preventDefault()}
+                    >
+                      {c.name}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* ── Shared Table ── */}
