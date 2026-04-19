@@ -19,13 +19,23 @@ export interface Variation {
   attributes: Record<string, string>[] | string;
 }
 
+export interface MeasurementGroupCapture {
+  groupId: string;
+  groupName: string;
+  displayFormat: "label_value" | "dash_separated";
+  unit: string;
+  values: { name: string; value: string }[];
+  notes?: string;
+}
+
+// Kept for backwards compatibility (legacy fields)
 export interface CustomMeasurements {
-  chest: string;
-  length: string;
-  sleeves: string;
-  shoulders: string;
-  waist: string;
-  notes: string;
+  chest?: string;
+  length?: string;
+  sleeves?: string;
+  shoulders?: string;
+  waist?: string;
+  notes?: string;
 }
 
 export interface CartItem {
@@ -39,6 +49,7 @@ export interface CartItem {
   qty: number;
   customTailoring: boolean;
   measurements?: CustomMeasurements;
+  measurementGroups?: MeasurementGroupCapture[];
   isCustomItem?: boolean;
   discountType?: "flat" | "percent";
   discountValue?: number;
