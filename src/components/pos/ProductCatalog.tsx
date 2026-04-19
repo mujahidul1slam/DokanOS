@@ -108,19 +108,17 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
       </div>
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <Select value={activeCategory} onValueChange={setActiveCategory}>
-          <SelectTrigger className="h-9 w-44 bg-secondary text-sm">
-            <SelectValue placeholder="All Categories" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories
-              .filter((c) => selectedStore === "all" || c.store_id === selectedStore)
-              .map((cat) => (
-                <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
+        <CategoryFilter
+          mode="single"
+          categories={categories}
+          stores={stores}
+          storeFilter={selectedStore}
+          value={activeCategory}
+          onChange={setActiveCategory}
+          placeholder="All Categories"
+          size="sm"
+          className="h-9 w-44 bg-secondary text-sm"
+        />
 
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
           <SelectTrigger className="h-9 w-40 bg-secondary text-sm">
