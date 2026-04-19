@@ -535,6 +535,7 @@ const POS = () => {
           <ProductCatalog
             products={products}
             categories={categories}
+            productCatMap={productCatMap}
             stores={stores}
             onSelectProduct={handleSelectProduct}
             onAddCustomItem={() => setShowCustomItem(true)}
