@@ -377,6 +377,10 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "completed" });
+      // Mirror to Woo notes
+      orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
+        postWooOrderNote(o.id, "[OmniSync] Marked as Completed");
+      });
       toast({ title: `${ids.length} order(s) marked Completed` });
       setSelected(new Set());
       loadOrders();
@@ -397,6 +401,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
       await logAction("update", "order_payment_bulk", undefined, { ids, to: "paid" });
+      orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
+        postWooOrderNote(o.id, "[OmniSync] Payment marked as Paid");
+      });
       toast({ title: `${ids.length} order(s) marked Paid` });
       setSelected(new Set());
       loadOrders();
@@ -417,6 +424,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await supabase.from("order_timeline").insert(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "cancelled" });
+      orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
+        postWooOrderNote(o.id, "[OmniSync] Order cancelled");
+      });
       toast({ title: `${ids.length} order(s) cancelled` });
       setSelected(new Set());
       loadOrders();
@@ -439,6 +449,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const wooOrders = orders.filter((o) => ids.includes(o.id) && o.woo_order_id && o.store_id);
       for (const o of wooOrders) {
         try {
+          // Note posted before trash so it's visible in WC even if trashed
+          await postWooOrderNote(o.id, "[OmniSync] Order moved to trash");
           await supabase.functions.invoke("woo-push", { body: { action: "trash_order", order_id: o.id } });
         } catch {}
       }
