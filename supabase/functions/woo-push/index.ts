@@ -357,3 +357,33 @@ async function trashOrder(supabase: any, orderId: string) {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
+
+/* ====== POST ORDER NOTE in WooCommerce ====== */
+async function postOrderNote(supabase: any, orderId: string, note: string, customerNote: boolean) {
+  const ctx = await getStoreForOrder(supabase, orderId);
+  if (!ctx) {
+    return new Response(JSON.stringify({ success: false, skipped: true, reason: "Order not linked to a WooCommerce store" }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const { order, store } = ctx;
+  const url = `${baseUrl(store)}/wp-json/wc/v3/orders/${order.woo_order_id}/notes`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: wooAuth(store), "Content-Type": "application/json" },
+    body: JSON.stringify({ note, customer_note: customerNote, added_by_user: false }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`WooCommerce post note error: ${res.status}`, text);
+    return new Response(JSON.stringify({ error: `WooCommerce API error: ${res.status}`, details: text }), {
+      status: 502,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const data = await res.json();
+  return new Response(JSON.stringify({ success: true, note_id: data.id }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
