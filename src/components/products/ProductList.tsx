@@ -13,6 +13,7 @@ import ProductDetailSheet from "@/components/products/ProductDetailSheet";
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { downloadCsv } from "@/lib/exportCsv";
 import { format } from "date-fns";
+import CategoryFilter from "@/components/CategoryFilter";
 
 interface ProductRow {
   id: string;
@@ -129,12 +130,17 @@ const ProductList = () => {
     const catNameMap = new Map((cats || []).map((c: any) => [c.id, c.name]));
     const storeNameMap = new Map((storeData || []).map((s: any) => [s.id, s.name]));
     const productCatMap = new Map<string, string[]>();
+    const productCatIdMap = new Map<string, Set<string>>();
     for (const pc of pcData || []) {
       const names = productCatMap.get(pc.product_id) || [];
       const catName = catNameMap.get(pc.category_id);
       if (catName) names.push(catName);
       productCatMap.set(pc.product_id, names);
+
+      if (!productCatIdMap.has(pc.product_id)) productCatIdMap.set(pc.product_id, new Set());
+      productCatIdMap.get(pc.product_id)!.add(pc.category_id);
     }
+    setProductCatIdMap(productCatIdMap);
 
     const enriched = (data || []).map((p: any) => ({
       ...p,
@@ -416,20 +422,16 @@ const ProductList = () => {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or SKU…" className="pl-9" />
         </div>
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-[200px]"><SelectValue placeholder="Category" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {flatCategories.map(c => (
-              <SelectItem key={c.id} value={c.name}>
-                <span style={{ paddingLeft: `${c.depth * 16}px` }} className="flex items-center gap-1">
-                  {c.depth > 0 && <span className="text-muted-foreground">└</span>}
-                  {c.name}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <CategoryFilter
+          mode="single"
+          categories={dbCategories}
+          stores={stores}
+          storeFilter={storeFilter}
+          value={categoryFilter}
+          onChange={setCategoryFilter}
+          placeholder="All Categories"
+          className="w-[200px] justify-start"
+        />
         <Select value={stockFilter} onValueChange={setStockFilter}>
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Stock Status" /></SelectTrigger>
           <SelectContent>
