@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler } from "lucide-react";
+import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -7,14 +7,17 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTheme } from "@/hooks/useTheme";
+import { logAction } from "@/lib/auditLog";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
 import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
+import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
 
 const tabs = [
   { id: "general", label: "General", icon: Settings },
+  { id: "business", label: "Business Profile", icon: Building2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "pos", label: "POS Settings", icon: ShoppingCart },
   { id: "measurements", label: "Measurements", icon: Ruler },
@@ -40,6 +43,7 @@ const SettingsPage = () => {
     localStorage.setItem("omnisync-business-name", businessName);
     localStorage.setItem("omnisync-currency", currency);
     localStorage.setItem("omnisync-timezone", timezone);
+    logAction("update", "settings_general", undefined, { businessName, currency, timezone });
     toast.success("Settings saved");
   };
 
