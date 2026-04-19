@@ -549,6 +549,107 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   </div>
                 </section>
 
+                {/* Measurements */}
+                {measurements.length > 0 && (
+                  <section>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                        <Ruler className="h-4 w-4" /> Measurements
+                      </h3>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() => order && printMeasurementSlip(order.id)}
+                      >
+                        <Printer className="h-3.5 w-3.5" /> Print Slip
+                      </Button>
+                    </div>
+                    <div className="space-y-3">
+                      {activeItems.map((item) => {
+                        const itemMeas = measurements.filter((m) => m.order_item_id === item.id);
+                        if (itemMeas.length === 0) return null;
+                        return (
+                          <div key={`m-${item.id}`} className="rounded-lg border border-border p-3 bg-secondary/30">
+                            <div className="text-xs font-semibold text-foreground mb-2">{item.product_name}</div>
+                            {itemMeas.map((m) => {
+                              const vals = Array.isArray(m.values)
+                                ? m.values
+                                : Object.entries(m.values || {}).map(([name, value]) => ({ name, value: String(value) }));
+                              const filled = vals.filter((v: any) => v.value && String(v.value).trim() !== "");
+                              return (
+                                <div key={m.id} className="mb-2 last:mb-0">
+                                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold flex items-center gap-2">
+                                    {m.group_name}
+                                    {m.source === "woo" && (
+                                      <Badge className="bg-primary/10 text-primary border-primary/20 text-[9px] px-1.5 py-0">Woo</Badge>
+                                    )}
+                                  </div>
+                                  {m.display_format === "dash_separated" ? (
+                                    <div className="text-sm font-semibold tracking-wider mt-1">
+                                      {filled.map((v: any) => v.value).join(" - ")} {m.unit}
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-2 gap-x-4 mt-1">
+                                      {filled.map((v: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between text-xs border-b border-dashed border-border py-0.5">
+                                          <span className="text-muted-foreground">{v.name}</span>
+                                          <span className="font-medium">{v.value} {m.unit}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {m.notes && (
+                                    <div className="text-[11px] italic text-muted-foreground mt-1">{m.notes}</div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                      {/* Orphan measurements (no order_item_id) */}
+                      {measurements.filter((m) => !m.order_item_id).length > 0 && (
+                        <div className="rounded-lg border border-border p-3 bg-secondary/30">
+                          <div className="text-xs font-semibold text-foreground mb-2">General</div>
+                          {measurements.filter((m) => !m.order_item_id).map((m) => {
+                            const vals = Array.isArray(m.values)
+                              ? m.values
+                              : Object.entries(m.values || {}).map(([name, value]) => ({ name, value: String(value) }));
+                            const filled = vals.filter((v: any) => v.value && String(v.value).trim() !== "");
+                            return (
+                              <div key={m.id} className="mb-2 last:mb-0">
+                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold flex items-center gap-2">
+                                  {m.group_name}
+                                  {m.source === "woo" && (
+                                    <Badge className="bg-primary/10 text-primary border-primary/20 text-[9px] px-1.5 py-0">Woo</Badge>
+                                  )}
+                                </div>
+                                {m.display_format === "dash_separated" ? (
+                                  <div className="text-sm font-semibold tracking-wider mt-1">
+                                    {filled.map((v: any) => v.value).join(" - ")} {m.unit}
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-2 gap-x-4 mt-1">
+                                    {filled.map((v: any, idx: number) => (
+                                      <div key={idx} className="flex justify-between text-xs border-b border-dashed border-border py-0.5">
+                                        <span className="text-muted-foreground">{v.name}</span>
+                                        <span className="font-medium">{v.value} {m.unit}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {measurements.length > 0 && <Separator />}
+
                 {/* Notes */}
                 <section>
                   <h3 className="text-sm font-semibold text-foreground mb-2">Order Notes</h3>
