@@ -80,7 +80,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 20;
 
-type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
+type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
 const Orders = () => {
   const { role } = useAuth();
