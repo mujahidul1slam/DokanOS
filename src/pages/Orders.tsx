@@ -507,8 +507,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-semibold">Orders</h1>
-          <p className="text-sm text-muted-foreground">Manage your order pipeline — from new orders to delivery</p>
+          <h1 className="font-heading text-2xl font-semibold">{preOrderMode ? "Pre-Orders" : "Orders"}</h1>
+          <p className="text-sm text-muted-foreground">{preOrderMode ? "Orders containing items on backorder — fulfill once stock arrives" : "Manage your order pipeline — from new orders to delivery"}</p>
         </div>
         <div className="flex items-center gap-2">
           {canWrite && (
