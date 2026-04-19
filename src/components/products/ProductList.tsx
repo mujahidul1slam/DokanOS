@@ -155,17 +155,22 @@ const ProductList = () => {
   const categoryTree = useMemo(() => buildCategoryTree(scopedDbCategories), [scopedDbCategories]);
   const flatCategories = useMemo(() => flattenCategoryTree(categoryTree), [categoryTree]);
 
+  // Map product -> set of category IDs (used for filtering by ID)
+  const [productCatIdMap, setProductCatIdMap] = useState<Map<string, Set<string>>>(new Map());
+
   const filtered = useMemo(() => {
     return products.filter(p => {
       const q = search.toLowerCase();
       const matchSearch = !q || p.name.toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q);
-      const matchCategory = categoryFilter === "all" || (p.categoryNames || []).includes(categoryFilter);
+      const matchCategory =
+        categoryFilter === "all" ||
+        (productCatIdMap.get(p.id)?.has(categoryFilter) ?? false);
       const matchStock = stockFilter === "all" || p.stock_status === stockFilter;
       const matchStore = storeFilter === "all" || p.store_id === storeFilter;
       const matchFeatured = featuredFilter === "all" || (featuredFilter === "featured" && p.is_featured) || (featuredFilter === "not_featured" && !p.is_featured);
       return matchSearch && matchCategory && matchStock && matchStore && matchFeatured;
     });
-  }, [products, search, categoryFilter, stockFilter, storeFilter, featuredFilter]);
+  }, [products, search, categoryFilter, stockFilter, storeFilter, featuredFilter, productCatIdMap]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
