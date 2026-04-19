@@ -824,7 +824,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                     <TableCell>
                       <ProductsList items={order.productItems} />
                     </TableCell>
-                    {tab === "all" && <TableCell><SourceBadge source={order.source} /></TableCell>}
+                    {tab === "all" && <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} /></TableCell>}
                     <TableCell className="text-right">
                       <div className="font-medium text-foreground">৳{Number(order.total).toLocaleString()}</div>
                       {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (
