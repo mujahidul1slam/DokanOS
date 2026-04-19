@@ -1,16 +1,18 @@
 import { useState, useMemo, RefObject } from "react";
-import { Search, ScanBarcode, Plus, Package, SlidersHorizontal, ArrowUpDown, Eye, EyeOff, Tag, Store as StoreIcon, Star, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, ScanBarcode, Plus, Package, SlidersHorizontal, ArrowUpDown, Eye, EyeOff, Tag, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
+import CategoryFilter from "@/components/CategoryFilter";
 import type { Product } from "./types";
 
 interface Props {
   products: Product[];
-  categories: { id: string; name: string; store_id: string | null }[];
+  categories: { id: string; name: string; parent_id?: string | null; store_id: string | null }[];
+  productCatMap?: Map<string, Set<string>>;
   stores: { id: string; name: string }[];
   onSelectProduct: (p: Product) => void;
   onAddCustomItem: () => void;
@@ -19,9 +21,9 @@ interface Props {
 
 const PER_PAGE_OPTIONS = [12, 24, 48, 96];
 
-const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCustomItem, searchInputRef }: Props) => {
+const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectProduct, onAddCustomItem, searchInputRef }: Props) => {
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [activeCategory, setActiveCategory] = useState<string>("all"); // category id or "all"
   const [sortBy, setSortBy] = useState<"name" | "newest" | "price_asc" | "price_desc" | "popularity">("name");
   const [hideOutOfStock, setHideOutOfStock] = useState(false);
   const [onSaleOnly, setOnSaleOnly] = useState(false);
@@ -31,7 +33,15 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
 
   const filtered = useMemo(() => {
     let list = products;
-    if (activeCategory !== "all") list = list.filter((p) => p.category === activeCategory);
+    if (activeCategory !== "all") {
+      list = list.filter((p) => {
+        const ids = productCatMap?.get(p.id);
+        if (ids?.has(activeCategory)) return true;
+        // Fallback: match by category name (legacy data without product_categories rows)
+        const cat = categories.find((c) => c.id === activeCategory);
+        return cat ? p.category === cat.name : false;
+      });
+    }
     if (hideOutOfStock) list = list.filter((p) => p.stock_quantity > 0);
     if (selectedStore !== "all") list = list.filter((p) => (p as any).store_id === selectedStore);
     if (search) {
@@ -67,7 +77,7 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
     nonFeatured.sort(sortFn);
 
     return [...featured, ...nonFeatured];
-  }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore]);
+  }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore, productCatMap, categories]);
 
   // Reset page on filter change
   useMemo(() => { setPage(1); }, [search, activeCategory, sortBy, hideOutOfStock, selectedStore, perPage]);
@@ -98,19 +108,17 @@ const ProductCatalog = ({ products, categories, stores, onSelectProduct, onAddCu
       </div>
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <Select value={activeCategory} onValueChange={setActiveCategory}>
-          <SelectTrigger className="h-9 w-44 bg-secondary text-sm">
-            <SelectValue placeholder="All Categories" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories
-              .filter((c) => selectedStore === "all" || c.store_id === selectedStore)
-              .map((cat) => (
-                <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
+        <CategoryFilter
+          mode="single"
+          categories={categories}
+          stores={stores}
+          storeFilter={selectedStore}
+          value={activeCategory}
+          onChange={setActiveCategory}
+          placeholder="All Categories"
+          size="sm"
+          className="h-9 w-44 bg-secondary text-sm"
+        />
 
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
           <SelectTrigger className="h-9 w-40 bg-secondary text-sm">

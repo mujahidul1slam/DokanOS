@@ -42,6 +42,7 @@ import { TableSkeleton } from "@/components/ui/loading-states";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { printInvoice } from "@/components/pos/InvoicePrint";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
+import CategoryFilter from "@/components/CategoryFilter";
 
 interface OrderRow {
   id: string;
@@ -752,73 +753,15 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
-          {/* Multi-select Category Filter (scoped to selected store) */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2 text-sm font-normal">
-                <Tags className="h-4 w-4" />
-                {categoryFilter.size === 0 ? "Categories" : `${categoryFilter.size} Categor${categoryFilter.size === 1 ? "y" : "ies"}`}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64 max-h-96 overflow-y-auto">
-              {scopedCategories.length === 0 ? (
-                <div className="px-2 py-3 text-xs text-muted-foreground">
-                  No categories available
-                </div>
-              ) : (
-                <>
-                  {categoryFilter.size > 0 && (
-                    <DropdownMenuItem onClick={() => setCategoryFilter(new Set())} className="text-xs text-muted-foreground">
-                      Clear all
-                    </DropdownMenuItem>
-                  )}
-                  {storeFilter === "all" ? (
-                    groupedCategories.map((group, idx) => (
-                      <div key={group.storeId ?? `none-${idx}`}>
-                        {idx > 0 && <DropdownMenuSeparator />}
-                        <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">
-                          {group.storeName}
-                        </DropdownMenuLabel>
-                        {group.cats.map((c) => (
-                          <DropdownMenuCheckboxItem
-                            key={c.id}
-                            checked={categoryFilter.has(c.id)}
-                            onCheckedChange={(checked) => {
-                              setCategoryFilter((prev) => {
-                                const next = new Set(prev);
-                                if (checked) next.add(c.id); else next.delete(c.id);
-                                return next;
-                              });
-                            }}
-                            onSelect={(e) => e.preventDefault()}
-                          >
-                            {c.name}
-                          </DropdownMenuCheckboxItem>
-                        ))}
-                      </div>
-                    ))
-                  ) : (
-                    scopedCategories.map((c) => (
-                      <DropdownMenuCheckboxItem
-                        key={c.id}
-                        checked={categoryFilter.has(c.id)}
-                        onCheckedChange={(checked) => {
-                          setCategoryFilter((prev) => {
-                            const next = new Set(prev);
-                            if (checked) next.add(c.id); else next.delete(c.id);
-                            return next;
-                          });
-                        }}
-                        onSelect={(e) => e.preventDefault()}
-                      >
-                        {c.name}
-                      </DropdownMenuCheckboxItem>
-                    ))
-                  )}
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Multi-select Category Filter (hierarchy + grouped by store) */}
+          <CategoryFilter
+            mode="multi"
+            categories={allCategories}
+            stores={stores}
+            storeFilter={storeFilter}
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+          />
         </div>
 
         {/* ── Shared Table ── */}
