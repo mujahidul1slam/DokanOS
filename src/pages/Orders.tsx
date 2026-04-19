@@ -233,6 +233,12 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     });
   }, [orders]);
 
+  // Categories scoped to currently selected store filter
+  const scopedCategories = useMemo(() => {
+    if (storeFilter === "all") return allCategories;
+    return allCategories.filter((c) => c.store_id === storeFilter);
+  }, [allCategories, storeFilter]);
+
   const filtered = useMemo(() => {
     const tabOrders = getTabOrders(tab);
     return tabOrders.filter((o) => {
@@ -246,6 +252,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const matchSource = sourceFilter === "all" || o.source === sourceFilter;
       const matchStore = storeFilter === "all" || o.store_id === storeFilter;
       const matchDelivery = deliveryFilter === "all" || o.fulfillment_type === deliveryFilter;
+      let matchCategory = true;
+      if (categoryFilter.size > 0) {
+        const orderCats = orderCategoryMap.get(o.id);
+        matchCategory = !!orderCats && Array.from(categoryFilter).some((c) => orderCats.has(c));
+      }
       let matchDate = true;
       if (dateRange?.from) {
         const d = new Date(o.created_at);
@@ -256,14 +267,24 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           matchDate = matchDate && d <= end;
         }
       }
-      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery;
+      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery && matchCategory;
     });
-  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, dateRange, tab, getTabOrders]);
+  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, dateRange, tab]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, categoryFilter, dateRange, tab]);
+
+  // When store filter changes, drop category selections that no longer belong
+  useEffect(() => {
+    if (storeFilter === "all") return;
+    setCategoryFilter((prev) => {
+      const allowed = new Set(scopedCategories.map((c) => c.id));
+      const next = new Set(Array.from(prev).filter((id) => allowed.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [storeFilter, scopedCategories]);
   useEffect(() => { setSelected(new Set()); }, [tab]);
 
   const toggleSelect = (id: string) => {
