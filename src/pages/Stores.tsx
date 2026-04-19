@@ -258,6 +258,19 @@ const Stores = () => {
                   )}
                   {store.status === "syncing" ? "Syncing..." : "Sync Now"}
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  title="Push locally delivered/completed orders to WooCommerce as Completed"
+                  disabled={backfillingId === store.id}
+                  onClick={() => handleBackfillCompleted(store.id)}
+                >
+                  {backfillingId === store.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">
