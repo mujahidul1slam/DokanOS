@@ -103,7 +103,7 @@ const ProductList = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editProductId, setEditProductId] = useState<string | null>(null);
-  const [dbCategories, setDbCategories] = useState<{ id: string; name: string; parent_id: string | null }[]>([]);
+  const [dbCategories, setDbCategories] = useState<{ id: string; name: string; parent_id: string | null; store_id: string | null }[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [page, setPage] = useState(1);
 
@@ -119,7 +119,7 @@ const ProductList = () => {
     const [{ data }, { data: pcData }, { data: cats }, { data: storeData }] = await Promise.all([
       supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id, is_featured, sales_count").order("name"),
       supabase.from("product_categories").select("product_id, category_id"),
-      supabase.from("categories").select("id, name, parent_id"),
+      supabase.from("categories").select("id, name, parent_id, store_id"),
       supabase.from("stores").select("id, name"),
     ]);
 
