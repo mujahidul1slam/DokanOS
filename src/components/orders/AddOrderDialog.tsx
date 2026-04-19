@@ -419,6 +419,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 <SelectContent>
                   <SelectItem value="delivery">Delivery</SelectItem>
                   <SelectItem value="pickup">Pickup</SelectItem>
+                  <SelectItem value="walkin">Walk-in</SelectItem>
                 </SelectContent>
               </Select>
             </div>
