@@ -145,7 +145,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
         .from("orders")
-        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, stores(name), order_items(id, product_name, quantity, products(stock_status))")
+        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, stores(name), order_items(id, product_id, product_name, quantity, products(stock_status))")
         .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
@@ -159,12 +159,45 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       ),
     }));
     setOrders(mapped as OrderRow[]);
+
+    // Build order -> category-id set map for filtering
+    const productIds = Array.from(new Set(
+      (data || []).flatMap((o: any) => (o.order_items || []).map((i: any) => i.product_id).filter(Boolean))
+    ));
+    if (productIds.length > 0) {
+      const { data: pcData } = await supabase
+        .from("product_categories")
+        .select("product_id, category_id")
+        .in("product_id", productIds);
+      const productCatMap = new Map<string, Set<string>>();
+      (pcData || []).forEach((pc: any) => {
+        if (!productCatMap.has(pc.product_id)) productCatMap.set(pc.product_id, new Set());
+        productCatMap.get(pc.product_id)!.add(pc.category_id);
+      });
+      const orderCatMap = new Map<string, Set<string>>();
+      (data || []).forEach((o: any) => {
+        const set = new Set<string>();
+        (o.order_items || []).forEach((i: any) => {
+          const cats = productCatMap.get(i.product_id);
+          if (cats) cats.forEach((c) => set.add(c));
+        });
+        orderCatMap.set(o.id, set);
+      });
+      setOrderCategoryMap(orderCatMap);
+    } else {
+      setOrderCategoryMap(new Map());
+    }
+
     setLoading(false);
   }, []);
 
   const loadStores = useCallback(async () => {
-    const { data } = await supabase.from("stores").select("id, name").order("name");
-    setStores(data || []);
+    const [{ data: storeData }, { data: catData }] = await Promise.all([
+      supabase.from("stores").select("id, name").order("name"),
+      supabase.from("categories").select("id, name, store_id").order("name"),
+    ]);
+    setStores(storeData || []);
+    setAllCategories((catData || []) as any);
   }, []);
 
   useEffect(() => { loadOrders(); loadStores(); }, [loadOrders, loadStores]);
