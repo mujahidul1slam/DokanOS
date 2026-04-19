@@ -17,6 +17,7 @@ import KeyboardShortcutsHelp from "@/components/pos/KeyboardShortcutsHelp";
 import type { Product, Cart, CartItem, CustomerData } from "@/components/pos/types";
 import { saveOrderItemMeasurements } from "@/lib/measurements";
 import { printMeasurementSlip } from "@/components/orders/MeasurementSlipPrint";
+import { logAction } from "@/lib/auditLog";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
@@ -410,6 +411,17 @@ const POS = () => {
       .single();
 
     if (order) {
+      // Order placed timeline event
+      await supabase.from("order_timeline").insert({
+        order_id: order.id,
+        event: "created",
+        description: `Order placed via POS — Total ৳${total.toLocaleString()}`,
+      });
+      await logAction("create", "order", order.id, {
+        order_number: orderNumber, source: "pos", total, payment_status: paymentStatus,
+        item_count: cart.items.length,
+      });
+
       const items = cart.items.map((i) => ({
         order_id: order.id,
         product_id: i.isCustomItem ? null : i.productId,
