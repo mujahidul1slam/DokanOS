@@ -10,6 +10,7 @@ import CommandPalette from "@/components/CommandPalette";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders";
+import PreOrders from "./pages/PreOrders";
 import Customers from "./pages/Customers";
 import Products from "./pages/Products";
 import POS from "./pages/POS";
@@ -69,6 +70,7 @@ const AppRoutes = () => {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/orders" element={<Orders />} />
+        <Route path="/pre-orders" element={<PreOrders />} />
         <Route path="/customers" element={<Customers />} />
         <Route path="/products" element={
           <RoleGuard allowedRoles={["admin", "staff"]}>
