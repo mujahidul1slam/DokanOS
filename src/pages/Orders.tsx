@@ -82,7 +82,11 @@ const PAGE_SIZE = 20;
 
 type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
-const Orders = () => {
+interface OrdersProps {
+  preOrderMode?: boolean;
+}
+
+const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const { role } = useAuth();
   const { settings: invoiceSettings } = useInvoiceSettings();
   const canWrite = role === "admin" || role === "staff";
