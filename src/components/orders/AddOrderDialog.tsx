@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Search, Plus, Minus, Trash2, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { logAction } from "@/lib/auditLog";
 
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -285,7 +286,11 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       await supabase.from("order_timeline").insert({
         order_id: order.id,
         event: "created",
-        description: `Order created manually (${source})`,
+        description: `Order placed manually (${source})`,
+      });
+
+      await logAction("create", "order", order.id, {
+        order_number: orderNumber, source, total: order.total ?? null,
       });
 
       toast.success(`Order ${orderNumber} created`);

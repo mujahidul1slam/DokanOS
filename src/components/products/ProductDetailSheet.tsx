@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
+import { logAction } from "@/lib/auditLog";
 
 /* ---------- types ---------- */
 interface Variation {
@@ -254,11 +255,18 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     };
 
     let savedId = form.id;
+    const isUpdate = !!form.id;
     if (form.id) {
       await supabase.from("products").update(payload).eq("id", form.id);
     } else {
       const { data } = await supabase.from("products").insert(payload).select("id").single();
       savedId = data?.id;
+    }
+    if (savedId) {
+      await logAction(isUpdate ? "update" : "create", "product", savedId, {
+        name: payload.name, sku: payload.sku, price: payload.price,
+        stock_quantity: payload.stock_quantity, is_active: payload.is_active,
+      });
     }
 
     if (savedId) {

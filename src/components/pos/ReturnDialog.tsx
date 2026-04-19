@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, RotateCcw, Package } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { logAction } from "@/lib/auditLog";
 
 interface Props {
   open: boolean;
@@ -142,6 +143,10 @@ const ReturnDialog = ({ open, onClose }: Props) => {
         order_id: selectedOrder.id,
         event: "return_processed",
         description: `Return ${returnNumber}: ৳${refundTotal.toLocaleString()} refunded via ${refundMethod}`,
+      });
+
+      await logAction("create", "pos_return", selectedOrder.id, {
+        return_number: returnNumber, refund_amount: refundTotal, refund_method: refundMethod, restock,
       });
 
       toast({ title: "Return processed", description: `${returnNumber} — ৳${refundTotal.toLocaleString()} refunded` });
