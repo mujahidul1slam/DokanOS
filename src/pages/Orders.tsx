@@ -157,7 +157,10 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         .filter((i: any) => i.product_name)
         .map((i: any) => ({ name: i.product_name, qty: i.quantity || 1 })),
       hasBackorder: (o.order_items || []).some(
-        (i: any) => i.products?.stock_status === "onbackorder"
+        (i: any) => {
+          const s = (i.products?.stock_status || "").toLowerCase().replace(/[_-\s]/g, "");
+          return s === "onbackorder";
+        }
       ),
     }));
     setOrders(mapped as OrderRow[]);
