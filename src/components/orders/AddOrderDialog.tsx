@@ -385,30 +385,38 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">City</Label>
-              <Select value={selectedCity?.toString() || ""} onValueChange={(v) => setSelectedCity(Number(v))}>
-                <SelectTrigger><SelectValue placeholder="Select city" /></SelectTrigger>
-                <SelectContent>
-                  {cities.map(c => <SelectItem key={c.city_id} value={c.city_id.toString()}>{c.city_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={cities.map((c) => ({ value: c.city_id.toString(), label: c.city_name }))}
+                value={selectedCity?.toString() || ""}
+                onChange={(v) => setSelectedCity(v ? Number(v) : null)}
+                placeholder="Select city"
+                searchPlaceholder="Search cities..."
+                emptyText="No city found"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Zone</Label>
-              <Select value={selectedZone?.toString() || ""} onValueChange={(v) => setSelectedZone(Number(v))} disabled={!selectedCity}>
-                <SelectTrigger><SelectValue placeholder="Select zone" /></SelectTrigger>
-                <SelectContent>
-                  {zones.map(z => <SelectItem key={z.zone_id} value={z.zone_id.toString()}>{z.zone_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={zones.map((z) => ({ value: z.zone_id.toString(), label: z.zone_name }))}
+                value={selectedZone?.toString() || ""}
+                onChange={(v) => setSelectedZone(v ? Number(v) : null)}
+                placeholder="Select zone"
+                searchPlaceholder="Search zones..."
+                emptyText="No zone found"
+                disabled={!selectedCity}
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Area</Label>
-              <Select value={selectedArea?.toString() || ""} onValueChange={(v) => setSelectedArea(Number(v))} disabled={!selectedZone}>
-                <SelectTrigger><SelectValue placeholder="Select area" /></SelectTrigger>
-                <SelectContent>
-                  {areas.map(a => <SelectItem key={a.area_id} value={a.area_id.toString()}>{a.area_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={areas.map((a) => ({ value: a.area_id.toString(), label: a.area_name }))}
+                value={selectedArea?.toString() || ""}
+                onChange={(v) => setSelectedArea(v ? Number(v) : null)}
+                placeholder="Select area"
+                searchPlaceholder="Search areas..."
+                emptyText="No area found"
+                disabled={!selectedZone}
+              />
             </div>
           </div>
 
