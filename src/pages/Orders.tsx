@@ -6,7 +6,7 @@ import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
-  Trash2, RotateCcw,
+  Trash2, RotateCcw, Hourglass,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -73,13 +73,14 @@ interface OrderRow {
   stores: { name: string } | null;
   itemCount: number;
   productItems: { name: string; qty: number }[];
+  hasBackorder: boolean;
 }
 
 interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 20;
 
-type TabKey = "all" | "new" | "ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
+type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
 const Orders = () => {
   const { role } = useAuth();
@@ -121,17 +122,25 @@ const Orders = () => {
   // Open detail sheet from ?order=ID URL param (e.g., from Customer profile)
   useEffect(() => {
     const orderParam = searchParams.get("order");
+    const tabParam = searchParams.get("tab") as TabKey | null;
+    let changed = false;
     if (orderParam) {
       setDetailOrderId(orderParam);
       searchParams.delete("order");
-      setSearchParams(searchParams, { replace: true });
+      changed = true;
     }
+    if (tabParam) {
+      setTab(tabParam);
+      searchParams.delete("tab");
+      changed = true;
+    }
+    if (changed) setSearchParams(searchParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
         .from("orders")
-        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, stores(name), order_items(id, product_name, quantity)")
+        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, stores(name), order_items(id, product_name, quantity, products(stock_status))")
         .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
@@ -140,6 +149,9 @@ const Orders = () => {
       productItems: (o.order_items || [])
         .filter((i: any) => i.product_name)
         .map((i: any) => ({ name: i.product_name, qty: i.quantity || 1 })),
+      hasBackorder: (o.order_items || []).some(
+        (i: any) => i.products?.stock_status === "onbackorder"
+      ),
     }));
     setOrders(mapped as OrderRow[]);
     setLoading(false);
@@ -162,9 +174,11 @@ const Orders = () => {
     return active.filter((o) => {
       switch (tabKey) {
         case "new":
-          return o.status === "processing" && !o.consignment_id;
+          return o.status === "processing" && !o.consignment_id && !o.hasBackorder;
         case "ready":
-          return o.status === "ready_to_ship" && !o.consignment_id;
+          return o.status === "ready_to_ship" && !o.consignment_id && !o.hasBackorder;
+        case "pre_order":
+          return o.hasBackorder && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status);
         case "pickup_pending":
           return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up","Pickup Cancel","Pickup Cancelled"].includes(o.tracking_status || "");
         case "in_transit":
@@ -227,6 +241,7 @@ const Orders = () => {
     all: orders.filter((o) => !o.deleted_at).length,
     new: getTabOrders("new").length,
     ready: getTabOrders("ready").length,
+    pre_order: getTabOrders("pre_order").length,
     pickup_pending: getTabOrders("pickup_pending").length,
     in_transit: getTabOrders("in_transit").length,
     delivered: getTabOrders("delivered").length,
@@ -577,6 +592,7 @@ const Orders = () => {
             <TabsTrigger value="all" className="gap-1.5 text-xs"><ShoppingCart className="h-3.5 w-3.5" />All ({counts.all})</TabsTrigger>
             <TabsTrigger value="new" className="gap-1.5 text-xs"><Package className="h-3.5 w-3.5" />New Orders ({counts.new})</TabsTrigger>
             <TabsTrigger value="ready" className="gap-1.5 text-xs"><PackageCheck className="h-3.5 w-3.5" />Ready to Ship ({counts.ready})</TabsTrigger>
+            <TabsTrigger value="pre_order" className="gap-1.5 text-xs"><Hourglass className="h-3.5 w-3.5" />Pre-Order ({counts.pre_order})</TabsTrigger>
             <TabsTrigger value="pickup_pending" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Pickup Pending ({counts.pickup_pending})</TabsTrigger>
             <TabsTrigger value="in_transit" className="gap-1.5 text-xs"><Truck className="h-3.5 w-3.5" />In Transit ({counts.in_transit})</TabsTrigger>
             <TabsTrigger value="delivered" className="gap-1.5 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Delivered ({counts.delivered})</TabsTrigger>
@@ -819,6 +835,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
     all: { icon: ShoppingCart, text: "No orders found" },
     new: { icon: Package, text: "No new orders to process" },
     ready: { icon: PackageCheck, text: "No orders ready to ship — mark orders as Ready from the New Orders tab" },
+    pre_order: { icon: Hourglass, text: "No pre-orders — orders containing backordered products will appear here" },
     pickup_pending: { icon: Clock, text: "No orders waiting for pickup" },
     in_transit: { icon: Truck, text: "No orders in transit" },
     delivered: { icon: CheckCircle2, text: "No delivered orders" },
