@@ -102,6 +102,36 @@ export type Database = {
           },
         ]
       }
+      custom_roles: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_system: boolean
+          name: string
+          permissions: Database["public"]["Enums"]["app_permission"][]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_system?: boolean
+          name: string
+          permissions?: Database["public"]["Enums"]["app_permission"][]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_system?: boolean
+          name?: string
+          permissions?: Database["public"]["Enums"]["app_permission"][]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customer_aliases: {
         Row: {
           created_at: string
@@ -1037,6 +1067,33 @@ export type Database = {
           },
         ]
       }
+      permission_settings: {
+        Row: {
+          created_at: string
+          enforce_store_scoping: boolean
+          id: string
+          large_discount_amount: number | null
+          large_discount_percent: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enforce_store_scoping?: boolean
+          id?: string
+          large_discount_amount?: number | null
+          large_discount_percent?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enforce_store_scoping?: boolean
+          id?: string
+          large_discount_amount?: number | null
+          large_discount_percent?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       pos_returns: {
         Row: {
           created_at: string
@@ -1421,6 +1478,59 @@ export type Database = {
         }
         Relationships: []
       }
+      user_custom_roles: {
+        Row: {
+          assigned_at: string
+          custom_role_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          custom_role_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          assigned_at?: string
+          custom_role_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_custom_roles_custom_role_id_fkey"
+            columns: ["custom_role_id"]
+            isOneToOne: false
+            referencedRelation: "custom_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_permissions: {
+        Row: {
+          created_at: string
+          granted: boolean
+          id: string
+          permission: Database["public"]["Enums"]["app_permission"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted?: boolean
+          id?: string
+          permission: Database["public"]["Enums"]["app_permission"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          granted?: boolean
+          id?: string
+          permission?: Database["public"]["Enums"]["app_permission"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -1438,6 +1548,42 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_store_access: {
+        Row: {
+          created_at: string
+          id: string
+          store_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          store_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          store_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_store_access_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_store_access_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -1473,9 +1619,21 @@ export type Database = {
       }
     }
     Functions: {
+      get_user_permissions: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["app_permission"][]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
+      }
+      get_user_store_ids: { Args: { _user_id: string }; Returns: string[] }
+      has_permission: {
+        Args: {
+          _permission: Database["public"]["Enums"]["app_permission"]
+          _user_id: string
+        }
+        Returns: boolean
       }
       has_role: {
         Args: {
@@ -1494,8 +1652,49 @@ export type Database = {
       }
       normalize_bd_phone: { Args: { _phone: string }; Returns: string }
       purge_trashed_orders: { Args: never; Returns: undefined }
+      user_has_store_access: {
+        Args: { _store_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
+      app_permission:
+        | "dashboard.view"
+        | "orders.view"
+        | "orders.create"
+        | "orders.edit"
+        | "orders.delete"
+        | "orders.change_status"
+        | "orders.dispatch"
+        | "orders.refund"
+        | "orders.log_payment"
+        | "orders.discount_large"
+        | "preorders.view"
+        | "preorders.manage"
+        | "customers.view"
+        | "customers.edit"
+        | "customers.delete"
+        | "products.view"
+        | "products.create"
+        | "products.edit"
+        | "products.delete"
+        | "products.view_cost"
+        | "products.edit_cost"
+        | "pos.use"
+        | "pos.discount_large"
+        | "pos.refund"
+        | "pos.shift_close"
+        | "analytics.view"
+        | "analytics.view_revenue"
+        | "integrations.view"
+        | "integrations.manage"
+        | "stores.view"
+        | "stores.manage"
+        | "settings.view"
+        | "settings.manage"
+        | "team.view"
+        | "team.manage"
+        | "audit.view"
       app_role: "admin" | "staff" | "viewer"
     }
     CompositeTypes: {
@@ -1624,6 +1823,44 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_permission: [
+        "dashboard.view",
+        "orders.view",
+        "orders.create",
+        "orders.edit",
+        "orders.delete",
+        "orders.change_status",
+        "orders.dispatch",
+        "orders.refund",
+        "orders.log_payment",
+        "orders.discount_large",
+        "preorders.view",
+        "preorders.manage",
+        "customers.view",
+        "customers.edit",
+        "customers.delete",
+        "products.view",
+        "products.create",
+        "products.edit",
+        "products.delete",
+        "products.view_cost",
+        "products.edit_cost",
+        "pos.use",
+        "pos.discount_large",
+        "pos.refund",
+        "pos.shift_close",
+        "analytics.view",
+        "analytics.view_revenue",
+        "integrations.view",
+        "integrations.manage",
+        "stores.view",
+        "stores.manage",
+        "settings.view",
+        "settings.manage",
+        "team.view",
+        "team.manage",
+        "audit.view",
+      ],
       app_role: ["admin", "staff", "viewer"],
     },
   },
