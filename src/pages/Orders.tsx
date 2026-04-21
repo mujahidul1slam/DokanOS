@@ -780,6 +780,38 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               <SelectItem value="delivery">Delivery</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={courierFilter} onValueChange={setCourierFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Courier Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Courier</SelectItem>
+              <SelectItem value="has">Has Courier Entry</SelectItem>
+              <SelectItem value="none">No Courier Entry</SelectItem>
+              <SelectItem value="Pending">Pending</SelectItem>
+              <SelectItem value="Pickup Pending">Pickup Pending</SelectItem>
+              <SelectItem value="Assigned for Pickup">Assigned for Pickup</SelectItem>
+              <SelectItem value="Picked Up">Picked Up</SelectItem>
+              <SelectItem value="Pickup Failed">Pickup Failed</SelectItem>
+              <SelectItem value="Pickup Cancel">Pickup Cancel</SelectItem>
+              <SelectItem value="At Sorting Hub">At Sorting Hub</SelectItem>
+              <SelectItem value="In Transit">In Transit</SelectItem>
+              <SelectItem value="Out for Delivery">Out for Delivery</SelectItem>
+              <SelectItem value="Delivered">Delivered</SelectItem>
+              <SelectItem value="Partial Delivered">Partial Delivered</SelectItem>
+              <SelectItem value="Payment Invoice">Payment Invoice</SelectItem>
+              <SelectItem value="On Hold">On Hold</SelectItem>
+              <SelectItem value="Exchange">Exchange</SelectItem>
+              <SelectItem value="Return">Return</SelectItem>
+              <SelectItem value="Returned">Returned</SelectItem>
+              <SelectItem value="Paid Return">Paid Return</SelectItem>
+              <SelectItem value="Return Requested">Return Requested</SelectItem>
+              <SelectItem value="Return In Transit">Return In Transit</SelectItem>
+              <SelectItem value="Returned to Merchant">Returned to Merchant</SelectItem>
+              <SelectItem value="Return Delivered">Return Delivered</SelectItem>
+              <SelectItem value="Delivery Failed">Delivery Failed</SelectItem>
+              <SelectItem value="Customer Refused">Customer Refused</SelectItem>
+              <SelectItem value="Cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={storeFilter} onValueChange={setStoreFilter}>
             <SelectTrigger className="w-[160px]"><SelectValue placeholder="Store" /></SelectTrigger>
             <SelectContent>
