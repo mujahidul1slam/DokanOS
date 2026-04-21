@@ -11,6 +11,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { downloadCsv } from "@/lib/exportCsv";
 import { TableSkeleton } from "@/components/ui/loading-states";
 
@@ -128,10 +129,10 @@ export default function AuditLogTab() {
           <Table>
             <TableHeader>
               <TableRow className="bg-secondary hover:bg-secondary">
-                <TableHead>Date</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Entity</TableHead>
+                <TableHead className="w-[140px]">Date</TableHead>
+                <TableHead className="w-[220px]">User</TableHead>
+                <TableHead className="w-[120px]">Action</TableHead>
+                <TableHead className="w-[200px]">Entity</TableHead>
                 <TableHead>Details</TableHead>
               </TableRow>
             </TableHeader>
@@ -142,28 +143,51 @@ export default function AuditLogTab() {
                     No audit log entries found
                   </TableCell>
                 </TableRow>
-              ) : paginated.map((entry) => (
-                <TableRow key={entry.id}>
-                  <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                    {format(new Date(entry.created_at), "MMM d, h:mm a")}
-                  </TableCell>
-                  <TableCell className="text-sm">{entry.user_email || "System"}</TableCell>
-                  <TableCell>
-                    <Badge className={actionColors[entry.action] || "bg-muted text-muted-foreground"}>
-                      {entry.action}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">{entry.entity_type}</span>
-                    {entry.entity_id && (
-                      <span className="text-xs text-muted-foreground ml-1">#{entry.entity_id.slice(0, 8)}</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
-                    {entry.details ? JSON.stringify(entry.details).slice(0, 80) : "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
+              ) : paginated.map((entry) => {
+                const detailsStr = entry.details ? JSON.stringify(entry.details, null, 2) : "—";
+                const detailsPreview = entry.details ? JSON.stringify(entry.details) : "—";
+                return (
+                  <TableRow key={entry.id}>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                      {format(new Date(entry.created_at), "MMM d, h:mm a")}
+                    </TableCell>
+                    <TableCell className="text-sm">{entry.user_email || "System"}</TableCell>
+                    <TableCell>
+                      <Badge className={actionColors[entry.action] || "bg-muted text-muted-foreground"}>
+                        {entry.action}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm">{entry.entity_type}</span>
+                      {entry.entity_id && (
+                        <span className="text-xs text-muted-foreground ml-1">#{entry.entity_id.slice(0, 8)}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <TooltipProvider delayDuration={150}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="block w-full max-w-[600px] truncate text-left cursor-help font-mono"
+                              title=""
+                            >
+                              {detailsPreview}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="left"
+                            align="start"
+                            className="max-w-[520px] max-h-[400px] overflow-auto whitespace-pre-wrap break-all font-mono text-xs"
+                          >
+                            {detailsStr}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

@@ -75,7 +75,7 @@ const SettingsPage = () => {
         </nav>
 
         {/* Content */}
-        <div className="flex-1 max-w-2xl space-y-4">
+        <div className={cn("flex-1 space-y-4", activeTab === "audit" ? "max-w-none" : "max-w-2xl")}>
           {activeTab === "general" && (
             <div className="rounded-lg border border-border bg-card p-6 space-y-6">
               <div>
