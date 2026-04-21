@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { logAction } from "@/lib/auditLog";
+import { addOrderTimeline } from "@/lib/orderTimeline";
 import { postWooOrderNote } from "@/lib/wooNotes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
