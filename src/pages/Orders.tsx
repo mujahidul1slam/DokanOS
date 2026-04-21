@@ -365,7 +365,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const timelineEntries = ids.map((id) => ({
         order_id: id, event: "status_changed", description: "Marked as Ready to Ship",
       }));
-      await supabase.from("order_timeline").insert(timelineEntries);
+      await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "ready_to_ship" });
       toast({ title: `${ids.length} order(s) marked Ready to Ship` });
       setSelected(new Set());
@@ -385,7 +385,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const timelineEntries = ids.map((id) => ({
         order_id: id, event: "status_changed", description: "Marked as Completed",
       }));
-      await supabase.from("order_timeline").insert(timelineEntries);
+      await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "completed" });
       // Mirror to Woo notes
       orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
@@ -409,7 +409,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const timelineEntries = ids.map((id) => ({
         order_id: id, event: "payment_updated", description: "Marked as Paid",
       }));
-      await supabase.from("order_timeline").insert(timelineEntries);
+      await addOrderTimeline(timelineEntries);
       await logAction("update", "order_payment_bulk", undefined, { ids, to: "paid" });
       orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
         postWooOrderNote(o.id, "[OmniSync] Payment marked as Paid");
@@ -432,7 +432,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const timelineEntries = ids.map((id) => ({
         order_id: id, event: "status_changed", description: "Cancelled",
       }));
-      await supabase.from("order_timeline").insert(timelineEntries);
+      await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "cancelled" });
       orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
         postWooOrderNote(o.id, "[OmniSync] Order cancelled");
@@ -455,7 +455,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const timelineEntries = ids.map((id) => ({
         order_id: id, event: "trashed", description: "Order moved to trash",
       }));
-      await supabase.from("order_timeline").insert(timelineEntries);
+      await addOrderTimeline(timelineEntries);
       const wooOrders = orders.filter((o) => ids.includes(o.id) && o.woo_order_id && o.store_id);
       for (const o of wooOrders) {
         try {
@@ -482,7 +482,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const timelineEntries = ids.map((id) => ({
         order_id: id, event: "restored", description: "Order restored from trash",
       }));
-      await supabase.from("order_timeline").insert(timelineEntries);
+      await addOrderTimeline(timelineEntries);
       await logAction("update", "order_restore_bulk", undefined, { ids });
       toast({ title: `${ids.length} order(s) restored` });
       setSelected(new Set());
@@ -503,7 +503,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const timelineEntries = ids.map((id) => ({
         order_id: id, event: "status_changed", description: `Status changed to ${label}`,
       }));
-      await supabase.from("order_timeline").insert(timelineEntries);
+      await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: newStatus });
       toast({ title: `${ids.length} order(s) → ${label}` });
       setSelected(new Set());
