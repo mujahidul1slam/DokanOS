@@ -33,12 +33,12 @@ function renderMeasurement(m: CapturedMeasurement, override: SlipTpl["default_fo
   const filled = m.values.filter((v) => v.value && String(v.value).trim() !== "");
   if (filled.length === 0) return "";
   if (fmt === "dash_separated") {
-    return `<div style="font-size:13px;font-weight:600;letter-spacing:0.5px;">${filled.map((v) => v.value).join(" - ")}${m.unit ? ` ${m.unit}` : ""}</div>`;
+    return `<div style="font-size:20px;font-weight:700;letter-spacing:1px;margin-top:4px;">${filled.map((v) => v.value).join(" - ")}${m.unit ? ` ${m.unit}` : ""}</div>`;
   }
-  return `<table style="width:100%;border-collapse:collapse;margin-top:4px;">
+  return `<table style="width:100%;border-collapse:collapse;margin-top:6px;">
     ${filled.map((v) => `<tr>
-      <td style="padding:2px 4px;font-size:11px;color:#444;border-bottom:1px dashed #e5e5e5;width:40%;">${v.name}</td>
-      <td style="padding:2px 4px;font-size:12px;font-weight:600;border-bottom:1px dashed #e5e5e5;">${v.value}${m.unit ? ` ${m.unit}` : ""}</td>
+      <td style="padding:5px 6px;font-size:15px;color:#333;border-bottom:1px dashed #d5d5d5;width:45%;">${v.name}</td>
+      <td style="padding:5px 6px;font-size:18px;font-weight:700;border-bottom:1px dashed #d5d5d5;">${v.value}${m.unit ? ` ${m.unit}` : ""}</td>
     </tr>`).join("")}
   </table>`;
 }
