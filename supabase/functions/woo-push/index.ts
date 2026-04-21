@@ -322,7 +322,7 @@ function reverseMapStatus(status: string): string {
     completed: "completed",
     delivered: "completed",
     shipped: "completed",
-    cancelled: "completed",
+    cancelled: "cancelled",
     returned: "completed",
   };
   return map[status] || "processing";
