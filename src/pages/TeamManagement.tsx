@@ -9,10 +9,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { UserPlus, Shield, Mail, Loader2, Trash2 } from "lucide-react";
+import { UserPlus, Shield, Mail, Loader2, Trash2, Settings2 } from "lucide-react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { TableSkeleton, EmptyState } from "@/components/ui/loading-states";
+import RolesTab from "@/components/team/RolesTab";
+import UserAccessDialog from "@/components/team/UserAccessDialog";
 
 interface TeamMember {
   user_id: string;
@@ -29,7 +32,7 @@ interface Invitation {
 }
 
 const TeamManagement = () => {
-  const { isAdmin, session } = useAuth();
+  const { isAdmin } = useAuth();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -38,6 +41,7 @@ const TeamManagement = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteInviteId, setDeleteInviteId] = useState<string | null>(null);
+  const [accessUser, setAccessUser] = useState<TeamMember | null>(null);
 
   const fetchTeam = async () => {
     setLoading(true);
@@ -62,22 +66,17 @@ const TeamManagement = () => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchTeam();
-  }, []);
+  useEffect(() => { fetchTeam(); }, []);
 
   const handleInvite = async () => {
     if (!inviteEmail) return;
     setInviting(true);
-
     try {
       const { data, error } = await supabase.functions.invoke("team-manage", {
         body: { action: "invite", email: inviteEmail, role: inviteRole },
       });
-
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-
       toast.success(`Invitation sent to ${inviteEmail}`);
       setInviteEmail("");
       setInviteRole("staff");
@@ -96,31 +95,11 @@ const TeamManagement = () => {
     fetchTeam();
   };
 
-  const handleRoleChange = async (userId: string, newRole: string) => {
-    try {
-      const { data, error } = await supabase.functions.invoke("team-manage", {
-        body: { action: "update_role", user_id: userId, role: newRole },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast.success("Role updated");
-      fetchTeam();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to update role");
-    }
-  };
-
   if (!isAdmin) {
-    return (
-      <EmptyState
-        icon={Shield}
-        title="Access Denied"
-        description="You don't have permission to manage the team. Contact an admin."
-      />
-    );
+    return <EmptyState icon={Shield} title="Access Denied" description="You don't have permission to manage the team." />;
   }
 
-  const roleBadgeVariant = (role: string) => {
+  const roleBadgeVariant = (role: string): any => {
     switch (role) {
       case "admin": return "default";
       case "staff": return "secondary";
@@ -132,17 +111,15 @@ const TeamManagement = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Team Management</h1>
-          <p className="text-sm text-muted-foreground">Manage team members and invitations</p>
+          <h1 className="text-2xl font-bold text-foreground">Team & Access</h1>
+          <p className="text-sm text-muted-foreground">Manage team members, custom roles, and per-user permissions</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button><UserPlus className="mr-2 h-4 w-4" />Invite Member</Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Invite Team Member</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Invite Team Member</DialogTitle></DialogHeader>
             <div className="space-y-4 pt-4">
               <div className="space-y-2">
                 <Label>Email Address</Label>
@@ -160,106 +137,127 @@ const TeamManagement = () => {
                 </Select>
               </div>
               <Button onClick={handleInvite} className="w-full" disabled={inviting}>
-                {inviting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Send Invitation
+                {inviting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send Invitation
               </Button>
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg"><Shield className="h-5 w-5" />Team Members</CardTitle>
-          <CardDescription>Current team members and their roles</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <TableSkeleton rows={3} cols={3} />
-          ) : members.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No team members yet</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.map((m) => (
-                  <TableRow key={m.user_id}>
-                    <TableCell className="font-medium">{m.full_name || m.user_id.slice(0, 8)}</TableCell>
-                    <TableCell><Badge variant={roleBadgeVariant(m.role) as any}>{m.role}</Badge></TableCell>
-                    <TableCell>
-                      <Select value={m.role} onValueChange={(v) => handleRoleChange(m.user_id, v)}>
-                        <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="staff">Staff</SelectItem>
-                          <SelectItem value="viewer">Viewer</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="members">
+        <TabsList>
+          <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsTrigger value="roles">Custom Roles</TabsTrigger>
+          <TabsTrigger value="invitations">Invitations</TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg"><Mail className="h-5 w-5" />Invitations</CardTitle>
-          <CardDescription>Pending and accepted invitations</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {invitations.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">No invitations yet</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invitations.map((inv) => (
-                  <TableRow key={inv.id}>
-                    <TableCell>{inv.email}</TableCell>
-                    <TableCell><Badge variant={roleBadgeVariant(inv.role) as any}>{inv.role}</Badge></TableCell>
-                    <TableCell>
-                      {inv.accepted_at ? (
-                        <Badge variant="outline" className="text-success">Accepted</Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-warning">Pending</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {!inv.accepted_at && (
-                        <Button size="sm" variant="ghost" onClick={() => setDeleteInviteId(inv.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+        <TabsContent value="members" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg"><Shield className="h-5 w-5" />Team Members</CardTitle>
+              <CardDescription>Set preset role and manage detailed access per user</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <TableSkeleton rows={3} cols={3} />
+              ) : members.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">No team members yet</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Preset Role</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {members.map((m) => (
+                      <TableRow key={m.user_id}>
+                        <TableCell className="font-medium">{m.full_name || m.user_id.slice(0, 8)}</TableCell>
+                        <TableCell><Badge variant={roleBadgeVariant(m.role)}>{m.role}</Badge></TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => setAccessUser(m)}>
+                            <Settings2 className="mr-2 h-4 w-4" />Manage Access
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="roles" className="mt-4">
+          <RolesTab />
+        </TabsContent>
+
+        <TabsContent value="invitations" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg"><Mail className="h-5 w-5" />Invitations</CardTitle>
+              <CardDescription>Pending and accepted invitations</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {invitations.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">No invitations yet</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {invitations.map((inv) => (
+                      <TableRow key={inv.id}>
+                        <TableCell>{inv.email}</TableCell>
+                        <TableCell><Badge variant={roleBadgeVariant(inv.role)}>{inv.role}</Badge></TableCell>
+                        <TableCell>
+                          {inv.accepted_at ? (
+                            <Badge variant="outline" className="text-success">Accepted</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-warning">Pending</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {!inv.accepted_at && (
+                            <Button size="sm" variant="ghost" onClick={() => setDeleteInviteId(inv.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {accessUser && (
+        <UserAccessDialog
+          open={!!accessUser}
+          onOpenChange={(o) => !o && setAccessUser(null)}
+          userId={accessUser.user_id}
+          userName={accessUser.full_name || accessUser.user_id.slice(0, 8)}
+          currentRole={accessUser.role}
+          onSaved={fetchTeam}
+        />
+      )}
 
       <ConfirmDialog
         open={!!deleteInviteId}
         onOpenChange={(open) => { if (!open) setDeleteInviteId(null); }}
         title="Remove Invitation"
-        description="This will revoke the pending invitation. The user will not be able to join."
+        description="This will revoke the pending invitation."
         confirmLabel="Remove"
         variant="destructive"
         onConfirm={() => deleteInviteId && handleDeleteInvite(deleteInviteId)}
