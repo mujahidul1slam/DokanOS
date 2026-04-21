@@ -225,7 +225,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         case "pre_order":
           return o.hasBackorder && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status);
         case "pickup_pending":
-          return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up","Pickup Cancel","Pickup Cancelled"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up","Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || "");
         case "in_transit":
           return !!o.consignment_id && ["At Sorting Hub","In Transit","On the Way To Delivery Hub","At Delivery Hub","Out for Delivery"].includes(o.tracking_status || "");
         case "delivered":
@@ -236,9 +236,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             (!!o.consignment_id && ["Delivered","Partial Delivered","Payment Invoice"].includes(o.tracking_status || ""))
           );
         case "on_hold":
-          return !!o.consignment_id && ["On Hold","Hold","Exchange","Cancelled"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["On Hold","Hold","Exchange"].includes(o.tracking_status || "");
         case "returned":
-          return !!o.consignment_id && ["Return","Returned","Delivery Failed","Customer Refused"].includes(o.tracking_status || "");
+          return o.status === "returned" || (!!o.consignment_id && ["Return","Returned","Paid Return","Return Requested","Return In Transit","Returned to Merchant","Merchant Return","Return Delivered","Delivery Failed","Customer Refused"].includes(o.tracking_status || ""));
         default:
           return true;
       }

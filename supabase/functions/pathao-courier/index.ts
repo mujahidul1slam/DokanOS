@@ -20,13 +20,18 @@ function mapPathaoStatus(status: string | null | undefined): string | undefined 
   if ([
     "pending","pickup pending","pickup requested","assigned for pickup",
     "picked","picked up","pickup cancel","pickup cancelled","pickup canceled",
+    "pickup failed",
   ].includes(s)) return "shipped";
   if ([
     "at sorting hub","in transit","on the way to delivery hub","at delivery hub","out for delivery",
   ].includes(s)) return "shipped";
   if (["delivered","partial delivered","payment invoice"].includes(s)) return "delivered";
   if (["on hold","hold","exchange"].includes(s)) return "processing";
-  if (["return","returned","delivery failed","customer refused"].includes(s)) return "returned";
+  if ([
+    "return","returned","delivery failed","customer refused",
+    "paid return","return requested","return in transit","returned to merchant",
+    "merchant return","return delivered",
+  ].includes(s)) return "returned";
   if (["cancelled","canceled"].includes(s)) return "cancelled";
   return undefined;
 }
