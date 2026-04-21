@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { UserPlus, Shield, Mail, Loader2, Trash2, Settings2 } from "lucide-react";
+import { UserPlus, Shield, Mail, Loader2, Trash2, Settings2, KeyRound, Send } from "lucide-react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { TableSkeleton, EmptyState } from "@/components/ui/loading-states";
 import RolesTab from "@/components/team/RolesTab";
@@ -39,9 +39,13 @@ const TeamManagement = () => {
   const [inviteRole, setInviteRole] = useState<string>("staff");
   const [inviting, setInviting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [inviteMode, setInviteMode] = useState<"email" | "password">("email");
+  const [createPassword, setCreatePassword] = useState("");
+  const [createName, setCreateName] = useState("");
   const [loading, setLoading] = useState(true);
   const [deleteInviteId, setDeleteInviteId] = useState<string | null>(null);
   const [accessUser, setAccessUser] = useState<TeamMember | null>(null);
+  const [resendingEmail, setResendingEmail] = useState<string | null>(null);
 
   const fetchTeam = async () => {
     setLoading(true);
@@ -72,20 +76,38 @@ const TeamManagement = () => {
     if (!inviteEmail) return;
     setInviting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("team-manage", {
-        body: { action: "invite", email: inviteEmail, role: inviteRole },
-      });
+      const body: any = inviteMode === "password"
+        ? { action: "create_with_password", email: inviteEmail, role: inviteRole, password: createPassword, full_name: createName }
+        : { action: "invite", email: inviteEmail, role: inviteRole };
+      const { data, error } = await supabase.functions.invoke("team-manage", { body });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      toast.success(`Invitation sent to ${inviteEmail}`);
+      toast.success(data?.message || "Done");
       setInviteEmail("");
       setInviteRole("staff");
+      setCreatePassword("");
+      setCreateName("");
       setDialogOpen(false);
       fetchTeam();
     } catch (err: any) {
-      toast.error(err.message || "Failed to send invitation");
+      toast.error(err.message || "Failed");
     }
     setInviting(false);
+  };
+
+  const handleResendInvite = async (email: string) => {
+    setResendingEmail(email);
+    try {
+      const { data, error } = await supabase.functions.invoke("team-manage", {
+        body: { action: "resend_invite", email },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(data?.message || `Email re-sent to ${email}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend");
+    }
+    setResendingEmail(null);
   };
 
   const handleDeleteInvite = async (id: string) => {
@@ -119,27 +141,69 @@ const TeamManagement = () => {
             <Button><UserPlus className="mr-2 h-4 w-4" />Invite Member</Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Invite Team Member</DialogTitle></DialogHeader>
-            <div className="space-y-4 pt-4">
-              <div className="space-y-2">
-                <Label>Email Address</Label>
-                <Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@example.com" />
-              </div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select value={inviteRole} onValueChange={setInviteRole}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="staff">Staff</SelectItem>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button onClick={handleInvite} className="w-full" disabled={inviting}>
-                {inviting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send Invitation
-              </Button>
-            </div>
+            <DialogHeader>
+              <DialogTitle>Add Team Member</DialogTitle>
+            </DialogHeader>
+            <Tabs value={inviteMode} onValueChange={(v) => setInviteMode(v as any)} className="pt-2">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="email"><Mail className="mr-2 h-4 w-4" />Email Invite</TabsTrigger>
+                <TabsTrigger value="password"><KeyRound className="mr-2 h-4 w-4" />Set Password</TabsTrigger>
+              </TabsList>
+              <TabsContent value="email" className="space-y-4 pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Sends an invitation email so the user can set their own password. Email is sent from your configured Lovable Cloud sender address (default: <code className="text-xs">noreply@mail.app.supabase.io</code>). Check spam folder if not received.
+                </p>
+                <div className="space-y-2">
+                  <Label>Email Address</Label>
+                  <Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@example.com" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button onClick={handleInvite} className="w-full" disabled={inviting || !inviteEmail}>
+                  {inviting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send Invitation Email
+                </Button>
+              </TabsContent>
+              <TabsContent value="password" className="space-y-4 pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Create the account directly with a password you choose. No email is sent — you'll need to share the credentials with them.
+                </p>
+                <div className="space-y-2">
+                  <Label>Full Name (optional)</Label>
+                  <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Jane Doe" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email Address</Label>
+                  <Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@example.com" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Password</Label>
+                  <Input type="text" value={createPassword} onChange={(e) => setCreatePassword(e.target.value)} placeholder="At least 8 characters" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button onClick={handleInvite} className="w-full" disabled={inviting || !inviteEmail || createPassword.length < 8}>
+                  {inviting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create Account
+                </Button>
+              </TabsContent>
+            </Tabs>
           </DialogContent>
         </Dialog>
       </div>
@@ -227,9 +291,23 @@ const TeamManagement = () => {
                         </TableCell>
                         <TableCell>
                           {!inv.accepted_at && (
-                            <Button size="sm" variant="ghost" onClick={() => setDeleteInviteId(inv.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleResendInvite(inv.email)}
+                                disabled={resendingEmail === inv.email}
+                              >
+                                {resendingEmail === inv.email ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <><Send className="mr-1 h-3 w-3" />Resend</>
+                                )}
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setDeleteInviteId(inv.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
