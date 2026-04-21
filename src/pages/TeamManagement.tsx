@@ -291,9 +291,23 @@ const TeamManagement = () => {
                         </TableCell>
                         <TableCell>
                           {!inv.accepted_at && (
-                            <Button size="sm" variant="ghost" onClick={() => setDeleteInviteId(inv.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleResendInvite(inv.email)}
+                                disabled={resendingEmail === inv.email}
+                              >
+                                {resendingEmail === inv.email ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <><Send className="mr-1 h-3 w-3" />Resend</>
+                                )}
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setDeleteInviteId(inv.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
