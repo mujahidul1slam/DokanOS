@@ -34,7 +34,7 @@ export async function addOrderTimeline(
       metadata: { ...userInfo, ...(e.metadata || {}) },
     }));
 
-    const { error } = await supabase.from("order_timeline").insert(rows);
+    const { error } = await supabase.from("order_timeline").insert(rows as any);
     if (error) console.warn("addOrderTimeline failed:", error.message);
   } catch (e) {
     console.warn("addOrderTimeline failed:", e);
