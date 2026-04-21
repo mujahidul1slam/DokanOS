@@ -407,7 +407,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       }
 
       // Timeline entries
-      await supabase.from("order_timeline").insert({
+      await addOrderTimeline({
         order_id: order.id,
         event: "returned",
         description: "Order returned — inventory restocked",
