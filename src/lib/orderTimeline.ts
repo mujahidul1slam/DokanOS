@@ -41,6 +41,15 @@ export async function addOrderTimeline(
 
     const { error } = await supabase.from("order_timeline").insert(rows as any);
     if (error) console.warn("addOrderTimeline failed:", error.message);
+
+    // Mirror each entry to the WooCommerce order's notes timeline (no-op for non-Woo orders).
+    for (const e of arr) {
+      if (e.metadata?.skip_woo_note) continue;
+      const userLabel = userName ? ` — by ${userName}` : "";
+      const note = `[OmniSync] ${e.description}${userLabel}`;
+      // Fire-and-forget; postWooOrderNote already swallows errors.
+      void postWooOrderNote(e.order_id, note, Boolean(e.metadata?.woo_customer_note));
+    }
   } catch (e) {
     console.warn("addOrderTimeline failed:", e);
   }
