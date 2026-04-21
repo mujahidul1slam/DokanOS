@@ -810,19 +810,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   <div className="relative pl-6 space-y-0">
                     {/* Vertical line */}
                     <div className="absolute left-[9px] top-1 bottom-1 w-px bg-border" />
-                    {timeline.map((entry, idx) => (
-                      <div key={entry.id} className="relative pb-6 last:pb-0">
-                        <div className="absolute -left-6 top-0.5 flex items-center justify-center">
-                          <CircleDot className="h-[18px] w-[18px] text-primary bg-background rounded-full" />
+                    {timeline.map((entry) => {
+                      const meta = (entry.metadata || {}) as Record<string, unknown>;
+                      const userLabel = (meta.user_name as string) || (meta.user_email as string) || "System";
+                      return (
+                        <div key={entry.id} className="relative pb-6 last:pb-0">
+                          <div className="absolute -left-6 top-0.5 flex items-center justify-center">
+                            <CircleDot className="h-[18px] w-[18px] text-primary bg-background rounded-full" />
+                          </div>
+                          <div>
+                            <p className="text-sm text-foreground">{entry.description}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {format(new Date(entry.created_at), "MMM d, yyyy · h:mm a")}
+                              <span className="mx-1.5">·</span>
+                              <span className="font-medium">by {userLabel}</span>
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm text-foreground">{entry.description}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {format(new Date(entry.created_at), "MMM d, yyyy · h:mm a")}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </TabsContent>
