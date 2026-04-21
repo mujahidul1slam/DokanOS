@@ -18,6 +18,7 @@ import type { Product, Cart, CartItem, CustomerData } from "@/components/pos/typ
 import { saveOrderItemMeasurements } from "@/lib/measurements";
 import { printMeasurementSlip } from "@/components/orders/MeasurementSlipPrint";
 import { logAction } from "@/lib/auditLog";
+import { addOrderTimeline } from "@/lib/orderTimeline";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;

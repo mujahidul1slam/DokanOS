@@ -288,7 +288,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         order_id: order.id,
         event: "created",
         description: `Order placed manually (${source})`,
-        metadata: { order_number: orderNumber, source, total: order.total },
+        metadata: { order_number: orderNumber, source },
       });
 
       await logAction("create", "order", order.id, {
