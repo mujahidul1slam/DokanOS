@@ -117,10 +117,10 @@ export async function printMeasurementSlip(orderId: string) {
       ${tpl.show_product_name !== false ? `<div style="font-weight:700;font-size:13px;">${line.product_name}</div>` : ""}
       ${tpl.show_product_sku && line.sku ? `<div style="font-family:monospace;font-size:10px;color:#666;">SKU: ${line.sku}</div>` : ""}
       ${line.measurements.map((m) => `
-        <div style="margin-top:8px;">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#555;letter-spacing:0.5px;">${m.groupName}</div>
+        <div style="margin-top:10px;">
+          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
           ${renderMeasurement(m, tpl.default_format)}
-          ${tpl.show_notes !== false && m.notes ? `<div style="font-size:10px;color:#666;margin-top:3px;font-style:italic;">${m.notes}</div>` : ""}
+          ${tpl.show_notes !== false && m.notes ? `<div style="font-size:12px;color:#555;margin-top:4px;font-style:italic;">${m.notes}</div>` : ""}
         </div>
       `).join("")}
     </div>
