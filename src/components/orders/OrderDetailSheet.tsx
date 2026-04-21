@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { postWooOrderNote } from "@/lib/wooNotes";
+import { usePermissions } from "@/hooks/usePermissions";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -90,6 +91,11 @@ interface Props {
 /* ------------------------------------------------------------------ */
 
 export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved }: Props) {
+  const { can } = usePermissions();
+  const canEdit = can("orders.edit");
+  const canChangeStatus = can("orders.change_status");
+  const canRefund = can("orders.refund");
+  const canLogPayment = can("orders.log_payment");
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
