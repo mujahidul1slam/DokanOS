@@ -39,9 +39,13 @@ const TeamManagement = () => {
   const [inviteRole, setInviteRole] = useState<string>("staff");
   const [inviting, setInviting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [inviteMode, setInviteMode] = useState<"email" | "password">("email");
+  const [createPassword, setCreatePassword] = useState("");
+  const [createName, setCreateName] = useState("");
   const [loading, setLoading] = useState(true);
   const [deleteInviteId, setDeleteInviteId] = useState<string | null>(null);
   const [accessUser, setAccessUser] = useState<TeamMember | null>(null);
+  const [resendingEmail, setResendingEmail] = useState<string | null>(null);
 
   const fetchTeam = async () => {
     setLoading(true);
