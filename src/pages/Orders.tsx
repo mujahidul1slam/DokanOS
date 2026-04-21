@@ -910,7 +910,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                           {order.status === "processing" && !order.consignment_id && canWrite && (
                             <DropdownMenuItem onClick={() => {
                               supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
-                                supabase.from("order_timeline").insert({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
+                                addOrderTimeline({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
                                 toast({ title: "Marked Ready to Ship" });
                                 loadOrders();
                               });
