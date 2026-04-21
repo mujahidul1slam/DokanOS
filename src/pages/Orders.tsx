@@ -429,9 +429,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "cancelled" });
-      orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
-        postWooOrderNote(o.id, "[OmniSync] Order cancelled");
-      });
+      // Woo notes auto-posted via addOrderTimeline above
       toast({ title: `${ids.length} order(s) cancelled` });
       setSelected(new Set());
       loadOrders();
