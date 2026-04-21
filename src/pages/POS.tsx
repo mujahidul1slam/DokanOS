@@ -413,10 +413,11 @@ const POS = () => {
 
     if (order) {
       // Order placed timeline event
-      await supabase.from("order_timeline").insert({
+      await addOrderTimeline({
         order_id: order.id,
         event: "created",
         description: `Order placed via POS — Total ৳${total.toLocaleString()}`,
+        metadata: { source: "pos", total, item_count: cart.items.length, payment_status: paymentStatus },
       });
       await logAction("create", "order", order.id, {
         order_number: orderNumber, source: "pos", total, payment_status: paymentStatus,
@@ -479,13 +480,14 @@ const POS = () => {
           amount: p.amount,
         }));
         await supabase.from("order_payments").insert(payments);
-        for (const p of cart.payments) {
-          await supabase.from("order_timeline").insert({
+        await addOrderTimeline(
+          cart.payments.map((p) => ({
             order_id: order.id,
             event: "payment_logged",
             description: `Payment of ৳${p.amount.toLocaleString()} via ${p.method}`,
-          });
-        }
+            metadata: { method: p.method, amount: p.amount },
+          }))
+        );
         await logAction("create", "order_payment", order.id, {
           order_number: orderNumber, payments: cart.payments.map((p) => ({ method: p.method, amount: p.amount })),
         });
