@@ -130,8 +130,8 @@ export async function printMeasurementSlip(orderId: string) {
     <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
       <div style="font-weight:700;font-size:13px;">General Measurements</div>
       ${orphans.map((m) => `
-        <div style="margin-top:8px;">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#555;">${m.groupName}</div>
+        <div style="margin-top:10px;">
+          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
           ${renderMeasurement(m, tpl.default_format)}
         </div>
       `).join("")}
