@@ -387,10 +387,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "completed" });
-      // Mirror to Woo notes
-      orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
-        postWooOrderNote(o.id, "[OmniSync] Marked as Completed");
-      });
+      // Woo notes auto-posted via addOrderTimeline above
       toast({ title: `${ids.length} order(s) marked Completed` });
       setSelected(new Set());
       loadOrders();
