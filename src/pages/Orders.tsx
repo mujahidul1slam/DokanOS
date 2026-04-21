@@ -387,10 +387,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "completed" });
-      // Mirror to Woo notes
-      orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
-        postWooOrderNote(o.id, "[OmniSync] Marked as Completed");
-      });
+      // Woo notes auto-posted via addOrderTimeline above
       toast({ title: `${ids.length} order(s) marked Completed` });
       setSelected(new Set());
       loadOrders();
@@ -411,9 +408,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_payment_bulk", undefined, { ids, to: "paid" });
-      orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
-        postWooOrderNote(o.id, "[OmniSync] Payment marked as Paid");
-      });
+      // Woo notes auto-posted via addOrderTimeline above
       toast({ title: `${ids.length} order(s) marked Paid` });
       setSelected(new Set());
       loadOrders();
@@ -434,9 +429,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "cancelled" });
-      orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
-        postWooOrderNote(o.id, "[OmniSync] Order cancelled");
-      });
+      // Woo notes auto-posted via addOrderTimeline above
       toast({ title: `${ids.length} order(s) cancelled` });
       setSelected(new Set());
       loadOrders();
@@ -454,6 +447,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       await supabase.from("orders").update({ deleted_at: now } as any).in("id", ids);
       const timelineEntries = ids.map((id) => ({
         order_id: id, event: "trashed", description: "Order moved to trash",
+        // Posted explicitly BEFORE the WC trash call below so it's still attached.
+        metadata: { skip_woo_note: true },
       }));
       await addOrderTimeline(timelineEntries);
       const wooOrders = orders.filter((o) => ids.includes(o.id) && o.woo_order_id && o.store_id);

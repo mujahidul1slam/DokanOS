@@ -28,6 +28,23 @@ async function getAccessToken(): Promise<string> {
   return data.access_token;
 }
 
+/** Mirror an order timeline entry to the linked WooCommerce order's notes timeline. */
+async function postWooNote(orderId: string, note: string) {
+  try {
+    const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/woo-push`;
+    await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+      },
+      body: JSON.stringify({ action: "post_note", order_id: orderId, note, customer_note: false }),
+    });
+  } catch (e) {
+    console.warn("postWooNote failed:", e);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -145,6 +162,9 @@ Deno.serve(async (req) => {
               user_email: null,
             },
           });
+
+          // Mirror status update into WooCommerce notes timeline (no-op for non-Woo orders)
+          await postWooNote(order.id, `[OmniSync] Pathao courier status: ${pathaoStatus} — by Pathao Tracking`);
 
           updated++;
         }
