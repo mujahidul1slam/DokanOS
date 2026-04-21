@@ -359,7 +359,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     await logAction("create", "order_payment", order.id, {
       order_number: order.order_number, method: payMethod, amount: parseFloat(payAmount), trx_id: payTrxId || null,
     });
-    postWooOrderNote(order.id, `[OmniSync] Payment logged: ৳${parseFloat(payAmount).toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}`);
+    // Woo order note is auto-posted via addOrderTimeline above.
     setPayAmount("");
     setPayTrxId("");
     setPayNotes("");
