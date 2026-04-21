@@ -437,7 +437,12 @@ Deno.serve(async (req) => {
 
             const data = await pathaoGet(useToken, `/aladdin/api/v1/orders/${order.consignment_id}`);
             const info = data.data || data;
-            const order_status = info.order_status || info.status;
+            const orderStatusRaw = info.order_status ?? info.status ?? info.order_status_slug;
+            const order_status = typeof orderStatusRaw === "string" ? orderStatusRaw.trim() : "";
+
+            if (!order_status || order_status.toLowerCase() === "undefined" || order_status.toLowerCase() === "null") {
+              continue;
+            }
 
             const mappedStatus = mapPathaoStatus(order_status);
             const updateData: any = { tracking_status: order_status };
@@ -448,8 +453,14 @@ Deno.serve(async (req) => {
               await sb.from("order_timeline").insert({
                 order_id: order.id,
                 event: "tracking_update",
-                description: `Pathao status: ${order_status}`,
-                metadata: { tracking_status: order_status },
+                description: `Pathao courier status: ${order_status}`,
+                metadata: {
+                  tracking_status: order_status,
+                  mapped_status: mappedStatus,
+                  previous_status: order.tracking_status,
+                  user_name: "Pathao Tracking",
+                  user_email: null,
+                },
               });
 
               await postWooOrderNote(order.id, `[OmniSync] Pathao status update: ${order_status}`);
