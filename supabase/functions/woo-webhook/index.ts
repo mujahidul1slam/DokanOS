@@ -170,6 +170,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     .eq("woo_order_id", o.id).eq("store_id", store_id).maybeSingle();
 
   let orderId: string;
+  let isNewOrder = false;
   if (existingOrder) {
     const { error } = await supabase.from("orders").update(orderData).eq("id", existingOrder.id);
     if (error) return jsonResp({ error: "Failed to update order" }, 500);
@@ -179,6 +180,23 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     const { data: inserted, error } = await supabase.from("orders").insert(orderInsert).select("id").single();
     if (error || !inserted) return jsonResp({ error: "Failed to insert order" }, 500);
     orderId = inserted.id;
+    isNewOrder = true;
+  }
+
+  if (isNewOrder) {
+    await supabase.from("order_timeline").insert({
+      order_id: orderId,
+      event: "created",
+      description: `Order received from WooCommerce — Total ৳${(parseFloat(o.total) || 0).toLocaleString()}`,
+      metadata: {
+        source: "woo_webhook",
+        woo_order_id: o.id,
+        woo_status: o.status,
+        total: parseFloat(o.total) || 0,
+        user_name: "WooCommerce",
+        user_email: null,
+      },
+    });
   }
 
   await supabase.from("order_items").delete().eq("order_id", orderId);
