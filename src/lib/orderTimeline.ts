@@ -1,7 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
+import { postWooOrderNote } from "@/lib/wooNotes";
 
 export interface TimelineMetadata {
   [key: string]: unknown;
+  // Set to true to skip mirroring this entry to the WooCommerce order notes timeline.
+  skip_woo_note?: boolean;
+  // Set to true to mark the mirrored Woo note as a customer-visible note.
+  woo_customer_note?: boolean;
 }
 
 /**
