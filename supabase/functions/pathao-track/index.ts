@@ -163,6 +163,9 @@ Deno.serve(async (req) => {
             },
           });
 
+          // Mirror status update into WooCommerce notes timeline (no-op for non-Woo orders)
+          await postWooNote(order.id, `[OmniSync] Pathao courier status: ${pathaoStatus} — by Pathao Tracking`);
+
           updated++;
         }
       } catch (err: any) {
