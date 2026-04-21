@@ -718,54 +718,50 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order #, name, or phone..." className="pl-9" />
           </div>
-          {(tab === "all" || preOrderMode) && (
-            <>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className={cn("gap-2 text-sm font-normal", !dateRange?.from && "text-muted-foreground")}>
-                    <CalendarIcon className="h-4 w-4" />
-                    {dateRange?.from ? (dateRange.to ? `${format(dateRange.from, "MMM d")} – ${format(dateRange.to, "MMM d")}` : format(dateRange.from, "MMM d, yyyy")) : "Date Range"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="range" selected={dateRange} onSelect={setDateRange} numberOfMonths={2} className="p-3 pointer-events-auto" />
-                </PopoverContent>
-              </Popover>
-              {tab === "all" && !preOrderMode && (
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="processing">New Order</SelectItem>
-                    <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
-                    <SelectItem value="shipped">Shipped</SelectItem>
-                    <SelectItem value="delivered">Delivered</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="returned">Returned</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-              <Select value={paymentFilter} onValueChange={setPaymentFilter}>
-                <SelectTrigger className="w-[140px]"><SelectValue placeholder="Payment" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Payment</SelectItem>
-                  <SelectItem value="paid">Paid</SelectItem>
-                  <SelectItem value="unpaid">Unpaid</SelectItem>
-                  <SelectItem value="cod">COD</SelectItem>
-                  <SelectItem value="partial">Partial</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                <SelectTrigger className="w-[130px]"><SelectValue placeholder="Source" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Sources</SelectItem>
-                  <SelectItem value="online">Online</SelectItem>
-                  <SelectItem value="pos">POS</SelectItem>
-                </SelectContent>
-              </Select>
-            </>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={cn("gap-2 text-sm font-normal", !dateRange?.from && "text-muted-foreground")}>
+                <CalendarIcon className="h-4 w-4" />
+                {dateRange?.from ? (dateRange.to ? `${format(dateRange.from, "MMM d")} – ${format(dateRange.to, "MMM d")}` : format(dateRange.from, "MMM d, yyyy")) : "Date Range"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="range" selected={dateRange} onSelect={setDateRange} numberOfMonths={2} className="p-3 pointer-events-auto" />
+            </PopoverContent>
+          </Popover>
+          {!preOrderMode && (
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="processing">New Order</SelectItem>
+                <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
+                <SelectItem value="shipped">Shipped</SelectItem>
+                <SelectItem value="delivered">Delivered</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="returned">Returned</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
           )}
+          <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Payment" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Payment</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+              <SelectItem value="unpaid">Unpaid</SelectItem>
+              <SelectItem value="cod">COD</SelectItem>
+              <SelectItem value="partial">Partial</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger className="w-[130px]"><SelectValue placeholder="Source" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sources</SelectItem>
+              <SelectItem value="online">Online</SelectItem>
+              <SelectItem value="pos">POS</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={deliveryFilter} onValueChange={setDeliveryFilter}>
             <SelectTrigger className="w-[150px]"><SelectValue placeholder="Delivery" /></SelectTrigger>
             <SelectContent>
@@ -806,13 +802,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                   <TableHead>Customer</TableHead>
                   <TableHead>Store</TableHead>
                   <TableHead className="w-[240px]">Products</TableHead>
-                  {tab === "all" && <TableHead>Source</TableHead>}
+                  <TableHead>Source</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Delivery</TableHead>
                   <TableHead>Status</TableHead>
-                  {["pickup_pending", "in_transit", "on_hold", "all"].includes(tab) && (
-                    <TableHead>Courier</TableHead>
-                  )}
+                  <TableHead>Courier</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -837,7 +831,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                     <TableCell>
                       <ProductsList items={order.productItems} />
                     </TableCell>
-                    {tab === "all" && <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} /></TableCell>}
+                    <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} /></TableCell>
                     <TableCell className="text-right">
                       <div className="font-medium text-foreground">৳{Number(order.total).toLocaleString()}</div>
                       {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (
@@ -851,18 +845,16 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                     <TableCell>
                       <FulfillmentBadge status={order.status} />
                     </TableCell>
-                    {["pickup_pending", "in_transit", "on_hold", "all"].includes(tab) && (
-                      <TableCell>
-                        {order.consignment_id ? (
-                          <div className="space-y-1">
-                            <a href={`https://merchant.pathao.com/tracking?consignment_id=${order.consignment_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                              {order.consignment_id}<ExternalLink className="h-3 w-3" />
-                            </a>
-                            <div><TrackingBadge status={order.tracking_status} /></div>
-                          </div>
-                        ) : <span className="text-xs text-muted-foreground italic">—</span>}
-                      </TableCell>
-                    )}
+                    <TableCell>
+                      {order.consignment_id ? (
+                        <div className="space-y-1">
+                          <a href={`https://merchant.pathao.com/tracking?consignment_id=${order.consignment_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                            {order.consignment_id}<ExternalLink className="h-3 w-3" />
+                          </a>
+                          <div><TrackingBadge status={order.tracking_status} /></div>
+                        </div>
+                      ) : <span className="text-xs text-muted-foreground italic">—</span>}
+                    </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
