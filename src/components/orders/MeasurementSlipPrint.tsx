@@ -33,12 +33,12 @@ function renderMeasurement(m: CapturedMeasurement, override: SlipTpl["default_fo
   const filled = m.values.filter((v) => v.value && String(v.value).trim() !== "");
   if (filled.length === 0) return "";
   if (fmt === "dash_separated") {
-    return `<div style="font-size:13px;font-weight:600;letter-spacing:0.5px;">${filled.map((v) => v.value).join(" - ")}${m.unit ? ` ${m.unit}` : ""}</div>`;
+    return `<div style="font-size:20px;font-weight:700;letter-spacing:1px;margin-top:4px;">${filled.map((v) => v.value).join(" - ")}${m.unit ? ` ${m.unit}` : ""}</div>`;
   }
-  return `<table style="width:100%;border-collapse:collapse;margin-top:4px;">
+  return `<table style="width:100%;border-collapse:collapse;margin-top:6px;">
     ${filled.map((v) => `<tr>
-      <td style="padding:2px 4px;font-size:11px;color:#444;border-bottom:1px dashed #e5e5e5;width:40%;">${v.name}</td>
-      <td style="padding:2px 4px;font-size:12px;font-weight:600;border-bottom:1px dashed #e5e5e5;">${v.value}${m.unit ? ` ${m.unit}` : ""}</td>
+      <td style="padding:5px 6px;font-size:15px;color:#333;border-bottom:1px dashed #d5d5d5;width:45%;">${v.name}</td>
+      <td style="padding:5px 6px;font-size:18px;font-weight:700;border-bottom:1px dashed #d5d5d5;">${v.value}${m.unit ? ` ${m.unit}` : ""}</td>
     </tr>`).join("")}
   </table>`;
 }
@@ -117,10 +117,10 @@ export async function printMeasurementSlip(orderId: string) {
       ${tpl.show_product_name !== false ? `<div style="font-weight:700;font-size:13px;">${line.product_name}</div>` : ""}
       ${tpl.show_product_sku && line.sku ? `<div style="font-family:monospace;font-size:10px;color:#666;">SKU: ${line.sku}</div>` : ""}
       ${line.measurements.map((m) => `
-        <div style="margin-top:8px;">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#555;letter-spacing:0.5px;">${m.groupName}</div>
+        <div style="margin-top:10px;">
+          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
           ${renderMeasurement(m, tpl.default_format)}
-          ${tpl.show_notes !== false && m.notes ? `<div style="font-size:10px;color:#666;margin-top:3px;font-style:italic;">${m.notes}</div>` : ""}
+          ${tpl.show_notes !== false && m.notes ? `<div style="font-size:12px;color:#555;margin-top:4px;font-style:italic;">${m.notes}</div>` : ""}
         </div>
       `).join("")}
     </div>
@@ -130,8 +130,8 @@ export async function printMeasurementSlip(orderId: string) {
     <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
       <div style="font-weight:700;font-size:13px;">General Measurements</div>
       ${orphans.map((m) => `
-        <div style="margin-top:8px;">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#555;">${m.groupName}</div>
+        <div style="margin-top:10px;">
+          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
           ${renderMeasurement(m, tpl.default_format)}
         </div>
       `).join("")}
