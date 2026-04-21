@@ -357,6 +357,16 @@ Deno.serve(async (req) => {
         };
       });
 
+      // Find which orders are new (don't exist yet) so we can write a "created" timeline event after upsert
+      const wooIds = wooOrders.map((o: any) => o.id);
+      const { data: preExisting } = await supabase
+        .from("orders")
+        .select("woo_order_id")
+        .eq("store_id", store_id)
+        .in("woo_order_id", wooIds);
+      const preExistingIds = new Set((preExisting || []).map((r: any) => r.woo_order_id));
+      const newWooOrders = wooOrders.filter((o: any) => !preExistingIds.has(o.id));
+
       for (let i = 0; i < orderRows.length; i += 500) {
         const chunk = orderRows.slice(i, i + 500);
         const { error } = await supabase
@@ -369,6 +379,36 @@ Deno.serve(async (req) => {
       const { data: dbOrders } = await supabase
         .from("orders").select("id, woo_order_id").eq("store_id", store_id);
       const orderMap = new Map((dbOrders || []).map((o: any) => [o.woo_order_id, o.id]));
+
+      // Insert "created" timeline events for newly imported orders
+      if (newWooOrders.length > 0) {
+        const newTimelineRows = newWooOrders
+          .map((o: any) => {
+            const orderId = orderMap.get(o.id);
+            if (!orderId) return null;
+            return {
+              order_id: orderId,
+              event: "created",
+              description: `Order received from WooCommerce — Total ৳${(parseFloat(o.total) || 0).toLocaleString()}`,
+              metadata: {
+                source: "woo_sync",
+                woo_order_id: o.id,
+                woo_status: o.status,
+                total: parseFloat(o.total) || 0,
+                user_name: "WooCommerce",
+                user_email: null,
+              },
+            };
+          })
+          .filter(Boolean);
+        if (newTimelineRows.length > 0) {
+          for (let i = 0; i < newTimelineRows.length; i += 500) {
+            const chunk = newTimelineRows.slice(i, i + 500);
+            const { error: tlErr } = await supabase.from("order_timeline").insert(chunk);
+            if (tlErr) console.warn("Timeline insert warn:", tlErr.message);
+          }
+        }
+      }
 
       let itemCount = 0;
       // Load measurement field name -> group info map for Woo meta detection

@@ -4,6 +4,7 @@ import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer } from 
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
+import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { postWooOrderNote } from "@/lib/wooNotes";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -68,6 +69,7 @@ interface TimelineEntry {
   event: string;
   description: string;
   created_at: string;
+  metadata: Record<string, unknown> | null;
 }
 
 interface PaymentEntry {
@@ -139,7 +141,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .eq("order_id", orderId),
       supabase
         .from("order_timeline")
-        .select("id, event, description, created_at")
+        .select("id, event, description, created_at, metadata")
         .eq("order_id", orderId)
         .order("created_at", { ascending: false }),
       supabase
@@ -239,21 +241,74 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
       // Add timeline entry for status change
       if (status !== order.status) {
-        await supabase.from("order_timeline").insert({
+        await addOrderTimeline({
           order_id: order.id,
           event: "status_changed",
           description: `Status changed from "${order.status}" to "${status}"`,
+          metadata: { from: order.status, to: status },
         });
         await logAction("update", "order_status", order.id, { from: order.status, to: status, order_number: order.order_number });
       }
 
       if (paymentStatus !== order.payment_status) {
-        await supabase.from("order_timeline").insert({
+        await addOrderTimeline({
           order_id: order.id,
           event: "payment_status_changed",
           description: `Payment status changed from "${order.payment_status}" to "${paymentStatus}"`,
+          metadata: { from: order.payment_status, to: paymentStatus },
         });
         await logAction("update", "order_payment_status", order.id, { from: order.payment_status, to: paymentStatus, order_number: order.order_number });
+      }
+
+      // Customer info changes
+      const custChanges: string[] = [];
+      if ((order.customer_name || "") !== customerName) custChanges.push(`name: "${order.customer_name || "—"}" → "${customerName || "—"}"`);
+      if ((order.customer_phone || "") !== customerPhone) custChanges.push(`phone: "${order.customer_phone || "—"}" → "${customerPhone || "—"}"`);
+      if ((order.customer_address || "") !== customerAddress) custChanges.push(`address updated`);
+      if ((order.customer_email || "") !== customerEmail) custChanges.push(`email: "${order.customer_email || "—"}" → "${customerEmail || "—"}"`);
+      if (custChanges.length > 0) {
+        await addOrderTimeline({
+          order_id: order.id,
+          event: "customer_updated",
+          description: `Customer info updated — ${custChanges.join(", ")}`,
+          metadata: { changes: custChanges },
+        });
+      }
+
+      // Item changes
+      const itemChangeNotes: string[] = [];
+      if (deletedItemIds.length > 0) {
+        const removed = items.filter((i) => deletedItemIds.includes(i.id)).map((i) => `${i.product_name} ×${i.quantity}`);
+        itemChangeNotes.push(`removed: ${removed.join(", ")}`);
+      }
+      for (const item of activeItems) {
+        const orig = items.find((i) => i.id === item.id);
+        if (orig && orig.quantity !== item.quantity) {
+          itemChangeNotes.push(`${item.product_name}: qty ${orig.quantity} → ${item.quantity}`);
+        }
+      }
+      if (itemChangeNotes.length > 0) {
+        await addOrderTimeline({
+          order_id: order.id,
+          event: "items_updated",
+          description: `Items updated — ${itemChangeNotes.join("; ")}`,
+          metadata: { changes: itemChangeNotes },
+        });
+      }
+
+      // Totals / fulfillment changes
+      const totalsChanges: string[] = [];
+      if ((order.discount || 0) !== discount) totalsChanges.push(`discount ৳${order.discount || 0} → ৳${discount}`);
+      if ((order.shipping_cost || 0) !== shippingCost) totalsChanges.push(`shipping ৳${order.shipping_cost || 0} → ৳${shippingCost}`);
+      if ((order.fulfillment_type || "delivery") !== fulfillmentType) totalsChanges.push(`delivery type: ${order.fulfillment_type} → ${fulfillmentType}`);
+      if ((order.notes || "") !== notes) totalsChanges.push(`notes updated`);
+      if (totalsChanges.length > 0) {
+        await addOrderTimeline({
+          order_id: order.id,
+          event: "order_updated",
+          description: `Order updated — ${totalsChanges.join(", ")}`,
+          metadata: { changes: totalsChanges, new_total: computedTotal },
+        });
       }
 
       await logAction("update", "order", order.id, {
@@ -300,10 +355,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       trx_id: payTrxId || null,
       notes: payNotes || null,
     });
-    await supabase.from("order_timeline").insert({
+    await addOrderTimeline({
       order_id: order.id,
       event: "payment_logged",
       description: `Payment of ৳${parseFloat(payAmount).toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}`,
+      metadata: { method: payMethod, amount: parseFloat(payAmount), trx_id: payTrxId || null },
     });
     await logAction("create", "order_payment", order.id, {
       order_number: order.order_number, method: payMethod, amount: parseFloat(payAmount), trx_id: payTrxId || null,
@@ -351,7 +407,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       }
 
       // Timeline entries
-      await supabase.from("order_timeline").insert({
+      await addOrderTimeline({
         order_id: order.id,
         event: "returned",
         description: "Order returned — inventory restocked",
@@ -754,19 +810,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   <div className="relative pl-6 space-y-0">
                     {/* Vertical line */}
                     <div className="absolute left-[9px] top-1 bottom-1 w-px bg-border" />
-                    {timeline.map((entry, idx) => (
-                      <div key={entry.id} className="relative pb-6 last:pb-0">
-                        <div className="absolute -left-6 top-0.5 flex items-center justify-center">
-                          <CircleDot className="h-[18px] w-[18px] text-primary bg-background rounded-full" />
+                    {timeline.map((entry) => {
+                      const meta = (entry.metadata || {}) as Record<string, unknown>;
+                      const userLabel = (meta.user_name as string) || (meta.user_email as string) || "System";
+                      return (
+                        <div key={entry.id} className="relative pb-6 last:pb-0">
+                          <div className="absolute -left-6 top-0.5 flex items-center justify-center">
+                            <CircleDot className="h-[18px] w-[18px] text-primary bg-background rounded-full" />
+                          </div>
+                          <div>
+                            <p className="text-sm text-foreground">{entry.description}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {format(new Date(entry.created_at), "MMM d, yyyy · h:mm a")}
+                              <span className="mx-1.5">·</span>
+                              <span className="font-medium">by {userLabel}</span>
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm text-foreground">{entry.description}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {format(new Date(entry.created_at), "MMM d, yyyy · h:mm a")}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </TabsContent>

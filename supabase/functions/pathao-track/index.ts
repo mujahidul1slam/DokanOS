@@ -115,9 +115,15 @@ Deno.serve(async (req) => {
         }
         const data = await res.json();
         const info = data.data || data;
-        const pathaoStatus = info.order_status || info.status;
+        const pathaoStatusRaw = info.order_status ?? info.status ?? info.order_status_slug;
+        const pathaoStatus = typeof pathaoStatusRaw === "string" ? pathaoStatusRaw.trim() : "";
 
-        if (pathaoStatus && pathaoStatus !== order.tracking_status) {
+        if (!pathaoStatus || pathaoStatus.toLowerCase() === "undefined" || pathaoStatus.toLowerCase() === "null") {
+          // Don't pollute timeline with bogus values
+          continue;
+        }
+
+        if (pathaoStatus !== order.tracking_status) {
           const mappedStatus = statusMap[pathaoStatus] || order.status;
           await sb
             .from("orders")
@@ -130,8 +136,14 @@ Deno.serve(async (req) => {
           await sb.from("order_timeline").insert({
             order_id: order.id,
             event: "tracking_update",
-            description: `Pathao status: ${pathaoStatus}`,
-            metadata: { tracking_status: pathaoStatus },
+            description: `Pathao courier status: ${pathaoStatus}`,
+            metadata: {
+              tracking_status: pathaoStatus,
+              mapped_status: mappedStatus,
+              previous_status: order.tracking_status,
+              user_name: "Pathao Tracking",
+              user_email: null,
+            },
           });
 
           updated++;
