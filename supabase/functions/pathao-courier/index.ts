@@ -466,8 +466,9 @@ Deno.serve(async (req) => {
 
               await postWooOrderNote(order.id, `[OmniSync] Pathao status update: ${order_status}`);
 
-              // If newly delivered, push status back to WooCommerce as "completed"
-              if (mappedStatus === "delivered") {
+              // Once the Pathao cycle has terminated (delivered/returned), close out the
+              // linked WooCommerce order — woo-push maps both to "completed".
+              if (mappedStatus === "delivered" || mappedStatus === "returned") {
                 await pushOrderStatusToWoo(sb, order.id).catch((e) =>
                   console.warn(`woo-push from track_all failed for ${order.id}: ${e?.message || e}`)
                 );
