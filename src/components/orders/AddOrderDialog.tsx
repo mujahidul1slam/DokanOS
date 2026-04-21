@@ -3,6 +3,7 @@ import { Search, Plus, Minus, Trash2, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
+import { addOrderTimeline } from "@/lib/orderTimeline";
 
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -283,10 +284,11 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       }));
       await supabase.from("order_items").insert(orderItems);
 
-      await supabase.from("order_timeline").insert({
+      await addOrderTimeline({
         order_id: order.id,
         event: "created",
         description: `Order placed manually (${source})`,
+        metadata: { order_number: orderNumber, source, total: order.total },
       });
 
       await logAction("create", "order", order.id, {
