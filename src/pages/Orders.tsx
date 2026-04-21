@@ -103,6 +103,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [storeFilter, setStoreFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [deliveryFilter, setDeliveryFilter] = useState("all");
+  const [courierFilter, setCourierFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
