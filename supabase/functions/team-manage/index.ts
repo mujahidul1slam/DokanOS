@@ -141,11 +141,13 @@ Deno.serve(async (req) => {
       const newUserId = created.user?.id;
       if (!newUserId) throw new Error("User creation failed");
 
-      // Assign role directly (handle_new_user trigger only assigns on invitation match)
-      // Upsert in case trigger already inserted nothing
+      // Assign role directly (handle_new_user trigger only assigns on invitation match).
+      // user_roles unique constraint is on (user_id, role), not user_id alone — so we
+      // delete any existing rows for this user first, then insert the chosen role.
+      await supabase.from("user_roles").delete().eq("user_id", newUserId);
       const { error: roleErr } = await supabase
         .from("user_roles")
-        .upsert({ user_id: newUserId, role }, { onConflict: "user_id" });
+        .insert({ user_id: newUserId, role });
       if (roleErr) throw roleErr;
 
       // Mark a synthetic invitation as accepted for audit trail
