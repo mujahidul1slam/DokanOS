@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/usePermissions";
 import StatusBadge from "@/components/StatusBadge";
 
 /* ─── Types ─── */
@@ -70,6 +71,8 @@ interface Area { area_id: number; area_name: string }
 
 /* ─── Component ─── */
 const Dispatch = () => {
+  const { can } = usePermissions();
+  const canDispatch = can("orders.dispatch");
   const [tab, setTab] = useState("pending");
   const [orders, setOrders] = useState<DispatchOrder[]>([]);
   const [shippedOrders, setShippedOrders] = useState<DispatchOrder[]>([]);
@@ -549,9 +552,10 @@ const Dispatch = () => {
               />
             </div>
             <Button
-              disabled={selected.size === 0}
+              disabled={selected.size === 0 || !canDispatch}
               onClick={() => openDispatch(Array.from(selected))}
               className="gap-2"
+              title={!canDispatch ? "You don't have permission to dispatch orders" : undefined}
             >
               <Send className="h-4 w-4" />
               Dispatch {selected.size > 0 && `(${selected.size})`}
@@ -616,7 +620,8 @@ const Dispatch = () => {
                           size="sm"
                           variant="ghost"
                           onClick={() => openDispatch([order.id])}
-                          title="Dispatch single"
+                          title={canDispatch ? "Dispatch single" : "No dispatch permission"}
+                          disabled={!canDispatch}
                         >
                           <Send className="h-4 w-4" />
                         </Button>

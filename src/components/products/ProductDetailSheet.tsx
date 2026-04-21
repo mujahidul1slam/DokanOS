@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
 import { logAction } from "@/lib/auditLog";
+import { usePermissions } from "@/hooks/usePermissions";
 
 /* ---------- types ---------- */
 interface Variation {
@@ -83,6 +84,9 @@ interface Props {
 
 /* ========== Component ========== */
 const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) => {
+  const { can } = usePermissions();
+  const canViewCost = can("products.view_cost");
+  const canEditCost = can("products.edit_cost");
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [variations, setVariations] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -492,10 +496,12 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
                 <Label>Price (BDT)</Label>
                 <Input type="number" value={form.price} onChange={e => set("price", Number(e.target.value))} />
               </div>
-              <div className="space-y-2">
-                <Label>Cost Price (BDT)</Label>
-                <Input type="number" value={form.cost_price} onChange={e => set("cost_price", Number(e.target.value))} />
-              </div>
+              {canViewCost && (
+                <div className="space-y-2">
+                  <Label>Cost Price (BDT)</Label>
+                  <Input type="number" value={form.cost_price} onChange={e => set("cost_price", Number(e.target.value))} disabled={!canEditCost} />
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Description</Label>

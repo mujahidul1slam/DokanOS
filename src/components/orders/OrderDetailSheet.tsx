@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { postWooOrderNote } from "@/lib/wooNotes";
+import { usePermissions } from "@/hooks/usePermissions";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -90,6 +91,11 @@ interface Props {
 /* ------------------------------------------------------------------ */
 
 export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved }: Props) {
+  const { can } = usePermissions();
+  const canEdit = can("orders.edit");
+  const canChangeStatus = can("orders.change_status");
+  const canRefund = can("orders.refund");
+  const canLogPayment = can("orders.log_payment");
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
@@ -789,12 +795,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
             </Select>
           </div>
           <div className="flex items-center gap-2">
-            {order && (order.status === "delivered" || order.status === "completed") && (
+            {order && (order.status === "delivered" || order.status === "completed") && canRefund && (
               <Button variant="outline" onClick={handleReturn} disabled={saving} className="gap-1.5 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
                 <Undo2 className="h-4 w-4" /> Return
               </Button>
             )}
-            <Button onClick={handleSave} disabled={saving}>
+            <Button onClick={handleSave} disabled={saving || (!canEdit && !canChangeStatus)}>
               {saving ? "Saving…" : "Save Changes"}
             </Button>
           </div>

@@ -4,8 +4,10 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { PermissionsProvider } from "@/hooks/usePermissions";
 import { ThemeProvider } from "@/hooks/useTheme";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import PermissionGuard from "@/components/PermissionGuard";
 import CommandPalette from "@/components/CommandPalette";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
@@ -25,20 +27,8 @@ import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient();
 
-const RoleGuard = ({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) => {
-  const { role } = useAuth();
-  if (role && !allowedRoles.includes(role)) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <p className="text-muted-foreground">You don't have permission to access this page.</p>
-      </div>
-    );
-  }
-  return <>{children}</>;
-};
-
 const AppRoutes = () => {
-  const { user, loading, role } = useAuth();
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (
@@ -61,47 +51,20 @@ const AppRoutes = () => {
     );
   }
 
-  // Viewer can only see Dashboard, Orders, Customers
-  const viewerOnly = role === "viewer";
-
   return (
     <DashboardLayout>
       <CommandPalette />
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/orders" element={<Orders />} />
-        <Route path="/pre-orders" element={<PreOrders />} />
-        <Route path="/customers" element={<Customers />} />
-        <Route path="/products" element={
-          <RoleGuard allowedRoles={["admin", "staff"]}>
-            <Products />
-          </RoleGuard>
-        } />
-        <Route path="/pos" element={
-          <RoleGuard allowedRoles={["admin", "staff"]}>
-            <POS />
-          </RoleGuard>
-        } />
-        <Route path="/analytics" element={
-          <RoleGuard allowedRoles={["admin"]}>
-            <Analytics />
-          </RoleGuard>
-        } />
-        <Route path="/integrations" element={
-          <RoleGuard allowedRoles={["admin"]}>
-            <Integrations />
-          </RoleGuard>
-        } />
-        <Route path="/settings" element={
-          <RoleGuard allowedRoles={["admin"]}>
-            <SettingsPage />
-          </RoleGuard>
-        } />
-        <Route path="/team" element={
-          <RoleGuard allowedRoles={["admin"]}>
-            <TeamManagement />
-          </RoleGuard>
-        } />
+        <Route path="/" element={<PermissionGuard permission="dashboard.view"><Dashboard /></PermissionGuard>} />
+        <Route path="/orders" element={<PermissionGuard permission="orders.view"><Orders /></PermissionGuard>} />
+        <Route path="/pre-orders" element={<PermissionGuard permission="preorders.view"><PreOrders /></PermissionGuard>} />
+        <Route path="/customers" element={<PermissionGuard permission="customers.view"><Customers /></PermissionGuard>} />
+        <Route path="/products" element={<PermissionGuard permission="products.view"><Products /></PermissionGuard>} />
+        <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />
+        <Route path="/analytics" element={<PermissionGuard permission="analytics.view"><Analytics /></PermissionGuard>} />
+        <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
+        <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
+        <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFound />} />
@@ -119,7 +82,9 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <AuthProvider>
-              <AppRoutes />
+              <PermissionsProvider>
+                <AppRoutes />
+              </PermissionsProvider>
             </AuthProvider>
           </BrowserRouter>
         </TooltipProvider>
