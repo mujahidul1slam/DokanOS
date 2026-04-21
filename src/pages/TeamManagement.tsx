@@ -76,20 +76,38 @@ const TeamManagement = () => {
     if (!inviteEmail) return;
     setInviting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("team-manage", {
-        body: { action: "invite", email: inviteEmail, role: inviteRole },
-      });
+      const body: any = inviteMode === "password"
+        ? { action: "create_with_password", email: inviteEmail, role: inviteRole, password: createPassword, full_name: createName }
+        : { action: "invite", email: inviteEmail, role: inviteRole };
+      const { data, error } = await supabase.functions.invoke("team-manage", { body });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      toast.success(`Invitation sent to ${inviteEmail}`);
+      toast.success(data?.message || "Done");
       setInviteEmail("");
       setInviteRole("staff");
+      setCreatePassword("");
+      setCreateName("");
       setDialogOpen(false);
       fetchTeam();
     } catch (err: any) {
-      toast.error(err.message || "Failed to send invitation");
+      toast.error(err.message || "Failed");
     }
     setInviting(false);
+  };
+
+  const handleResendInvite = async (email: string) => {
+    setResendingEmail(email);
+    try {
+      const { data, error } = await supabase.functions.invoke("team-manage", {
+        body: { action: "resend_invite", email },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(data?.message || `Email re-sent to ${email}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend");
+    }
+    setResendingEmail(null);
   };
 
   const handleDeleteInvite = async (id: string) => {
