@@ -408,9 +408,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_payment_bulk", undefined, { ids, to: "paid" });
-      orders.filter((o) => ids.includes(o.id) && o.woo_order_id).forEach((o) => {
-        postWooOrderNote(o.id, "[OmniSync] Payment marked as Paid");
-      });
+      // Woo notes auto-posted via addOrderTimeline above
       toast({ title: `${ids.length} order(s) marked Paid` });
       setSelected(new Set());
       loadOrders();
