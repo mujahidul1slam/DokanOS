@@ -7,7 +7,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { email, role, action, user_id } = await req.json();
+    const { email, role, action, user_id, password, full_name } = await req.json();
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -30,31 +30,34 @@ Deno.serve(async (req) => {
 
     if (callerRole?.role !== "admin") throw new Error("Admin access required");
 
+    // Helper: find existing auth user by email (paginated)
+    async function findUserByEmail(targetEmail: string) {
+      let page = 1;
+      while (page <= 20) {
+        const { data: list, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+        if (error) return null;
+        const found = list.users.find((u: any) => (u.email || "").toLowerCase() === targetEmail);
+        if (found) return found;
+        if (list.users.length < 200) return null;
+        page++;
+      }
+      return null;
+    }
+
+    // ========== INVITE (sends invitation email via Supabase built-in mailer) ==========
     if (action === "invite") {
       if (!email || !role) throw new Error("Email and role are required");
       const normalizedEmail = String(email).trim().toLowerCase();
 
-      // 1. Clear any stale pending invitation rows for this email so re-invite always works
+      // Clear stale pending invitation rows
       await supabase
         .from("invitations")
         .delete()
         .eq("email", normalizedEmail)
         .is("accepted_at", null);
 
-      // 2. Look up existing auth user (paginate through users to find one)
-      let existingUser: any = null;
-      let page = 1;
-      while (page <= 10) {
-        const { data: list, error: listErr } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
-        if (listErr) break;
-        existingUser = list.users.find((u: any) => (u.email || "").toLowerCase() === normalizedEmail);
-        if (existingUser || list.users.length < 200) break;
-        page++;
-      }
-
-      // 3. If user exists but never confirmed/accepted, delete so we can re-create cleanly.
-      //    If user exists AND has a role assigned, they already accepted — block re-invite.
-      let createdUserId: string | null = null;
+      // Check existing user
+      const existingUser = await findUserByEmail(normalizedEmail);
       if (existingUser) {
         const { data: existingRole } = await supabase
           .from("user_roles")
@@ -63,25 +66,14 @@ Deno.serve(async (req) => {
           .maybeSingle();
 
         if (existingRole) {
-          throw new Error("This user is already a team member");
+          throw new Error("This user is already an active team member");
         }
 
-        // Stale auth user from prior failed invite — remove and recreate
+        // Stale auth user — delete to allow fresh invite
         await supabase.auth.admin.deleteUser(existingUser.id);
       }
 
-      // 4. Create fresh auth user
-      const tempPassword = crypto.randomUUID() + "Aa1!";
-      const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
-        email: normalizedEmail,
-        password: tempPassword,
-        email_confirm: true,
-        user_metadata: { invited: true, invited_by: caller.id },
-      });
-      if (createError) throw createError;
-      createdUserId = newUser.user?.id ?? null;
-
-      // 5. Create invitation record
+      // Insert invitation row first (so handle_new_user trigger picks the right role)
       const { error: invErr } = await supabase.from("invitations").insert({
         email: normalizedEmail,
         role,
@@ -89,17 +81,85 @@ Deno.serve(async (req) => {
       });
       if (invErr) throw invErr;
 
-      // 6. Generate recovery link so the invited user can set their password
-      const { error: linkErr } = await supabase.auth.admin.generateLink({
-        type: "recovery",
-        email: normalizedEmail,
-      });
-      if (linkErr) console.error("generateLink error:", linkErr.message);
+      // Send the actual invite email through Supabase Auth
+      // (uses Supabase's built-in SMTP — sender is "noreply@mail.app.supabase.io" by default)
+      const redirectTo = `${req.headers.get("origin") || ""}/reset-password`;
+      const { data: invited, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(
+        normalizedEmail,
+        { redirectTo, data: { invited_by: caller.id } }
+      );
+      if (inviteErr) {
+        // Roll back invitation row on failure
+        await supabase.from("invitations").delete().eq("email", normalizedEmail).is("accepted_at", null);
+        throw new Error(`Email send failed: ${inviteErr.message}`);
+      }
 
       return new Response(JSON.stringify({
         success: true,
-        message: `Invitation sent to ${normalizedEmail}`,
-        user_id: createdUserId,
+        message: `Invitation email sent to ${normalizedEmail}`,
+        user_id: invited.user?.id ?? null,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ========== CREATE USER WITH PASSWORD (no email sent — admin sets credentials directly) ==========
+    if (action === "create_with_password") {
+      if (!email || !role || !password) {
+        throw new Error("Email, role, and password are required");
+      }
+      if (String(password).length < 8) {
+        throw new Error("Password must be at least 8 characters");
+      }
+      const normalizedEmail = String(email).trim().toLowerCase();
+
+      // Block if user already exists with a role
+      const existingUser = await findUserByEmail(normalizedEmail);
+      if (existingUser) {
+        const { data: existingRole } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", existingUser.id)
+          .maybeSingle();
+        if (existingRole) throw new Error("This user already exists");
+        // stale — clean up
+        await supabase.auth.admin.deleteUser(existingUser.id);
+      }
+
+      // Clean up any pending invitation
+      await supabase.from("invitations").delete().eq("email", normalizedEmail).is("accepted_at", null);
+
+      // Create confirmed user with the given password
+      const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+        email: normalizedEmail,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: full_name || normalizedEmail, created_by_admin: caller.id },
+      });
+      if (createErr) throw createErr;
+
+      const newUserId = created.user?.id;
+      if (!newUserId) throw new Error("User creation failed");
+
+      // Assign role directly (handle_new_user trigger only assigns on invitation match)
+      // Upsert in case trigger already inserted nothing
+      const { error: roleErr } = await supabase
+        .from("user_roles")
+        .upsert({ user_id: newUserId, role }, { onConflict: "user_id" });
+      if (roleErr) throw roleErr;
+
+      // Mark a synthetic invitation as accepted for audit trail
+      await supabase.from("invitations").insert({
+        email: normalizedEmail,
+        role,
+        invited_by: caller.id,
+        accepted_at: new Date().toISOString(),
+      });
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: `User created. Share these credentials with them.`,
+        user_id: newUserId,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -107,14 +167,11 @@ Deno.serve(async (req) => {
 
     if (action === "update_role") {
       if (!user_id || !role) throw new Error("user_id and role are required");
-
       const { error } = await supabase
         .from("user_roles")
         .update({ role })
         .eq("user_id", user_id);
-
       if (error) throw error;
-
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -123,8 +180,25 @@ Deno.serve(async (req) => {
     if (action === "delete_invite") {
       if (!user_id) throw new Error("invite id required");
       await supabase.from("invitations").delete().eq("id", user_id);
-
       return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "resend_invite") {
+      if (!email) throw new Error("Email required");
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const redirectTo = `${req.headers.get("origin") || ""}/reset-password`;
+      const { error: resendErr } = await supabase.auth.admin.inviteUserByEmail(
+        normalizedEmail,
+        { redirectTo }
+      );
+      if (resendErr) {
+        // Fallback: send password recovery if user already exists
+        const { error: recErr } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo });
+        if (recErr) throw new Error(`Resend failed: ${resendErr.message}`);
+      }
+      return new Response(JSON.stringify({ success: true, message: `Invitation re-sent to ${normalizedEmail}` }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
