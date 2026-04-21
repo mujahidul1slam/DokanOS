@@ -166,6 +166,24 @@ Deno.serve(async (req) => {
           // Mirror status update into WooCommerce notes timeline (no-op for non-Woo orders)
           await postWooNote(order.id, `[OmniSync] Pathao courier status: ${pathaoStatus} — by Pathao Tracking`);
 
+          // Once the Pathao cycle has terminated (delivered/returned), close out the
+          // linked WooCommerce order — woo-push maps both to "completed".
+          if (mappedStatus === "delivered" || mappedStatus === "returned") {
+            try {
+              const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/woo-push`;
+              await fetch(url, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+                },
+                body: JSON.stringify({ action: "push_order", order_id: order.id }),
+              });
+            } catch (e) {
+              console.warn(`woo-push from pathao-track failed for ${order.id}:`, e);
+            }
+          }
+
           updated++;
         }
       } catch (err: any) {

@@ -312,15 +312,18 @@ async function pushOrder(supabase: any, orderId: string) {
 }
 
 function reverseMapStatus(status: string): string {
+  // Once a Pathao courier cycle has terminated (delivered OR returned/cancelled/refused),
+  // we always close the WooCommerce order as "completed" per business rule —
+  // the merchant treats the courier outcome as the final lifecycle event.
   const map: Record<string, string> = {
     pending: "pending",
     processing: "processing",
     ready_to_ship: "processing",
     completed: "completed",
     delivered: "completed",
-    cancelled: "cancelled",
-    returned: "refunded",
     shipped: "completed",
+    cancelled: "cancelled",
+    returned: "completed",
   };
   return map[status] || "processing";
 }
