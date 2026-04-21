@@ -73,9 +73,18 @@ export function TrackingBadge({ status }: { status: string | null }) {
     "Payment Invoice": "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
     "Return": "bg-red-500/15 text-red-400 border-red-500/20",
     "Returned": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Paid Return": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Return Requested": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Return In Transit": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Returned to Merchant": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Merchant Return": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Return Delivered": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Delivery Failed": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Customer Refused": "bg-red-500/15 text-red-400 border-red-500/20",
     "Exchange": "bg-orange-500/15 text-orange-400 border-orange-500/20",
     "On Hold": "bg-amber-500/15 text-amber-400 border-amber-500/20",
     "Pickup Cancel": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Pickup Failed": "bg-red-500/15 text-red-400 border-red-500/20",
     "Cancelled": "bg-zinc-500/15 text-zinc-400 border-zinc-500/20",
   };
 
