@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { UserPlus, Shield, Mail, Loader2, Trash2, Settings2 } from "lucide-react";
+import { UserPlus, Shield, Mail, Loader2, Trash2, Settings2, KeyRound, Send } from "lucide-react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { TableSkeleton, EmptyState } from "@/components/ui/loading-states";
 import RolesTab from "@/components/team/RolesTab";
