@@ -18,13 +18,12 @@ export async function addOrderTimeline(
 ) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    const userInfo = {
+    const meta = user?.user_metadata as Record<string, unknown> | undefined;
+    const userName = (typeof meta?.full_name === "string" ? meta.full_name : null) ?? user?.email ?? null;
+    const userInfo: Record<string, string | null> = {
       user_id: user?.id ?? null,
       user_email: user?.email ?? null,
-      user_name:
-        (user?.user_metadata as Record<string, unknown> | undefined)?.full_name ??
-        user?.email ??
-        null,
+      user_name: userName,
     };
 
     const arr = Array.isArray(entries) ? entries : [entries];
