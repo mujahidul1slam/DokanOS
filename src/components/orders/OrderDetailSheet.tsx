@@ -795,12 +795,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
             </Select>
           </div>
           <div className="flex items-center gap-2">
-            {order && (order.status === "delivered" || order.status === "completed") && (
+            {order && (order.status === "delivered" || order.status === "completed") && canRefund && (
               <Button variant="outline" onClick={handleReturn} disabled={saving} className="gap-1.5 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
                 <Undo2 className="h-4 w-4" /> Return
               </Button>
             )}
-            <Button onClick={handleSave} disabled={saving}>
+            <Button onClick={handleSave} disabled={saving || (!canEdit && !canChangeStatus)}>
               {saving ? "Saving…" : "Save Changes"}
             </Button>
           </div>

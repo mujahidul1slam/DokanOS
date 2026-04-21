@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
 import { logAction } from "@/lib/auditLog";
+import { usePermissions } from "@/hooks/usePermissions";
 
 /* ---------- types ---------- */
 interface Variation {
