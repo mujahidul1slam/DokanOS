@@ -103,6 +103,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [storeFilter, setStoreFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [deliveryFilter, setDeliveryFilter] = useState("all");
+  const [courierFilter, setCourierFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
@@ -277,6 +278,14 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       const matchSource = sourceFilter === "all" || o.source === sourceFilter;
       const matchStore = storeFilter === "all" || o.store_id === storeFilter;
       const matchDelivery = deliveryFilter === "all" || o.fulfillment_type === deliveryFilter;
+      let matchCourier = true;
+      if (courierFilter === "has") {
+        matchCourier = !!o.consignment_id;
+      } else if (courierFilter === "none") {
+        matchCourier = !o.consignment_id;
+      } else if (courierFilter !== "all") {
+        matchCourier = (o.tracking_status || "") === courierFilter;
+      }
       let matchCategory = true;
       if (categoryFilter.size > 0) {
         const orderCats = orderCategoryMap.get(o.id);
@@ -292,14 +301,14 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           matchDate = matchDate && d <= end;
         }
       }
-      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery && matchCategory;
+      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery && matchCourier && matchCategory;
     });
-  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
+  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, categoryFilter, dateRange, tab]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, categoryFilter, dateRange, tab]);
 
   // When store filter changes, drop category selections that no longer belong
   useEffect(() => {
@@ -769,6 +778,38 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               <SelectItem value="walkin">Walk-in</SelectItem>
               <SelectItem value="pickup">Pickup</SelectItem>
               <SelectItem value="delivery">Delivery</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={courierFilter} onValueChange={setCourierFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Courier Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Courier</SelectItem>
+              <SelectItem value="has">Has Courier Entry</SelectItem>
+              <SelectItem value="none">No Courier Entry</SelectItem>
+              <SelectItem value="Pending">Pending</SelectItem>
+              <SelectItem value="Pickup Pending">Pickup Pending</SelectItem>
+              <SelectItem value="Assigned for Pickup">Assigned for Pickup</SelectItem>
+              <SelectItem value="Picked Up">Picked Up</SelectItem>
+              <SelectItem value="Pickup Failed">Pickup Failed</SelectItem>
+              <SelectItem value="Pickup Cancel">Pickup Cancel</SelectItem>
+              <SelectItem value="At Sorting Hub">At Sorting Hub</SelectItem>
+              <SelectItem value="In Transit">In Transit</SelectItem>
+              <SelectItem value="Out for Delivery">Out for Delivery</SelectItem>
+              <SelectItem value="Delivered">Delivered</SelectItem>
+              <SelectItem value="Partial Delivered">Partial Delivered</SelectItem>
+              <SelectItem value="Payment Invoice">Payment Invoice</SelectItem>
+              <SelectItem value="On Hold">On Hold</SelectItem>
+              <SelectItem value="Exchange">Exchange</SelectItem>
+              <SelectItem value="Return">Return</SelectItem>
+              <SelectItem value="Returned">Returned</SelectItem>
+              <SelectItem value="Paid Return">Paid Return</SelectItem>
+              <SelectItem value="Return Requested">Return Requested</SelectItem>
+              <SelectItem value="Return In Transit">Return In Transit</SelectItem>
+              <SelectItem value="Returned to Merchant">Returned to Merchant</SelectItem>
+              <SelectItem value="Return Delivered">Return Delivered</SelectItem>
+              <SelectItem value="Delivery Failed">Delivery Failed</SelectItem>
+              <SelectItem value="Customer Refused">Customer Refused</SelectItem>
+              <SelectItem value="Cancelled">Cancelled</SelectItem>
             </SelectContent>
           </Select>
           <Select value={storeFilter} onValueChange={setStoreFilter}>
