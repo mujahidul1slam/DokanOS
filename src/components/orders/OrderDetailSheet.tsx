@@ -325,13 +325,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           console.warn("WooCommerce order push failed:", e);
         }
 
-        // Mirror changes as Woo order notes
-        const noteParts: string[] = [];
-        if (status !== order.status) noteParts.push(`Status: ${order.status} → ${status}`);
-        if (paymentStatus !== order.payment_status) noteParts.push(`Payment: ${order.payment_status} → ${paymentStatus}`);
-        if (noteParts.length > 0) {
-          postWooOrderNote(order.id, `[OmniSync] ${noteParts.join(" · ")}`);
-        }
+        // Status/payment/customer/item/total changes are already mirrored to Woo notes
+        // automatically via addOrderTimeline above.
       }
 
       toast.success("Order updated & synced");
