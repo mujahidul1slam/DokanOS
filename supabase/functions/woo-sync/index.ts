@@ -482,57 +482,98 @@ Deno.serve(async (req) => {
         });
       });
 
+      // BULK delete + insert order_items / measurements for all touched orders.
+      // Previously: 3 round-trips per order × N orders. Now: 4 round-trips total.
+      const touchedOrderIds = wooOrders
+        .map((o: any) => orderMap.get(o.id))
+        .filter((id: any): id is string => !!id);
+
+      if (touchedOrderIds.length > 0) {
+        for (let i = 0; i < touchedOrderIds.length; i += 500) {
+          const chunk = touchedOrderIds.slice(i, i + 500);
+          await supabase.from("order_items").delete().in("order_id", chunk);
+          await supabase.from("order_item_measurements").delete().in("order_id", chunk).eq("source", "woo");
+        }
+      }
+      ts(`cleared old items/measurements for ${touchedOrderIds.length} orders`);
+
+      // Build all item rows up front, tagging each with its source line for measurement linking.
+      type StagedItem = { row: any; wooOrderId: number; lineIdx: number };
+      const staged: StagedItem[] = [];
       for (const o of wooOrders) {
         const orderId = orderMap.get(o.id);
         if (!orderId) continue;
-        const items = (o.line_items || []).map((li: any) => {
+        (o.line_items || []).forEach((li: any, idx: number) => {
           const variationLabel = buildVariationLabel(li.meta_data || [], fieldMap);
           const fullName = variationLabel ? `${li.name} - ${variationLabel}` : li.name;
-          return {
-            order_id: orderId,
-            product_id: prodMap.get(li.product_id) || null,
-            product_name: fullName,
-            quantity: li.quantity,
-            unit_price: parseFloat(li.price) || 0,
-            line_total: parseFloat(li.total) || 0,
-          };
+          staged.push({
+            row: {
+              order_id: orderId,
+              product_id: prodMap.get(li.product_id) || null,
+              product_name: fullName,
+              quantity: li.quantity,
+              unit_price: parseFloat(li.price) || 0,
+              line_total: parseFloat(li.total) || 0,
+            },
+            wooOrderId: o.id,
+            lineIdx: idx,
+          });
         });
-        await supabase.from("order_items").delete().eq("order_id", orderId);
-        await supabase.from("order_item_measurements").delete().eq("order_id", orderId).eq("source", "woo");
-        let insertedItems: any[] = [];
-        if (items.length > 0) {
-          const { data: ins, error: itemErr } = await supabase.from("order_items").insert(items).select("id");
-          if (itemErr) console.error(`Order items insert error for order ${o.id}:`, itemErr);
-          else { itemCount += items.length; insertedItems = ins || []; }
-        }
+      }
 
-        // Extract measurements from line item meta_data
-        const measRows: any[] = [];
+      // Bulk insert items in chunks, preserving order to map back to source line items.
+      const insertedItemIds: (string | null)[] = new Array(staged.length).fill(null);
+      let cursor = 0;
+      for (let i = 0; i < staged.length; i += 500) {
+        const slice = staged.slice(i, i + 500);
+        const { data: ins, error: itemErr } = await supabase
+          .from("order_items")
+          .insert(slice.map((s) => s.row))
+          .select("id");
+        if (itemErr) console.error(`Order items bulk insert error:`, itemErr);
+        (ins || []).forEach((r: any, j: number) => { insertedItemIds[i + j] = r.id; });
+        cursor = i;
+      }
+      summary.order_items = staged.length;
+      ts(`inserted ${staged.length} order items`);
+
+      // Build measurement rows now that we know each line's DB id.
+      const measRows: any[] = [];
+      const lineByKey = new Map<string, number>();
+      staged.forEach((s, idx) => lineByKey.set(`${s.wooOrderId}|${s.lineIdx}`, idx));
+
+      for (const o of wooOrders) {
+        const orderId = orderMap.get(o.id);
+        if (!orderId) continue;
         (o.line_items || []).forEach((li: any, idx: number) => {
-          const dbItem = insertedItems[idx];
-          const groups = extractMeasurementsFromMeta(li.meta_data || [], fieldMap);
-          groups.forEach((g) => {
+          const stagedIdx = lineByKey.get(`${o.id}|${idx}`);
+          const dbItemId = stagedIdx != null ? insertedItemIds[stagedIdx] : null;
+          extractMeasurementsFromMeta(li.meta_data || [], fieldMap).forEach((g) => {
             measRows.push({
-              order_id: orderId, order_item_id: dbItem?.id || null,
+              order_id: orderId, order_item_id: dbItemId,
               group_name: g.groupName, display_format: g.displayFormat,
               unit: g.unit, values: g.values, source: "woo",
             });
           });
         });
-        const orderGroups = extractMeasurementsFromMeta(o.meta_data || [], fieldMap);
-        orderGroups.forEach((g) => {
+        extractMeasurementsFromMeta(o.meta_data || [], fieldMap).forEach((g) => {
           measRows.push({
             order_id: orderId, order_item_id: null,
             group_name: g.groupName, display_format: g.displayFormat,
             unit: g.unit, values: g.values, source: "woo",
           });
         });
-        if (measRows.length > 0) {
-          const { error: mErr } = await supabase.from("order_item_measurements").insert(measRows);
-          if (mErr) console.warn(`Measurements insert warn for order ${o.id}:`, mErr.message);
-        }
       }
-      summary.order_items = itemCount;
+
+      if (measRows.length > 0) {
+        for (let i = 0; i < measRows.length; i += 500) {
+          const { error: mErr } = await supabase
+            .from("order_item_measurements")
+            .insert(measRows.slice(i, i + 500));
+          if (mErr) console.warn(`Measurements bulk insert warn:`, mErr.message);
+        }
+        ts(`inserted ${measRows.length} measurements`);
+      }
     }
     } // end runFullSync
   } catch (err: any) {
