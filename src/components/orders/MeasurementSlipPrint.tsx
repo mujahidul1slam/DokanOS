@@ -285,15 +285,6 @@ export async function printMeasurementSlipsBulk(orderIds: string[]): Promise<{ p
   let printed = 0;
   let skipped = 0;
   for (const id of orderIds) {
-    const { data: meas } = await supabase
-      .from("order_item_measurements" as any)
-      .select("id")
-      .eq("order_id", id)
-      .limit(1);
-    if (!meas || meas.length === 0) {
-      skipped++;
-      continue;
-    }
     try {
       await printMeasurementSlip(id);
       printed++;
