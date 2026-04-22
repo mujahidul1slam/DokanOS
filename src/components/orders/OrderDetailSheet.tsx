@@ -62,6 +62,7 @@ interface LineItem {
   unit_price: number;
   line_total: number;
   product_id: string | null;
+  base_product_name?: string | null;
 }
 
 interface TimelineEntry {
@@ -137,7 +138,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .single(),
       supabase
         .from("order_items")
-        .select("id, product_name, quantity, unit_price, line_total, product_id")
+        .select("id, product_name, quantity, unit_price, line_total, product_id, products(name)")
         .eq("order_id", orderId),
       supabase
         .from("order_timeline")
@@ -169,7 +170,16 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setNotes(o.notes || "");
       setFulfillmentType(o.fulfillment_type || "delivery");
     }
-    const li = (itemsRes.data || []) as unknown as LineItem[];
+    const liRaw = (itemsRes.data || []) as any[];
+    const li: LineItem[] = liRaw.map((r) => ({
+      id: r.id,
+      product_name: r.product_name,
+      quantity: r.quantity,
+      unit_price: r.unit_price,
+      line_total: r.line_total,
+      product_id: r.product_id,
+      base_product_name: r.products?.name || null,
+    }));
     setItems(li);
     setEditedItems(li.map((i) => ({ ...i })));
     setDeletedItemIds([]);
@@ -554,9 +564,22 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                           </TableRow>
                         ) : (
                           activeItems.map((item) => {
-                            const dashIdx = item.product_name.indexOf(" - ");
-                            const baseName = dashIdx > -1 ? item.product_name.slice(0, dashIdx) : item.product_name;
-                            const variation = dashIdx > -1 ? item.product_name.slice(dashIdx + 3) : null;
+                            let baseName = item.product_name;
+                            let variation: string | null = null;
+                            if (item.base_product_name && item.product_name.startsWith(item.base_product_name)) {
+                              const rest = item.product_name.slice(item.base_product_name.length);
+                              const m = rest.match(/^\s*-\s*(.+)$/);
+                              if (m) {
+                                baseName = item.base_product_name;
+                                variation = m[1];
+                              }
+                            } else {
+                              const dashIdx = item.product_name.lastIndexOf(" - ");
+                              if (dashIdx > -1) {
+                                baseName = item.product_name.slice(0, dashIdx);
+                                variation = item.product_name.slice(dashIdx + 3);
+                              }
+                            }
                             return (
                             <TableRow key={item.id}>
                               <TableCell className="text-sm font-medium">
