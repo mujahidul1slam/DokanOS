@@ -1,10 +1,17 @@
 import { useState, useEffect, useMemo } from "react";
 import Fuse from "fuse.js";
-import { Search, Plus, Minus, Trash2, Loader2 } from "lucide-react";
+import { Search, Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
+import { Switch } from "@/components/ui/switch";
+import {
+  getGroupsForProduct,
+  saveOrderItemMeasurements,
+  type MeasurementGroup,
+  type CapturedMeasurement,
+} from "@/lib/measurements";
 
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -67,6 +74,11 @@ interface OrderItem {
   variationLabel?: string;
   price: number;
   qty: number;
+  customMeasurements?: boolean;
+  // groupId -> { fieldId -> value }
+  measurementValues?: Record<string, Record<string, string>>;
+  measurementNotes?: Record<string, string>;
+  measurementsExpanded?: boolean;
 }
 
 interface Props {
@@ -91,6 +103,11 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Custom measurements
+  const [measurementsEnabled, setMeasurementsEnabled] = useState(true);
+  // Cache: productId -> MeasurementGroup[]
+  const [groupsByProduct, setGroupsByProduct] = useState<Record<string, MeasurementGroup[]>>({});
+
   // Pathao location
   const [cities, setCities] = useState<{ city_id: number; city_name: string }[]>([]);
   const [zones, setZones] = useState<{ zone_id: number; zone_name: string }[]>([]);
@@ -110,15 +127,37 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
-    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes]) => {
+      supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled").limit(1).maybeSingle(),
+    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes]) => {
       setProducts(pRes.data || []);
       setVariations((vRes.data || []) as VariationRow[]);
       setSources((sRes.data || []) as any[]);
       setCities((cRes.data || []) as any[]);
       setAllZones((zRes.data || []) as any[]);
       setAllAreas((aRes.data || []) as any[]);
+      setMeasurementsEnabled(((isRes as any).data?.pos_custom_measurements_enabled) !== false);
     });
   }, [open]);
+
+  // When a new product is added to the cart, lazy-load its measurement groups.
+  useEffect(() => {
+    const productIds = Array.from(new Set(items.map((i) => i.productId)));
+    const missing = productIds.filter((id) => !(id in groupsByProduct));
+    if (missing.length === 0) return;
+    let mounted = true;
+    (async () => {
+      const entries = await Promise.all(
+        missing.map(async (pid) => [pid, await getGroupsForProduct(pid)] as const),
+      );
+      if (!mounted) return;
+      setGroupsByProduct((prev) => {
+        const next = { ...prev };
+        for (const [pid, grps] of entries) next[pid] = grps;
+        return next;
+      });
+    })();
+    return () => { mounted = false; };
+  }, [items, groupsByProduct]);
 
   // When city changes, derive its zones (from the global cache)
   useEffect(() => {
@@ -261,6 +300,48 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   const removeItem = (uid: string) => setItems(prev => prev.filter(i => i.uid !== uid));
 
+  const updateItem = (uid: string, patch: Partial<OrderItem>) =>
+    setItems(prev => prev.map(i => i.uid === uid ? { ...i, ...patch } : i));
+
+  const setMeasurementValue = (uid: string, groupId: string, fieldId: string, value: string) =>
+    setItems(prev => prev.map(i => {
+      if (i.uid !== uid) return i;
+      const next = { ...(i.measurementValues || {}) };
+      next[groupId] = { ...(next[groupId] || {}), [fieldId]: value };
+      return { ...i, measurementValues: next };
+    }));
+
+  const setMeasurementNote = (uid: string, groupId: string, value: string) =>
+    setItems(prev => prev.map(i => {
+      if (i.uid !== uid) return i;
+      const next = { ...(i.measurementNotes || {}), [groupId]: value };
+      return { ...i, measurementNotes: next };
+    }));
+
+  const buildItemMeasurements = (item: OrderItem): CapturedMeasurement[] => {
+    if (!item.customMeasurements) return [];
+    const groups = groupsByProduct[item.productId] || [];
+    return groups
+      .map<CapturedMeasurement | null>((g) => {
+        const vals = item.measurementValues?.[g.id] || {};
+        const filled = g.fields
+          .map((f) => ({ name: f.name, value: vals[f.id] || "" }))
+          .filter((v) => v.value.trim() !== "");
+        const note = item.measurementNotes?.[g.id]?.trim();
+        if (filled.length === 0 && !note) return null;
+        return {
+          groupId: g.id,
+          groupName: g.name,
+          displayFormat: g.display_format,
+          unit: g.unit,
+          values: filled,
+          notes: note || undefined,
+          source: "pos",
+        };
+      })
+      .filter((x): x is CapturedMeasurement => x !== null);
+  };
+
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const total = subtotal - discount + shippingCost;
 
@@ -331,7 +412,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
       if (error) throw error;
 
-      const orderItems = items.map(i => ({
+      const orderItemsPayload = items.map(i => ({
         order_id: order.id,
         product_id: i.productId,
         product_name: i.variationLabel ? `${i.name} - ${i.variationLabel}` : i.name,
@@ -339,7 +420,31 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         quantity: i.qty,
         line_total: i.price * i.qty,
       }));
-      await supabase.from("order_items").insert(orderItems);
+      const { data: insertedItems } = await supabase
+        .from("order_items")
+        .insert(orderItemsPayload)
+        .select("id, product_id, product_name");
+
+      // Persist captured measurements per inserted order item
+      if (insertedItems && insertedItems.length > 0) {
+        const used = new Set<string>();
+        for (const cartItem of items) {
+          const captured = buildItemMeasurements(cartItem);
+          if (captured.length === 0) continue;
+          const expectedName = cartItem.variationLabel
+            ? `${cartItem.name} - ${cartItem.variationLabel}`
+            : cartItem.name;
+          const match = insertedItems.find(
+            (oi: any) =>
+              !used.has(oi.id) &&
+              oi.product_id === cartItem.productId &&
+              oi.product_name === expectedName,
+          );
+          if (!match) continue;
+          used.add(match.id);
+          await saveOrderItemMeasurements(order.id, match.id, captured);
+        }
+      }
 
       await addOrderTimeline({
         order_id: order.id,
@@ -408,22 +513,95 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               <div className="px-3 py-2 bg-secondary text-xs font-medium text-muted-foreground grid grid-cols-[1fr_80px_100px_80px_32px]">
                 <span>Product</span><span className="text-right">Price</span><span className="text-center">Qty</span><span className="text-right">Total</span><span></span>
               </div>
-              {items.map(item => (
-                <div key={item.uid} className="px-3 py-2 border-t border-border grid grid-cols-[1fr_80px_100px_80px_32px] items-center text-sm">
-                  <div className="truncate">
-                    <span className="font-medium">{item.name}</span>
-                    {item.variationLabel && <span className="ml-1 text-xs text-muted-foreground">({item.variationLabel})</span>}
+              {items.map(item => {
+                const groups = groupsByProduct[item.productId] || [];
+                const showMeasureToggle = measurementsEnabled && groups.length > 0;
+                return (
+                  <div key={item.uid} className="border-t border-border">
+                    <div className="px-3 py-2 grid grid-cols-[1fr_80px_100px_80px_32px] items-center text-sm">
+                      <div className="truncate">
+                        <span className="font-medium">{item.name}</span>
+                        {item.variationLabel && <span className="ml-1 text-xs text-muted-foreground">({item.variationLabel})</span>}
+                      </div>
+                      <span className="text-right text-muted-foreground">৳{item.price.toLocaleString()}</span>
+                      <div className="flex items-center justify-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty - 1)}><Minus className="h-3 w-3" /></Button>
+                        <span className="w-6 text-center">{item.qty}</span>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty + 1)}><Plus className="h-3 w-3" /></Button>
+                      </div>
+                      <span className="text-right font-medium">৳{(item.price * item.qty).toLocaleString()}</span>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeItem(item.uid)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+
+                    {showMeasureToggle && (
+                      <div className="px-3 pb-2 space-y-2">
+                        <div className="flex items-center justify-between rounded-md bg-secondary/50 px-2.5 py-1.5">
+                          <div className="flex items-center gap-2">
+                            <Ruler className="h-3.5 w-3.5 text-primary" />
+                            <span className="text-xs font-medium">Custom Measurements</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {groups.length === 1 ? groups[0].name : `${groups.length} groups`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {item.customMeasurements && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateItem(item.uid, { measurementsExpanded: !item.measurementsExpanded })}
+                              >
+                                {item.measurementsExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              </Button>
+                            )}
+                            <Switch
+                              checked={!!item.customMeasurements}
+                              onCheckedChange={(checked) =>
+                                updateItem(item.uid, { customMeasurements: checked, measurementsExpanded: checked })
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        {item.customMeasurements && item.measurementsExpanded && (
+                          <div className="space-y-2">
+                            {groups.map((g) => (
+                              <div key={g.id} className="rounded-md border border-border bg-card p-2.5 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <h5 className="text-xs font-semibold">{g.name}</h5>
+                                  <span className="text-[10px] text-muted-foreground uppercase">{g.unit}</span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {g.fields.map((f) => (
+                                    <div key={f.id}>
+                                      <Label className="text-[10px] text-muted-foreground">{f.name}</Label>
+                                      <Input
+                                        value={item.measurementValues?.[g.id]?.[f.id] || ""}
+                                        onChange={(e) => setMeasurementValue(item.uid, g.id, f.id, e.target.value)}
+                                        placeholder="0.0"
+                                        className="h-8 mt-0.5 text-xs"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                                <div>
+                                  <Label className="text-[10px] text-muted-foreground">Notes</Label>
+                                  <Textarea
+                                    value={item.measurementNotes?.[g.id] || ""}
+                                    onChange={(e) => setMeasurementNote(item.uid, g.id, e.target.value)}
+                                    placeholder="Special instructions..."
+                                    className="mt-0.5 min-h-[40px] text-xs"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <span className="text-right text-muted-foreground">৳{item.price.toLocaleString()}</span>
-                  <div className="flex items-center justify-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty - 1)}><Minus className="h-3 w-3" /></Button>
-                    <span className="w-6 text-center">{item.qty}</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty + 1)}><Plus className="h-3 w-3" /></Button>
-                  </div>
-                  <span className="text-right font-medium">৳{(item.price * item.qty).toLocaleString()}</span>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeItem(item.uid)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
