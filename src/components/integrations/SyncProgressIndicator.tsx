@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
 
 interface SyncingStore {
   id: string;
@@ -85,24 +84,20 @@ const SyncProgressIndicator = ({ syncingStores }: Props) => {
                 {formatElapsed(s.startedAt)}
               </span>
             </div>
-            <IndeterminateBar />
+            <div className="relative h-1 w-full overflow-hidden rounded-full bg-secondary">
+              <div className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary animate-[sync-slide_1.4s_ease-in-out_infinite]" />
+            </div>
           </div>
         ))}
       </div>
+      <style>{`
+        @keyframes sync-slide {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(400%); }
+        }
+      `}</style>
     </div>
   );
 };
-
-const IndeterminateBar = () => (
-  <div className="relative h-1 w-full overflow-hidden rounded-full bg-secondary">
-    <div className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary animate-[sync-slide_1.4s_ease-in-out_infinite]" />
-    <style>{`
-      @keyframes sync-slide {
-        0%   { transform: translateX(-100%); }
-        100% { transform: translateX(400%); }
-      }
-    `}</style>
-  </div>
-);
 
 export default SyncProgressIndicator;
