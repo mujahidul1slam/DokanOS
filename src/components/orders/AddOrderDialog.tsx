@@ -74,6 +74,11 @@ interface OrderItem {
   variationLabel?: string;
   price: number;
   qty: number;
+  customMeasurements?: boolean;
+  // groupId -> { fieldId -> value }
+  measurementValues?: Record<string, Record<string, string>>;
+  measurementNotes?: Record<string, string>;
+  measurementsExpanded?: boolean;
 }
 
 interface Props {
