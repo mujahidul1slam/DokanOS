@@ -95,89 +95,84 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [cities, setCities] = useState<{ city_id: number; city_name: string }[]>([]);
   const [zones, setZones] = useState<{ zone_id: number; zone_name: string }[]>([]);
   const [areas, setAreas] = useState<{ area_id: number; area_name: string }[]>([]);
+  const [allZones, setAllZones] = useState<{ zone_id: number; zone_name: string; city_id: number }[]>([]);
+  const [allAreas, setAllAreas] = useState<{ area_id: number; area_name: string; zone_id: number }[]>([]);
   const [selectedCity, setSelectedCity] = useState<number | null>(null);
   const [selectedZone, setSelectedZone] = useState<number | null>(null);
   const [selectedArea, setSelectedArea] = useState<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    // Fetch products, variations, sources, cities in parallel
     Promise.all([
       supabase.from("products").select("id, name, sku, price, stock_quantity, image_url").eq("is_active", true).order("name"),
       supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes"),
       supabase.from("order_sources").select("id, name").order("sort_order"),
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
-    ]).then(([pRes, vRes, sRes, cRes]) => {
+      supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
+      supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
+    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes]) => {
       setProducts(pRes.data || []);
       setVariations((vRes.data || []) as VariationRow[]);
       setSources((sRes.data || []) as any[]);
       setCities((cRes.data || []) as any[]);
+      setAllZones((zRes.data || []) as any[]);
+      setAllAreas((aRes.data || []) as any[]);
     });
   }, [open]);
 
-  // Load zones when city changes
+  // When city changes, derive its zones (from the global cache)
   useEffect(() => {
-    if (!selectedCity) { setZones([]); setSelectedZone(null); setAreas([]); setSelectedArea(null); return; }
-    supabase.from("pathao_zones").select("zone_id, zone_name").eq("city_id", selectedCity).order("zone_name").then(({ data }) => {
-      setZones((data || []) as any[]);
-      setSelectedZone(null); setAreas([]); setSelectedArea(null);
-    });
-  }, [selectedCity]);
+    if (!selectedCity) { setZones([]); return; }
+    setZones(allZones.filter((z) => z.city_id === selectedCity));
+  }, [selectedCity, allZones]);
 
-  // Load areas when zone changes
+  // When zone changes, derive its areas (from the global cache)
   useEffect(() => {
-    if (!selectedZone) { setAreas([]); setSelectedArea(null); return; }
-    supabase.from("pathao_areas").select("area_id, area_name").eq("zone_id", selectedZone).order("area_name").then(({ data }) => {
-      setAreas((data || []) as any[]);
-      setSelectedArea(null);
-    });
-  }, [selectedZone]);
+    if (!selectedZone) { setAreas([]); return; }
+    setAreas(allAreas.filter((a) => a.zone_id === selectedZone));
+  }, [selectedZone, allAreas]);
 
-  // Fuzzy address-to-location matching: trims whitespace, strips
-  // parentheticals like "Banani (DOHS)", and falls back to long-token matches.
-  const findBestMatch = <T extends { name: string; id: number }>(
-    addr: string,
-    list: T[],
-  ): T | undefined => {
-    if (!addr || list.length === 0) return undefined;
-    const a = ` ${addr.toLowerCase().replace(/[,\-_/]/g, " ").replace(/\s+/g, " ").trim()} `;
-    let best: { item: T; score: number } | undefined;
-    for (const item of list) {
-      const raw = item.name.trim().toLowerCase();
-      if (!raw) continue;
-      const stripped = raw.replace(/\s*\(.*?\)\s*/g, " ").replace(/\s+/g, " ").trim();
-      let score = 0;
-      if (a.includes(` ${raw} `)) score = raw.length + 100;
-      else if (a.includes(raw)) score = raw.length + 50;
-      else if (stripped && stripped !== raw && a.includes(stripped)) score = stripped.length + 30;
-      else {
-        const tokens = stripped.split(" ").filter((t) => t.length >= 4);
-        for (const t of tokens) {
-          if (a.includes(t)) score = Math.max(score, t.length);
+  // Address auto-detect: try to match an AREA first (most specific) — that
+  // back-fills its zone and city. Otherwise match a ZONE which back-fills
+  // its city. Otherwise just match the city.
+  useEffect(() => {
+    if (!customerAddress || customerAddress.length < 3) return;
+    if (allZones.length === 0 && cities.length === 0) return;
+    let mounted = true;
+    (async () => {
+      const { buildAddressCandidates, strictMatch, fuzzyMatch } = await import("@/lib/pathaoMatch");
+      if (!mounted) return;
+      const candidates = buildAddressCandidates([customerAddress]);
+
+      let nextCity = selectedCity;
+      let nextZone = selectedZone;
+      let nextArea = selectedArea;
+
+      const areaMatch = strictMatch(allAreas, (a) => a.area_name, candidates);
+      if (areaMatch) {
+        nextArea = areaMatch.area_id;
+        nextZone = areaMatch.zone_id;
+        const parent = allZones.find((z) => z.zone_id === areaMatch.zone_id);
+        if (parent) nextCity = parent.city_id;
+      } else {
+        const zoneMatch =
+          strictMatch(allZones, (z) => z.zone_name, candidates) ||
+          fuzzyMatch(allZones, (z) => z.zone_name, candidates);
+        if (zoneMatch) {
+          nextZone = zoneMatch.zone_id;
+          nextCity = zoneMatch.city_id;
+        } else {
+          const cityMatch = strictMatch(cities, (c) => c.city_name, candidates);
+          if (cityMatch) nextCity = cityMatch.city_id;
         }
       }
-      if (score > 0 && (!best || score > best.score)) best = { item, score };
-    }
-    return best?.item;
-  };
 
-  useEffect(() => {
-    if (!customerAddress || customerAddress.length < 3 || cities.length === 0) return;
-    const matched = findBestMatch(customerAddress, cities.map((c) => ({ id: c.city_id, name: c.city_name })));
-    if (matched && matched.id !== selectedCity) setSelectedCity(matched.id);
-  }, [customerAddress, cities]);
-
-  useEffect(() => {
-    if (!customerAddress || zones.length === 0) return;
-    const matched = findBestMatch(customerAddress, zones.map((z) => ({ id: z.zone_id, name: z.zone_name })));
-    if (matched && matched.id !== selectedZone) setSelectedZone(matched.id);
-  }, [customerAddress, zones]);
-
-  useEffect(() => {
-    if (!customerAddress || areas.length === 0) return;
-    const matched = findBestMatch(customerAddress, areas.map((a) => ({ id: a.area_id, name: a.area_name })));
-    if (matched && matched.id !== selectedArea) setSelectedArea(matched.id);
-  }, [customerAddress, areas]);
+      if (nextCity !== selectedCity) setSelectedCity(nextCity);
+      if (nextZone !== selectedZone) setSelectedZone(nextZone);
+      if (nextArea !== selectedArea) setSelectedArea(nextArea);
+    })();
+    return () => { mounted = false; };
+  }, [customerAddress, cities, allZones, allAreas]);
 
   // Flat searchable index of products + variations
   const searchIndex = useMemo((): (SearchResult & { searchText: string })[] => {
