@@ -1,5 +1,33 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { CapturedMeasurement } from "@/lib/measurements";
+import { addOrderTimeline } from "@/lib/orderTimeline";
+
+/**
+ * If the order is currently in pre_order_pending status, promote it to
+ * pre_order_making (the "in production" stage) — printing the measurement
+ * slip is the trigger that production has begun.
+ */
+async function promotePreOrderOnSlipPrint(orderId: string) {
+  try {
+    const { data } = await supabase
+      .from("orders")
+      .select("id, status, order_number")
+      .eq("id", orderId)
+      .single();
+    if (!data) return;
+    if (data.status === "pre_order_pending") {
+      await supabase.from("orders").update({ status: "pre_order_making" }).eq("id", orderId);
+      await addOrderTimeline({
+        order_id: orderId,
+        event: "status_changed",
+        description: 'Status changed from "Pre-Order" to "Making" — measurement slip printed',
+        metadata: { from: "pre_order_pending", to: "pre_order_making", trigger: "measurement_slip_print" },
+      });
+    }
+  } catch (e) {
+    console.warn("promotePreOrderOnSlipPrint failed:", e);
+  }
+}
 
 interface SlipTpl {
   title?: string;
