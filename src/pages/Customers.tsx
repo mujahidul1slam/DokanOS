@@ -1,4 +1,5 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import {
@@ -46,7 +47,8 @@ interface CustomerOrder {
 
 interface StoreOption { id: string; name: string }
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 500;
+const ROW_HEIGHT = 73; // px — approximate height of one customer row
 
 const Customers = () => {
   const [customers, setCustomers] = useState<UnifiedCustomer[]>([]);
