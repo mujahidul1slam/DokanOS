@@ -23,6 +23,7 @@ const PreOrders = lazy(() => import("./pages/PreOrders"));
 const Customers = lazy(() => import("./pages/Customers"));
 const Products = lazy(() => import("./pages/Products"));
 const POS = lazy(() => import("./pages/POS"));
+const PosReports = lazy(() => import("./pages/PosReports"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
@@ -84,6 +85,7 @@ const AppRoutes = () => {
           <Route path="/customers" element={<PermissionGuard permission="customers.view"><Customers /></PermissionGuard>} />
           <Route path="/products" element={<PermissionGuard permission="products.view"><Products /></PermissionGuard>} />
           <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />
+          <Route path="/pos/reports" element={<PermissionGuard permission="analytics.view"><PosReports /></PermissionGuard>} />
           <Route path="/analytics" element={<PermissionGuard permission="analytics.view"><Analytics /></PermissionGuard>} />
           <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
           <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
