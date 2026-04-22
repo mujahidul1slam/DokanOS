@@ -314,6 +314,33 @@ Deno.serve(async (req) => {
       return customerId;
     }
 
+    // Kick off background sync (runFullSync is hoisted, declared below).
+    const syncTask = (async () => {
+      try {
+        await runFullSync();
+        await supabase.from("stores")
+          .update({ status: "connected", last_synced_at: new Date().toISOString() })
+          .eq("id", store_id);
+        ts(`completed: ${JSON.stringify(summary)}`);
+      } catch (e: any) {
+        console.error("woo-sync background error:", e?.message || e);
+        await supabase.from("stores").update({ status: "error" }).eq("id", store_id);
+      } finally {
+        clearInterval(heartbeat);
+      }
+    })();
+
+    // @ts-ignore
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(syncTask);
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, status: "started", message: "Sync running in background. Check back in a minute." }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+
     // --- Main sync -------------------------------------------------------
     async function runFullSync() {
     const lastSync = store.last_synced_at ? new Date(store.last_synced_at) : null;
