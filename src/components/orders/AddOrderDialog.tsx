@@ -412,7 +412,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
       if (error) throw error;
 
-      const orderItems = items.map(i => ({
+      const orderItemsPayload = items.map(i => ({
         order_id: order.id,
         product_id: i.productId,
         product_name: i.variationLabel ? `${i.name} - ${i.variationLabel}` : i.name,
@@ -420,7 +420,31 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         quantity: i.qty,
         line_total: i.price * i.qty,
       }));
-      await supabase.from("order_items").insert(orderItems);
+      const { data: insertedItems } = await supabase
+        .from("order_items")
+        .insert(orderItemsPayload)
+        .select("id, product_id, product_name");
+
+      // Persist captured measurements per inserted order item
+      if (insertedItems && insertedItems.length > 0) {
+        const used = new Set<string>();
+        for (const cartItem of items) {
+          const captured = buildItemMeasurements(cartItem);
+          if (captured.length === 0) continue;
+          const expectedName = cartItem.variationLabel
+            ? `${cartItem.name} - ${cartItem.variationLabel}`
+            : cartItem.name;
+          const match = insertedItems.find(
+            (oi: any) =>
+              !used.has(oi.id) &&
+              oi.product_id === cartItem.productId &&
+              oi.product_name === expectedName,
+          );
+          if (!match) continue;
+          used.add(match.id);
+          await saveOrderItemMeasurements(order.id, match.id, captured);
+        }
+      }
 
       await addOrderTimeline({
         order_id: order.id,
