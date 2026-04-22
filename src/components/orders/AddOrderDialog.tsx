@@ -133,16 +133,41 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     });
   }, [selectedZone]);
 
-  // Auto-detect city/zone/area from address
+  // Auto-detect city from address (longest match wins to avoid partial collisions)
   useEffect(() => {
     if (!customerAddress || customerAddress.length < 3 || cities.length === 0) return;
     const addr = customerAddress.toLowerCase();
-    // Try to match city
-    const matchedCity = cities.find(c => addr.includes(c.city_name.toLowerCase()));
-    if (matchedCity && matchedCity.city_id !== selectedCity) {
-      setSelectedCity(matchedCity.city_id);
+    const matched = cities
+      .filter((c) => c.city_name && addr.includes(c.city_name.toLowerCase()))
+      .sort((a, b) => b.city_name.length - a.city_name.length)[0];
+    if (matched && matched.city_id !== selectedCity) {
+      setSelectedCity(matched.city_id);
     }
   }, [customerAddress, cities]);
+
+  // Auto-detect zone once zones for the city load
+  useEffect(() => {
+    if (!customerAddress || zones.length === 0) return;
+    const addr = customerAddress.toLowerCase();
+    const matched = zones
+      .filter((z) => z.zone_name && addr.includes(z.zone_name.toLowerCase()))
+      .sort((a, b) => b.zone_name.length - a.zone_name.length)[0];
+    if (matched && matched.zone_id !== selectedZone) {
+      setSelectedZone(matched.zone_id);
+    }
+  }, [customerAddress, zones]);
+
+  // Auto-detect area once areas for the zone load
+  useEffect(() => {
+    if (!customerAddress || areas.length === 0) return;
+    const addr = customerAddress.toLowerCase();
+    const matched = areas
+      .filter((a) => a.area_name && addr.includes(a.area_name.toLowerCase()))
+      .sort((a, b) => b.area_name.length - a.area_name.length)[0];
+    if (matched && matched.area_id !== selectedArea) {
+      setSelectedArea(matched.area_id);
+    }
+  }, [customerAddress, areas]);
 
   // Flat searchable index of products + variations
   const searchIndex = useMemo((): (SearchResult & { searchText: string })[] => {
