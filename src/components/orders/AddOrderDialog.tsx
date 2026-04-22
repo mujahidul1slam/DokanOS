@@ -133,40 +133,50 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     });
   }, [selectedZone]);
 
-  // Auto-detect city from address (longest match wins to avoid partial collisions)
+  // Fuzzy address-to-location matching: trims whitespace, strips
+  // parentheticals like "Banani (DOHS)", and falls back to long-token matches.
+  const findBestMatch = <T extends { name: string; id: number }>(
+    addr: string,
+    list: T[],
+  ): T | undefined => {
+    if (!addr || list.length === 0) return undefined;
+    const a = ` ${addr.toLowerCase().replace(/[,\-_/]/g, " ").replace(/\s+/g, " ").trim()} `;
+    let best: { item: T; score: number } | undefined;
+    for (const item of list) {
+      const raw = item.name.trim().toLowerCase();
+      if (!raw) continue;
+      const stripped = raw.replace(/\s*\(.*?\)\s*/g, " ").replace(/\s+/g, " ").trim();
+      let score = 0;
+      if (a.includes(` ${raw} `)) score = raw.length + 100;
+      else if (a.includes(raw)) score = raw.length + 50;
+      else if (stripped && stripped !== raw && a.includes(stripped)) score = stripped.length + 30;
+      else {
+        const tokens = stripped.split(" ").filter((t) => t.length >= 4);
+        for (const t of tokens) {
+          if (a.includes(t)) score = Math.max(score, t.length);
+        }
+      }
+      if (score > 0 && (!best || score > best.score)) best = { item, score };
+    }
+    return best?.item;
+  };
+
   useEffect(() => {
     if (!customerAddress || customerAddress.length < 3 || cities.length === 0) return;
-    const addr = customerAddress.toLowerCase();
-    const matched = cities
-      .filter((c) => c.city_name && addr.includes(c.city_name.toLowerCase()))
-      .sort((a, b) => b.city_name.length - a.city_name.length)[0];
-    if (matched && matched.city_id !== selectedCity) {
-      setSelectedCity(matched.city_id);
-    }
+    const matched = findBestMatch(customerAddress, cities.map((c) => ({ id: c.city_id, name: c.city_name })));
+    if (matched && matched.id !== selectedCity) setSelectedCity(matched.id);
   }, [customerAddress, cities]);
 
-  // Auto-detect zone once zones for the city load
   useEffect(() => {
     if (!customerAddress || zones.length === 0) return;
-    const addr = customerAddress.toLowerCase();
-    const matched = zones
-      .filter((z) => z.zone_name && addr.includes(z.zone_name.toLowerCase()))
-      .sort((a, b) => b.zone_name.length - a.zone_name.length)[0];
-    if (matched && matched.zone_id !== selectedZone) {
-      setSelectedZone(matched.zone_id);
-    }
+    const matched = findBestMatch(customerAddress, zones.map((z) => ({ id: z.zone_id, name: z.zone_name })));
+    if (matched && matched.id !== selectedZone) setSelectedZone(matched.id);
   }, [customerAddress, zones]);
 
-  // Auto-detect area once areas for the zone load
   useEffect(() => {
     if (!customerAddress || areas.length === 0) return;
-    const addr = customerAddress.toLowerCase();
-    const matched = areas
-      .filter((a) => a.area_name && addr.includes(a.area_name.toLowerCase()))
-      .sort((a, b) => b.area_name.length - a.area_name.length)[0];
-    if (matched && matched.area_id !== selectedArea) {
-      setSelectedArea(matched.area_id);
-    }
+    const matched = findBestMatch(customerAddress, areas.map((a) => ({ id: a.area_id, name: a.area_name })));
+    if (matched && matched.id !== selectedArea) setSelectedArea(matched.id);
   }, [customerAddress, areas]);
 
   // Flat searchable index of products + variations
