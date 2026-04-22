@@ -521,6 +521,24 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     } finally { setBulkUpdating(false); }
   };
 
+  /* ─── Bulk Print Measurement Slips ─── */
+  const handleBulkPrintMeasurementSlips = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      const { printed, skipped } = await printMeasurementSlipsBulk(ids);
+      toast({
+        title: `Printed ${printed} measurement slip(s)`,
+        description: skipped > 0 ? `${skipped} order(s) skipped — no measurements recorded.` : undefined,
+      });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Print failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
   /* ─── Bulk Track Selected ─── */
   const handleBulkTrackSelected = async () => {
     if (selected.size === 0) return;
