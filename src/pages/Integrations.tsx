@@ -378,6 +378,8 @@ const Integrations = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SyncProgressIndicator syncingStores={stores.filter((s) => s.status === "syncing")} />
     </div>
   );
 };
