@@ -363,12 +363,14 @@ Deno.serve(async (req) => {
       console.log(`Skipping customer sync — already done for store ${store_id}. Use "Sync Customers" to force.`);
     }
 
-    // --- Sync Orders ---
-    const wooOrders = await wooFetchAll("orders");
+    // --- Sync Orders (incremental when possible) ---
+    const orderParams = incremental ? { modified_after: sinceIso! } : {};
+    const wooOrders = await wooFetchAll("orders", orderParams);
+    ts(`fetched ${wooOrders.length} orders${incremental ? " (modified)" : ""}`);
     if (wooOrders.length > 0) {
-      // Resolve customer for each order (creates per-order if new phone arrives via webhook/sync).
+      // Resolve customer for each order in parallel (bounded). Was sequential — major slowdown.
       const orderCustomerMap = new Map<number, string | null>();
-      for (const o of wooOrders) {
+      await pMap(wooOrders, 5, async (o: any) => {
         const phone = o.billing?.phone?.trim() || null;
         const email = o.billing?.email?.trim() || null;
         const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || null;
@@ -376,7 +378,8 @@ Deno.serve(async (req) => {
         const city = o.billing?.city || null;
         const id = await findOrCreateCustomer({ phone, email, name: billingName, address, city });
         orderCustomerMap.set(o.id, id);
-      }
+      });
+      ts(`resolved customers for ${wooOrders.length} orders`);
 
       const { data: dbProducts } = await supabase
         .from("products").select("id, woo_product_id").eq("store_id", store_id);
