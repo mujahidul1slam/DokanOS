@@ -50,14 +50,17 @@ Deno.serve(async (req) => {
       throw new Error(`Rate limited after ${retries + 1} attempts: ${url}`);
     }
 
-    async function wooFetchAll(endpoint: string) {
+    async function wooFetchAll(endpoint: string, params: Record<string, string> = {}) {
       const all: any[] = [];
       let page = 1;
+      const extra = Object.entries(params).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("");
       while (true) {
-        const url = `${baseUrl}/wp-json/wc/v3/${endpoint}?per_page=100&page=${page}`;
+        const url = `${baseUrl}/wp-json/wc/v3/${endpoint}?per_page=100&page=${page}${extra}`;
         const res = await wooFetchWithRetry(url);
         if (!res.ok) {
           const text = await res.text();
+          // 400 with "rest_post_invalid_page_number" = past the last page; treat as done
+          if (res.status === 400 && text.includes("rest_post_invalid_page_number")) break;
           throw new Error(`WooCommerce API error (${endpoint} p${page}): ${res.status} ${text}`);
         }
         const data = await res.json();
@@ -76,6 +79,21 @@ Deno.serve(async (req) => {
         throw new Error(`WooCommerce API error (${endpoint}): ${res.status} ${text}`);
       }
       return res.json();
+    }
+
+    // Run async tasks with bounded concurrency.
+    async function pMap<T, R>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<R>): Promise<R[]> {
+      const results: R[] = new Array(items.length);
+      let next = 0;
+      const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (true) {
+          const i = next++;
+          if (i >= items.length) return;
+          results[i] = await fn(items[i], i);
+        }
+      });
+      await Promise.all(workers);
+      return results;
     }
 
     const summary = { products: 0, orders: 0, order_items: 0, customers: 0, categories: 0, variations: 0 };
