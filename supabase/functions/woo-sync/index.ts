@@ -207,8 +207,17 @@ Deno.serve(async (req) => {
     }
 
     async function runFullSync() {
-    // --- Sync Categories ---
+    // Incremental window: only refetch entities modified since the last successful sync.
+    // First-ever sync (no last_synced_at) = full pull.
+    const lastSync = store.last_synced_at ? new Date(store.last_synced_at) : null;
+    // Pad by 5 minutes to be safe with clock skew / in-flight orders
+    const sinceIso = lastSync ? new Date(lastSync.getTime() - 5 * 60 * 1000).toISOString() : null;
+    const incremental = !!sinceIso;
+    ts(`mode: ${incremental ? `incremental since ${sinceIso}` : "full"}`);
+
+    // --- Sync Categories (always full — small set) ---
     const wooCategories = await wooFetchAll("products/categories");
+    ts(`fetched ${wooCategories.length} categories`);
     if (wooCategories.length > 0) {
       const catRows = wooCategories.map((c: any) => ({
         store_id, woo_category_id: c.id, name: c.name, slug: c.slug || "",
@@ -239,8 +248,10 @@ Deno.serve(async (req) => {
       .from("categories").select("id, woo_category_id").eq("store_id", store_id);
     const catByWooId = new Map((allDbCats || []).map((c: any) => [c.woo_category_id, c.id]));
 
-    // --- Sync Products ---
-    const wooProducts = await wooFetchAll("products");
+    // --- Sync Products (incremental when possible) ---
+    const productParams = incremental ? { modified_after: sinceIso! } : {};
+    const wooProducts = await wooFetchAll("products", productParams);
+    ts(`fetched ${wooProducts.length} products${incremental ? " (modified)" : ""}`);
     const parentProducts = wooProducts.filter((p: any) => p.type !== "variation");
 
     if (parentProducts.length > 0) {
