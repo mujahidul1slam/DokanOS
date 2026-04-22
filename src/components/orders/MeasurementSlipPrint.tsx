@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { CapturedMeasurement } from "@/lib/measurements";
+import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type CapturedMeasurement } from "@/lib/measurements";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 
 /**
