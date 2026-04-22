@@ -127,15 +127,37 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
-    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes]) => {
+      supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled").limit(1).maybeSingle(),
+    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes]) => {
       setProducts(pRes.data || []);
       setVariations((vRes.data || []) as VariationRow[]);
       setSources((sRes.data || []) as any[]);
       setCities((cRes.data || []) as any[]);
       setAllZones((zRes.data || []) as any[]);
       setAllAreas((aRes.data || []) as any[]);
+      setMeasurementsEnabled(((isRes as any).data?.pos_custom_measurements_enabled) !== false);
     });
   }, [open]);
+
+  // When a new product is added to the cart, lazy-load its measurement groups.
+  useEffect(() => {
+    const productIds = Array.from(new Set(items.map((i) => i.productId)));
+    const missing = productIds.filter((id) => !(id in groupsByProduct));
+    if (missing.length === 0) return;
+    let mounted = true;
+    (async () => {
+      const entries = await Promise.all(
+        missing.map(async (pid) => [pid, await getGroupsForProduct(pid)] as const),
+      );
+      if (!mounted) return;
+      setGroupsByProduct((prev) => {
+        const next = { ...prev };
+        for (const [pid, grps] of entries) next[pid] = grps;
+        return next;
+      });
+    })();
+    return () => { mounted = false; };
+  }, [items, groupsByProduct]);
 
   // When city changes, derive its zones (from the global cache)
   useEffect(() => {
