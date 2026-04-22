@@ -1,20 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Ruler } from "lucide-react";
+import { Plus, Trash2, Ruler, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
 
 const DEFAULT_SIZE_LABELS = ["XS", "S", "M", "L", "XL", "XXL", "3XL"];
 
-export interface SizePresetRow {
-  id?: string;
+interface PresetRow {
+  id: string;          // DB id (or local "new-...") — stable React key
+  dbId?: string;       // actual id in DB once persisted
   size_label: string;
   values: { name: string; value: string }[];
-  _isNew?: boolean;
-  _toDelete?: boolean;
 }
 
 interface Props {
@@ -29,15 +27,20 @@ interface Props {
 }
 
 /**
- * Inline editor for size presets within a measurement group. Auto-loads + auto-saves
- * (Save button) so it can be embedded inside both the Settings group card and the
- * Product Detail sheet without coordinating with their own save flows.
+ * Inline editor for size presets within a measurement group.
+ *
+ * Auto-saves: every change (add row, edit label, edit value, delete row) is
+ * persisted immediately so the user never loses input. A small status indicator
+ * shows the save state. This avoids confusion with the parent "Save All" button.
  */
 export const SizePresetsEditor = ({ groupId, productId = null, fieldNames, unit, showGroupDefaultsHint }: Props) => {
-  const [rows, setRows] = useState<SizePresetRow[]>([]);
-  const [groupDefaults, setGroupDefaults] = useState<SizePresetRow[]>([]);
+  const [rows, setRows] = useState<PresetRow[]>([]);
+  const [groupDefaults, setGroupDefaults] = useState<{ size_label: string; values: { name: string; value: string }[] }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+
+  // Debounce per-row writes so typing doesn't spam the DB.
+  const writeTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const load = async () => {
     setLoading(true);
@@ -50,6 +53,7 @@ export const SizePresetsEditor = ({ groupId, productId = null, fieldNames, unit,
       : await query.is("product_id", null);
     setRows(((data as any[]) || []).map((r) => ({
       id: r.id,
+      dbId: r.id,
       size_label: r.size_label,
       values: Array.isArray(r.values) ? r.values : [],
     })));
@@ -68,12 +72,81 @@ export const SizePresetsEditor = ({ groupId, productId = null, fieldNames, unit,
     setLoading(false);
   };
 
-  useEffect(() => { if (groupId && !groupId.startsWith("tmp-")) load(); }, [groupId, productId]);
+  useEffect(() => {
+    if (groupId && !groupId.startsWith("tmp-")) load();
+    return () => {
+      // Flush timers on unmount
+      writeTimers.current.forEach((t) => clearTimeout(t));
+      writeTimers.current.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, productId]);
 
-  const addRow = (label?: string) => {
-    if (label && rows.some((r) => r.size_label.toLowerCase() === label.toLowerCase() && !r._toDelete)) return;
+  const markSaving = (rowId: string, on: boolean) => {
+    setSavingIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(rowId); else next.delete(rowId);
+      return next;
+    });
+  };
+
+  /** Persist a single row immediately (insert or update). Updates dbId on insert. */
+  const persistRow = async (row: PresetRow) => {
+    if (!row.size_label.trim()) return; // require a label before saving
+    markSaving(row.id, true);
+    try {
+      const cleanValues = row.values.filter((v) => v.value.trim() !== "");
+      if (row.dbId) {
+        const { error } = await supabase
+          .from("measurement_size_presets" as any)
+          .update({ size_label: row.size_label.trim(), values: cleanValues } as any)
+          .eq("id", row.dbId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from("measurement_size_presets" as any)
+          .insert({
+            group_id: groupId,
+            product_id: productId || null,
+            size_label: row.size_label.trim(),
+            values: cleanValues,
+          } as any)
+          .select("id")
+          .single();
+        if (error) throw error;
+        const newDbId = (data as any).id;
+        setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, dbId: newDbId } : r));
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to save preset");
+    } finally {
+      markSaving(row.id, false);
+    }
+  };
+
+  /** Schedule a debounced persist for a row (used while typing). */
+  const scheduleSave = (rowId: string) => {
+    const existing = writeTimers.current.get(rowId);
+    if (existing) clearTimeout(existing);
+    const t = setTimeout(() => {
+      writeTimers.current.delete(rowId);
+      // Read latest row from state at fire time
+      setRows((prev) => {
+        const r = prev.find((x) => x.id === rowId);
+        if (r) persistRow(r);
+        return prev;
+      });
+    }, 600);
+    writeTimers.current.set(rowId, t);
+  };
+
+  const addRow = async (label?: string) => {
+    if (groupId.startsWith("tmp-")) {
+      toast.error("Save the measurement group first, then add size presets.");
+      return;
+    }
+    if (label && rows.some((r) => r.size_label.toLowerCase() === label.toLowerCase())) return;
     const seed = fieldNames.map((n) => ({ name: n, value: "" }));
-    // Pre-fill from group defaults if editing product overrides
     const defaultMatch = label ? groupDefaults.find((d) => d.size_label.toLowerCase() === label.toLowerCase()) : null;
     if (defaultMatch) {
       defaultMatch.values.forEach((v) => {
@@ -81,59 +154,41 @@ export const SizePresetsEditor = ({ groupId, productId = null, fieldNames, unit,
         if (idx >= 0) seed[idx] = { ...v };
       });
     }
-    setRows((prev) => [...prev, { size_label: label || "", values: seed, _isNew: true }]);
+    const localId = `new-${crypto.randomUUID()}`;
+    const newRow: PresetRow = { id: localId, size_label: label || "", values: seed };
+    setRows((prev) => [...prev, newRow]);
+    // If a label was supplied (quick-add), insert immediately so it survives.
+    if (label) await persistRow(newRow);
   };
 
-  const updateLabel = (idx: number, label: string) => {
-    setRows((prev) => prev.map((r, i) => i === idx ? { ...r, size_label: label } : r));
+  const updateLabel = (rowId: string, label: string) => {
+    setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, size_label: label } : r));
+    scheduleSave(rowId);
   };
 
-  const updateValue = (idx: number, fieldName: string, value: string) => {
-    setRows((prev) => prev.map((r, i) => {
-      if (i !== idx) return r;
+  const updateValue = (rowId: string, fieldName: string, value: string) => {
+    setRows((prev) => prev.map((r) => {
+      if (r.id !== rowId) return r;
       const exists = r.values.find((v) => v.name === fieldName);
       const values = exists
         ? r.values.map((v) => v.name === fieldName ? { ...v, value } : v)
         : [...r.values, { name: fieldName, value }];
       return { ...r, values };
     }));
+    scheduleSave(rowId);
   };
 
-  const removeRow = (idx: number) => {
-    setRows((prev) => prev.map((r, i) => i === idx ? { ...r, _toDelete: true } : r).filter((r) => !(r._toDelete && r._isNew)));
-  };
-
-  const save = async () => {
-    if (groupId.startsWith("tmp-")) {
-      toast.error("Save the measurement group first, then add size presets.");
-      return;
-    }
-    setSaving(true);
-    try {
-      for (const r of rows) {
-        if (r._toDelete && r.id) {
-          await supabase.from("measurement_size_presets" as any).delete().eq("id", r.id);
-        } else if (r._isNew) {
-          if (!r.size_label.trim()) continue;
-          await supabase.from("measurement_size_presets" as any).insert({
-            group_id: groupId,
-            product_id: productId || null,
-            size_label: r.size_label.trim(),
-            values: r.values.filter((v) => v.value.trim() !== ""),
-          } as any);
-        } else if (r.id) {
-          await supabase.from("measurement_size_presets" as any).update({
-            size_label: r.size_label.trim(),
-            values: r.values.filter((v) => v.value.trim() !== ""),
-          } as any).eq("id", r.id);
-        }
-      }
-      toast.success("Size presets saved");
-      await load();
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to save presets");
-    } finally {
-      setSaving(false);
+  const removeRow = async (row: PresetRow) => {
+    // Cancel any pending writes for this row
+    const t = writeTimers.current.get(row.id);
+    if (t) { clearTimeout(t); writeTimers.current.delete(row.id); }
+    setRows((prev) => prev.filter((r) => r.id !== row.id));
+    if (row.dbId) {
+      const { error } = await supabase
+        .from("measurement_size_presets" as any)
+        .delete()
+        .eq("id", row.dbId);
+      if (error) toast.error(error.message);
     }
   };
 
@@ -147,9 +202,9 @@ export const SizePresetsEditor = ({ groupId, productId = null, fieldNames, unit,
     return <p className="text-xs text-muted-foreground italic">Add fields to this group first.</p>;
   }
 
-  const visibleRows = rows.filter((r) => !r._toDelete);
-  const usedLabels = new Set(visibleRows.map((r) => r.size_label.toLowerCase()));
+  const usedLabels = new Set(rows.map((r) => r.size_label.toLowerCase()));
   const availableQuickLabels = DEFAULT_SIZE_LABELS.filter((l) => !usedLabels.has(l.toLowerCase()));
+  const anySaving = savingIds.size > 0;
 
   return (
     <div className="space-y-3">
@@ -157,53 +212,55 @@ export const SizePresetsEditor = ({ groupId, productId = null, fieldNames, unit,
         <Label className="text-xs flex items-center gap-1.5">
           <Ruler className="h-3.5 w-3.5" /> Size Presets {unit ? `(${unit})` : ""}
         </Label>
-        <Button onClick={save} disabled={saving} size="sm" variant="secondary" className="h-7 text-xs">
-          {saving ? "Saving…" : "Save Presets"}
-        </Button>
+        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+          {anySaving ? (
+            <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</>
+          ) : (
+            <><Check className="h-3 w-3 text-success" /> Auto-saved</>
+          )}
+        </span>
       </div>
 
-      {visibleRows.length === 0 && (
+      {rows.length === 0 && (
         <p className="text-xs text-muted-foreground italic">
           No size presets. {productId ? "These override the group defaults for this product." : "Define standard measurements for sizes like S, M, L, XL."}
         </p>
       )}
 
       <div className="space-y-2">
-        {visibleRows.map((r, idx) => {
-          const realIdx = rows.indexOf(r);
-          return (
-            <div key={r.id || `new-${idx}`} className="rounded-md border border-border bg-background p-2 space-y-2">
-              <div className="flex items-center gap-2">
-                <Input
-                  value={r.size_label}
-                  onChange={(e) => updateLabel(realIdx, e.target.value)}
-                  placeholder="Size label (e.g. L)"
-                  className="h-8 text-xs font-semibold w-32"
-                />
-                <Button variant="ghost" size="icon" onClick={() => removeRow(realIdx)} className="h-7 w-7 text-destructive ml-auto">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {fieldNames.map((fname) => {
-                  const v = r.values.find((x) => x.name === fname)?.value || "";
-                  const groupHint = groupDefaults.find((d) => d.size_label.toLowerCase() === r.size_label.toLowerCase())?.values.find((x) => x.name === fname)?.value;
-                  return (
-                    <div key={fname} className="space-y-0.5">
-                      <Label className="text-[10px] text-muted-foreground">{fname}</Label>
-                      <Input
-                        value={v}
-                        onChange={(e) => updateValue(realIdx, fname, e.target.value)}
-                        placeholder={groupHint ? `default: ${groupHint}` : ""}
-                        className="h-7 text-xs"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+        {rows.map((r) => (
+          <div key={r.id} className="rounded-md border border-border bg-background p-2 space-y-2">
+            <div className="flex items-center gap-2">
+              <Input
+                value={r.size_label}
+                onChange={(e) => updateLabel(r.id, e.target.value)}
+                placeholder="Size label (e.g. L)"
+                className="h-8 text-xs font-semibold w-32"
+              />
+              {savingIds.has(r.id) && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+              <Button variant="ghost" size="icon" onClick={() => removeRow(r)} className="h-7 w-7 text-destructive ml-auto">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
             </div>
-          );
-        })}
+            <div className="grid grid-cols-3 gap-2">
+              {fieldNames.map((fname) => {
+                const v = r.values.find((x) => x.name === fname)?.value || "";
+                const groupHint = groupDefaults.find((d) => d.size_label.toLowerCase() === r.size_label.toLowerCase())?.values.find((x) => x.name === fname)?.value;
+                return (
+                  <div key={fname} className="space-y-0.5">
+                    <Label className="text-[10px] text-muted-foreground">{fname}</Label>
+                    <Input
+                      value={v}
+                      onChange={(e) => updateValue(r.id, fname, e.target.value)}
+                      placeholder={groupHint ? `default: ${groupHint}` : ""}
+                      className="h-7 text-xs"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       {availableQuickLabels.length > 0 && (
