@@ -14,6 +14,7 @@ import { TableSkeleton } from "@/components/ui/loading-states";
 import { downloadCsv } from "@/lib/exportCsv";
 import { format } from "date-fns";
 import CategoryFilter from "@/components/CategoryFilter";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface ProductRow {
   id: string;
@@ -164,25 +165,32 @@ const ProductList = () => {
   // Map product -> set of category IDs (used for filtering by ID)
   const [productCatIdMap, setProductCatIdMap] = useState<Map<string, Set<string>>>(new Map());
 
+  const debouncedSearch = useDebounce(search, 200);
+
   const filtered = useMemo(() => {
+    const q = debouncedSearch.trim().toLowerCase();
     return products.filter(p => {
-      const q = search.toLowerCase();
-      const matchSearch = !q || p.name.toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q);
-      const matchCategory =
-        categoryFilter === "all" ||
-        (productCatIdMap.get(p.id)?.has(categoryFilter) ?? false);
-      const matchStock = stockFilter === "all" || p.stock_status === stockFilter;
-      const matchStore = storeFilter === "all" || p.store_id === storeFilter;
-      const matchFeatured = featuredFilter === "all" || (featuredFilter === "featured" && p.is_featured) || (featuredFilter === "not_featured" && !p.is_featured);
-      return matchSearch && matchCategory && matchStock && matchStore && matchFeatured;
+      if (q) {
+        const hit = p.name.toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      if (categoryFilter !== "all" && !(productCatIdMap.get(p.id)?.has(categoryFilter) ?? false)) return false;
+      if (stockFilter !== "all" && p.stock_status !== stockFilter) return false;
+      if (storeFilter !== "all" && p.store_id !== storeFilter) return false;
+      if (featuredFilter === "featured" && !p.is_featured) return false;
+      if (featuredFilter === "not_featured" && p.is_featured) return false;
+      return true;
     });
-  }, [products, search, categoryFilter, stockFilter, storeFilter, featuredFilter, productCatIdMap]);
+  }, [products, debouncedSearch, categoryFilter, stockFilter, storeFilter, featuredFilter, productCatIdMap]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const paginated = useMemo(
+    () => filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [filtered, currentPage]
+  );
 
-  useEffect(() => { setPage(1); }, [search, categoryFilter, stockFilter, storeFilter, featuredFilter]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, categoryFilter, stockFilter, storeFilter, featuredFilter]);
 
   const allSelected = paginated.length > 0 && paginated.every(p => selected.has(p.id));
   const toggleAll = () => {

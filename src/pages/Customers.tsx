@@ -19,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { FulfillmentBadge, PaymentBadge, SourceBadge } from "@/components/orders/OrderBadges";
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface AliasRow { id?: string; type: "name" | "email" | "address"; value: string; source_store_id: string | null; }
 
@@ -194,22 +195,27 @@ const Customers = () => {
     toast({ title: `${alias.type} deleted` });
   };
 
+  const debouncedSearch = useDebounce(search, 200);
+
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return customers.filter((c) => {
-      if (!q) return true;
-      return c.primaryName.toLowerCase().includes(q) ||
-        (c.phone || "").toLowerCase().includes(q) ||
-        (c.primaryEmail || "").toLowerCase().includes(q) ||
-        c.names.some((n) => n.value.toLowerCase().includes(q)) ||
-        c.emails.some((e) => e.value.toLowerCase().includes(q));
-    });
-  }, [customers, search]);
+    const q = debouncedSearch.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter((c) =>
+      c.primaryName.toLowerCase().includes(q) ||
+      (c.phone || "").toLowerCase().includes(q) ||
+      (c.primaryEmail || "").toLowerCase().includes(q) ||
+      c.names.some((n) => n.value.toLowerCase().includes(q)) ||
+      c.emails.some((e) => e.value.toLowerCase().includes(q))
+    );
+  }, [customers, debouncedSearch]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page]
+  );
 
-  useEffect(() => { setPage(1); }, [search]);
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
 
   if (loading) return (
     <div className="space-y-4">

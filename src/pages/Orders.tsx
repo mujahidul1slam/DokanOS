@@ -47,6 +47,7 @@ import { printInvoice } from "@/components/pos/InvoicePrint";
 import { printMeasurementSlipsBulk } from "@/components/orders/MeasurementSlipPrint";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import CategoryFilter from "@/components/CategoryFilter";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface OrderRow {
   id: string;
@@ -275,54 +276,56 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     return Array.from(groups.values()).sort((a, b) => a.storeName.localeCompare(b.storeName));
   }, [scopedCategories, stores]);
 
+  const debouncedSearch = useDebounce(search, 200);
+
   const filtered = useMemo(() => {
     const tabOrders = getTabOrders(tab);
+    const q = debouncedSearch.trim().toLowerCase();
+    const catArr = categoryFilter.size > 0 ? Array.from(categoryFilter) : null;
+    const fromMs = dateRange?.from ? dateRange.from.getTime() : null;
+    let toMs: number | null = null;
+    if (dateRange?.to) {
+      const end = new Date(dateRange.to);
+      end.setHours(23, 59, 59, 999);
+      toMs = end.getTime();
+    }
     return tabOrders.filter((o) => {
-      const q = search.toLowerCase();
-      const matchSearch = !q ||
-        o.order_number.toLowerCase().includes(q) ||
-        (o.customer_name || "").toLowerCase().includes(q) ||
-        (o.customer_phone || "").toLowerCase().includes(q);
-      const matchStatus = tab !== "all" || statusFilter === "all" || o.status === statusFilter;
-      const matchPayment = paymentFilter === "all" || o.payment_status === paymentFilter;
-      const matchSource = sourceFilter === "all" || o.source === sourceFilter;
-      const matchStore = storeFilter === "all" || o.store_id === storeFilter;
-      const matchDelivery = deliveryFilter === "all" || o.fulfillment_type === deliveryFilter;
-      let matchCourier = true;
-      if (courierFilter === "has") {
-        matchCourier = !!o.consignment_id;
-      } else if (courierFilter === "none") {
-        matchCourier = !o.consignment_id;
-      } else if (courierFilter !== "all") {
-        matchCourier = (o.tracking_status || "") === courierFilter;
+      if (q) {
+        const hit =
+          o.order_number.toLowerCase().includes(q) ||
+          (o.customer_name || "").toLowerCase().includes(q) ||
+          (o.customer_phone || "").toLowerCase().includes(q);
+        if (!hit) return false;
       }
-      let matchCategory = true;
-      if (categoryFilter.size > 0) {
+      if (tab === "all" && statusFilter !== "all" && o.status !== statusFilter) return false;
+      if (paymentFilter !== "all" && o.payment_status !== paymentFilter) return false;
+      if (sourceFilter !== "all" && o.source !== sourceFilter) return false;
+      if (storeFilter !== "all" && o.store_id !== storeFilter) return false;
+      if (deliveryFilter !== "all" && o.fulfillment_type !== deliveryFilter) return false;
+      if (courierFilter === "has" && !o.consignment_id) return false;
+      else if (courierFilter === "none" && o.consignment_id) return false;
+      else if (courierFilter !== "all" && courierFilter !== "has" && courierFilter !== "none" && (o.tracking_status || "") !== courierFilter) return false;
+      if (catArr) {
         const orderCats = orderCategoryMap.get(o.id);
-        matchCategory = !!orderCats && Array.from(categoryFilter).some((c) => orderCats.has(c));
+        if (!orderCats) return false;
+        let any = false;
+        for (const c of catArr) { if (orderCats.has(c)) { any = true; break; } }
+        if (!any) return false;
       }
-      let matchPreOrder = true;
-      if (preOrderStatusFilter !== "all") {
-        matchPreOrder = o.status === preOrderStatusFilter;
+      if (preOrderStatusFilter !== "all" && o.status !== preOrderStatusFilter) return false;
+      if (fromMs !== null) {
+        const t = new Date(o.created_at).getTime();
+        if (t < fromMs) return false;
+        if (toMs !== null && t > toMs) return false;
       }
-      let matchDate = true;
-      if (dateRange?.from) {
-        const d = new Date(o.created_at);
-        matchDate = d >= dateRange.from;
-        if (dateRange.to) {
-          const end = new Date(dateRange.to);
-          end.setHours(23, 59, 59, 999);
-          matchDate = matchDate && d <= end;
-        }
-      }
-      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery && matchCourier && matchCategory && matchPreOrder;
+      return true;
     });
-  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
+  }, [debouncedSearch, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, dateRange, tab]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, dateRange, tab]);
 
   // When store filter changes, drop category selections that no longer belong
   useEffect(() => {

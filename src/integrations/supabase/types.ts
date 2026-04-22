@@ -1697,6 +1697,8 @@ export type Database = {
       }
       normalize_bd_phone: { Args: { _phone: string }; Returns: string }
       purge_trashed_orders: { Args: never; Returns: undefined }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       user_has_store_access: {
         Args: { _store_id: string; _user_id: string }
         Returns: boolean
