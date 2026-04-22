@@ -463,7 +463,10 @@ Deno.serve(async (req) => {
             product_id: prodId, woo_variation_id: v.id,
             name: v.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${v.id}`,
             sku: v.sku || null, price: parseFloat(v.price) || 0,
-            manage_stock: v.manage_stock ?? false, stock_quantity: v.stock_quantity ?? 0,
+            // WooCommerce variations may return manage_stock as the string "parent"
+            // (= inherit from parent). Coerce to a boolean for our DB column.
+            manage_stock: v.manage_stock === true,
+            stock_quantity: v.stock_quantity ?? 0,
             stock_status: fromWooStockStatus(v.stock_status || "instock"),
             barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
             attributes: (v.attributes || []).map((a: any) => ({ key: a.name || a.slug, value: a.option })),
