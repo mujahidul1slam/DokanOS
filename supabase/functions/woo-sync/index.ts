@@ -299,16 +299,14 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Fetch variations for ALL variable products. Don't trust `wp.variations?.length`
-      // — some WC setups omit/under-report it. Always hit the variations endpoint.
+      // Fetch variations for ALL variable products in parallel (bounded concurrency).
+      // Don't trust `wp.variations?.length` — some WC setups omit/under-report it.
       const variableProducts = parentProducts.filter((wp: any) => wp.type === "variable");
-      for (let vi = 0; vi < variableProducts.length; vi++) {
-        const wp = variableProducts[vi];
+      ts(`syncing variations for ${variableProducts.length} variable products`);
+      await pMap(variableProducts, 5, async (wp: any) => {
         const prodId = prodByWooId.get(wp.id);
-        if (!prodId) continue;
-        if (vi > 0) await delay(300);
+        if (!prodId) return;
         try {
-          // Paginate variations (WC default is 10/page; per_page=100 max)
           const wooVars: any[] = [];
           let vpage = 1;
           while (true) {
@@ -318,10 +316,7 @@ Deno.serve(async (req) => {
             if (chunk.length < 100) break;
             vpage++;
           }
-          if (wooVars.length === 0) {
-            console.warn(`Variable product ${wp.id} (${wp.name}) returned 0 variations from WC`);
-            continue;
-          }
+          if (wooVars.length === 0) return;
 
           const varRows = wooVars.map((v: any) => ({
             product_id: prodId, woo_variation_id: v.id,
@@ -341,7 +336,7 @@ Deno.serve(async (req) => {
         } catch (e: any) {
           console.warn(`Skipping variations for product ${wp.id}: ${e.message}`);
         }
-      }
+      });
     }
 
     // --- Sync Customers (ONE-WAY, ONE-TIME) ---
