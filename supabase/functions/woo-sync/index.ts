@@ -50,14 +50,17 @@ Deno.serve(async (req) => {
       throw new Error(`Rate limited after ${retries + 1} attempts: ${url}`);
     }
 
-    async function wooFetchAll(endpoint: string) {
+    async function wooFetchAll(endpoint: string, params: Record<string, string> = {}) {
       const all: any[] = [];
       let page = 1;
+      const extra = Object.entries(params).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("");
       while (true) {
-        const url = `${baseUrl}/wp-json/wc/v3/${endpoint}?per_page=100&page=${page}`;
+        const url = `${baseUrl}/wp-json/wc/v3/${endpoint}?per_page=100&page=${page}${extra}`;
         const res = await wooFetchWithRetry(url);
         if (!res.ok) {
           const text = await res.text();
+          // 400 with "rest_post_invalid_page_number" = past the last page; treat as done
+          if (res.status === 400 && text.includes("rest_post_invalid_page_number")) break;
           throw new Error(`WooCommerce API error (${endpoint} p${page}): ${res.status} ${text}`);
         }
         const data = await res.json();
@@ -78,16 +81,45 @@ Deno.serve(async (req) => {
       return res.json();
     }
 
-    const summary = { products: 0, orders: 0, order_items: 0, customers: 0, categories: 0, variations: 0 };
+    // Run async tasks with bounded concurrency.
+    async function pMap<T, R>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<R>): Promise<R[]> {
+      const results: R[] = new Array(items.length);
+      let next = 0;
+      const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (true) {
+          const i = next++;
+          if (i >= items.length) return;
+          results[i] = await fn(items[i], i);
+        }
+      });
+      await Promise.all(workers);
+      return results;
+    }
 
+    const summary = { products: 0, orders: 0, order_items: 0, customers: 0, categories: 0, variations: 0 };
+    const t0 = Date.now();
+    const ts = (label: string) => console.log(`[woo-sync ${store_id.slice(0, 8)}] ${label} (+${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+
+    // Stale-lock guard: if a sync is marked "syncing" but stores.updated_at hasn't moved in 10+ minutes,
+    // the previous run died — allow this one to take over.
     if (store.status === "syncing") {
-      return new Response(
-        JSON.stringify({ success: true, status: "already_running", message: "A sync is already in progress for this store." }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      const updatedAt = store.updated_at ? new Date(store.updated_at).getTime() : 0;
+      const ageMin = (Date.now() - updatedAt) / 60000;
+      if (ageMin < 10) {
+        return new Response(
+          JSON.stringify({ success: true, status: "already_running", message: `A sync is already in progress for this store (started ${ageMin.toFixed(1)}m ago).` }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.warn(`Stale sync lock detected (${ageMin.toFixed(1)}m old) — taking over.`);
     }
 
     await supabase.from("stores").update({ status: "syncing" }).eq("id", store_id);
+
+    // Heartbeat: bump updated_at every 30s so the stale-lock guard knows we're alive
+    const heartbeat = setInterval(() => {
+      supabase.from("stores").update({ updated_at: new Date().toISOString() }).eq("id", store_id).then();
+    }, 30000);
 
     const syncTask = (async () => {
       try {
@@ -95,10 +127,12 @@ Deno.serve(async (req) => {
         await supabase.from("stores")
           .update({ status: "connected", last_synced_at: new Date().toISOString() })
           .eq("id", store_id);
-        console.log("woo-sync completed for store", store_id, summary);
+        ts(`completed: ${JSON.stringify(summary)}`);
       } catch (e: any) {
         console.error("woo-sync background error:", e?.message || e);
         await supabase.from("stores").update({ status: "error" }).eq("id", store_id);
+      } finally {
+        clearInterval(heartbeat);
       }
     })();
 
@@ -173,8 +207,17 @@ Deno.serve(async (req) => {
     }
 
     async function runFullSync() {
-    // --- Sync Categories ---
+    // Incremental window: only refetch entities modified since the last successful sync.
+    // First-ever sync (no last_synced_at) = full pull.
+    const lastSync = store.last_synced_at ? new Date(store.last_synced_at) : null;
+    // Pad by 5 minutes to be safe with clock skew / in-flight orders
+    const sinceIso = lastSync ? new Date(lastSync.getTime() - 5 * 60 * 1000).toISOString() : null;
+    const incremental = !!sinceIso;
+    ts(`mode: ${incremental ? `incremental since ${sinceIso}` : "full"}`);
+
+    // --- Sync Categories (always full — small set) ---
     const wooCategories = await wooFetchAll("products/categories");
+    ts(`fetched ${wooCategories.length} categories`);
     if (wooCategories.length > 0) {
       const catRows = wooCategories.map((c: any) => ({
         store_id, woo_category_id: c.id, name: c.name, slug: c.slug || "",
@@ -205,8 +248,10 @@ Deno.serve(async (req) => {
       .from("categories").select("id, woo_category_id").eq("store_id", store_id);
     const catByWooId = new Map((allDbCats || []).map((c: any) => [c.woo_category_id, c.id]));
 
-    // --- Sync Products ---
-    const wooProducts = await wooFetchAll("products");
+    // --- Sync Products (incremental when possible) ---
+    const productParams = incremental ? { modified_after: sinceIso! } : {};
+    const wooProducts = await wooFetchAll("products", productParams);
+    ts(`fetched ${wooProducts.length} products${incremental ? " (modified)" : ""}`);
     const parentProducts = wooProducts.filter((p: any) => p.type !== "variation");
 
     if (parentProducts.length > 0) {
@@ -254,16 +299,14 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Fetch variations for ALL variable products. Don't trust `wp.variations?.length`
-      // — some WC setups omit/under-report it. Always hit the variations endpoint.
+      // Fetch variations for ALL variable products in parallel (bounded concurrency).
+      // Don't trust `wp.variations?.length` — some WC setups omit/under-report it.
       const variableProducts = parentProducts.filter((wp: any) => wp.type === "variable");
-      for (let vi = 0; vi < variableProducts.length; vi++) {
-        const wp = variableProducts[vi];
+      ts(`syncing variations for ${variableProducts.length} variable products`);
+      await pMap(variableProducts, 5, async (wp: any) => {
         const prodId = prodByWooId.get(wp.id);
-        if (!prodId) continue;
-        if (vi > 0) await delay(300);
+        if (!prodId) return;
         try {
-          // Paginate variations (WC default is 10/page; per_page=100 max)
           const wooVars: any[] = [];
           let vpage = 1;
           while (true) {
@@ -273,10 +316,7 @@ Deno.serve(async (req) => {
             if (chunk.length < 100) break;
             vpage++;
           }
-          if (wooVars.length === 0) {
-            console.warn(`Variable product ${wp.id} (${wp.name}) returned 0 variations from WC`);
-            continue;
-          }
+          if (wooVars.length === 0) return;
 
           const varRows = wooVars.map((v: any) => ({
             product_id: prodId, woo_variation_id: v.id,
@@ -296,7 +336,7 @@ Deno.serve(async (req) => {
         } catch (e: any) {
           console.warn(`Skipping variations for product ${wp.id}: ${e.message}`);
         }
-      }
+      });
     }
 
     // --- Sync Customers (ONE-WAY, ONE-TIME) ---
@@ -323,12 +363,14 @@ Deno.serve(async (req) => {
       console.log(`Skipping customer sync — already done for store ${store_id}. Use "Sync Customers" to force.`);
     }
 
-    // --- Sync Orders ---
-    const wooOrders = await wooFetchAll("orders");
+    // --- Sync Orders (incremental when possible) ---
+    const orderParams = incremental ? { modified_after: sinceIso! } : {};
+    const wooOrders = await wooFetchAll("orders", orderParams);
+    ts(`fetched ${wooOrders.length} orders${incremental ? " (modified)" : ""}`);
     if (wooOrders.length > 0) {
-      // Resolve customer for each order (creates per-order if new phone arrives via webhook/sync).
+      // Resolve customer for each order in parallel (bounded). Was sequential — major slowdown.
       const orderCustomerMap = new Map<number, string | null>();
-      for (const o of wooOrders) {
+      await pMap(wooOrders, 5, async (o: any) => {
         const phone = o.billing?.phone?.trim() || null;
         const email = o.billing?.email?.trim() || null;
         const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || null;
@@ -336,7 +378,8 @@ Deno.serve(async (req) => {
         const city = o.billing?.city || null;
         const id = await findOrCreateCustomer({ phone, email, name: billingName, address, city });
         orderCustomerMap.set(o.id, id);
-      }
+      });
+      ts(`resolved customers for ${wooOrders.length} orders`);
 
       const { data: dbProducts } = await supabase
         .from("products").select("id, woo_product_id").eq("store_id", store_id);
@@ -424,7 +467,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      let itemCount = 0;
       // Load measurement field name -> group info map for Woo meta detection
       const { data: mFields } = await supabase
         .from("measurement_fields")
@@ -439,57 +481,98 @@ Deno.serve(async (req) => {
         });
       });
 
+      // BULK delete + insert order_items / measurements for all touched orders.
+      // Previously: 3 round-trips per order × N orders. Now: 4 round-trips total.
+      const touchedOrderIds = wooOrders
+        .map((o: any) => orderMap.get(o.id))
+        .filter((id: any): id is string => !!id);
+
+      if (touchedOrderIds.length > 0) {
+        for (let i = 0; i < touchedOrderIds.length; i += 500) {
+          const chunk = touchedOrderIds.slice(i, i + 500);
+          await supabase.from("order_items").delete().in("order_id", chunk);
+          await supabase.from("order_item_measurements").delete().in("order_id", chunk).eq("source", "woo");
+        }
+      }
+      ts(`cleared old items/measurements for ${touchedOrderIds.length} orders`);
+
+      // Build all item rows up front, tagging each with its source line for measurement linking.
+      type StagedItem = { row: any; wooOrderId: number; lineIdx: number };
+      const staged: StagedItem[] = [];
       for (const o of wooOrders) {
         const orderId = orderMap.get(o.id);
         if (!orderId) continue;
-        const items = (o.line_items || []).map((li: any) => {
+        (o.line_items || []).forEach((li: any, idx: number) => {
           const variationLabel = buildVariationLabel(li.meta_data || [], fieldMap);
           const fullName = variationLabel ? `${li.name} - ${variationLabel}` : li.name;
-          return {
-            order_id: orderId,
-            product_id: prodMap.get(li.product_id) || null,
-            product_name: fullName,
-            quantity: li.quantity,
-            unit_price: parseFloat(li.price) || 0,
-            line_total: parseFloat(li.total) || 0,
-          };
+          staged.push({
+            row: {
+              order_id: orderId,
+              product_id: prodMap.get(li.product_id) || null,
+              product_name: fullName,
+              quantity: li.quantity,
+              unit_price: parseFloat(li.price) || 0,
+              line_total: parseFloat(li.total) || 0,
+            },
+            wooOrderId: o.id,
+            lineIdx: idx,
+          });
         });
-        await supabase.from("order_items").delete().eq("order_id", orderId);
-        await supabase.from("order_item_measurements").delete().eq("order_id", orderId).eq("source", "woo");
-        let insertedItems: any[] = [];
-        if (items.length > 0) {
-          const { data: ins, error: itemErr } = await supabase.from("order_items").insert(items).select("id");
-          if (itemErr) console.error(`Order items insert error for order ${o.id}:`, itemErr);
-          else { itemCount += items.length; insertedItems = ins || []; }
-        }
+      }
 
-        // Extract measurements from line item meta_data
-        const measRows: any[] = [];
+      // Bulk insert items in chunks, preserving order to map back to source line items.
+      const insertedItemIds: (string | null)[] = new Array(staged.length).fill(null);
+      let cursor = 0;
+      for (let i = 0; i < staged.length; i += 500) {
+        const slice = staged.slice(i, i + 500);
+        const { data: ins, error: itemErr } = await supabase
+          .from("order_items")
+          .insert(slice.map((s) => s.row))
+          .select("id");
+        if (itemErr) console.error(`Order items bulk insert error:`, itemErr);
+        (ins || []).forEach((r: any, j: number) => { insertedItemIds[i + j] = r.id; });
+        cursor = i;
+      }
+      summary.order_items = staged.length;
+      ts(`inserted ${staged.length} order items`);
+
+      // Build measurement rows now that we know each line's DB id.
+      const measRows: any[] = [];
+      const lineByKey = new Map<string, number>();
+      staged.forEach((s, idx) => lineByKey.set(`${s.wooOrderId}|${s.lineIdx}`, idx));
+
+      for (const o of wooOrders) {
+        const orderId = orderMap.get(o.id);
+        if (!orderId) continue;
         (o.line_items || []).forEach((li: any, idx: number) => {
-          const dbItem = insertedItems[idx];
-          const groups = extractMeasurementsFromMeta(li.meta_data || [], fieldMap);
-          groups.forEach((g) => {
+          const stagedIdx = lineByKey.get(`${o.id}|${idx}`);
+          const dbItemId = stagedIdx != null ? insertedItemIds[stagedIdx] : null;
+          extractMeasurementsFromMeta(li.meta_data || [], fieldMap).forEach((g) => {
             measRows.push({
-              order_id: orderId, order_item_id: dbItem?.id || null,
+              order_id: orderId, order_item_id: dbItemId,
               group_name: g.groupName, display_format: g.displayFormat,
               unit: g.unit, values: g.values, source: "woo",
             });
           });
         });
-        const orderGroups = extractMeasurementsFromMeta(o.meta_data || [], fieldMap);
-        orderGroups.forEach((g) => {
+        extractMeasurementsFromMeta(o.meta_data || [], fieldMap).forEach((g) => {
           measRows.push({
             order_id: orderId, order_item_id: null,
             group_name: g.groupName, display_format: g.displayFormat,
             unit: g.unit, values: g.values, source: "woo",
           });
         });
-        if (measRows.length > 0) {
-          const { error: mErr } = await supabase.from("order_item_measurements").insert(measRows);
-          if (mErr) console.warn(`Measurements insert warn for order ${o.id}:`, mErr.message);
-        }
       }
-      summary.order_items = itemCount;
+
+      if (measRows.length > 0) {
+        for (let i = 0; i < measRows.length; i += 500) {
+          const { error: mErr } = await supabase
+            .from("order_item_measurements")
+            .insert(measRows.slice(i, i + 500));
+          if (mErr) console.warn(`Measurements bulk insert warn:`, mErr.message);
+        }
+        ts(`inserted ${measRows.length} measurements`);
+      }
     }
     } // end runFullSync
   } catch (err: any) {
