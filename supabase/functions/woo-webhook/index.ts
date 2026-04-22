@@ -166,7 +166,7 @@ async function syncProductVariations(supabase: any, store: any, wooProductId: nu
     name: v.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${v.id}`,
     sku: v.sku || null,
     price: parseFloat(v.price) || 0,
-    manage_stock: v.manage_stock ?? false,
+    manage_stock: v.manage_stock === true, // Woo can return "parent" string; coerce to boolean
     stock_quantity: v.stock_quantity ?? 0,
     stock_status: fromWooStockStatus(v.stock_status || "instock"),
     barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
