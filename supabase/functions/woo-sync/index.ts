@@ -254,15 +254,29 @@ Deno.serve(async (req) => {
         }
       }
 
-      const variableProducts = parentProducts.filter((wp: any) => wp.type === "variable" && wp.variations?.length > 0);
+      // Fetch variations for ALL variable products. Don't trust `wp.variations?.length`
+      // — some WC setups omit/under-report it. Always hit the variations endpoint.
+      const variableProducts = parentProducts.filter((wp: any) => wp.type === "variable");
       for (let vi = 0; vi < variableProducts.length; vi++) {
         const wp = variableProducts[vi];
         const prodId = prodByWooId.get(wp.id);
         if (!prodId) continue;
-        if (vi > 0) await delay(500);
+        if (vi > 0) await delay(300);
         try {
-          const wooVars = await wooFetch(`products/${wp.id}/variations?per_page=100`);
-          if (!Array.isArray(wooVars) || wooVars.length === 0) continue;
+          // Paginate variations (WC default is 10/page; per_page=100 max)
+          const wooVars: any[] = [];
+          let vpage = 1;
+          while (true) {
+            const chunk = await wooFetch(`products/${wp.id}/variations?per_page=100&page=${vpage}`);
+            if (!Array.isArray(chunk) || chunk.length === 0) break;
+            wooVars.push(...chunk);
+            if (chunk.length < 100) break;
+            vpage++;
+          }
+          if (wooVars.length === 0) {
+            console.warn(`Variable product ${wp.id} (${wp.name}) returned 0 variations from WC`);
+            continue;
+          }
 
           const varRows = wooVars.map((v: any) => ({
             product_id: prodId, woo_variation_id: v.id,

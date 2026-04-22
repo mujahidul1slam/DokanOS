@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
     const isProduct = webhookTopic.startsWith("product.") || (payload.name && !payload.line_items && payload.type);
     const isOrder = webhookTopic.startsWith("order.") || payload.line_items;
 
-    if (isProduct) return await handleProductWebhook(supabase, store_id, payload);
+    if (isProduct) return await handleProductWebhook(supabase, store, payload);
     if (isOrder) return await handleOrderWebhook(supabase, store_id, payload);
 
     return jsonResp({ ok: true, message: "Unhandled topic" });
@@ -89,8 +89,9 @@ Deno.serve(async (req) => {
   }
 });
 
-/* ====== PRODUCT WEBHOOK (unchanged) ====== */
-async function handleProductWebhook(supabase: any, store_id: string, p: any) {
+/* ====== PRODUCT WEBHOOK ====== */
+async function handleProductWebhook(supabase: any, store: any, p: any) {
+  const store_id = store.id;
   if (p.type === "variation") return jsonResp({ ok: true, skipped: "variation" });
 
   const productData = {
@@ -129,7 +130,53 @@ async function handleProductWebhook(supabase: any, store_id: string, p: any) {
       .map((catId: string) => ({ product_id: productId, category_id: catId }));
     if (pcRows.length > 0) await supabase.from("product_categories").insert(pcRows);
   }
+
+  // For variable products, fetch and upsert variations from WC REST API.
+  if (p.type === "variable" && store.url && store.consumer_key && store.consumer_secret) {
+    try {
+      await syncProductVariations(supabase, store, p.id, productId);
+    } catch (e: any) {
+      console.warn(`Variation sync failed for product ${p.id}: ${e?.message || e}`);
+    }
+  }
+
   return jsonResp({ success: true, product_id: productId });
+}
+
+async function syncProductVariations(supabase: any, store: any, wooProductId: number, productId: string) {
+  const baseUrl = String(store.url).replace(/\/+$/, "");
+  const auth = "Basic " + btoa(`${store.consumer_key}:${store.consumer_secret}`);
+  const wooVars: any[] = [];
+  let page = 1;
+  while (true) {
+    const url = `${baseUrl}/wp-json/wc/v3/products/${wooProductId}/variations?per_page=100&page=${page}`;
+    const res = await fetch(url, { headers: { Authorization: auth } });
+    if (!res.ok) throw new Error(`WC variations ${res.status}`);
+    const chunk = await res.json();
+    if (!Array.isArray(chunk) || chunk.length === 0) break;
+    wooVars.push(...chunk);
+    if (chunk.length < 100) break;
+    page++;
+  }
+  if (wooVars.length === 0) return;
+
+  const varRows = wooVars.map((v: any) => ({
+    product_id: productId,
+    woo_variation_id: v.id,
+    name: v.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${v.id}`,
+    sku: v.sku || null,
+    price: parseFloat(v.price) || 0,
+    manage_stock: v.manage_stock ?? false,
+    stock_quantity: v.stock_quantity ?? 0,
+    stock_status: fromWooStockStatus(v.stock_status || "instock"),
+    barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
+    attributes: (v.attributes || []).map((a: any) => ({ key: a.name || a.slug, value: a.option })),
+  }));
+
+  const { error } = await supabase
+    .from("product_variations")
+    .upsert(varRows, { onConflict: "woo_variation_id,product_id", ignoreDuplicates: false });
+  if (error) console.error(`Variations upsert error for product ${wooProductId}:`, error);
 }
 
 /* ====== ORDER WEBHOOK ====== */
