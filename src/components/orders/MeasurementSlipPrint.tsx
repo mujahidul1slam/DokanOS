@@ -9,21 +9,50 @@ import { addOrderTimeline } from "@/lib/orderTimeline";
  */
 async function promotePreOrderOnSlipPrint(orderId: string) {
   try {
-    const { data } = await supabase
+    const { data: order } = await supabase
       .from("orders")
-      .select("id, status, order_number")
+      .select("id, status, consignment_id")
       .eq("id", orderId)
       .single();
-    if (!data) return;
-    if (data.status === "pre_order_pending") {
-      await supabase.from("orders").update({ status: "pre_order_making" }).eq("id", orderId);
-      await addOrderTimeline({
-        order_id: orderId,
-        event: "status_changed",
-        description: 'Status changed from "Pre-Order" to "Making" — measurement slip printed',
-        metadata: { from: "pre_order_pending", to: "pre_order_making", trigger: "measurement_slip_print" },
-      });
+    if (!order) return;
+
+    // Already past the "making" stage — nothing to do.
+    if (["pre_order_making", "pre_order_ready", "ready_to_ship", "shipped", "delivered", "completed", "cancelled", "returned"].includes(order.status)) {
+      return;
     }
+
+    // Detect whether this order is treated as a pre-order: either it sits in
+    // pre_order_pending, or it's still in processing/on_hold/pending with at
+    // least one backordered line item (matches the Pre-Orders tab logic).
+    let isPreOrder = order.status === "pre_order_pending";
+    let fromLabel = "Pre-Order";
+    let fromStatus = order.status;
+
+    if (!isPreOrder && ["processing", "on_hold", "pending"].includes(order.status) && !order.consignment_id) {
+      const { data: items } = await supabase
+        .from("order_items")
+        .select("products:product_id(stock_status, backorders)")
+        .eq("order_id", orderId);
+      const hasBackorder = (items || []).some((i: any) => {
+        const s = String(i.products?.stock_status || "").toLowerCase().replace(/[_\-\s]/g, "");
+        const b = String(i.products?.backorders || "").toLowerCase();
+        return s === "onbackorder" || b === "yes" || b === "notify";
+      });
+      if (hasBackorder) {
+        isPreOrder = true;
+        fromLabel = order.status === "processing" ? "New Order" : order.status;
+      }
+    }
+
+    if (!isPreOrder) return;
+
+    await supabase.from("orders").update({ status: "pre_order_making" }).eq("id", orderId);
+    await addOrderTimeline({
+      order_id: orderId,
+      event: "status_changed",
+      description: `Status changed from "${fromLabel}" to "Making" — measurement slip printed`,
+      metadata: { from: fromStatus, to: "pre_order_making", trigger: "measurement_slip_print" },
+    });
   } catch (e) {
     console.warn("promotePreOrderOnSlipPrint failed:", e);
   }
