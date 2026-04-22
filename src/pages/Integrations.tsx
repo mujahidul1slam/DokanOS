@@ -199,6 +199,7 @@ const Integrations = () => {
             onRefresh={loadData}
           />
         )}
+        <SyncProgressIndicator syncingStores={stores.filter((s) => s.status === "syncing")} />
       </div>
     );
   }
