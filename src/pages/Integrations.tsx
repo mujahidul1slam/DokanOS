@@ -18,7 +18,6 @@ import { useToast } from "@/hooks/use-toast";
 import { StatsSkeleton } from "@/components/ui/loading-states";
 import WooCommerceDetail from "@/components/integrations/WooCommerceDetail";
 import PathaoDetail from "@/components/integrations/PathaoDetail";
-import SyncProgressIndicator from "@/components/integrations/SyncProgressIndicator";
 
 interface StoreRow {
   id: string;
@@ -199,7 +198,6 @@ const Integrations = () => {
             onRefresh={loadData}
           />
         )}
-        <SyncProgressIndicator syncingStores={stores.filter((s) => s.status === "syncing")} />
       </div>
     );
   }
@@ -378,8 +376,6 @@ const Integrations = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <SyncProgressIndicator syncingStores={stores.filter((s) => s.status === "syncing")} />
     </div>
   );
 };

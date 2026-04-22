@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import AppSidebar from "./AppSidebar";
+import GlobalSyncIndicator from "./integrations/GlobalSyncIndicator";
 
 const DashboardLayout = ({ children }: { children: ReactNode }) => (
   <div className="flex min-h-screen">
@@ -9,6 +10,7 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => (
         {children}
       </div>
     </main>
+    <GlobalSyncIndicator />
   </div>
 );
 
