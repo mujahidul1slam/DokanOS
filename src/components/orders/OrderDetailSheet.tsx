@@ -553,9 +553,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                             <TableCell colSpan={5} className="text-center text-muted-foreground py-6">No items</TableCell>
                           </TableRow>
                         ) : (
-                          activeItems.map((item) => (
+                          activeItems.map((item) => {
+                            const dashIdx = item.product_name.indexOf(" - ");
+                            const baseName = dashIdx > -1 ? item.product_name.slice(0, dashIdx) : item.product_name;
+                            const variation = dashIdx > -1 ? item.product_name.slice(dashIdx + 3) : null;
+                            return (
                             <TableRow key={item.id}>
-                              <TableCell className="text-sm font-medium">{item.product_name}</TableCell>
+                              <TableCell className="text-sm font-medium">
+                                <div>{baseName}</div>
+                                {variation && (
+                                  <div className="text-xs font-normal text-muted-foreground mt-0.5">{variation}</div>
+                                )}
+                              </TableCell>
                               <TableCell className="text-sm text-right">৳{Number(item.unit_price).toLocaleString()}</TableCell>
                               <TableCell className="text-center">
                                 <Input
