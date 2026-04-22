@@ -25,20 +25,15 @@ export default defineConfig(({ mode }) => ({
     cssCodeSplit: true,
     sourcemap: false,
     chunkSizeWarningLimit: 1000,
+    // Note: do NOT split React/Recharts/Radix into separate vendor chunks here.
+    // Recharts (and Radix) read `React.forwardRef` at module-eval time, so if the
+    // chart chunk ever evaluates before the React chunk finishes loading you get
+    // "Cannot read properties of undefined (reading 'forwardRef')" and a blank
+    // screen on production hosts (e.g. Vercel). Letting Rollup decide chunking
+    // keeps React inlined with its consumers and avoids that race.
     rollupOptions: {
       output: {
-        // Long-cacheable vendor chunks. Heavy libs split out so route chunks stay tiny.
-        manualChunks: (id) => {
-          if (!id.includes("node_modules")) return;
-          if (id.includes("react-dom") || id.includes("react/") || id.includes("react-router")) return "react-vendor";
-          if (id.includes("@radix-ui") || id.includes("cmdk") || id.includes("vaul")) return "ui-vendor";
-          if (id.includes("recharts") || id.includes("d3-")) return "charts";
-          if (id.includes("@supabase")) return "supabase";
-          if (id.includes("@tanstack")) return "tanstack";
-          if (id.includes("date-fns")) return "date-fns";
-          if (id.includes("lucide-react")) return "icons";
-          if (id.includes("react-hook-form") || id.includes("@hookform") || id.includes("zod")) return "forms";
-        },
+        manualChunks: undefined,
       },
     },
   },
