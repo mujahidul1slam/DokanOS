@@ -442,14 +442,18 @@ Deno.serve(async (req) => {
       for (const o of wooOrders) {
         const orderId = orderMap.get(o.id);
         if (!orderId) continue;
-        const items = (o.line_items || []).map((li: any) => ({
-          order_id: orderId,
-          product_id: prodMap.get(li.product_id) || null,
-          product_name: li.name,
-          quantity: li.quantity,
-          unit_price: parseFloat(li.price) || 0,
-          line_total: parseFloat(li.total) || 0,
-        }));
+        const items = (o.line_items || []).map((li: any) => {
+          const variationLabel = buildVariationLabel(li.meta_data || [], fieldMap);
+          const fullName = variationLabel ? `${li.name} - ${variationLabel}` : li.name;
+          return {
+            order_id: orderId,
+            product_id: prodMap.get(li.product_id) || null,
+            product_name: fullName,
+            quantity: li.quantity,
+            unit_price: parseFloat(li.price) || 0,
+            line_total: parseFloat(li.total) || 0,
+          };
+        });
         await supabase.from("order_items").delete().eq("order_id", orderId);
         await supabase.from("order_item_measurements").delete().eq("order_id", orderId).eq("source", "woo");
         let insertedItems: any[] = [];
@@ -559,4 +563,25 @@ function extractMeasurementsFromMeta(
   return Array.from(grouped.entries()).map(([groupName, info]) => ({
     groupName, displayFormat: info.displayFormat, unit: info.unit, values: info.values,
   }));
+}
+
+/**
+ * Build a variation suffix from Woo line item meta_data (e.g., "Size: M / Color: Red").
+ * Skips hidden meta (keys starting with `_`) and any keys that match measurement fields.
+ */
+function buildVariationLabel(
+  meta: any[],
+  fieldMap: Map<string, { groupName: string; displayFormat: string; unit: string; fieldName: string }>
+): string {
+  if (!Array.isArray(meta) || meta.length === 0) return "";
+  const parts: string[] = [];
+  for (const m of meta) {
+    const rawKey = String(m?.display_key ?? m?.key ?? "").trim();
+    if (!rawKey || rawKey.startsWith("_")) continue;
+    if (fieldMap.has(rawKey.toLowerCase())) continue; // skip measurement fields
+    const value = String(m?.display_value ?? m?.value ?? "").trim();
+    if (!value || value.includes("<")) continue; // skip empty / HTML values
+    parts.push(`${rawKey}: ${value}`);
+  }
+  return parts.join(" / ");
 }

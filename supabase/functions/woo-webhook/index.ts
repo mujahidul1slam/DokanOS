@@ -249,14 +249,26 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   await supabase.from("order_items").delete().eq("order_id", orderId);
   await supabase.from("order_item_measurements").delete().eq("order_id", orderId).eq("source", "woo");
 
-  const items = (o.line_items || []).map((li: any) => ({
-    order_id: orderId,
-    product_id: prodMap.get(li.product_id) || null,
-    product_name: li.name,
-    quantity: li.quantity,
-    unit_price: parseFloat(li.price) || 0,
-    line_total: parseFloat(li.total) || 0,
-  }));
+  // fieldMap is built below for measurements; we need it earlier to filter variation meta.
+  const { data: mFieldsEarly } = await supabase
+    .from("measurement_fields")
+    .select("name");
+  const measurementNameSet = new Set<string>(
+    ((mFieldsEarly as any[]) || []).map((f: any) => String(f.name).toLowerCase().trim())
+  );
+
+  const items = (o.line_items || []).map((li: any) => {
+    const variationLabel = buildVariationLabel(li.meta_data || [], measurementNameSet);
+    const fullName = variationLabel ? `${li.name} - ${variationLabel}` : li.name;
+    return {
+      order_id: orderId,
+      product_id: prodMap.get(li.product_id) || null,
+      product_name: fullName,
+      quantity: li.quantity,
+      unit_price: parseFloat(li.price) || 0,
+      line_total: parseFloat(li.total) || 0,
+    };
+  });
   let insertedItems: any[] = [];
   if (items.length > 0) {
     const { data: ins } = await supabase.from("order_items").insert(items).select("id");
@@ -325,6 +337,24 @@ function extractMeasurementsFromMeta(
   return Array.from(grouped.entries()).map(([groupName, info]) => ({
     groupName, displayFormat: info.displayFormat, unit: info.unit, values: info.values,
   }));
+}
+
+/**
+ * Build a variation suffix from Woo line item meta_data (e.g., "Size: M / Color: Red").
+ * Skips hidden meta (keys starting with `_`) and any keys that match measurement fields.
+ */
+function buildVariationLabel(meta: any[], measurementNames: Set<string>): string {
+  if (!Array.isArray(meta) || meta.length === 0) return "";
+  const parts: string[] = [];
+  for (const m of meta) {
+    const rawKey = String(m?.display_key ?? m?.key ?? "").trim();
+    if (!rawKey || rawKey.startsWith("_")) continue;
+    if (measurementNames.has(rawKey.toLowerCase())) continue;
+    const value = String(m?.display_value ?? m?.value ?? "").trim();
+    if (!value || value.includes("<")) continue;
+    parts.push(`${rawKey}: ${value}`);
+  }
+  return parts.join(" / ");
 }
 
 /* ====== Customer resolution: GLOBAL phone-based, alias-aware ======
