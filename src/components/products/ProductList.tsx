@@ -65,7 +65,7 @@ const STOCK_FILTER_OPTIONS = [
   { value: "on_backorder", label: "On Backorder" },
 ];
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 200;
 
 function buildCategoryTree(categories: { id: string; name: string; parent_id: string | null }[]): CategoryNode[] {
   const map = new Map<string, CategoryNode>();
@@ -474,7 +474,7 @@ const ProductList = () => {
               <tr><td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">No products found.</td></tr>
             )}
             {paginated.map(p => (
-              <tr key={p.id} className={`border-b border-border last:border-0 hover:bg-secondary/50 cursor-pointer ${selected.has(p.id) ? "bg-primary/5" : ""}`} onClick={() => openEdit(p.id)}>
+              <tr key={p.id} className={`virtual-row border-b border-border last:border-0 hover:bg-secondary/50 cursor-pointer ${selected.has(p.id) ? "bg-primary/5" : ""}`} onClick={() => openEdit(p.id)}>
                 <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                   <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleOne(p.id)} />
                 </td>

@@ -122,3 +122,17 @@
     font-family: var(--font-heading);
   }
 }
+
+@layer utilities {
+  /* Browser-native row windowing for large tables.
+     Skips painting/layout for rows scrolled off-screen, drastically
+     reducing render cost on tables with thousands of rows. */
+  .virtual-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 64px;
+  }
+  .virtual-row-tall {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 96px;
+  }
+}
