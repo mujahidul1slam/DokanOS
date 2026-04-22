@@ -84,7 +84,7 @@ interface OrderRow {
 
 interface StoreOption { id: string; name: string }
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 200;
 
 type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
@@ -901,7 +901,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               </TableHeader>
               <TableBody>
                 {paginated.map((order) => (
-                  <TableRow key={order.id} className={cn("group", selected.has(order.id) && "bg-primary/5")}>
+                  <TableRow key={order.id} className={cn("virtual-row-tall group", selected.has(order.id) && "bg-primary/5")}>
                     <TableCell><Checkbox checked={selected.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></TableCell>
                     <TableCell>
                       <div className="font-medium text-foreground">#{order.order_number}</div>
