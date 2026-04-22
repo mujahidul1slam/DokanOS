@@ -445,11 +445,12 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         </SheetHeader>
 
         <Tabs defaultValue="categories" className="flex-1 mt-4">
-          <TabsList className="w-full grid grid-cols-4">
+          <TabsList className="w-full grid grid-cols-5">
             <TabsTrigger value="categories">Categories</TabsTrigger>
             <TabsTrigger value="basic">Basic Info</TabsTrigger>
             <TabsTrigger value="inventory">Inventory</TabsTrigger>
             <TabsTrigger value="variations">Variations</TabsTrigger>
+            <TabsTrigger value="measurements">Measurements</TabsTrigger>
           </TabsList>
 
           {/* ===== Tab 1: Categories ===== */}
