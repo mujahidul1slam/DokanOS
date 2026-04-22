@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
 
 interface SyncingStore {
   id: string;
