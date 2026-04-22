@@ -227,7 +227,14 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         case "ready":
           return o.status === "ready_to_ship" && !o.consignment_id && !o.hasBackorder;
         case "pre_order":
-          return o.hasBackorder && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status);
+          // A pre-order is anything sitting in one of the dedicated pre-order
+          // statuses, OR a legacy backordered order that hasn't been dispatched
+          // yet. Once dispatched (consignment exists) it leaves the pre-order
+          // tab and rejoins the courier flow.
+          return (
+            ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
+            (o.hasBackorder && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
+          );
         case "pickup_pending":
           return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up","Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || "");
         case "in_transit":
