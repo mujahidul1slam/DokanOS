@@ -76,7 +76,7 @@ const CartPanel = ({
   const [pathaoAreas, setPathaoAreas] = useState<PathaoArea[]>([]);
   const [zoneSearch, setZoneSearch] = useState("");
   const [showZoneDropdown, setShowZoneDropdown] = useState(false);
-  const [detectedZone, setDetectedZone] = useState<PathaoZone | null>(null);
+  const [detected, setDetected] = useState<DetectedLocation | null>(null);
 
   useEffect(() => {
     Promise.all([
