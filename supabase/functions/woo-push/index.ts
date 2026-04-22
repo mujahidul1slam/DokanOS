@@ -315,9 +315,13 @@ function reverseMapStatus(status: string): string {
   // Once a Pathao courier cycle has terminated (delivered OR returned/cancelled/refused),
   // we always close the WooCommerce order as "completed" per business rule —
   // the merchant treats the courier outcome as the final lifecycle event.
+  // Pre-order states map to "on-hold" on Woo so customers see production is in progress.
   const map: Record<string, string> = {
     pending: "pending",
     processing: "processing",
+    pre_order_pending: "on-hold",
+    pre_order_making: "on-hold",
+    pre_order_ready: "processing",
     ready_to_ship: "processing",
     completed: "completed",
     delivered: "completed",
