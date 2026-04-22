@@ -301,6 +301,10 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         const orderCats = orderCategoryMap.get(o.id);
         matchCategory = !!orderCats && Array.from(categoryFilter).some((c) => orderCats.has(c));
       }
+      let matchPreOrder = true;
+      if (preOrderStatusFilter !== "all") {
+        matchPreOrder = o.status === preOrderStatusFilter;
+      }
       let matchDate = true;
       if (dateRange?.from) {
         const d = new Date(o.created_at);
@@ -311,14 +315,14 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           matchDate = matchDate && d <= end;
         }
       }
-      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery && matchCourier && matchCategory;
+      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery && matchCourier && matchCategory && matchPreOrder;
     });
-  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
+  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, categoryFilter, dateRange, tab]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, dateRange, tab]);
 
   // When store filter changes, drop category selections that no longer belong
   useEffect(() => {
