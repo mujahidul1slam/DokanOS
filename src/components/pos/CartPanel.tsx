@@ -214,21 +214,31 @@ const CartPanel = ({
     return undefined;
   }, [getEditDistance, normalizeLocationText]);
 
-  // Auto-detect zone from address using same logic as dispatch
+  // Auto-detect zone + area globally from address (no city required).
+  // Tries area first (most specific), back-filling its zone; otherwise zone.
   const autoDetectZone = useCallback((address: string) => {
-    if (!address || address.length < 3 || pathaoZones.length === 0) { setDetectedZone(null); return; }
+    if (!address || address.length < 3 || pathaoZones.length === 0) { setDetected(null); return; }
     const candidates = buildLocationCandidates([address]);
-    
-    // Try strict global zone match first
-    const zoneMatch = getStrictLocationMatch(pathaoZones, (z) => z.zone_name, candidates);
-    if (zoneMatch) { setDetectedZone(zoneMatch); return; }
-    
-    // Then fuzzy match
-    const fuzzyZone = fuzzyMatch(pathaoZones, (z) => z.zone_name, candidates);
-    if (fuzzyZone) { setDetectedZone(fuzzyZone); return; }
-    
-    setDetectedZone(null);
-  }, [pathaoZones, buildLocationCandidates, getStrictLocationMatch, fuzzyMatch]);
+
+    const areaMatch = getStrictLocationMatch(pathaoAreas, (a) => a.area_name, candidates);
+    if (areaMatch) {
+      const parentZone = pathaoZones.find((z) => z.zone_id === areaMatch.zone_id);
+      if (parentZone) { setDetected({ zone: parentZone, area: areaMatch }); return; }
+    }
+
+    const zoneMatch =
+      getStrictLocationMatch(pathaoZones, (z) => z.zone_name, candidates) ||
+      fuzzyMatch(pathaoZones, (z) => z.zone_name, candidates);
+    if (zoneMatch) {
+      // Try to refine with an area inside this zone
+      const zoneAreas = pathaoAreas.filter((a) => a.zone_id === zoneMatch.zone_id);
+      const areaInZone = fuzzyMatch(zoneAreas, (a) => a.area_name, candidates);
+      setDetected({ zone: zoneMatch, area: areaInZone });
+      return;
+    }
+
+    setDetected(null);
+  }, [pathaoZones, pathaoAreas, buildLocationCandidates, getStrictLocationMatch, fuzzyMatch]);
 
   const cart = carts.find((c) => c.id === activeCartId) || carts[0];
   if (!cart) return null;
