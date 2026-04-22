@@ -79,15 +79,29 @@ Deno.serve(async (req) => {
     }
 
     const summary = { products: 0, orders: 0, order_items: 0, customers: 0, categories: 0, variations: 0 };
+    const t0 = Date.now();
+    const ts = (label: string) => console.log(`[woo-sync ${store_id.slice(0, 8)}] ${label} (+${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 
+    // Stale-lock guard: if a sync is marked "syncing" but stores.updated_at hasn't moved in 10+ minutes,
+    // the previous run died — allow this one to take over.
     if (store.status === "syncing") {
-      return new Response(
-        JSON.stringify({ success: true, status: "already_running", message: "A sync is already in progress for this store." }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      const updatedAt = store.updated_at ? new Date(store.updated_at).getTime() : 0;
+      const ageMin = (Date.now() - updatedAt) / 60000;
+      if (ageMin < 10) {
+        return new Response(
+          JSON.stringify({ success: true, status: "already_running", message: `A sync is already in progress for this store (started ${ageMin.toFixed(1)}m ago).` }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.warn(`Stale sync lock detected (${ageMin.toFixed(1)}m old) — taking over.`);
     }
 
     await supabase.from("stores").update({ status: "syncing" }).eq("id", store_id);
+
+    // Heartbeat: bump updated_at every 30s so the stale-lock guard knows we're alive
+    const heartbeat = setInterval(() => {
+      supabase.from("stores").update({ updated_at: new Date().toISOString() }).eq("id", store_id).then();
+    }, 30000);
 
     const syncTask = (async () => {
       try {
@@ -95,10 +109,12 @@ Deno.serve(async (req) => {
         await supabase.from("stores")
           .update({ status: "connected", last_synced_at: new Date().toISOString() })
           .eq("id", store_id);
-        console.log("woo-sync completed for store", store_id, summary);
+        ts(`completed: ${JSON.stringify(summary)}`);
       } catch (e: any) {
         console.error("woo-sync background error:", e?.message || e);
         await supabase.from("stores").update({ status: "error" }).eq("id", store_id);
+      } finally {
+        clearInterval(heartbeat);
       }
     })();
 
