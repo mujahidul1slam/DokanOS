@@ -103,6 +103,11 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Custom measurements
+  const [measurementsEnabled, setMeasurementsEnabled] = useState(true);
+  // Cache: productId -> MeasurementGroup[]
+  const [groupsByProduct, setGroupsByProduct] = useState<Record<string, MeasurementGroup[]>>({});
+
   // Pathao location
   const [cities, setCities] = useState<{ city_id: number; city_name: string }[]>([]);
   const [zones, setZones] = useState<{ zone_id: number; zone_name: string }[]>([]);
