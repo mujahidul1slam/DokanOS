@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import Fuse from "fuse.js";
 import { Search, Plus, Minus, Trash2, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -143,42 +144,68 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     }
   }, [customerAddress, cities]);
 
-  // Build search results including variations
-  const searchResults = useMemo((): SearchResult[] => {
-    const q = productSearch.toLowerCase();
-    if (!q) return [];
-    const results: SearchResult[] = [];
-
+  // Flat searchable index of products + variations
+  const searchIndex = useMemo((): (SearchResult & { searchText: string })[] => {
+    const flat: (SearchResult & { searchText: string })[] = [];
     for (const p of products) {
-      const productVariations = variations.filter(v => v.product_id === p.id);
+      const productVariations = variations.filter((v) => v.product_id === p.id);
       if (productVariations.length > 0) {
-        // Show variations instead of parent
         for (const v of productVariations) {
-          const varLabel = typeof v.attributes === 'string' ? v.attributes :
-            Array.isArray(v.attributes) ? v.attributes.map((a: any) => Object.values(a).join(': ')).join(', ') :
-            v.name;
-          const matchName = `${p.name} ${varLabel}`.toLowerCase();
-          const matchSku = (v.sku || '').toLowerCase();
-          if (matchName.includes(q) || matchSku.includes(q) || (p.sku || '').toLowerCase().includes(q)) {
-            results.push({
-              id: v.id,
-              productId: p.id,
-              variationId: v.id,
-              name: p.name,
-              variationLabel: varLabel || v.name,
-              sku: v.sku || p.sku,
-              price: v.price,
-            });
-          }
+          const varLabel =
+            typeof v.attributes === "string"
+              ? v.attributes
+              : Array.isArray(v.attributes)
+              ? v.attributes.map((a: any) => Object.values(a).join(": ")).join(", ")
+              : v.name;
+          flat.push({
+            id: v.id,
+            productId: p.id,
+            variationId: v.id,
+            name: p.name,
+            variationLabel: varLabel || v.name,
+            sku: v.sku || p.sku,
+            price: v.price,
+            searchText: `${p.name} ${varLabel} ${v.sku || ""} ${p.sku || ""}`,
+          });
         }
       } else {
-        if (p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q)) {
-          results.push({ id: p.id, productId: p.id, name: p.name, sku: p.sku, price: p.price });
-        }
+        flat.push({
+          id: p.id,
+          productId: p.id,
+          name: p.name,
+          sku: p.sku,
+          price: p.price,
+          searchText: `${p.name} ${p.sku || ""}`,
+        });
       }
     }
-    return results.slice(0, 20);
-  }, [products, variations, productSearch]);
+    return flat;
+  }, [products, variations]);
+
+  const fuse = useMemo(
+    () =>
+      new Fuse(searchIndex, {
+        keys: [
+          { name: "name", weight: 0.45 },
+          { name: "variationLabel", weight: 0.2 },
+          { name: "sku", weight: 0.2 },
+          { name: "searchText", weight: 0.15 },
+        ],
+        threshold: 0.4,
+        ignoreLocation: true,
+        minMatchCharLength: 2,
+      }),
+    [searchIndex],
+  );
+
+  const searchResults = useMemo((): SearchResult[] => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return [];
+    // Exact SKU match wins
+    const exact = searchIndex.filter((r) => (r.sku || "").toLowerCase() === q);
+    if (exact.length > 0) return exact.slice(0, 20);
+    return fuse.search(q).slice(0, 20).map((r) => r.item);
+  }, [searchIndex, fuse, productSearch]);
 
   const addItem = (result: SearchResult) => {
     const uid = result.variationId ? `${result.productId}_${result.variationId}` : result.productId;

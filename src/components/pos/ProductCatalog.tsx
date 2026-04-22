@@ -1,4 +1,5 @@
 import { useState, useMemo, RefObject } from "react";
+import Fuse from "fuse.js";
 import { Search, ScanBarcode, Plus, Package, SlidersHorizontal, ArrowUpDown, Eye, EyeOff, Tag, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -45,13 +46,28 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
     if (hideOutOfStock) list = list.filter((p) => p.stock_quantity > 0);
     if (selectedStore !== "all") list = list.filter((p) => (p as any).store_id === selectedStore);
     if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(
+      const q = search.trim().toLowerCase();
+      // Exact SKU/barcode match short-circuits (for scanners)
+      const exact = list.filter(
         (p) =>
-          p.name.toLowerCase().includes(q) ||
-          (p.sku || "").toLowerCase().includes(q) ||
-          ((p as any).barcode || "").toLowerCase().includes(q)
+          (p.sku || "").toLowerCase() === q ||
+          ((p as any).barcode || "").toLowerCase() === q
       );
+      if (exact.length > 0) {
+        list = exact;
+      } else {
+        const fuse = new Fuse(list, {
+          keys: [
+            { name: "name", weight: 0.6 },
+            { name: "sku", weight: 0.25 },
+            { name: "barcode", weight: 0.15 },
+          ],
+          threshold: 0.4,
+          ignoreLocation: true,
+          minMatchCharLength: 2,
+        });
+        list = fuse.search(q).map((r) => r.item);
+      }
     }
 
     // Featured products always first
