@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { CapturedMeasurement } from "@/lib/measurements";
+import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type CapturedMeasurement } from "@/lib/measurements";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 
 /**
@@ -146,13 +146,66 @@ export async function printMeasurementSlip(orderId: string) {
     }
   });
 
-  const productLines: ProductLine[] = items
-    .map((i) => ({
-      product_name: i.product_name,
-      sku: skuMap.get(i.product_id),
-      measurements: measByItem.get(i.id) || [],
-    }))
-    .filter((p) => p.measurements.length > 0);
+  // Build product lines, with size-preset auto-fill when no custom measurement was captured.
+  const productLines: ProductLine[] = [];
+  for (const i of items) {
+    let measurements = measByItem.get(i.id) || [];
+
+    // Custom measurements always win — only resolve presets when nothing was captured.
+    if (measurements.length === 0 && i.product_id) {
+      // 1. Detect size from variation attributes / product_name suffix
+      let variationAttrs: any = null;
+      let variationName: string | null = null;
+      const dashIdx = (i.product_name || "").lastIndexOf(" - ");
+      if (dashIdx > 0) variationName = (i.product_name || "").slice(dashIdx + 3);
+
+      // Try to find a matching product_variations row (authoritative attributes)
+      try {
+        const { data: vars } = await supabase
+          .from("product_variations")
+          .select("name, attributes")
+          .eq("product_id", i.product_id);
+        if (vars && vars.length > 0 && variationName) {
+          const match = vars.find((v: any) => String(v.name || "").trim().toLowerCase() === variationName!.trim().toLowerCase());
+          if (match) variationAttrs = match.attributes;
+        }
+      } catch { /* ignore */ }
+
+      const sizeLabel = detectSizeFromItem({
+        variation_attributes: variationAttrs,
+        variation_name: variationName,
+        product_name: i.product_name,
+      });
+
+      if (sizeLabel) {
+        // 2. Look up assigned measurement groups for this product
+        const groups = await getGroupsForProduct(i.product_id);
+        // 3. Resolve a preset for each group + size
+        const resolved: CapturedMeasurement[] = [];
+        for (const g of groups) {
+          const preset = await resolveSizePreset(g.id, i.product_id, sizeLabel);
+          if (preset && preset.values.length > 0) {
+            resolved.push({
+              groupName: `${g.name} (Size ${sizeLabel})`,
+              displayFormat: g.display_format,
+              unit: g.unit,
+              values: preset.values,
+              source: "woo",
+            });
+          }
+        }
+        if (resolved.length > 0) measurements = resolved;
+      }
+    }
+
+    if (measurements.length > 0) {
+      productLines.push({
+        product_name: i.product_name,
+        sku: skuMap.get(i.product_id),
+        measurements,
+      });
+    }
+  }
 
   if (productLines.length === 0 && orphans.length === 0) {
     alert("No measurements recorded for this order.");
@@ -232,15 +285,6 @@ export async function printMeasurementSlipsBulk(orderIds: string[]): Promise<{ p
   let printed = 0;
   let skipped = 0;
   for (const id of orderIds) {
-    const { data: meas } = await supabase
-      .from("order_item_measurements" as any)
-      .select("id")
-      .eq("order_id", id)
-      .limit(1);
-    if (!meas || meas.length === 0) {
-      skipped++;
-      continue;
-    }
     try {
       await printMeasurementSlip(id);
       printed++;

@@ -16,6 +16,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import SizePresetsEditor from "@/components/measurements/SizePresetsEditor";
 
 interface Group {
   id: string;
@@ -392,6 +393,15 @@ const MeasurementsTab = () => {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Size presets */}
+                <div className="rounded-md border border-border bg-background/60 p-3">
+                  <SizePresetsEditor
+                    groupId={g.id}
+                    fieldNames={g.fields.map((f) => f.name).filter(Boolean)}
+                    unit={g.unit}
+                  />
                 </div>
               </div>
             );

@@ -74,6 +74,91 @@ export async function getGroupsForProduct(productId: string): Promise<Measuremen
   return allGroups.filter((g) => matchedGroupIds.has(g.id));
 }
 
+export interface SizePreset {
+  id: string;
+  group_id: string;
+  product_id: string | null;
+  size_label: string;
+  values: { name: string; value: string }[];
+}
+
+/**
+ * Detect the size token (e.g. "L", "XL", "32") from an order item.
+ * Looks at WooCommerce-style line meta first (`meta_data` array), then the
+ * variation attributes JSON we store, then falls back to parsing the variation
+ * name / product name (last token after dash/slash/space).
+ */
+export function detectSizeFromItem(item: {
+  meta_data?: any;
+  variation_attributes?: any;
+  variation_name?: string | null;
+  product_name?: string | null;
+}): string | null {
+  const SIZE_KEYS = ["size", "pa_size", "attribute_pa_size", "attribute_size"];
+
+  // 1. WooCommerce meta_data
+  const meta = item.meta_data;
+  if (Array.isArray(meta)) {
+    for (const m of meta) {
+      const key = String(m?.key || m?.display_key || "").toLowerCase().trim();
+      if (SIZE_KEYS.some((k) => key === k || key.endsWith(k))) {
+        const val = String(m?.value || m?.display_value || "").trim();
+        if (val) return val;
+      }
+    }
+  }
+
+  // 2. Variation attributes JSON we store (array of {key, value} or {name, option})
+  const attrs = item.variation_attributes;
+  if (Array.isArray(attrs)) {
+    for (const a of attrs) {
+      const key = String(a?.key || a?.name || "").toLowerCase().trim();
+      if (SIZE_KEYS.some((k) => key === k || key.endsWith(k)) || key === "size") {
+        const val = String(a?.value || a?.option || "").trim();
+        if (val) return val;
+      }
+    }
+  }
+
+  // 3. Parse the variation/product name — last segment after `-`, `/`, or space.
+  const name = (item.variation_name || item.product_name || "").trim();
+  if (name) {
+    const tokens = name.split(/[\s\-\/|]+/).filter(Boolean);
+    const last = tokens[tokens.length - 1];
+    if (last && last.length <= 4) return last;
+  }
+  return null;
+}
+
+/**
+ * Load the best matching size preset for a (group, product, size) combination.
+ * Product-scoped overrides win over group defaults.
+ */
+export async function resolveSizePreset(
+  groupId: string,
+  productId: string | null,
+  sizeLabel: string
+): Promise<SizePreset | null> {
+  const wantedLabel = sizeLabel.toLowerCase().trim();
+  if (!wantedLabel) return null;
+
+  const { data } = await supabase
+    .from("measurement_size_presets" as any)
+    .select("id, group_id, product_id, size_label, values")
+    .eq("group_id", groupId);
+
+  const rows = ((data as any[]) || []).filter((r) => String(r.size_label).toLowerCase().trim() === wantedLabel);
+  if (rows.length === 0) return null;
+
+  // Prefer the product-scoped override
+  const productMatch = productId ? rows.find((r) => r.product_id === productId) : null;
+  const chosen = productMatch || rows.find((r) => r.product_id === null) || rows[0];
+  return {
+    ...chosen,
+    values: Array.isArray(chosen.values) ? chosen.values : [],
+  };
+}
+
 /** Format captured measurement values per its display format. */
 export function formatMeasurement(m: CapturedMeasurement): string {
   const filled = m.values.filter((v) => v.value && String(v.value).trim() !== "");

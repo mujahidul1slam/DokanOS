@@ -496,6 +496,51 @@ export type Database = {
         }
         Relationships: []
       }
+      measurement_size_presets: {
+        Row: {
+          created_at: string
+          group_id: string
+          id: string
+          product_id: string | null
+          size_label: string
+          updated_at: string
+          values: Json
+        }
+        Insert: {
+          created_at?: string
+          group_id: string
+          id?: string
+          product_id?: string | null
+          size_label: string
+          updated_at?: string
+          values?: Json
+        }
+        Update: {
+          created_at?: string
+          group_id?: string
+          id?: string
+          product_id?: string | null
+          size_label?: string
+          updated_at?: string
+          values?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "measurement_size_presets_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "measurement_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "measurement_size_presets_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_item_measurements: {
         Row: {
           created_at: string

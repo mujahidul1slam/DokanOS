@@ -15,6 +15,8 @@ import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
 import { logAction } from "@/lib/auditLog";
 import { usePermissions } from "@/hooks/usePermissions";
+import SizePresetsEditor from "@/components/measurements/SizePresetsEditor";
+import { getGroupsForProduct, type MeasurementGroup } from "@/lib/measurements";
 
 /* ---------- types ---------- */
 interface Variation {
@@ -103,6 +105,10 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   const [newAttrKey, setNewAttrKey] = useState("");
   const [newValInputs, setNewValInputs] = useState<Record<string, string>>({});
 
+  // measurement groups assigned to this product (direct + via categories)
+  const [productGroups, setProductGroups] = useState<MeasurementGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+
   useEffect(() => {
     if (!open) return;
     loadCategories();
@@ -184,6 +190,16 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
           setAttrValues(vals);
         }
       }
+    }
+    // Load measurement groups for this product (direct + via categories)
+    setGroupsLoading(true);
+    try {
+      const grps = await getGroupsForProduct(id);
+      setProductGroups(grps);
+    } catch {
+      setProductGroups([]);
+    } finally {
+      setGroupsLoading(false);
     }
     setLoading(false);
   };
@@ -429,11 +445,12 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         </SheetHeader>
 
         <Tabs defaultValue="categories" className="flex-1 mt-4">
-          <TabsList className="w-full grid grid-cols-4">
+          <TabsList className="w-full grid grid-cols-5">
             <TabsTrigger value="categories">Categories</TabsTrigger>
             <TabsTrigger value="basic">Basic Info</TabsTrigger>
             <TabsTrigger value="inventory">Inventory</TabsTrigger>
             <TabsTrigger value="variations">Variations</TabsTrigger>
+            <TabsTrigger value="measurements">Measurements</TabsTrigger>
           </TabsList>
 
           {/* ===== Tab 1: Categories ===== */}
@@ -664,6 +681,45 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
                   </AccordionItem>
                 ))}
               </Accordion>
+            )}
+          </TabsContent>
+
+          {/* ===== Tab 5: Measurements ===== */}
+          <TabsContent value="measurements" className="space-y-4 mt-4">
+            {!form.id ? (
+              <p className="text-sm text-muted-foreground py-8 text-center border border-dashed rounded-lg">
+                Save the product first, then you can configure size-specific measurements here.
+              </p>
+            ) : groupsLoading ? (
+              <p className="text-sm text-muted-foreground">Loading measurement groups…</p>
+            ) : productGroups.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-8 text-center border border-dashed rounded-lg space-y-1">
+                <p>No measurement groups assigned to this product.</p>
+                <p className="text-xs">Assign groups in <span className="font-medium">Settings → Measurements</span>, either directly or via this product's category.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  Define size-specific measurements (e.g. L, XL) for this product. These override the group's default presets and are auto-applied when this product appears in an order with a matching size.
+                </p>
+                {productGroups.map((g) => (
+                  <div key={g.id} className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold">{g.name}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{g.fields.length} fields · {g.unit}</p>
+                      </div>
+                    </div>
+                    <SizePresetsEditor
+                      groupId={g.id}
+                      productId={form.id}
+                      fieldNames={g.fields.map((f) => f.name)}
+                      unit={g.unit}
+                      showGroupDefaultsHint
+                    />
+                  </div>
+                ))}
+              </div>
             )}
           </TabsContent>
         </Tabs>
