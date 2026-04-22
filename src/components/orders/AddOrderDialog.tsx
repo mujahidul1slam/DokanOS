@@ -1,10 +1,17 @@
 import { useState, useEffect, useMemo } from "react";
 import Fuse from "fuse.js";
-import { Search, Plus, Minus, Trash2, Loader2 } from "lucide-react";
+import { Search, Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
+import { Switch } from "@/components/ui/switch";
+import {
+  getGroupsForProduct,
+  saveOrderItemMeasurements,
+  type MeasurementGroup,
+  type CapturedMeasurement,
+} from "@/lib/measurements";
 
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
