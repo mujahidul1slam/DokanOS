@@ -1,5 +1,4 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import {
@@ -47,8 +46,7 @@ interface CustomerOrder {
 
 interface StoreOption { id: string; name: string }
 
-const PAGE_SIZE = 500;
-const ROW_HEIGHT = 73; // px — approximate height of one customer row
+const PAGE_SIZE = 200;
 
 const Customers = () => {
   const [customers, setCustomers] = useState<UnifiedCustomer[]>([]);
@@ -273,7 +271,7 @@ const Customers = () => {
                 </TableCell>
               </TableRow>
             ) : paginated.map((c) => (
-              <TableRow key={c.id} className="group cursor-pointer hover:bg-muted/50" onClick={() => openDetail(c)}>
+              <TableRow key={c.id} className="virtual-row group cursor-pointer hover:bg-muted/50" onClick={() => openDetail(c)}>
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
