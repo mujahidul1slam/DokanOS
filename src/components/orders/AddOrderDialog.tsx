@@ -513,22 +513,95 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               <div className="px-3 py-2 bg-secondary text-xs font-medium text-muted-foreground grid grid-cols-[1fr_80px_100px_80px_32px]">
                 <span>Product</span><span className="text-right">Price</span><span className="text-center">Qty</span><span className="text-right">Total</span><span></span>
               </div>
-              {items.map(item => (
-                <div key={item.uid} className="px-3 py-2 border-t border-border grid grid-cols-[1fr_80px_100px_80px_32px] items-center text-sm">
-                  <div className="truncate">
-                    <span className="font-medium">{item.name}</span>
-                    {item.variationLabel && <span className="ml-1 text-xs text-muted-foreground">({item.variationLabel})</span>}
+              {items.map(item => {
+                const groups = groupsByProduct[item.productId] || [];
+                const showMeasureToggle = measurementsEnabled && groups.length > 0;
+                return (
+                  <div key={item.uid} className="border-t border-border">
+                    <div className="px-3 py-2 grid grid-cols-[1fr_80px_100px_80px_32px] items-center text-sm">
+                      <div className="truncate">
+                        <span className="font-medium">{item.name}</span>
+                        {item.variationLabel && <span className="ml-1 text-xs text-muted-foreground">({item.variationLabel})</span>}
+                      </div>
+                      <span className="text-right text-muted-foreground">৳{item.price.toLocaleString()}</span>
+                      <div className="flex items-center justify-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty - 1)}><Minus className="h-3 w-3" /></Button>
+                        <span className="w-6 text-center">{item.qty}</span>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty + 1)}><Plus className="h-3 w-3" /></Button>
+                      </div>
+                      <span className="text-right font-medium">৳{(item.price * item.qty).toLocaleString()}</span>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeItem(item.uid)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+
+                    {showMeasureToggle && (
+                      <div className="px-3 pb-2 space-y-2">
+                        <div className="flex items-center justify-between rounded-md bg-secondary/50 px-2.5 py-1.5">
+                          <div className="flex items-center gap-2">
+                            <Ruler className="h-3.5 w-3.5 text-primary" />
+                            <span className="text-xs font-medium">Custom Measurements</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {groups.length === 1 ? groups[0].name : `${groups.length} groups`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {item.customMeasurements && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateItem(item.uid, { measurementsExpanded: !item.measurementsExpanded })}
+                              >
+                                {item.measurementsExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              </Button>
+                            )}
+                            <Switch
+                              checked={!!item.customMeasurements}
+                              onCheckedChange={(checked) =>
+                                updateItem(item.uid, { customMeasurements: checked, measurementsExpanded: checked })
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        {item.customMeasurements && item.measurementsExpanded && (
+                          <div className="space-y-2">
+                            {groups.map((g) => (
+                              <div key={g.id} className="rounded-md border border-border bg-card p-2.5 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <h5 className="text-xs font-semibold">{g.name}</h5>
+                                  <span className="text-[10px] text-muted-foreground uppercase">{g.unit}</span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {g.fields.map((f) => (
+                                    <div key={f.id}>
+                                      <Label className="text-[10px] text-muted-foreground">{f.name}</Label>
+                                      <Input
+                                        value={item.measurementValues?.[g.id]?.[f.id] || ""}
+                                        onChange={(e) => setMeasurementValue(item.uid, g.id, f.id, e.target.value)}
+                                        placeholder="0.0"
+                                        className="h-8 mt-0.5 text-xs"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                                <div>
+                                  <Label className="text-[10px] text-muted-foreground">Notes</Label>
+                                  <Textarea
+                                    value={item.measurementNotes?.[g.id] || ""}
+                                    onChange={(e) => setMeasurementNote(item.uid, g.id, e.target.value)}
+                                    placeholder="Special instructions..."
+                                    className="mt-0.5 min-h-[40px] text-xs"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <span className="text-right text-muted-foreground">৳{item.price.toLocaleString()}</span>
-                  <div className="flex items-center justify-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty - 1)}><Minus className="h-3 w-3" /></Button>
-                    <span className="w-6 text-center">{item.qty}</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty + 1)}><Plus className="h-3 w-3" /></Button>
-                  </div>
-                  <span className="text-right font-medium">৳{(item.price * item.qty).toLocaleString()}</span>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeItem(item.uid)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
