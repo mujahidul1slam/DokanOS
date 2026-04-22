@@ -584,7 +584,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                 </Button>
                               </TableCell>
                             </TableRow>
-                          ))
+                            );
+                          })
                         )}
                       </TableBody>
                     </Table>
