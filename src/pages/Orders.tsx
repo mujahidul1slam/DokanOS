@@ -690,6 +690,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   <DropdownMenuItem onClick={() => handleBulkStatusChange("processing")}><Package className="h-4 w-4 mr-2" /> Processing</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("pre_order_pending")}><Hourglass className="h-4 w-4 mr-2" /> Pre-Order</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("pre_order_making")}><Wrench className="h-4 w-4 mr-2" /> Making</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("pre_order_ready")}><Sparkles className="h-4 w-4 mr-2" /> Pre-Order Ready</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleBulkStatusChange("ready_to_ship")}><PackageCheck className="h-4 w-4 mr-2" /> Ready to Ship</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleBulkStatusChange("shipped")}><Truck className="h-4 w-4 mr-2" /> Shipped</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleBulkStatusChange("delivered")}><CheckCircle2 className="h-4 w-4 mr-2" /> Delivered</DropdownMenuItem>
@@ -700,6 +703,12 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               </DropdownMenu>
             )}
             <PickupSlipPrint orders={selectedOrders} />
+            {canWrite && (
+              <Button size="sm" variant="outline" onClick={handleBulkPrintMeasurementSlips} disabled={bulkUpdating} className="gap-1.5">
+                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ruler className="h-4 w-4" />}
+                Print Measurement Slips
+              </Button>
+            )}
             {canWrite && (
               <Button size="sm" onClick={() => openDispatch(Array.from(selected))} className="gap-1.5">
                 <Send className="h-4 w-4" /> Dispatch
