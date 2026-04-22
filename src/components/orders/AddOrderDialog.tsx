@@ -300,6 +300,48 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   const removeItem = (uid: string) => setItems(prev => prev.filter(i => i.uid !== uid));
 
+  const updateItem = (uid: string, patch: Partial<OrderItem>) =>
+    setItems(prev => prev.map(i => i.uid === uid ? { ...i, ...patch } : i));
+
+  const setMeasurementValue = (uid: string, groupId: string, fieldId: string, value: string) =>
+    setItems(prev => prev.map(i => {
+      if (i.uid !== uid) return i;
+      const next = { ...(i.measurementValues || {}) };
+      next[groupId] = { ...(next[groupId] || {}), [fieldId]: value };
+      return { ...i, measurementValues: next };
+    }));
+
+  const setMeasurementNote = (uid: string, groupId: string, value: string) =>
+    setItems(prev => prev.map(i => {
+      if (i.uid !== uid) return i;
+      const next = { ...(i.measurementNotes || {}), [groupId]: value };
+      return { ...i, measurementNotes: next };
+    }));
+
+  const buildItemMeasurements = (item: OrderItem): CapturedMeasurement[] => {
+    if (!item.customMeasurements) return [];
+    const groups = groupsByProduct[item.productId] || [];
+    return groups
+      .map<CapturedMeasurement | null>((g) => {
+        const vals = item.measurementValues?.[g.id] || {};
+        const filled = g.fields
+          .map((f) => ({ name: f.name, value: vals[f.id] || "" }))
+          .filter((v) => v.value.trim() !== "");
+        const note = item.measurementNotes?.[g.id]?.trim();
+        if (filled.length === 0 && !note) return null;
+        return {
+          groupId: g.id,
+          groupName: g.name,
+          displayFormat: g.display_format,
+          unit: g.unit,
+          values: filled,
+          notes: note || undefined,
+          source: "pos",
+        };
+      })
+      .filter((x): x is CapturedMeasurement => x !== null);
+  };
+
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const total = subtotal - discount + shippingCost;
 
