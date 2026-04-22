@@ -6,7 +6,7 @@ import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
-  Trash2, RotateCcw, Hourglass, Tags,
+  Trash2, RotateCcw, Hourglass, Tags, Ruler, Sparkles, Wrench,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { logAction } from "@/lib/auditLog";
@@ -44,6 +44,7 @@ import {
 import { TableSkeleton } from "@/components/ui/loading-states";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { printInvoice } from "@/components/pos/InvoicePrint";
+import { printMeasurementSlipsBulk } from "@/components/orders/MeasurementSlipPrint";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import CategoryFilter from "@/components/CategoryFilter";
 
@@ -105,6 +106,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [deliveryFilter, setDeliveryFilter] = useState("all");
   const [courierFilter, setCourierFilter] = useState("all");
+  const [preOrderStatusFilter, setPreOrderStatusFilter] = useState<"all" | "pre_order_pending" | "pre_order_making" | "pre_order_ready">("all");
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
@@ -225,7 +227,14 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         case "ready":
           return o.status === "ready_to_ship" && !o.consignment_id && !o.hasBackorder;
         case "pre_order":
-          return o.hasBackorder && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status);
+          // A pre-order is anything sitting in one of the dedicated pre-order
+          // statuses, OR a legacy backordered order that hasn't been dispatched
+          // yet. Once dispatched (consignment exists) it leaves the pre-order
+          // tab and rejoins the courier flow.
+          return (
+            ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
+            (o.hasBackorder && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
+          );
         case "pickup_pending":
           return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up","Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || "");
         case "in_transit":
@@ -292,6 +301,10 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         const orderCats = orderCategoryMap.get(o.id);
         matchCategory = !!orderCats && Array.from(categoryFilter).some((c) => orderCats.has(c));
       }
+      let matchPreOrder = true;
+      if (preOrderStatusFilter !== "all") {
+        matchPreOrder = o.status === preOrderStatusFilter;
+      }
       let matchDate = true;
       if (dateRange?.from) {
         const d = new Date(o.created_at);
@@ -302,14 +315,14 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           matchDate = matchDate && d <= end;
         }
       }
-      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery && matchCourier && matchCategory;
+      return matchSearch && matchStatus && matchPayment && matchSource && matchStore && matchDate && matchDelivery && matchCourier && matchCategory && matchPreOrder;
     });
-  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
+  }, [orders, search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, categoryFilter, dateRange, tab]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, dateRange, tab]);
 
   // When store filter changes, drop category selections that no longer belong
   useEffect(() => {
@@ -508,6 +521,24 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     } finally { setBulkUpdating(false); }
   };
 
+  /* ─── Bulk Print Measurement Slips ─── */
+  const handleBulkPrintMeasurementSlips = async () => {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      const { printed, skipped } = await printMeasurementSlipsBulk(ids);
+      toast({
+        title: `Printed ${printed} measurement slip(s)`,
+        description: skipped > 0 ? `${skipped} order(s) skipped — no measurements recorded.` : undefined,
+      });
+      setSelected(new Set());
+      loadOrders();
+    } catch {
+      toast({ title: "Print failed", variant: "destructive" });
+    } finally { setBulkUpdating(false); }
+  };
+
   /* ─── Bulk Track Selected ─── */
   const handleBulkTrackSelected = async () => {
     if (selected.size === 0) return;
@@ -659,6 +690,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   <DropdownMenuItem onClick={() => handleBulkStatusChange("processing")}><Package className="h-4 w-4 mr-2" /> Processing</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("pre_order_pending")}><Hourglass className="h-4 w-4 mr-2" /> Pre-Order</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("pre_order_making")}><Wrench className="h-4 w-4 mr-2" /> Making</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange("pre_order_ready")}><Sparkles className="h-4 w-4 mr-2" /> Pre-Order Ready</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleBulkStatusChange("ready_to_ship")}><PackageCheck className="h-4 w-4 mr-2" /> Ready to Ship</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleBulkStatusChange("shipped")}><Truck className="h-4 w-4 mr-2" /> Shipped</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleBulkStatusChange("delivered")}><CheckCircle2 className="h-4 w-4 mr-2" /> Delivered</DropdownMenuItem>
@@ -669,6 +703,12 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               </DropdownMenu>
             )}
             <PickupSlipPrint orders={selectedOrders} />
+            {canWrite && (
+              <Button size="sm" variant="outline" onClick={handleBulkPrintMeasurementSlips} disabled={bulkUpdating} className="gap-1.5">
+                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ruler className="h-4 w-4" />}
+                Print Measurement Slips
+              </Button>
+            )}
             {canWrite && (
               <Button size="sm" onClick={() => openDispatch(Array.from(selected))} className="gap-1.5">
                 <Send className="h-4 w-4" /> Dispatch
@@ -740,6 +780,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="processing">New Order</SelectItem>
+                <SelectItem value="pre_order_pending">Pre-Order</SelectItem>
+                <SelectItem value="pre_order_making">Making</SelectItem>
+                <SelectItem value="pre_order_ready">Pre-Order Ready</SelectItem>
                 <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
                 <SelectItem value="shipped">Shipped</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
@@ -749,6 +792,15 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               </SelectContent>
             </Select>
           )}
+          <Select value={preOrderStatusFilter} onValueChange={(v) => setPreOrderStatusFilter(v as any)}>
+            <SelectTrigger className="w-[170px]"><SelectValue placeholder="Pre-Order Stage" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Pre-Order Stages</SelectItem>
+              <SelectItem value="pre_order_pending">Pre-Order (New)</SelectItem>
+              <SelectItem value="pre_order_making">Making</SelectItem>
+              <SelectItem value="pre_order_ready">Pre-Order Ready</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={paymentFilter} onValueChange={setPaymentFilter}>
             <SelectTrigger className="w-[140px]"><SelectValue placeholder="Payment" /></SelectTrigger>
             <SelectContent>

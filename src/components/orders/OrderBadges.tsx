@@ -42,6 +42,12 @@ export function FulfillmentBadge({ status }: { status: string }) {
       return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">New Order</Badge>;
     case "ready_to_ship":
       return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/25">Ready to Ship</Badge>;
+    case "pre_order_pending":
+      return <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/20 hover:bg-violet-500/25">Pre-Order</Badge>;
+    case "pre_order_making":
+      return <Badge className="bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/20 hover:bg-fuchsia-500/25">Making</Badge>;
+    case "pre_order_ready":
+      return <Badge className="bg-teal-500/15 text-teal-400 border-teal-500/20 hover:bg-teal-500/25">Pre-Order Ready</Badge>;
     case "shipped":
       return <Badge className="bg-primary/15 text-primary border-primary/20 hover:bg-primary/25">Shipped</Badge>;
     case "delivered":

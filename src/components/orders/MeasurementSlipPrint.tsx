@@ -1,5 +1,33 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { CapturedMeasurement } from "@/lib/measurements";
+import { addOrderTimeline } from "@/lib/orderTimeline";
+
+/**
+ * If the order is currently in pre_order_pending status, promote it to
+ * pre_order_making (the "in production" stage) — printing the measurement
+ * slip is the trigger that production has begun.
+ */
+async function promotePreOrderOnSlipPrint(orderId: string) {
+  try {
+    const { data } = await supabase
+      .from("orders")
+      .select("id, status, order_number")
+      .eq("id", orderId)
+      .single();
+    if (!data) return;
+    if (data.status === "pre_order_pending") {
+      await supabase.from("orders").update({ status: "pre_order_making" }).eq("id", orderId);
+      await addOrderTimeline({
+        order_id: orderId,
+        event: "status_changed",
+        description: 'Status changed from "Pre-Order" to "Making" — measurement slip printed',
+        metadata: { from: "pre_order_pending", to: "pre_order_making", trigger: "measurement_slip_print" },
+      });
+    }
+  } catch (e) {
+    console.warn("promotePreOrderOnSlipPrint failed:", e);
+  }
+}
 
 interface SlipTpl {
   title?: string;
@@ -162,4 +190,35 @@ export async function printMeasurementSlip(orderId: string) {
     w.focus();
     setTimeout(() => w.print(), 300);
   }
+
+  // Auto-promote pre-order to "making" once the slip is printed.
+  await promotePreOrderOnSlipPrint(orderId);
+}
+
+/**
+ * Print measurement slips for many orders at once. Each slip opens in its own
+ * window. Orders with no measurements recorded are silently skipped.
+ */
+export async function printMeasurementSlipsBulk(orderIds: string[]): Promise<{ printed: number; skipped: number }> {
+  let printed = 0;
+  let skipped = 0;
+  for (const id of orderIds) {
+    const { data: meas } = await supabase
+      .from("order_item_measurements" as any)
+      .select("id")
+      .eq("order_id", id)
+      .limit(1);
+    if (!meas || meas.length === 0) {
+      skipped++;
+      continue;
+    }
+    try {
+      await printMeasurementSlip(id);
+      printed++;
+      await new Promise((r) => setTimeout(r, 400));
+    } catch {
+      skipped++;
+    }
+  }
+  return { printed, skipped };
 }
