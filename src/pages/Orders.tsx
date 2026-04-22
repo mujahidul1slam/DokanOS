@@ -6,7 +6,7 @@ import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
-  Trash2, RotateCcw, Hourglass, Tags,
+  Trash2, RotateCcw, Hourglass, Tags, Ruler, Sparkles, Wrench,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { logAction } from "@/lib/auditLog";
@@ -44,6 +44,7 @@ import {
 import { TableSkeleton } from "@/components/ui/loading-states";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { printInvoice } from "@/components/pos/InvoicePrint";
+import { printMeasurementSlipsBulk } from "@/components/orders/MeasurementSlipPrint";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import CategoryFilter from "@/components/CategoryFilter";
 
