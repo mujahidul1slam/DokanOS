@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
     const authHeader = "Basic " + btoa(`${store.consumer_key}:${store.consumer_secret}`);
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+    // --- HTTP helpers ----------------------------------------------------
     async function wooFetchWithRetry(url: string, retries = 3): Promise<Response> {
       for (let attempt = 0; attempt <= retries; attempt++) {
         const res = await fetch(url, { headers: { Authorization: authHeader } });
@@ -50,38 +51,74 @@ Deno.serve(async (req) => {
       throw new Error(`Rate limited after ${retries + 1} attempts: ${url}`);
     }
 
-    async function wooFetchAll(endpoint: string, params: Record<string, string> = {}) {
-      const all: any[] = [];
-      let page = 1;
+    /**
+     * Paginated WooCommerce fetch with PARALLELIZED pages.
+     * Reads X-WP-TotalPages from page 1, then fetches the rest concurrently.
+     * Falls back to sequential walk if the header is missing.
+     */
+    async function wooFetchAll(endpoint: string, params: Record<string, string> = {}, concurrency = 5) {
       const extra = Object.entries(params).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("");
-      while (true) {
-        const url = `${baseUrl}/wp-json/wc/v3/${endpoint}?per_page=100&page=${page}${extra}`;
-        const res = await wooFetchWithRetry(url);
-        if (!res.ok) {
-          const text = await res.text();
-          // 400 with "rest_post_invalid_page_number" = past the last page; treat as done
-          if (res.status === 400 && text.includes("rest_post_invalid_page_number")) break;
-          throw new Error(`WooCommerce API error (${endpoint} p${page}): ${res.status} ${text}`);
+      const buildUrl = (page: number) => `${baseUrl}/wp-json/wc/v3/${endpoint}?per_page=100&page=${page}${extra}`;
+
+      // Page 1
+      const firstRes = await wooFetchWithRetry(buildUrl(1));
+      if (!firstRes.ok) {
+        const text = await firstRes.text();
+        if (firstRes.status === 400 && text.includes("rest_post_invalid_page_number")) return [];
+        throw new Error(`WooCommerce API error (${endpoint} p1): ${firstRes.status} ${text}`);
+      }
+      const firstData = await firstRes.json();
+      if (!Array.isArray(firstData) || firstData.length === 0) return [];
+
+      const totalPagesHeader = firstRes.headers.get("x-wp-totalpages") || firstRes.headers.get("X-WP-TotalPages");
+      const totalPages = totalPagesHeader ? parseInt(totalPagesHeader, 10) : null;
+      const all: any[] = [...firstData];
+
+      if (totalPages && totalPages > 1) {
+        // Parallel fetch remaining pages with bounded concurrency.
+        const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+        const pageResults: any[][] = new Array(pages.length);
+        let cursor = 0;
+        const workers = Array.from({ length: Math.min(concurrency, pages.length) }, async () => {
+          while (true) {
+            const idx = cursor++;
+            if (idx >= pages.length) return;
+            const p = pages[idx];
+            const res = await wooFetchWithRetry(buildUrl(p));
+            if (!res.ok) {
+              const text = await res.text();
+              if (res.status === 400 && text.includes("rest_post_invalid_page_number")) {
+                pageResults[idx] = [];
+                return;
+              }
+              throw new Error(`WooCommerce API error (${endpoint} p${p}): ${res.status} ${text}`);
+            }
+            pageResults[idx] = await res.json();
+          }
+        });
+        await Promise.all(workers);
+        for (const arr of pageResults) if (arr?.length) all.push(...arr);
+      } else if (firstData.length === 100 && !totalPages) {
+        // No header — fall back to sequential walk from page 2.
+        let page = 2;
+        while (true) {
+          const res = await wooFetchWithRetry(buildUrl(page));
+          if (!res.ok) {
+            const text = await res.text();
+            if (res.status === 400 && text.includes("rest_post_invalid_page_number")) break;
+            throw new Error(`WooCommerce API error (${endpoint} p${page}): ${res.status} ${text}`);
+          }
+          const data = await res.json();
+          if (!Array.isArray(data) || data.length === 0) break;
+          all.push(...data);
+          if (data.length < 100) break;
+          page++;
         }
-        const data = await res.json();
-        all.push(...data);
-        if (data.length < 100) break;
-        page++;
       }
       return all;
     }
 
-    async function wooFetch(endpoint: string) {
-      const url = `${baseUrl}/wp-json/wc/v3/${endpoint}`;
-      const res = await wooFetchWithRetry(url);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`WooCommerce API error (${endpoint}): ${res.status} ${text}`);
-      }
-      return res.json();
-    }
-
-    // Run async tasks with bounded concurrency.
+    /** Bounded-concurrency map. */
     async function pMap<T, R>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<R>): Promise<R[]> {
       const results: R[] = new Array(items.length);
       let next = 0;
@@ -96,12 +133,52 @@ Deno.serve(async (req) => {
       return results;
     }
 
+    /** Fetch all variation pages for a single product in parallel. */
+    async function fetchVariationsAll(productId: number, concurrency = 4): Promise<any[]> {
+      const buildUrl = (page: number) =>
+        `${baseUrl}/wp-json/wc/v3/products/${productId}/variations?per_page=100&page=${page}`;
+      const firstRes = await wooFetchWithRetry(buildUrl(1));
+      if (!firstRes.ok) {
+        const text = await firstRes.text();
+        if (firstRes.status === 400 && text.includes("rest_post_invalid_page_number")) return [];
+        throw new Error(`Variations error (p${productId}): ${firstRes.status} ${text}`);
+      }
+      const firstData = await firstRes.json();
+      if (!Array.isArray(firstData) || firstData.length === 0) return [];
+      const totalPagesHeader = firstRes.headers.get("x-wp-totalpages") || firstRes.headers.get("X-WP-TotalPages");
+      const totalPages = totalPagesHeader ? parseInt(totalPagesHeader, 10) : (firstData.length === 100 ? 999 : 1);
+      const all = [...firstData];
+      if (totalPages > 1) {
+        const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+        let stop = false;
+        let cursor = 0;
+        const workers = Array.from({ length: Math.min(concurrency, pages.length) }, async () => {
+          while (!stop) {
+            const idx = cursor++;
+            if (idx >= pages.length) return;
+            const p = pages[idx];
+            const res = await wooFetchWithRetry(buildUrl(p));
+            if (!res.ok) {
+              const text = await res.text();
+              if (res.status === 400 && text.includes("rest_post_invalid_page_number")) { stop = true; return; }
+              throw new Error(`Variations error (p${productId} pg${p}): ${res.status} ${text}`);
+            }
+            const data = await res.json();
+            if (!Array.isArray(data) || data.length === 0) { stop = true; return; }
+            all.push(...data);
+            if (data.length < 100) stop = true;
+          }
+        });
+        await Promise.all(workers);
+      }
+      return all;
+    }
+
     const summary = { products: 0, orders: 0, order_items: 0, customers: 0, categories: 0, variations: 0 };
     const t0 = Date.now();
     const ts = (label: string) => console.log(`[woo-sync ${store_id.slice(0, 8)}] ${label} (+${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 
-    // Stale-lock guard: if a sync is marked "syncing" but stores.updated_at hasn't moved in 10+ minutes,
-    // the previous run died — allow this one to take over.
+    // Stale-lock guard
     if (store.status === "syncing") {
       const updatedAt = store.updated_at ? new Date(store.updated_at).getTime() : 0;
       const ageMin = (Date.now() - updatedAt) / 60000;
@@ -116,7 +193,6 @@ Deno.serve(async (req) => {
 
     await supabase.from("stores").update({ status: "syncing" }).eq("id", store_id);
 
-    // Heartbeat: bump updated_at every 30s so the stale-lock guard knows we're alive
     const heartbeat = setInterval(() => {
       supabase.from("stores").update({ updated_at: new Date().toISOString() }).eq("id", store_id).then();
     }, 30000);
@@ -147,18 +223,38 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
-    async function upsertAliases(customerId: string, name: string | null, email: string | null, address: string | null, city: string | null) {
-      const aliasRows: any[] = [];
-      if (name) aliasRows.push({ customer_id: customerId, type: "name", value: name, source_store_id: store_id });
-      if (email) aliasRows.push({ customer_id: customerId, type: "email", value: email, source_store_id: store_id });
-      const fullAddr = [address, city].filter(Boolean).join(", ");
-      if (fullAddr) aliasRows.push({ customer_id: customerId, type: "address", value: fullAddr, source_store_id: store_id });
-      for (const row of aliasRows) {
-        const { error } = await supabase.from("customer_aliases").insert(row);
-        if (error && !String(error.message || "").includes("duplicate")) {
-          console.warn("Alias insert warn:", error.message);
+    // --- Customer helpers (with in-memory cache) -------------------------
+    /** key (phone or email:xxx) -> customer.id */
+    const customerCache = new Map<string, string>();
+    /** Tracks alias rows already enqueued/inserted this run to avoid dup work. */
+    const aliasSeen = new Set<string>();
+    const pendingAliases: any[] = [];
+
+    function queueAliases(customerId: string, name: string | null, email: string | null, address: string | null, city: string | null) {
+      const add = (type: string, value: string | null) => {
+        if (!value) return;
+        const k = `${customerId}|${type}|${value}`;
+        if (aliasSeen.has(k)) return;
+        aliasSeen.add(k);
+        pendingAliases.push({ customer_id: customerId, type, value, source_store_id: store_id });
+      };
+      add("name", name);
+      add("email", email);
+      const fullAddr = [address, city].filter(Boolean).join(", ") || null;
+      add("address", fullAddr);
+    }
+
+    async function flushAliases() {
+      if (pendingAliases.length === 0) return;
+      // Bulk insert in chunks; ignore duplicates (unique constraint may exist).
+      for (let i = 0; i < pendingAliases.length; i += 500) {
+        const chunk = pendingAliases.slice(i, i + 500);
+        const { error } = await supabase.from("customer_aliases").insert(chunk);
+        if (error && !String(error.message || "").toLowerCase().includes("duplicate")) {
+          console.warn("Alias bulk insert warn:", error.message);
         }
       }
+      pendingAliases.length = 0;
     }
 
     function normalizePhone(raw: any): string | null {
@@ -170,7 +266,38 @@ Deno.serve(async (req) => {
       return p;
     }
 
-    /** Find-or-create customer GLOBALLY by phone (then email). Never overwrites existing. */
+    /**
+     * Pre-warm the customer cache by batch-loading all customers matching the phones/emails
+     * we're about to look up. Avoids N sequential round-trips.
+     */
+    async function prewarmCustomerCache(phones: Set<string>, emails: Set<string>) {
+      const phoneArr = Array.from(phones);
+      const emailArr = Array.from(emails);
+      const tasks: Promise<any>[] = [];
+      if (phoneArr.length > 0) {
+        for (let i = 0; i < phoneArr.length; i += 500) {
+          const chunk = phoneArr.slice(i, i + 500);
+          tasks.push(
+            supabase.from("customers").select("id, phone").in("phone", chunk).then(({ data }) => {
+              (data || []).forEach((r: any) => { if (r.phone) customerCache.set(`p:${r.phone}`, r.id); });
+            })
+          );
+        }
+      }
+      if (emailArr.length > 0) {
+        for (let i = 0; i < emailArr.length; i += 500) {
+          const chunk = emailArr.slice(i, i + 500);
+          tasks.push(
+            supabase.from("customers").select("id, email").in("email", chunk).then(({ data }) => {
+              (data || []).forEach((r: any) => { if (r.email) customerCache.set(`e:${r.email}`, r.id); });
+            })
+          );
+        }
+      }
+      await Promise.all(tasks);
+    }
+
+    /** Find-or-create customer GLOBALLY by phone (then email). Uses cache. */
     async function findOrCreateCustomer(args: {
       phone: string | null; email: string | null; name: string | null;
       address: string | null; city: string | null; wooCustomerId?: number | null;
@@ -180,13 +307,16 @@ Deno.serve(async (req) => {
       if (!phone && !email && !name) return null;
 
       let customerId: string | null = null;
-      if (phone) {
+      if (phone) customerId = customerCache.get(`p:${phone}`) || null;
+      if (!customerId && email) customerId = customerCache.get(`e:${email}`) || null;
+
+      if (!customerId && phone) {
         const { data } = await supabase.from("customers").select("id").eq("phone", phone).maybeSingle();
-        if (data) customerId = data.id;
+        if (data) { customerId = data.id; customerCache.set(`p:${phone}`, data.id); }
       }
       if (!customerId && email) {
         const { data } = await supabase.from("customers").select("id").eq("email", email).maybeSingle();
-        if (data) customerId = data.id;
+        if (data) { customerId = data.id; customerCache.set(`e:${email}`, data.id); }
       }
       if (!customerId) {
         const insertRow: any = { store_id, name: name || "Guest", email, phone, address, city };
@@ -201,58 +331,73 @@ Deno.serve(async (req) => {
         } else {
           customerId = created.id;
         }
+        if (phone) customerCache.set(`p:${phone}`, customerId);
+        if (email) customerCache.set(`e:${email}`, customerId);
       }
-      await upsertAliases(customerId, name, email, address, city);
+      queueAliases(customerId, name, email, address, city);
       return customerId;
     }
 
+    // --- Main sync -------------------------------------------------------
     async function runFullSync() {
-    // Incremental window: only refetch entities modified since the last successful sync.
-    // First-ever sync (no last_synced_at) = full pull.
     const lastSync = store.last_synced_at ? new Date(store.last_synced_at) : null;
-    // Pad by 5 minutes to be safe with clock skew / in-flight orders
     const sinceIso = lastSync ? new Date(lastSync.getTime() - 5 * 60 * 1000).toISOString() : null;
     const incremental = !!sinceIso;
     ts(`mode: ${incremental ? `incremental since ${sinceIso}` : "full"}`);
 
-    // --- Sync Categories (always full — small set) ---
-    const wooCategories = await wooFetchAll("products/categories");
-    ts(`fetched ${wooCategories.length} categories`);
+    // --- Categories, Products, Orders fetched IN PARALLEL ---
+    // Each fetch is independent of the others until upserts happen.
+    const productParams = incremental ? { modified_after: sinceIso! } : {};
+    const orderParams = incremental ? { modified_after: sinceIso! } : {};
+
+    const [wooCategories, wooProducts, wooOrders] = await Promise.all([
+      wooFetchAll("products/categories"),
+      wooFetchAll("products", productParams),
+      wooFetchAll("orders", orderParams),
+    ]);
+    ts(`fetched ${wooCategories.length} categories, ${wooProducts.length} products${incremental ? " (modified)" : ""}, ${wooOrders.length} orders${incremental ? " (modified)" : ""}`);
+
+    // --- Categories: upsert in 2 passes (without parent, then with parent_id resolved) ---
+    let catByWooId = new Map<number, string>();
     if (wooCategories.length > 0) {
-      const catRows = wooCategories.map((c: any) => ({
+      // Pass 1: insert/update name+slug only
+      const catRows1 = wooCategories.map((c: any) => ({
         store_id, woo_category_id: c.id, name: c.name, slug: c.slug || "",
       }));
-
-      const { error: catErr } = await supabase
+      const { data: upserted, error: catErr } = await supabase
         .from("categories")
-        .upsert(catRows, { onConflict: "woo_category_id,store_id", ignoreDuplicates: false });
+        .upsert(catRows1, { onConflict: "woo_category_id,store_id", ignoreDuplicates: false })
+        .select("id, woo_category_id");
       if (catErr) console.error("Categories upsert error:", catErr);
+      catByWooId = new Map((upserted || []).map((c: any) => [c.woo_category_id, c.id]));
 
-      const { data: dbCats } = await supabase
-        .from("categories").select("id, woo_category_id").eq("store_id", store_id);
-      const catMap = new Map((dbCats || []).map((c: any) => [c.woo_category_id, c.id]));
-
-      for (const wc of wooCategories) {
-        if (wc.parent && wc.parent > 0) {
-          const dbId = catMap.get(wc.id);
-          const parentDbId = catMap.get(wc.parent);
-          if (dbId && parentDbId) {
-            await supabase.from("categories").update({ parent_id: parentDbId }).eq("id", dbId);
-          }
-        }
+      // Pass 2: bulk upsert with parent_id resolved (single round-trip instead of N)
+      const catRows2 = wooCategories
+        .filter((c: any) => c.parent && c.parent > 0 && catByWooId.has(c.parent))
+        .map((c: any) => ({
+          store_id,
+          woo_category_id: c.id,
+          name: c.name,
+          slug: c.slug || "",
+          parent_id: catByWooId.get(c.parent),
+        }));
+      if (catRows2.length > 0) {
+        const { error: pErr } = await supabase
+          .from("categories")
+          .upsert(catRows2, { onConflict: "woo_category_id,store_id", ignoreDuplicates: false });
+        if (pErr) console.error("Categories parent upsert error:", pErr);
       }
       summary.categories = wooCategories.length;
+    } else {
+      // Still need the map for product->category linking
+      const { data: dbCats } = await supabase
+        .from("categories").select("id, woo_category_id").eq("store_id", store_id);
+      catByWooId = new Map((dbCats || []).map((c: any) => [c.woo_category_id, c.id]));
     }
 
-    const { data: allDbCats } = await supabase
-      .from("categories").select("id, woo_category_id").eq("store_id", store_id);
-    const catByWooId = new Map((allDbCats || []).map((c: any) => [c.woo_category_id, c.id]));
-
-    // --- Sync Products (incremental when possible) ---
-    const productParams = incremental ? { modified_after: sinceIso! } : {};
-    const wooProducts = await wooFetchAll("products", productParams);
-    ts(`fetched ${wooProducts.length} products${incremental ? " (modified)" : ""}`);
+    // --- Products ---
     const parentProducts = wooProducts.filter((p: any) => p.type !== "variation");
+    let prodByWooId = new Map<number, string>();
 
     if (parentProducts.length > 0) {
       const rows = parentProducts.map((p: any) => ({
@@ -269,16 +414,16 @@ Deno.serve(async (req) => {
         barcode: p.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
       }));
 
-      const { error } = await supabase
+      // Single round-trip: upsert + return ids
+      const { data: upserted, error } = await supabase
         .from("products")
-        .upsert(rows, { onConflict: "woo_product_id,store_id", ignoreDuplicates: false });
+        .upsert(rows, { onConflict: "woo_product_id,store_id", ignoreDuplicates: false })
+        .select("id, woo_product_id");
       if (error) console.error("Products upsert error:", error);
       else summary.products = rows.length;
+      prodByWooId = new Map((upserted || []).map((p: any) => [p.woo_product_id, p.id]));
 
-      const { data: dbProds } = await supabase
-        .from("products").select("id, woo_product_id").eq("store_id", store_id);
-      const prodByWooId = new Map((dbProds || []).map((p: any) => [p.woo_product_id, p.id]));
-
+      // product_categories: delete + bulk insert
       const pcRows: { product_id: string; category_id: string }[] = [];
       const productIdsWithCats: string[] = [];
       for (const wp of parentProducts) {
@@ -291,33 +436,26 @@ Deno.serve(async (req) => {
         }
       }
       if (productIdsWithCats.length > 0) {
-        await supabase.from("product_categories").delete().in("product_id", productIdsWithCats);
-      }
-      if (pcRows.length > 0) {
-        for (let i = 0; i < pcRows.length; i += 500) {
-          await supabase.from("product_categories").insert(pcRows.slice(i, i + 500));
+        for (let i = 0; i < productIdsWithCats.length; i += 500) {
+          await supabase.from("product_categories").delete().in("product_id", productIdsWithCats.slice(i, i + 500));
         }
       }
+      if (pcRows.length > 0) {
+        // Parallel chunk inserts
+        const chunks: any[][] = [];
+        for (let i = 0; i < pcRows.length; i += 500) chunks.push(pcRows.slice(i, i + 500));
+        await pMap(chunks, 4, (c) => supabase.from("product_categories").insert(c).then());
+      }
 
-      // Fetch variations for ALL variable products in parallel (bounded concurrency).
-      // Don't trust `wp.variations?.length` — some WC setups omit/under-report it.
+      // Variations — parallel by product, parallel pages within each
       const variableProducts = parentProducts.filter((wp: any) => wp.type === "variable");
       ts(`syncing variations for ${variableProducts.length} variable products`);
       await pMap(variableProducts, 5, async (wp: any) => {
         const prodId = prodByWooId.get(wp.id);
         if (!prodId) return;
         try {
-          const wooVars: any[] = [];
-          let vpage = 1;
-          while (true) {
-            const chunk = await wooFetch(`products/${wp.id}/variations?per_page=100&page=${vpage}`);
-            if (!Array.isArray(chunk) || chunk.length === 0) break;
-            wooVars.push(...chunk);
-            if (chunk.length < 100) break;
-            vpage++;
-          }
+          const wooVars = await fetchVariationsAll(wp.id);
           if (wooVars.length === 0) return;
-
           const varRows = wooVars.map((v: any) => ({
             product_id: prodId, woo_variation_id: v.id,
             name: v.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${v.id}`,
@@ -327,7 +465,6 @@ Deno.serve(async (req) => {
             barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
             attributes: (v.attributes || []).map((a: any) => ({ key: a.name || a.slug, value: a.option })),
           }));
-
           const { error: varErr } = await supabase
             .from("product_variations")
             .upsert(varRows, { onConflict: "woo_variation_id,product_id", ignoreDuplicates: false });
@@ -339,16 +476,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    // --- Sync Customers (ONE-WAY, ONE-TIME) ---
-    // Only on FIRST Sync Now per store, OR when explicitly forced via "Sync Customers" button.
-    // Identity = phone, GLOBAL across stores. Existing customers are NEVER overwritten;
-    // every new name/email/address gets appended as an alias.
+    // --- Customers (one-time / forced) ---
     const shouldSyncCustomers = forceCustomers || !store.customers_synced_at;
 
     if (shouldSyncCustomers) {
       const wooCustomers = await wooFetchAll("customers");
-      let okCount = 0;
+
+      // Pre-warm cache from all phones/emails we're about to process
+      const phoneSet = new Set<string>();
+      const emailSet = new Set<string>();
       for (const c of wooCustomers) {
+        const ph = normalizePhone(c.billing?.phone);
+        if (ph) phoneSet.add(ph);
+        const em = c.email?.trim();
+        if (em) emailSet.add(em);
+      }
+      await prewarmCustomerCache(phoneSet, emailSet);
+
+      let okCount = 0;
+      // Bounded concurrency: customer creation can race on duplicate phone, but our
+      // cache + ON CONFLICT recovery handles it. Keep moderate to avoid contention.
+      await pMap(wooCustomers, 4, async (c: any) => {
         const phone = c.billing?.phone?.trim() || null;
         const email = c.email?.trim() || null;
         const name = `${c.first_name || ""} ${c.last_name || ""}`.trim() || c.username || "Guest";
@@ -356,21 +504,30 @@ Deno.serve(async (req) => {
         const city = c.billing?.city || null;
         const id = await findOrCreateCustomer({ phone, email, name, address, city, wooCustomerId: c.id });
         if (id) okCount++;
-      }
+      });
       summary.customers = okCount;
       await supabase.from("stores").update({ customers_synced_at: new Date().toISOString() }).eq("id", store_id);
     } else {
       console.log(`Skipping customer sync — already done for store ${store_id}. Use "Sync Customers" to force.`);
     }
 
-    // --- Sync Orders (incremental when possible) ---
-    const orderParams = incremental ? { modified_after: sinceIso! } : {};
-    const wooOrders = await wooFetchAll("orders", orderParams);
-    ts(`fetched ${wooOrders.length} orders${incremental ? " (modified)" : ""}`);
+    // --- Orders ---
     if (wooOrders.length > 0) {
-      // Resolve customer for each order in parallel (bounded). Was sequential — major slowdown.
+      // Pre-warm customer cache for ALL order billings in one round-trip set
+      const phoneSet = new Set<string>();
+      const emailSet = new Set<string>();
+      for (const o of wooOrders) {
+        const ph = normalizePhone(o.billing?.phone);
+        if (ph) phoneSet.add(ph);
+        const em = o.billing?.email?.trim();
+        if (em) emailSet.add(em);
+      }
+      await prewarmCustomerCache(phoneSet, emailSet);
+      ts(`pre-warmed customer cache (${phoneSet.size} phones, ${emailSet.size} emails)`);
+
+      // Resolve customers in parallel
       const orderCustomerMap = new Map<number, string | null>();
-      await pMap(wooOrders, 5, async (o: any) => {
+      await pMap(wooOrders, 6, async (o: any) => {
         const phone = o.billing?.phone?.trim() || null;
         const email = o.billing?.email?.trim() || null;
         const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || null;
@@ -381,15 +538,19 @@ Deno.serve(async (req) => {
       });
       ts(`resolved customers for ${wooOrders.length} orders`);
 
-      const { data: dbProducts } = await supabase
-        .from("products").select("id, woo_product_id").eq("store_id", store_id);
-      const prodMap = new Map((dbProducts || []).map((p: any) => [p.woo_product_id, p.id]));
+      // Reuse the prodByWooId map we already built. Only re-fetch if it's empty
+      // (e.g. incremental sync with no changed products but new orders referencing existing ones).
+      let prodMap = prodByWooId;
+      if (prodMap.size === 0) {
+        const { data: dbProducts } = await supabase
+          .from("products").select("id, woo_product_id").eq("store_id", store_id);
+        prodMap = new Map((dbProducts || []).map((p: any) => [p.woo_product_id, p.id]));
+      }
 
       const orderRows = wooOrders.map((o: any) => {
         const phone = normalizePhone(o.billing?.phone);
         const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
         const billingAddr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;
-
         return {
           store_id,
           woo_order_id: o.id,
@@ -414,7 +575,7 @@ Deno.serve(async (req) => {
         };
       });
 
-      // Find which orders are new (don't exist yet) so we can write a "created" timeline event after upsert
+      // Identify new orders for timeline events
       const wooIds = wooOrders.map((o: any) => o.id);
       const { data: preExisting } = await supabase
         .from("orders")
@@ -424,20 +585,20 @@ Deno.serve(async (req) => {
       const preExistingIds = new Set((preExisting || []).map((r: any) => r.woo_order_id));
       const newWooOrders = wooOrders.filter((o: any) => !preExistingIds.has(o.id));
 
+      // Upsert orders + return ids in a single round-trip per chunk
+      const orderMap = new Map<number, string>();
       for (let i = 0; i < orderRows.length; i += 500) {
         const chunk = orderRows.slice(i, i + 500);
-        const { error } = await supabase
+        const { data: upserted, error } = await supabase
           .from("orders")
-          .upsert(chunk, { onConflict: "woo_order_id,store_id", ignoreDuplicates: false });
+          .upsert(chunk, { onConflict: "woo_order_id,store_id", ignoreDuplicates: false })
+          .select("id, woo_order_id");
         if (error) console.error("Orders upsert error:", error);
+        (upserted || []).forEach((r: any) => orderMap.set(r.woo_order_id, r.id));
       }
       summary.orders = orderRows.length;
 
-      const { data: dbOrders } = await supabase
-        .from("orders").select("id, woo_order_id").eq("store_id", store_id);
-      const orderMap = new Map((dbOrders || []).map((o: any) => [o.woo_order_id, o.id]));
-
-      // Insert "created" timeline events for newly imported orders
+      // Insert "created" timeline events for newly imported orders (parallel chunks)
       if (newWooOrders.length > 0) {
         const newTimelineRows = newWooOrders
           .map((o: any) => {
@@ -448,26 +609,22 @@ Deno.serve(async (req) => {
               event: "created",
               description: `Order received from WooCommerce — Total ৳${(parseFloat(o.total) || 0).toLocaleString()}`,
               metadata: {
-                source: "woo_sync",
-                woo_order_id: o.id,
-                woo_status: o.status,
-                total: parseFloat(o.total) || 0,
-                user_name: "WooCommerce",
-                user_email: null,
+                source: "woo_sync", woo_order_id: o.id, woo_status: o.status,
+                total: parseFloat(o.total) || 0, user_name: "WooCommerce", user_email: null,
               },
             };
           })
-          .filter(Boolean);
+          .filter(Boolean) as any[];
         if (newTimelineRows.length > 0) {
-          for (let i = 0; i < newTimelineRows.length; i += 500) {
-            const chunk = newTimelineRows.slice(i, i + 500);
-            const { error: tlErr } = await supabase.from("order_timeline").insert(chunk);
-            if (tlErr) console.warn("Timeline insert warn:", tlErr.message);
-          }
+          const tlChunks: any[][] = [];
+          for (let i = 0; i < newTimelineRows.length; i += 500) tlChunks.push(newTimelineRows.slice(i, i + 500));
+          await pMap(tlChunks, 3, (c) => supabase.from("order_timeline").insert(c).then(({ error }) => {
+            if (error) console.warn("Timeline insert warn:", error.message);
+          }));
         }
       }
 
-      // Load measurement field name -> group info map for Woo meta detection
+      // Measurement field map
       const { data: mFields } = await supabase
         .from("measurement_fields")
         .select("name, group_id, measurement_groups(name, display_format, unit)");
@@ -481,22 +638,24 @@ Deno.serve(async (req) => {
         });
       });
 
-      // BULK delete + insert order_items / measurements for all touched orders.
-      // Previously: 3 round-trips per order × N orders. Now: 4 round-trips total.
+      // Bulk delete old items + measurements (parallel chunks)
       const touchedOrderIds = wooOrders
         .map((o: any) => orderMap.get(o.id))
         .filter((id: any): id is string => !!id);
 
       if (touchedOrderIds.length > 0) {
-        for (let i = 0; i < touchedOrderIds.length; i += 500) {
-          const chunk = touchedOrderIds.slice(i, i + 500);
-          await supabase.from("order_items").delete().in("order_id", chunk);
-          await supabase.from("order_item_measurements").delete().in("order_id", chunk).eq("source", "woo");
-        }
+        const idChunks: string[][] = [];
+        for (let i = 0; i < touchedOrderIds.length; i += 500) idChunks.push(touchedOrderIds.slice(i, i + 500));
+        await pMap(idChunks, 3, async (chunk) => {
+          await Promise.all([
+            supabase.from("order_items").delete().in("order_id", chunk),
+            supabase.from("order_item_measurements").delete().in("order_id", chunk).eq("source", "woo"),
+          ]);
+        });
       }
       ts(`cleared old items/measurements for ${touchedOrderIds.length} orders`);
 
-      // Build all item rows up front, tagging each with its source line for measurement linking.
+      // Build line item rows
       type StagedItem = { row: any; wooOrderId: number; lineIdx: number };
       const staged: StagedItem[] = [];
       for (const o of wooOrders) {
@@ -520,23 +679,24 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Bulk insert items in chunks, preserving order to map back to source line items.
+      // Bulk insert items in PARALLEL chunks while preserving id mapping back to source line items.
       const insertedItemIds: (string | null)[] = new Array(staged.length).fill(null);
-      let cursor = 0;
+      const itemChunks: { offset: number; rows: any[] }[] = [];
       for (let i = 0; i < staged.length; i += 500) {
-        const slice = staged.slice(i, i + 500);
+        itemChunks.push({ offset: i, rows: staged.slice(i, i + 500).map((s) => s.row) });
+      }
+      await pMap(itemChunks, 3, async (chunk) => {
         const { data: ins, error: itemErr } = await supabase
           .from("order_items")
-          .insert(slice.map((s) => s.row))
+          .insert(chunk.rows)
           .select("id");
         if (itemErr) console.error(`Order items bulk insert error:`, itemErr);
-        (ins || []).forEach((r: any, j: number) => { insertedItemIds[i + j] = r.id; });
-        cursor = i;
-      }
+        (ins || []).forEach((r: any, j: number) => { insertedItemIds[chunk.offset + j] = r.id; });
+      });
       summary.order_items = staged.length;
       ts(`inserted ${staged.length} order items`);
 
-      // Build measurement rows now that we know each line's DB id.
+      // Build measurement rows
       const measRows: any[] = [];
       const lineByKey = new Map<string, number>();
       staged.forEach((s, idx) => lineByKey.set(`${s.wooOrderId}|${s.lineIdx}`, idx));
@@ -565,15 +725,17 @@ Deno.serve(async (req) => {
       }
 
       if (measRows.length > 0) {
-        for (let i = 0; i < measRows.length; i += 500) {
-          const { error: mErr } = await supabase
-            .from("order_item_measurements")
-            .insert(measRows.slice(i, i + 500));
-          if (mErr) console.warn(`Measurements bulk insert warn:`, mErr.message);
-        }
+        const mChunks: any[][] = [];
+        for (let i = 0; i < measRows.length; i += 500) mChunks.push(measRows.slice(i, i + 500));
+        await pMap(mChunks, 3, (c) => supabase.from("order_item_measurements").insert(c).then(({ error }) => {
+          if (error) console.warn(`Measurements bulk insert warn:`, error.message);
+        }));
         ts(`inserted ${measRows.length} measurements`);
       }
     }
+
+    // Flush any aliases queued during customer/order processing
+    await flushAliases();
     } // end runFullSync
   } catch (err: any) {
     console.error("woo-sync error:", err);
@@ -607,7 +769,6 @@ function derivePaymentStatus(o: any): string {
   return "unpaid";
 }
 
-/** Maps a WooCommerce order's shipping_lines into our fulfillment_type. */
 function fromWooShipping(o: any): string {
   const lines = Array.isArray(o?.shipping_lines) ? o.shipping_lines : [];
   if (lines.length === 0) return "delivery";
@@ -619,11 +780,6 @@ function fromWooShipping(o: any): string {
   return "delivery";
 }
 
-/**
- * Scan WooCommerce meta_data for entries whose key matches a known measurement field name.
- * Skips hidden meta (keys starting with `_`) and entries with empty values.
- * Returns measurements grouped by their parent measurement_group.
- */
 function extractMeasurementsFromMeta(
   meta: any[],
   fieldMap: Map<string, { groupName: string; displayFormat: string; unit: string; fieldName: string }>
@@ -648,10 +804,6 @@ function extractMeasurementsFromMeta(
   }));
 }
 
-/**
- * Build a variation suffix from Woo line item meta_data (e.g., "Size: M / Color: Red").
- * Skips hidden meta (keys starting with `_`) and any keys that match measurement fields.
- */
 function buildVariationLabel(
   meta: any[],
   fieldMap: Map<string, { groupName: string; displayFormat: string; unit: string; fieldName: string }>
@@ -661,9 +813,9 @@ function buildVariationLabel(
   for (const m of meta) {
     const rawKey = String(m?.display_key ?? m?.key ?? "").trim();
     if (!rawKey || rawKey.startsWith("_")) continue;
-    if (fieldMap.has(rawKey.toLowerCase())) continue; // skip measurement fields
+    if (fieldMap.has(rawKey.toLowerCase())) continue;
     const value = String(m?.display_value ?? m?.value ?? "").trim();
-    if (!value || value.includes("<")) continue; // skip empty / HTML values
+    if (!value || value.includes("<")) continue;
     parts.push(`${rawKey}: ${value}`);
   }
   return parts.join(" / ");
