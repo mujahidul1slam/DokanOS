@@ -780,6 +780,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="processing">New Order</SelectItem>
+                <SelectItem value="pre_order_pending">Pre-Order</SelectItem>
+                <SelectItem value="pre_order_making">Making</SelectItem>
+                <SelectItem value="pre_order_ready">Pre-Order Ready</SelectItem>
                 <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
                 <SelectItem value="shipped">Shipped</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
@@ -789,6 +792,15 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               </SelectContent>
             </Select>
           )}
+          <Select value={preOrderStatusFilter} onValueChange={(v) => setPreOrderStatusFilter(v as any)}>
+            <SelectTrigger className="w-[170px]"><SelectValue placeholder="Pre-Order Stage" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Pre-Order Stages</SelectItem>
+              <SelectItem value="pre_order_pending">Pre-Order (New)</SelectItem>
+              <SelectItem value="pre_order_making">Making</SelectItem>
+              <SelectItem value="pre_order_ready">Pre-Order Ready</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={paymentFilter} onValueChange={setPaymentFilter}>
             <SelectTrigger className="w-[140px]"><SelectValue placeholder="Payment" /></SelectTrigger>
             <SelectContent>
