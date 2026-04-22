@@ -197,33 +197,9 @@ Deno.serve(async (req) => {
       supabase.from("stores").update({ updated_at: new Date().toISOString() }).eq("id", store_id).then();
     }, 30000);
 
-    const syncTask = (async () => {
-      try {
-        await runFullSync();
-        await supabase.from("stores")
-          .update({ status: "connected", last_synced_at: new Date().toISOString() })
-          .eq("id", store_id);
-        ts(`completed: ${JSON.stringify(summary)}`);
-      } catch (e: any) {
-        console.error("woo-sync background error:", e?.message || e);
-        await supabase.from("stores").update({ status: "error" }).eq("id", store_id);
-      } finally {
-        clearInterval(heartbeat);
-      }
-    })();
-
-    // @ts-ignore
-    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
-      // @ts-ignore
-      EdgeRuntime.waitUntil(syncTask);
-    }
-
-    return new Response(
-      JSON.stringify({ success: true, status: "started", message: "Sync running in background. Check back in a minute." }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-
     // --- Customer helpers (with in-memory cache) -------------------------
+    // NOTE: These MUST be declared before `syncTask` because the background
+    // closure references them; otherwise they hit the temporal dead zone.
     /** key (phone or email:xxx) -> customer.id */
     const customerCache = new Map<string, string>();
     /** Tracks alias rows already enqueued/inserted this run to avoid dup work. */
@@ -337,6 +313,33 @@ Deno.serve(async (req) => {
       queueAliases(customerId, name, email, address, city);
       return customerId;
     }
+
+    // Kick off background sync (runFullSync is hoisted, declared below).
+    const syncTask = (async () => {
+      try {
+        await runFullSync();
+        await supabase.from("stores")
+          .update({ status: "connected", last_synced_at: new Date().toISOString() })
+          .eq("id", store_id);
+        ts(`completed: ${JSON.stringify(summary)}`);
+      } catch (e: any) {
+        console.error("woo-sync background error:", e?.message || e);
+        await supabase.from("stores").update({ status: "error" }).eq("id", store_id);
+      } finally {
+        clearInterval(heartbeat);
+      }
+    })();
+
+    // @ts-ignore
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(syncTask);
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, status: "started", message: "Sync running in background. Check back in a minute." }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
 
     // --- Main sync -------------------------------------------------------
     async function runFullSync() {
