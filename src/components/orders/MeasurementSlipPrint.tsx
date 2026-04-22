@@ -190,4 +190,35 @@ export async function printMeasurementSlip(orderId: string) {
     w.focus();
     setTimeout(() => w.print(), 300);
   }
+
+  // Auto-promote pre-order to "making" once the slip is printed.
+  await promotePreOrderOnSlipPrint(orderId);
+}
+
+/**
+ * Print measurement slips for many orders at once. Each slip opens in its own
+ * window. Orders with no measurements recorded are silently skipped.
+ */
+export async function printMeasurementSlipsBulk(orderIds: string[]): Promise<{ printed: number; skipped: number }> {
+  let printed = 0;
+  let skipped = 0;
+  for (const id of orderIds) {
+    const { data: meas } = await supabase
+      .from("order_item_measurements" as any)
+      .select("id")
+      .eq("order_id", id)
+      .limit(1);
+    if (!meas || meas.length === 0) {
+      skipped++;
+      continue;
+    }
+    try {
+      await printMeasurementSlip(id);
+      printed++;
+      await new Promise((r) => setTimeout(r, 400));
+    } catch {
+      skipped++;
+    }
+  }
+  return { printed, skipped };
 }
