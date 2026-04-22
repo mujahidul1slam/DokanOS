@@ -467,7 +467,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      let itemCount = 0;
       // Load measurement field name -> group info map for Woo meta detection
       const { data: mFields } = await supabase
         .from("measurement_fields")
