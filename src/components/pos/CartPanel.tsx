@@ -27,6 +27,11 @@ interface PathaoArea {
   zone_id: number;
 }
 
+interface DetectedLocation {
+  zone: PathaoZone;
+  area?: PathaoArea;
+}
+
 interface Props {
   carts: Cart[];
   activeCartId: string;
@@ -71,7 +76,7 @@ const CartPanel = ({
   const [pathaoAreas, setPathaoAreas] = useState<PathaoArea[]>([]);
   const [zoneSearch, setZoneSearch] = useState("");
   const [showZoneDropdown, setShowZoneDropdown] = useState(false);
-  const [detectedZone, setDetectedZone] = useState<PathaoZone | null>(null);
+  const [detected, setDetected] = useState<DetectedLocation | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -209,21 +214,31 @@ const CartPanel = ({
     return undefined;
   }, [getEditDistance, normalizeLocationText]);
 
-  // Auto-detect zone from address using same logic as dispatch
+  // Auto-detect zone + area globally from address (no city required).
+  // Tries area first (most specific), back-filling its zone; otherwise zone.
   const autoDetectZone = useCallback((address: string) => {
-    if (!address || address.length < 3 || pathaoZones.length === 0) { setDetectedZone(null); return; }
+    if (!address || address.length < 3 || pathaoZones.length === 0) { setDetected(null); return; }
     const candidates = buildLocationCandidates([address]);
-    
-    // Try strict global zone match first
-    const zoneMatch = getStrictLocationMatch(pathaoZones, (z) => z.zone_name, candidates);
-    if (zoneMatch) { setDetectedZone(zoneMatch); return; }
-    
-    // Then fuzzy match
-    const fuzzyZone = fuzzyMatch(pathaoZones, (z) => z.zone_name, candidates);
-    if (fuzzyZone) { setDetectedZone(fuzzyZone); return; }
-    
-    setDetectedZone(null);
-  }, [pathaoZones, buildLocationCandidates, getStrictLocationMatch, fuzzyMatch]);
+
+    const areaMatch = getStrictLocationMatch(pathaoAreas, (a) => a.area_name, candidates);
+    if (areaMatch) {
+      const parentZone = pathaoZones.find((z) => z.zone_id === areaMatch.zone_id);
+      if (parentZone) { setDetected({ zone: parentZone, area: areaMatch }); return; }
+    }
+
+    const zoneMatch =
+      getStrictLocationMatch(pathaoZones, (z) => z.zone_name, candidates) ||
+      fuzzyMatch(pathaoZones, (z) => z.zone_name, candidates);
+    if (zoneMatch) {
+      // Try to refine with an area inside this zone
+      const zoneAreas = pathaoAreas.filter((a) => a.zone_id === zoneMatch.zone_id);
+      const areaInZone = fuzzyMatch(zoneAreas, (a) => a.area_name, candidates);
+      setDetected({ zone: zoneMatch, area: areaInZone });
+      return;
+    }
+
+    setDetected(null);
+  }, [pathaoZones, pathaoAreas, buildLocationCandidates, getStrictLocationMatch, fuzzyMatch]);
 
   const cart = carts.find((c) => c.id === activeCartId) || carts[0];
   if (!cart) return null;
@@ -315,7 +330,7 @@ const CartPanel = ({
     setNewCustAddress("");
     setCustomerSearch("");
     setPhoneError("");
-    setDetectedZone(null);
+    setDetected(null);
   };
 
   const selectCustomer = (c: CustomerData) => {
@@ -335,7 +350,7 @@ const CartPanel = ({
     setNewCustAddress("");
     setCustomerSearch("");
     setPhoneError("");
-    setDetectedZone(null);
+    setDetected(null);
   };
 
   const handlePrint = (format: "thermal" | "a4") => {
@@ -491,20 +506,22 @@ const CartPanel = ({
                 placeholder="Shipping address *"
                 className="h-9 text-sm bg-secondary"
               />
-              {/* Auto-detected zone hint */}
-              {detectedZone && !cart.pathaoZone && (
+              {/* Auto-detected zone/area hint */}
+              {detected && !cart.pathaoZone && (
                 <button
                   onClick={() => {
-                    onUpdateCart(cart.id, { 
-                      pathaoZone: detectedZone.zone_name,
-                      pathaoZoneId: detectedZone.zone_id,
-                      pathaoCityId: detectedZone.city_id,
+                    onUpdateCart(cart.id, {
+                      pathaoZone: detected.zone.zone_name,
+                      pathaoZoneId: detected.zone.zone_id,
+                      pathaoCityId: detected.zone.city_id,
+                      pathaoAreaId: detected.area?.area_id,
                     });
                     setZoneSearch("");
                   }}
                   className="w-full text-left rounded-md bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 transition-colors"
                 >
-                  🎯 Detected zone: <strong>{detectedZone.zone_name}</strong> — click to apply
+                  🎯 Detected: <strong>{detected.zone.zone_name}</strong>
+                  {detected.area && <> · <strong>{detected.area.area_name}</strong></>} — click to apply
                 </button>
               )}
               {/* Pathao Zone Searchable */}
