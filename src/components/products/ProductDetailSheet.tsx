@@ -191,6 +191,16 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         }
       }
     }
+    // Load measurement groups for this product (direct + via categories)
+    setGroupsLoading(true);
+    try {
+      const grps = await getGroupsForProduct(id);
+      setProductGroups(grps);
+    } catch {
+      setProductGroups([]);
+    } finally {
+      setGroupsLoading(false);
+    }
     setLoading(false);
   };
 
