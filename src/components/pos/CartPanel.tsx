@@ -330,7 +330,7 @@ const CartPanel = ({
     setNewCustAddress("");
     setCustomerSearch("");
     setPhoneError("");
-    setDetectedZone(null);
+    setDetected(null);
   };
 
   const selectCustomer = (c: CustomerData) => {
@@ -350,7 +350,7 @@ const CartPanel = ({
     setNewCustAddress("");
     setCustomerSearch("");
     setPhoneError("");
-    setDetectedZone(null);
+    setDetected(null);
   };
 
   const handlePrint = (format: "thermal" | "a4") => {
@@ -506,20 +506,22 @@ const CartPanel = ({
                 placeholder="Shipping address *"
                 className="h-9 text-sm bg-secondary"
               />
-              {/* Auto-detected zone hint */}
-              {detectedZone && !cart.pathaoZone && (
+              {/* Auto-detected zone/area hint */}
+              {detected && !cart.pathaoZone && (
                 <button
                   onClick={() => {
-                    onUpdateCart(cart.id, { 
-                      pathaoZone: detectedZone.zone_name,
-                      pathaoZoneId: detectedZone.zone_id,
-                      pathaoCityId: detectedZone.city_id,
+                    onUpdateCart(cart.id, {
+                      pathaoZone: detected.zone.zone_name,
+                      pathaoZoneId: detected.zone.zone_id,
+                      pathaoCityId: detected.zone.city_id,
+                      pathaoAreaId: detected.area?.area_id,
                     });
                     setZoneSearch("");
                   }}
                   className="w-full text-left rounded-md bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 transition-colors"
                 >
-                  🎯 Detected zone: <strong>{detectedZone.zone_name}</strong> — click to apply
+                  🎯 Detected: <strong>{detected.zone.zone_name}</strong>
+                  {detected.area && <> · <strong>{detected.area.area_name}</strong></>} — click to apply
                 </button>
               )}
               {/* Pathao Zone Searchable */}
