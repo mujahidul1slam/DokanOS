@@ -15,6 +15,8 @@ import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
 import { logAction } from "@/lib/auditLog";
 import { usePermissions } from "@/hooks/usePermissions";
+import SizePresetsEditor from "@/components/measurements/SizePresetsEditor";
+import { getGroupsForProduct, type MeasurementGroup } from "@/lib/measurements";
 
 /* ---------- types ---------- */
 interface Variation {
@@ -102,6 +104,10 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   const [attrValues, setAttrValues] = useState<Record<string, string[]>>({ Size: [], Color: [] });
   const [newAttrKey, setNewAttrKey] = useState("");
   const [newValInputs, setNewValInputs] = useState<Record<string, string>>({});
+
+  // measurement groups assigned to this product (direct + via categories)
+  const [productGroups, setProductGroups] = useState<MeasurementGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
