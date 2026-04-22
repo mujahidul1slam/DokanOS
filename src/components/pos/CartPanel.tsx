@@ -27,6 +27,11 @@ interface PathaoArea {
   zone_id: number;
 }
 
+interface DetectedLocation {
+  zone: PathaoZone;
+  area?: PathaoArea;
+}
+
 interface Props {
   carts: Cart[];
   activeCartId: string;
