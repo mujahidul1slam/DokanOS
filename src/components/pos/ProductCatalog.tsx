@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import CategoryFilter from "@/components/CategoryFilter";
 import type { Product } from "./types";
+import { useGlobalStockEnabled, getEffectiveStock } from "@/lib/stockSettings";
 
 interface Props {
   products: Product[];
@@ -23,6 +24,7 @@ interface Props {
 const PER_PAGE_OPTIONS = [12, 24, 48, 96];
 
 const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectProduct, onAddCustomItem, searchInputRef }: Props) => {
+  const globalStockEnabled = useGlobalStockEnabled();
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all"); // category id or "all"
   const [sortBy, setSortBy] = useState<"name" | "newest" | "price_asc" | "price_desc" | "popularity">("name");
@@ -43,7 +45,7 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
         return cat ? p.category === cat.name : false;
       });
     }
-    if (hideOutOfStock) list = list.filter((p) => p.stock_quantity > 0);
+    if (hideOutOfStock) list = list.filter((p) => !getEffectiveStock(p, globalStockEnabled).outOfStock);
     if (selectedStore !== "all") list = list.filter((p) => (p as any).store_id === selectedStore);
     if (search) {
       const q = search.trim().toLowerCase();
