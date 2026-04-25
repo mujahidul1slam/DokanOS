@@ -346,14 +346,12 @@ const Analytics = () => {
           <p className="text-sm text-muted-foreground">Comprehensive business intelligence — revenue, customers, inventory, and operations</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
-            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {Object.entries(presetLabel).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <DatePresetPicker
+            preset={datePreset}
+            customRange={customRange}
+            onPresetChange={setDatePreset}
+            onCustomRangeChange={setCustomRange}
+          />
           <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5">
             <Download className="h-4 w-4" /> Export
           </Button>
