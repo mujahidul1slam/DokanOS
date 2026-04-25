@@ -593,7 +593,17 @@ const PosReports = () => {
                       {due > 0 ? `৳${due.toLocaleString()}` : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-[10px] capitalize">{o.payment_method || "—"}</Badge>
+                      {(() => {
+                        const ms = methodsByOrder.get(o.id) || (o.payment_method ? [o.payment_method] : []);
+                        if (ms.length === 0) return <Badge variant="outline" className="text-[10px]">—</Badge>;
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {ms.map((m) => (
+                              <Badge key={m} variant="outline" className="text-[10px] capitalize">{m}</Badge>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell><StatusBadge status={o.status} /></TableCell>
                   </TableRow>
