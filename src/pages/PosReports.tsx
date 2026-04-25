@@ -152,6 +152,18 @@ const PosReports = () => {
     return m;
   }, [payments]);
 
+  // Per-order payment methods (from order_payments)
+  const methodsByOrder = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const p of payments) {
+      if (!p.method) continue;
+      const arr = m.get(p.order_id) || [];
+      if (!arr.includes(p.method)) arr.push(p.method);
+      m.set(p.order_id, arr);
+    }
+    return m;
+  }, [payments]);
+
   const itemsByOrder = useMemo(() => {
     const m = new Map<string, number>();
     for (const i of items) {
@@ -283,7 +295,7 @@ const PosReports = () => {
         String(o.total),
         String(paid),
         String(due),
-        o.payment_method || "—",
+        (methodsByOrder.get(o.id) || (o.payment_method ? [o.payment_method] : [])).join(", ") || "—",
         o.status,
       ];
     });
@@ -581,7 +593,17 @@ const PosReports = () => {
                       {due > 0 ? `৳${due.toLocaleString()}` : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-[10px] capitalize">{o.payment_method || "—"}</Badge>
+                      {(() => {
+                        const ms = methodsByOrder.get(o.id) || (o.payment_method ? [o.payment_method] : []);
+                        if (ms.length === 0) return <Badge variant="outline" className="text-[10px]">—</Badge>;
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {ms.map((m) => (
+                              <Badge key={m} variant="outline" className="text-[10px] capitalize">{m}</Badge>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell><StatusBadge status={o.status} /></TableCell>
                   </TableRow>
