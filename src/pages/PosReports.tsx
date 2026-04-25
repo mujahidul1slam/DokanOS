@@ -51,6 +51,13 @@ interface ItemRow {
   order_id: string;
   product_name: string;
   line_total: number;
+  product_id: string | null;
+}
+
+interface ProductRow {
+  id: string;
+  store_id: string | null;
+  woo_product_id: number | null;
 }
 
 interface StoreRow { id: string; name: string; }
