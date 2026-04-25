@@ -387,7 +387,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           }
         }
 
-        const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
+        const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: null });
+        const orderNumber = (genNum as string) || `ORD-${Date.now().toString(36).toUpperCase()}`;
 
         const { data: order, error } = await supabase.from("orders").insert({
           order_number: orderNumber,
