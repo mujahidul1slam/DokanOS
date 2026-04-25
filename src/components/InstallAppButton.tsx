@@ -8,6 +8,12 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+declare global {
+  interface Window {
+    deferredInstallPrompt?: BeforeInstallPromptEvent;
+  }
+}
+
 const isIOS = () =>
   typeof navigator !== "undefined" &&
   /iphone|ipad|ipod/i.test(navigator.userAgent) &&
@@ -19,7 +25,9 @@ const isStandalone = () =>
     (window.navigator as any).standalone === true);
 
 const InstallAppButton = () => {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
+  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
+    () => window.deferredInstallPrompt ?? null
+  );
   const [installed, setInstalled] = useState<boolean>(isStandalone());
   const [showIosHelp, setShowIosHelp] = useState(false);
 
@@ -28,11 +36,15 @@ const InstallAppButton = () => {
       e.preventDefault();
       setDeferred(e as BeforeInstallPromptEvent);
     };
+    const readyHandler = () => setDeferred(window.deferredInstallPrompt ?? null);
     const installedHandler = () => setInstalled(true);
     window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("omnisync-install-ready", readyHandler);
     window.addEventListener("appinstalled", installedHandler);
+    readyHandler();
     return () => {
       window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("omnisync-install-ready", readyHandler);
       window.removeEventListener("appinstalled", installedHandler);
     };
   }, []);
@@ -50,6 +62,7 @@ const InstallAppButton = () => {
         setInstalled(true);
       }
       setDeferred(null);
+      window.deferredInstallPrompt = undefined;
       return;
     }
     if (isIOS()) {

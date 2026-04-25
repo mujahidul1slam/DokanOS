@@ -2,6 +2,27 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
+declare global {
+  interface Window {
+    deferredInstallPrompt?: BeforeInstallPromptEvent;
+  }
+}
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  window.deferredInstallPrompt = event as BeforeInstallPromptEvent;
+  window.dispatchEvent(new Event("omnisync-install-ready"));
+});
+
+window.addEventListener("appinstalled", () => {
+  window.deferredInstallPrompt = undefined;
+});
+
 createRoot(document.getElementById("root")!).render(<App />);
 
 // Register service worker so the site is a true installable PWA
