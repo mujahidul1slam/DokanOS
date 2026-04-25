@@ -67,34 +67,6 @@ interface ProductLite {
   cost_price: number | null;
 }
 
-type DatePreset = "today" | "7d" | "30d" | "90d" | "year" | "all";
-
-const presetLabel: Record<DatePreset, string> = {
-  today: "Today",
-  "7d": "Last 7 Days",
-  "30d": "Last 30 Days",
-  "90d": "Last 90 Days",
-  year: "This Year",
-  all: "All Time",
-};
-
-const getDateRange = (preset: DatePreset): { from: Date | null; days: number } => {
-  const now = new Date();
-  switch (preset) {
-    case "today":
-      return { from: startOfDay(now), days: 1 };
-    case "7d":
-      return { from: subDays(now, 7), days: 7 };
-    case "30d":
-      return { from: subDays(now, 30), days: 30 };
-    case "90d":
-      return { from: subDays(now, 90), days: 90 };
-    case "year":
-      return { from: startOfYear(now), days: differenceInDays(now, startOfYear(now)) || 1 };
-    case "all":
-      return { from: null, days: 0 };
-  }
-};
 
 const Dashboard = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
