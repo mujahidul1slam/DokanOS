@@ -138,7 +138,7 @@ const Analytics = () => {
       setLoading(false);
     };
     load();
-  }, [datePreset]);
+  }, [datePreset, customRange]);
 
   const stats = useMemo(() => {
     const revenue = orders.reduce((s, o) => s + Number(o.total), 0);
