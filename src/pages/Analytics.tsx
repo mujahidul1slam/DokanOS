@@ -65,37 +65,6 @@ interface ReturnRow {
   created_at: string;
 }
 
-type DatePreset = "today" | "7d" | "30d" | "90d" | "year" | "all";
-
-const presetLabel: Record<DatePreset, string> = {
-  today: "Today",
-  "7d": "Last 7 Days",
-  "30d": "Last 30 Days",
-  "90d": "Last 90 Days",
-  year: "This Year",
-  all: "All Time",
-};
-
-const presetDays: Record<DatePreset, number> = {
-  today: 1, "7d": 7, "30d": 30, "90d": 90, year: 365, all: 365,
-};
-
-const COLORS = [
-  "hsl(217,91%,60%)", "hsl(142,71%,45%)", "hsl(38,92%,50%)",
-  "hsl(291,64%,42%)", "hsl(0,84%,60%)", "hsl(199,89%,48%)",
-];
-
-const getDateFrom = (preset: DatePreset): Date | null => {
-  const now = new Date();
-  switch (preset) {
-    case "today": return startOfDay(now);
-    case "7d": return subDays(now, 7);
-    case "30d": return subDays(now, 30);
-    case "90d": return subDays(now, 90);
-    case "year": return startOfYear(now);
-    case "all": return null;
-  }
-};
 
 const Analytics = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
