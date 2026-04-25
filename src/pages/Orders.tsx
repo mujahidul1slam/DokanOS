@@ -137,6 +137,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   useEffect(() => {
     const orderParam = searchParams.get("order");
     const tabParam = searchParams.get("tab") as TabKey | null;
+    const newParam = searchParams.get("new");
     let changed = false;
     if (orderParam) {
       setDetailOrderId(orderParam);
@@ -146,6 +147,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     if (tabParam) {
       setTab(tabParam);
       searchParams.delete("tab");
+      changed = true;
+    }
+    if (newParam) {
+      setAddOrderOpen(true);
+      searchParams.delete("new");
       changed = true;
     }
     if (changed) setSearchParams(searchParams, { replace: true });
