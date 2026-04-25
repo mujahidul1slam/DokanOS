@@ -14,6 +14,7 @@ import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
+import { getGlobalStockEnabled, setGlobalStockEnabled } from "@/lib/stockSettings";
 
 const tabs = [
   { id: "general", label: "General", icon: Settings },
@@ -30,7 +31,7 @@ type TabId = (typeof tabs)[number]["id"];
 
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState<TabId>("general");
-  const [globalStock, setGlobalStock] = useState(true);
+  const [globalStock, setGlobalStock] = useState<boolean>(() => getGlobalStockEnabled());
   const [saving, setSaving] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
@@ -146,7 +147,7 @@ const SettingsPage = () => {
               </div>
 
               <div className="flex justify-end pt-2">
-                <Button onClick={() => { setSaving(true); localStorage.setItem("omnisync-global-stock", String(globalStock)); logAction("update", "settings_inventory", undefined, { globalStock }); toast.success("Inventory settings saved"); setSaving(false); }} disabled={saving}>
+                <Button onClick={() => { setSaving(true); setGlobalStockEnabled(globalStock); logAction("update", "settings_inventory", undefined, { globalStock }); toast.success("Inventory settings saved"); setSaving(false); }} disabled={saving}>
                   {saving ? "Saving…" : "Save Changes"}
                 </Button>
               </div>
