@@ -15,6 +15,7 @@ import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
+import InstallAppButton from "@/components/InstallAppButton";
 import { getGlobalStockEnabled, setGlobalStockEnabled } from "@/lib/stockSettings";
 
 const tabs = [
@@ -110,6 +111,8 @@ const SettingsPage = () => {
                     {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
                   </Button>
                 </div>
+
+                <InstallAppButton />
               </div>
 
               <div className="flex justify-end pt-2">
