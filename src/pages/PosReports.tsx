@@ -184,11 +184,13 @@ const PosReports = () => {
     }, 0);
 
     let dues = 0;
+    let changeGiven = 0;
     for (const o of orders) {
       if (o.status === "cancelled") continue;
       const paid = paidByOrder.get(o.id) || 0;
-      const due = Number(o.total) - paid;
-      if (due > 0) dues += due;
+      const diff = paid - Number(o.total);
+      if (diff > 0) changeGiven += diff;
+      else if (diff < 0) dues += -diff;
     }
 
     const prevTotal = prevOrders.reduce((s, o) => s + Number(o.total), 0);
@@ -197,7 +199,7 @@ const PosReports = () => {
     const prevOrderCount = prevOrders.length;
 
     return {
-      totalSales, netSales, deliveryCharge, totalTax, dues,
+      totalSales, netSales, deliveryCharge, totalTax, dues, changeGiven,
       orderCount: orders.length,
       prevTotal, prevNet, prevDelivery, prevOrderCount,
     };
