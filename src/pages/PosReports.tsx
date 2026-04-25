@@ -385,6 +385,12 @@ const PosReports = () => {
           prevValue={stats.prevOrderCount}
           subtitle="POS orders in period"
         />
+        <StatCardDelta
+          icon={Coins}
+          title="Change Given"
+          value={`৳${stats.changeGiven.toLocaleString()}`}
+          subtitle="Cash returned to customers"
+        />
       </div>
 
       {/* Trend + payment mix */}
