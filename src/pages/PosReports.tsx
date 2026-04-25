@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  DollarSign, ShoppingCart, Truck, Wallet, Download, Receipt,
+  DollarSign, ShoppingCart, Truck, Wallet, Download, Receipt, Store, Package,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -49,6 +49,8 @@ interface PaymentRow {
 interface ItemRow {
   quantity: number;
   order_id: string;
+  product_name: string;
+  line_total: number;
 }
 
 interface StoreRow { id: string; name: string; }
@@ -106,7 +108,7 @@ const PosReports = () => {
       if (ids.length > 0) {
         const [paymentsRes, itemsRes] = await Promise.all([
           supabase.from("order_payments").select("method, amount, order_id").in("order_id", ids),
-          supabase.from("order_items").select("quantity, order_id").in("order_id", ids),
+          supabase.from("order_items").select("quantity, order_id, product_name, line_total").in("order_id", ids),
         ]);
         setPayments((paymentsRes.data || []) as PaymentRow[]);
         setItems((itemsRes.data || []) as ItemRow[]);
@@ -159,13 +161,42 @@ const PosReports = () => {
     const prevTotal = prevOrders.reduce((s, o) => s + Number(o.total), 0);
     const prevNet = prevOrders.reduce((s, o) => s + (Number(o.subtotal || 0) - Number(o.discount || 0)), 0);
     const prevDelivery = prevOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
+    const prevOrderCount = prevOrders.length;
 
     return {
       totalSales, netSales, deliveryCharge, totalTax, dues,
       orderCount: orders.length,
-      prevTotal, prevNet, prevDelivery,
+      prevTotal, prevNet, prevDelivery, prevOrderCount,
     };
   }, [orders, prevOrders, paidByOrder]);
+
+  // Top POS products by quantity & revenue
+  const topProducts = useMemo(() => {
+    const map = new Map<string, { name: string; qty: number; revenue: number }>();
+    for (const it of items) {
+      const key = it.product_name || "Unknown";
+      const cur = map.get(key) || { name: key, qty: 0, revenue: 0 };
+      cur.qty += Number(it.quantity || 0);
+      cur.revenue += Number(it.line_total || 0);
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  }, [items]);
+
+  // Sales by store
+  const salesByStore = useMemo(() => {
+    const storeMap = new Map(stores.map((s) => [s.id, s.name]));
+    const map = new Map<string, { name: string; sales: number; orders: number }>();
+    for (const o of orders) {
+      const key = o.store_id || "none";
+      const name = o.store_id ? (storeMap.get(o.store_id) || "Unknown Store") : "No Store";
+      const cur = map.get(key) || { name, sales: 0, orders: 0 };
+      cur.sales += Number(o.total);
+      cur.orders += 1;
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => b.sales - a.sales);
+  }, [orders, stores]);
 
   // Trend
   const trendData = useMemo(() => {
@@ -265,7 +296,7 @@ const PosReports = () => {
       </div>
 
       {/* Primary KPIs requested */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCardDelta
           icon={DollarSign}
           title="Total Sales"
@@ -296,6 +327,14 @@ const PosReports = () => {
           value={`৳${stats.dues.toLocaleString()}`}
           subtitle="Outstanding from non-cancelled orders"
           invertDelta
+        />
+        <StatCardDelta
+          icon={ShoppingCart}
+          title="Total Orders"
+          value={stats.orderCount.toLocaleString()}
+          currentValue={stats.orderCount}
+          prevValue={stats.prevOrderCount}
+          subtitle="POS orders in period"
         />
       </div>
 
@@ -355,6 +394,81 @@ const PosReports = () => {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Top POS Products + Sales by Store */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-lg border border-border bg-card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-sm font-medium text-card-foreground flex items-center gap-2">
+              <Package className="h-4 w-4 text-muted-foreground" /> Top POS Products
+            </h2>
+            <span className="text-xs text-muted-foreground">By revenue</span>
+          </div>
+          {topProducts.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No POS sales in this period</p>
+          ) : (
+            <div className="space-y-3">
+              {topProducts.map((p, idx) => {
+                const max = topProducts[0].revenue || 1;
+                return (
+                  <div key={p.name + idx}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-card-foreground truncate pr-2">
+                        <span className="text-muted-foreground tabular-nums mr-2">#{idx + 1}</span>
+                        {p.name}
+                      </span>
+                      <span className="text-muted-foreground shrink-0 tabular-nums">
+                        {p.qty} sold · ৳{p.revenue.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full bg-primary/70 rounded-full" style={{ width: `${(p.revenue / max) * 100}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-sm font-medium text-card-foreground flex items-center gap-2">
+              <Store className="h-4 w-4 text-muted-foreground" /> Sales by Store
+            </h2>
+            <span className="text-xs text-muted-foreground">{salesByStore.length} stores</span>
+          </div>
+          {salesByStore.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No sales in this period</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Store</TableHead>
+                    <TableHead className="text-xs text-right">Orders</TableHead>
+                    <TableHead className="text-xs text-right">Sales</TableHead>
+                    <TableHead className="text-xs text-right">Share</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {salesByStore.map((s, i) => {
+                    const share = stats.totalSales > 0 ? (s.sales / stats.totalSales) * 100 : 0;
+                    return (
+                      <TableRow key={s.name + i} className="text-xs">
+                        <TableCell className="font-medium text-foreground">{s.name}</TableCell>
+                        <TableCell className="text-right">{s.orders}</TableCell>
+                        <TableCell className="text-right font-semibold">৳{s.sales.toLocaleString()}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">{share.toFixed(1)}%</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
       </div>
 
