@@ -28,15 +28,10 @@ import TopProducts from "@/components/dashboard/TopProducts";
 import SourceMix from "@/components/dashboard/SourceMix";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { StatsSkeleton, TableSkeleton } from "@/components/ui/loading-states";
-import { startOfDay, subDays, startOfYear, format, differenceInDays } from "date-fns";
+import { format, subDays } from "date-fns";
+import DatePresetPicker, { DatePreset, presetLabel, resolveRange } from "@/components/DatePresetPicker";
+import type { DateRange } from "react-day-picker";
 
 interface OrderRow {
   id: string;
