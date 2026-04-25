@@ -190,10 +190,15 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
   const billingAddr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;
 
+  const baseOrderNum = String(o.number || o.id);
+  const { data: formatted } = await supabase.rpc("format_order_number", {
+    p_store_id: store_id, p_source: "woo", p_base: baseOrderNum,
+  });
+
   const orderData = {
     store_id,
     woo_order_id: o.id,
-    order_number: String(o.number || o.id),
+    order_number: (formatted as string) || baseOrderNum,
     source: "online",
     status: mapWooStatus(o.status),
     payment_method: o.payment_method_title || o.payment_method || null,

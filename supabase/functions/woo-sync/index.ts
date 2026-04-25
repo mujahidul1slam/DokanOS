@@ -553,14 +553,23 @@ Deno.serve(async (req) => {
         prodMap = new Map((dbProducts || []).map((p: any) => [p.woo_product_id, p.id]));
       }
 
+      // Pre-fetch store-level + global woo prefix/suffix and apply locally for speed.
+      const { data: storeRow } = await supabase
+        .from("stores").select("woo_order_prefix, woo_order_suffix").eq("id", store_id).maybeSingle();
+      const { data: invSet } = await supabase
+        .from("invoice_settings").select("woo_order_prefix, woo_order_suffix").limit(1).maybeSingle();
+      const wPrefix = (storeRow?.woo_order_prefix || invSet?.woo_order_prefix || "");
+      const wSuffix = (storeRow?.woo_order_suffix || invSet?.woo_order_suffix || "");
+
       const orderRows = wooOrders.map((o: any) => {
         const phone = normalizePhone(o.billing?.phone);
         const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
         const billingAddr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;
+        const baseNum = String(o.number || o.id);
         return {
           store_id,
           woo_order_id: o.id,
-          order_number: String(o.number || o.id),
+          order_number: `${wPrefix}${baseNum}${wSuffix}`,
           source: "online",
           status: mapWooStatus(o.status),
           payment_method: o.payment_method_title || o.payment_method || null,

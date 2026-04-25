@@ -336,6 +336,8 @@ export type Database = {
           id: string
           invoice_template: Json
           logo_url: string | null
+          manual_order_prefix: string
+          manual_order_suffix: string
           measurement_slip_template: Json
           phone: string | null
           pickup_slip_print_format: string
@@ -347,6 +349,8 @@ export type Database = {
           tagline: string | null
           terms_text: string | null
           updated_at: string
+          woo_order_prefix: string
+          woo_order_suffix: string
         }
         Insert: {
           address?: string | null
@@ -358,6 +362,8 @@ export type Database = {
           id?: string
           invoice_template?: Json
           logo_url?: string | null
+          manual_order_prefix?: string
+          manual_order_suffix?: string
           measurement_slip_template?: Json
           phone?: string | null
           pickup_slip_print_format?: string
@@ -369,6 +375,8 @@ export type Database = {
           tagline?: string | null
           terms_text?: string | null
           updated_at?: string
+          woo_order_prefix?: string
+          woo_order_suffix?: string
         }
         Update: {
           address?: string | null
@@ -380,6 +388,8 @@ export type Database = {
           id?: string
           invoice_template?: Json
           logo_url?: string | null
+          manual_order_prefix?: string
+          manual_order_suffix?: string
           measurement_slip_template?: Json
           phone?: string | null
           pickup_slip_print_format?: string
@@ -391,6 +401,8 @@ export type Database = {
           tagline?: string | null
           terms_text?: string | null
           updated_at?: string
+          woo_order_prefix?: string
+          woo_order_suffix?: string
         }
         Relationships: []
       }
@@ -1498,12 +1510,16 @@ export type Database = {
           customers_synced_at: string | null
           id: string
           last_synced_at: string | null
+          manual_order_prefix: string
+          manual_order_suffix: string
           name: string
           pos_order_prefix: string
           pos_order_suffix: string
           status: string
           updated_at: string
           url: string
+          woo_order_prefix: string
+          woo_order_suffix: string
         }
         Insert: {
           consumer_key?: string | null
@@ -1512,12 +1528,16 @@ export type Database = {
           customers_synced_at?: string | null
           id?: string
           last_synced_at?: string | null
+          manual_order_prefix?: string
+          manual_order_suffix?: string
           name: string
           pos_order_prefix?: string
           pos_order_suffix?: string
           status?: string
           updated_at?: string
           url: string
+          woo_order_prefix?: string
+          woo_order_suffix?: string
         }
         Update: {
           consumer_key?: string | null
@@ -1526,12 +1546,16 @@ export type Database = {
           customers_synced_at?: string | null
           id?: string
           last_synced_at?: string | null
+          manual_order_prefix?: string
+          manual_order_suffix?: string
           name?: string
           pos_order_prefix?: string
           pos_order_suffix?: string
           status?: string
           updated_at?: string
           url?: string
+          woo_order_prefix?: string
+          woo_order_suffix?: string
         }
         Relationships: []
       }
@@ -1676,10 +1700,13 @@ export type Database = {
       }
     }
     Functions: {
-      generate_pos_order_number: {
-        Args: { p_store_id?: string }
+      format_order_number: {
+        Args: { p_base: string; p_source: string; p_store_id: string }
         Returns: string
       }
+      generate_pos_order_number:
+        | { Args: { p_store_id?: string }; Returns: string }
+        | { Args: { p_source?: string; p_store_id?: string }; Returns: string }
       get_user_permissions: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_permission"][]

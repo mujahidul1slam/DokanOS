@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler, Building2 } from "lucide-react";
+import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler, Building2, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { logAction } from "@/lib/auditLog";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
+import OrdersSettingsTab from "@/components/settings/OrdersSettingsTab";
 import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
@@ -21,6 +22,7 @@ const tabs = [
   { id: "business", label: "Business Profile", icon: Building2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "pos", label: "POS Settings", icon: ShoppingCart },
+  { id: "orders", label: "Orders", icon: Hash },
   { id: "measurements", label: "Measurements", icon: Ruler },
   { id: "invoice", label: "Invoice/Pick up Slip", icon: FileText },
   { id: "sources", label: "Order Sources", icon: Tags },
@@ -155,6 +157,8 @@ const SettingsPage = () => {
           )}
 
           {activeTab === "pos" && <PosSettingsTab />}
+
+          {activeTab === "orders" && <OrdersSettingsTab />}
 
           {activeTab === "invoice" && <InvoiceSettingsTab />}
 
