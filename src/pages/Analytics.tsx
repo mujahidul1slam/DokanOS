@@ -8,11 +8,12 @@ import {
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatsSkeleton } from "@/components/ui/loading-states";
 import StatCardDelta from "@/components/dashboard/StatCardDelta";
-import { startOfDay, subDays, startOfYear, format, differenceInHours, getDay, getHours } from "date-fns";
+import { subDays, format, differenceInHours, getDay, getHours } from "date-fns";
 import { downloadCsv } from "@/lib/exportCsv";
+import DatePresetPicker, { DatePreset, resolveRange } from "@/components/DatePresetPicker";
+import type { DateRange } from "react-day-picker";
 import FinancialWaterfall from "@/components/analytics/FinancialWaterfall";
 import HourHeatmap from "@/components/analytics/HourHeatmap";
 import SalespersonLeaderboard from "@/components/analytics/SalespersonLeaderboard";
@@ -64,37 +65,10 @@ interface ReturnRow {
   created_at: string;
 }
 
-type DatePreset = "today" | "7d" | "30d" | "90d" | "year" | "all";
-
-const presetLabel: Record<DatePreset, string> = {
-  today: "Today",
-  "7d": "Last 7 Days",
-  "30d": "Last 30 Days",
-  "90d": "Last 90 Days",
-  year: "This Year",
-  all: "All Time",
-};
-
-const presetDays: Record<DatePreset, number> = {
-  today: 1, "7d": 7, "30d": 30, "90d": 90, year: 365, all: 365,
-};
-
 const COLORS = [
   "hsl(217,91%,60%)", "hsl(142,71%,45%)", "hsl(38,92%,50%)",
   "hsl(291,64%,42%)", "hsl(0,84%,60%)", "hsl(199,89%,48%)",
 ];
-
-const getDateFrom = (preset: DatePreset): Date | null => {
-  const now = new Date();
-  switch (preset) {
-    case "today": return startOfDay(now);
-    case "7d": return subDays(now, 7);
-    case "30d": return subDays(now, 30);
-    case "90d": return subDays(now, 90);
-    case "year": return startOfYear(now);
-    case "all": return null;
-  }
-};
 
 const Analytics = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -105,13 +79,13 @@ const Analytics = () => {
   const [allCustomerOrders, setAllCustomerOrders] = useState<{ customer_id: string | null; customer_name: string | null; total: number; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>();
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const dateFrom = getDateFrom(datePreset);
-      const days = presetDays[datePreset];
-      const prevFrom = dateFrom ? subDays(dateFrom, days) : null;
+      const { from: dateFrom, to: dateTo, days } = resolveRange(datePreset, customRange);
+      const prevFrom = dateFrom && days ? subDays(dateFrom, days) : null;
 
       const baseSelect = "id, total, subtotal, discount, shipping_cost, tax_amount, source, status, payment_status, created_at, customer_id, customer_name, customer_city, consignment_id, salesperson_name";
 
@@ -123,11 +97,16 @@ const Analytics = () => {
         ordersQuery = ordersQuery.gte("created_at", dateFrom.toISOString());
         returnsQuery = returnsQuery.gte("created_at", dateFrom.toISOString());
       }
+      if (dateTo && datePreset === "custom") {
+        ordersQuery = ordersQuery.lte("created_at", dateTo.toISOString());
+        returnsQuery = returnsQuery.lte("created_at", dateTo.toISOString());
+      }
       if (prevFrom && dateFrom) {
         prevQuery = prevQuery.gte("created_at", prevFrom.toISOString()).lt("created_at", dateFrom.toISOString());
       } else {
         prevQuery = prevQuery.eq("id", "00000000-0000-0000-0000-000000000000");
       }
+
 
       const [ordersRes, prevRes, productsRes, returnsRes, allCustRes] = await Promise.all([
         ordersQuery,
@@ -159,7 +138,7 @@ const Analytics = () => {
       setLoading(false);
     };
     load();
-  }, [datePreset]);
+  }, [datePreset, customRange]);
 
   const stats = useMemo(() => {
     const revenue = orders.reduce((s, o) => s + Number(o.total), 0);
@@ -261,7 +240,7 @@ const Analytics = () => {
       ltv[key].firstAt = Math.min(ltv[key].firstAt, ts);
     }
 
-    const dateFrom = getDateFrom(datePreset);
+    const { from: dateFrom } = resolveRange(datePreset, customRange);
     const fromTs = dateFrom ? dateFrom.getTime() : 0;
 
     const buyersInPeriod = new Set<string>();
@@ -290,7 +269,7 @@ const Analytics = () => {
       .map((v) => ({ name: v.name, orders: v.orders, revenue: v.revenue }));
 
     return { newCustomers: newC, returningCustomers: retC, repeatRate, avgLtv, topCustomers };
-  }, [orders, allCustomerOrders, datePreset]);
+  }, [orders, allCustomerOrders, datePreset, customRange]);
 
   // Inventory health
   const inventoryStats = useMemo(() => {
@@ -367,14 +346,12 @@ const Analytics = () => {
           <p className="text-sm text-muted-foreground">Comprehensive business intelligence — revenue, customers, inventory, and operations</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
-            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {Object.entries(presetLabel).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <DatePresetPicker
+            preset={datePreset}
+            customRange={customRange}
+            onPresetChange={setDatePreset}
+            onCustomRangeChange={setCustomRange}
+          />
           <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5">
             <Download className="h-4 w-4" /> Export
           </Button>

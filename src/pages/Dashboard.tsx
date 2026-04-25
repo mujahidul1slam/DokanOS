@@ -28,15 +28,10 @@ import TopProducts from "@/components/dashboard/TopProducts";
 import SourceMix from "@/components/dashboard/SourceMix";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { StatsSkeleton, TableSkeleton } from "@/components/ui/loading-states";
-import { startOfDay, subDays, startOfYear, format, differenceInDays } from "date-fns";
+import { format, subDays } from "date-fns";
+import DatePresetPicker, { DatePreset, presetLabel, resolveRange } from "@/components/DatePresetPicker";
+import type { DateRange } from "react-day-picker";
 
 interface OrderRow {
   id: string;
@@ -72,34 +67,6 @@ interface ProductLite {
   cost_price: number | null;
 }
 
-type DatePreset = "today" | "7d" | "30d" | "90d" | "year" | "all";
-
-const presetLabel: Record<DatePreset, string> = {
-  today: "Today",
-  "7d": "Last 7 Days",
-  "30d": "Last 30 Days",
-  "90d": "Last 90 Days",
-  year: "This Year",
-  all: "All Time",
-};
-
-const getDateRange = (preset: DatePreset): { from: Date | null; days: number } => {
-  const now = new Date();
-  switch (preset) {
-    case "today":
-      return { from: startOfDay(now), days: 1 };
-    case "7d":
-      return { from: subDays(now, 7), days: 7 };
-    case "30d":
-      return { from: subDays(now, 30), days: 30 };
-    case "90d":
-      return { from: subDays(now, 90), days: 90 };
-    case "year":
-      return { from: startOfYear(now), days: differenceInDays(now, startOfYear(now)) || 1 };
-    case "all":
-      return { from: null, days: 0 };
-  }
-};
 
 const Dashboard = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -110,11 +77,12 @@ const Dashboard = () => {
   const [lowStockProducts, setLowStockProducts] = useState<ProductLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>();
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const { from, days } = getDateRange(datePreset);
+      const { from, to, days } = resolveRange(datePreset, customRange);
       const prevFrom = from && days ? subDays(from, days) : null;
 
       const baseSel =
@@ -126,6 +94,7 @@ const Dashboard = () => {
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
       if (from) curQ = curQ.gte("created_at", from.toISOString());
+      if (to && datePreset === "custom") curQ = curQ.lte("created_at", to.toISOString());
 
       let prevQ = supabase
         .from("orders")
@@ -175,7 +144,7 @@ const Dashboard = () => {
       setLoading(false);
     };
     load();
-  }, [datePreset]);
+  }, [datePreset, customRange]);
 
   // ============ Aggregations ============
   const productCostMap = useMemo(() => {
@@ -362,18 +331,12 @@ const Dashboard = () => {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(presetLabel).map(([k, v]) => (
-                <SelectItem key={k} value={k}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <DatePresetPicker
+            preset={datePreset}
+            customRange={customRange}
+            onPresetChange={setDatePreset}
+            onCustomRangeChange={setCustomRange}
+          />
           <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-1.5">
             <Download className="h-4 w-4" /> Export
           </Button>
