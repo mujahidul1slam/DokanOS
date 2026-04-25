@@ -331,18 +331,12 @@ const Dashboard = () => {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(presetLabel).map(([k, v]) => (
-                <SelectItem key={k} value={k}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <DatePresetPicker
+            preset={datePreset}
+            customRange={customRange}
+            onPresetChange={setDatePreset}
+            onCustomRangeChange={setCustomRange}
+          />
           <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-1.5">
             <Download className="h-4 w-4" /> Export
           </Button>
