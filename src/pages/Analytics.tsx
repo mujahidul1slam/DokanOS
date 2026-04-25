@@ -65,6 +65,10 @@ interface ReturnRow {
   created_at: string;
 }
 
+const COLORS = [
+  "hsl(217,91%,60%)", "hsl(142,71%,45%)", "hsl(38,92%,50%)",
+  "hsl(291,64%,42%)", "hsl(0,84%,60%)", "hsl(199,89%,48%)",
+];
 
 const Analytics = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -75,13 +79,13 @@ const Analytics = () => {
   const [allCustomerOrders, setAllCustomerOrders] = useState<{ customer_id: string | null; customer_name: string | null; total: number; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>();
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const dateFrom = getDateFrom(datePreset);
-      const days = presetDays[datePreset];
-      const prevFrom = dateFrom ? subDays(dateFrom, days) : null;
+      const { from: dateFrom, to: dateTo, days } = resolveRange(datePreset, customRange);
+      const prevFrom = dateFrom && days ? subDays(dateFrom, days) : null;
 
       const baseSelect = "id, total, subtotal, discount, shipping_cost, tax_amount, source, status, payment_status, created_at, customer_id, customer_name, customer_city, consignment_id, salesperson_name";
 
@@ -93,11 +97,16 @@ const Analytics = () => {
         ordersQuery = ordersQuery.gte("created_at", dateFrom.toISOString());
         returnsQuery = returnsQuery.gte("created_at", dateFrom.toISOString());
       }
+      if (dateTo && datePreset === "custom") {
+        ordersQuery = ordersQuery.lte("created_at", dateTo.toISOString());
+        returnsQuery = returnsQuery.lte("created_at", dateTo.toISOString());
+      }
       if (prevFrom && dateFrom) {
         prevQuery = prevQuery.gte("created_at", prevFrom.toISOString()).lt("created_at", dateFrom.toISOString());
       } else {
         prevQuery = prevQuery.eq("id", "00000000-0000-0000-0000-000000000000");
       }
+
 
       const [ordersRes, prevRes, productsRes, returnsRes, allCustRes] = await Promise.all([
         ordersQuery,
