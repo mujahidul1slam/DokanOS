@@ -7,6 +7,8 @@ export interface Product {
   image_url: string | null;
   category: string | null;
   description: string | null;
+  manage_stock?: boolean;
+  stock_status?: string;
 }
 
 export interface Variation {
