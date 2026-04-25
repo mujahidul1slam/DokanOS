@@ -161,13 +161,42 @@ const PosReports = () => {
     const prevTotal = prevOrders.reduce((s, o) => s + Number(o.total), 0);
     const prevNet = prevOrders.reduce((s, o) => s + (Number(o.subtotal || 0) - Number(o.discount || 0)), 0);
     const prevDelivery = prevOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
+    const prevOrderCount = prevOrders.length;
 
     return {
       totalSales, netSales, deliveryCharge, totalTax, dues,
       orderCount: orders.length,
-      prevTotal, prevNet, prevDelivery,
+      prevTotal, prevNet, prevDelivery, prevOrderCount,
     };
   }, [orders, prevOrders, paidByOrder]);
+
+  // Top POS products by quantity & revenue
+  const topProducts = useMemo(() => {
+    const map = new Map<string, { name: string; qty: number; revenue: number }>();
+    for (const it of items) {
+      const key = it.product_name || "Unknown";
+      const cur = map.get(key) || { name: key, qty: 0, revenue: 0 };
+      cur.qty += Number(it.quantity || 0);
+      cur.revenue += Number(it.line_total || 0);
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  }, [items]);
+
+  // Sales by store
+  const salesByStore = useMemo(() => {
+    const storeMap = new Map(stores.map((s) => [s.id, s.name]));
+    const map = new Map<string, { name: string; sales: number; orders: number }>();
+    for (const o of orders) {
+      const key = o.store_id || "none";
+      const name = o.store_id ? (storeMap.get(o.store_id) || "Unknown Store") : "No Store";
+      const cur = map.get(key) || { name, sales: 0, orders: 0 };
+      cur.sales += Number(o.total);
+      cur.orders += 1;
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => b.sales - a.sales);
+  }, [orders, stores]);
 
   // Trend
   const trendData = useMemo(() => {
