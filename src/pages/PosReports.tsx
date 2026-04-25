@@ -68,6 +68,7 @@ const PosReports = () => {
   const [orders, setOrders] = useState<PosOrder[]>([]);
   const [prevOrders, setPrevOrders] = useState<PosOrder[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
+  const [products, setProducts] = useState<ProductRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -115,13 +116,26 @@ const PosReports = () => {
       if (ids.length > 0) {
         const [paymentsRes, itemsRes] = await Promise.all([
           supabase.from("order_payments").select("method, amount, order_id").in("order_id", ids),
-          supabase.from("order_items").select("quantity, order_id, product_name, line_total").in("order_id", ids),
+          supabase.from("order_items").select("quantity, order_id, product_name, line_total, product_id").in("order_id", ids),
         ]);
         setPayments((paymentsRes.data || []) as PaymentRow[]);
-        setItems((itemsRes.data || []) as ItemRow[]);
+        const itemRows = (itemsRes.data || []) as ItemRow[];
+        setItems(itemRows);
+
+        const productIds = Array.from(new Set(itemRows.map((i) => i.product_id).filter(Boolean))) as string[];
+        if (productIds.length > 0) {
+          const { data: prodData } = await supabase
+            .from("products")
+            .select("id, store_id, woo_product_id")
+            .in("id", productIds);
+          setProducts((prodData || []) as ProductRow[]);
+        } else {
+          setProducts([]);
+        }
       } else {
         setPayments([]);
         setItems([]);
+        setProducts([]);
       }
 
       setLoading(false);
