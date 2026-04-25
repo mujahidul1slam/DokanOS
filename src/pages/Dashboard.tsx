@@ -366,21 +366,6 @@ const Dashboard = () => {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button asChild size="sm" className="gap-1.5">
-            <Link to="/orders?new=1">
-              <Plus className="h-4 w-4" /> Add New Order
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link to="/pos">
-              <Monitor className="h-4 w-4" /> POS
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link to="/pos/reports">
-              <BarChart3 className="h-4 w-4" /> POS Reports
-            </Link>
-          </Button>
           <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
             <SelectTrigger className="w-[160px]">
               <SelectValue />
