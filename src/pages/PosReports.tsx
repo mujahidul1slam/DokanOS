@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  DollarSign, ShoppingCart, Truck, Wallet, Download, Receipt,
+  DollarSign, ShoppingCart, Truck, Wallet, Download, Receipt, Store, Package,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -49,6 +49,8 @@ interface PaymentRow {
 interface ItemRow {
   quantity: number;
   order_id: string;
+  product_name: string;
+  line_total: number;
 }
 
 interface StoreRow { id: string; name: string; }
@@ -106,7 +108,7 @@ const PosReports = () => {
       if (ids.length > 0) {
         const [paymentsRes, itemsRes] = await Promise.all([
           supabase.from("order_payments").select("method, amount, order_id").in("order_id", ids),
-          supabase.from("order_items").select("quantity, order_id").in("order_id", ids),
+          supabase.from("order_items").select("quantity, order_id, product_name, line_total").in("order_id", ids),
         ]);
         setPayments((paymentsRes.data || []) as PaymentRow[]);
         setItems((itemsRes.data || []) as ItemRow[]);
