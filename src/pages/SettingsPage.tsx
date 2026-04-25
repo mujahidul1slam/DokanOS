@@ -158,6 +158,8 @@ const SettingsPage = () => {
 
           {activeTab === "pos" && <PosSettingsTab />}
 
+          {activeTab === "orders" && <OrdersSettingsTab />}
+
           {activeTab === "invoice" && <InvoiceSettingsTab />}
 
           {activeTab === "sources" && <OrderSourcesTab />}
