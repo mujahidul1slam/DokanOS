@@ -144,7 +144,7 @@ const Dashboard = () => {
       setLoading(false);
     };
     load();
-  }, [datePreset]);
+  }, [datePreset, customRange]);
 
   // ============ Aggregations ============
   const productCostMap = useMemo(() => {
