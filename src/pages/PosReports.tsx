@@ -295,7 +295,7 @@ const PosReports = () => {
         String(o.total),
         String(paid),
         String(due),
-        o.payment_method || "—",
+        (methodsByOrder.get(o.id) || (o.payment_method ? [o.payment_method] : [])).join(", ") || "—",
         o.status,
       ];
     });
