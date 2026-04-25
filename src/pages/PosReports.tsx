@@ -204,20 +204,34 @@ const PosReports = () => {
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   }, [items]);
 
-  // Sales by store
+  // Sales by store — attributed by each line item's product origin (which WooCommerce store it belongs to).
+  // Items whose product has no woo_product_id (or no store link) are bucketed as "POS Only".
   const salesByStore = useMemo(() => {
     const storeMap = new Map(stores.map((s) => [s.id, s.name]));
-    const map = new Map<string, { name: string; sales: number; orders: number }>();
-    for (const o of orders) {
-      const key = o.store_id || "none";
-      const name = o.store_id ? (storeMap.get(o.store_id) || "Unknown Store") : "No Store";
-      const cur = map.get(key) || { name, sales: 0, orders: 0 };
-      cur.sales += Number(o.total);
-      cur.orders += 1;
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const map = new Map<string, { name: string; sales: number; qty: number; orderIds: Set<string> }>();
+
+    for (const it of items) {
+      const prod = it.product_id ? productMap.get(it.product_id) : null;
+      let key: string;
+      let name: string;
+      if (prod && prod.store_id && prod.woo_product_id) {
+        key = prod.store_id;
+        name = storeMap.get(prod.store_id) || "Unknown Store";
+      } else {
+        key = "__pos_only__";
+        name = "POS Only (no WooCommerce store)";
+      }
+      const cur = map.get(key) || { name, sales: 0, qty: 0, orderIds: new Set<string>() };
+      cur.sales += Number(it.line_total || 0);
+      cur.qty += Number(it.quantity || 0);
+      cur.orderIds.add(it.order_id);
       map.set(key, cur);
     }
-    return Array.from(map.values()).sort((a, b) => b.sales - a.sales);
-  }, [orders, stores]);
+    return Array.from(map.values())
+      .map((v) => ({ name: v.name, sales: v.sales, qty: v.qty, orders: v.orderIds.size }))
+      .sort((a, b) => b.sales - a.sales);
+  }, [items, products, stores]);
 
   // Trend
   const trendData = useMemo(() => {
