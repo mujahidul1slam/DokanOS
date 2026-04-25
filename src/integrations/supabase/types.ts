@@ -341,6 +341,8 @@ export type Database = {
           pickup_slip_print_format: string
           pickup_slip_template: Json
           pos_custom_measurements_enabled: boolean
+          pos_order_prefix: string
+          pos_order_suffix: string
           shipping_presets: Json
           tagline: string | null
           terms_text: string | null
@@ -361,6 +363,8 @@ export type Database = {
           pickup_slip_print_format?: string
           pickup_slip_template?: Json
           pos_custom_measurements_enabled?: boolean
+          pos_order_prefix?: string
+          pos_order_suffix?: string
           shipping_presets?: Json
           tagline?: string | null
           terms_text?: string | null
@@ -381,6 +385,8 @@ export type Database = {
           pickup_slip_print_format?: string
           pickup_slip_template?: Json
           pos_custom_measurements_enabled?: boolean
+          pos_order_prefix?: string
+          pos_order_suffix?: string
           shipping_presets?: Json
           tagline?: string | null
           terms_text?: string | null
@@ -1493,6 +1499,8 @@ export type Database = {
           id: string
           last_synced_at: string | null
           name: string
+          pos_order_prefix: string
+          pos_order_suffix: string
           status: string
           updated_at: string
           url: string
@@ -1505,6 +1513,8 @@ export type Database = {
           id?: string
           last_synced_at?: string | null
           name: string
+          pos_order_prefix?: string
+          pos_order_suffix?: string
           status?: string
           updated_at?: string
           url: string
@@ -1517,6 +1527,8 @@ export type Database = {
           id?: string
           last_synced_at?: string | null
           name?: string
+          pos_order_prefix?: string
+          pos_order_suffix?: string
           status?: string
           updated_at?: string
           url?: string
@@ -1664,6 +1676,10 @@ export type Database = {
       }
     }
     Functions: {
+      generate_pos_order_number: {
+        Args: { p_store_id?: string }
+        Returns: string
+      }
       get_user_permissions: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_permission"][]

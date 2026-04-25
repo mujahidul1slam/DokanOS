@@ -348,7 +348,9 @@ const POS = () => {
     const taxAmount = afterDiscount * cart.taxRate / 100;
     const total = afterDiscount + taxAmount + (cart.fulfillment === "delivery" ? cart.shippingFee : 0);
 
-    const orderNumber = `POS-${Date.now().toString(36).toUpperCase()}`;
+    const storeIdForNum = cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null);
+    const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: storeIdForNum });
+    const orderNumber = (genNum as string) || `POS-${Date.now().toString(36).toUpperCase()}`;
 
     const normalizedCustomerPhone = normalizeBdPhone(cart.customer?.phone);
     let customerId: string | null = cart.customer?.id || null;
