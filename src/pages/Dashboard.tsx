@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { Link } from "react-router-dom";
 import {
   ShoppingCart,
   DollarSign,
@@ -10,6 +11,9 @@ import {
   Users,
   Receipt,
   PercentCircle,
+  Plus,
+  Monitor,
+  BarChart3,
 } from "lucide-react";
 import {
   AreaChart,
