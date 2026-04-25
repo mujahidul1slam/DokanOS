@@ -95,7 +95,7 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
     nonFeatured.sort(sortFn);
 
     return [...featured, ...nonFeatured];
-  }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore, productCatMap, categories]);
+  }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore, productCatMap, categories, globalStockEnabled]);
 
   // Reset page on filter change
   useMemo(() => { setPage(1); }, [search, activeCategory, sortBy, hideOutOfStock, selectedStore, perPage]);
@@ -229,12 +229,24 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
                 ) : (
                   <Package className="h-10 w-10 text-muted-foreground/40" />
                 )}
-                <Badge
-                  variant={p.stock_quantity > 5 ? "default" : p.stock_quantity > 0 ? "secondary" : "destructive"}
-                  className="absolute top-2 right-2 text-[10px]"
-                >
-                  {p.stock_quantity > 0 ? `${p.stock_quantity} in stock` : "Out"}
-                </Badge>
+                {(() => {
+                  const eff = getEffectiveStock(p, globalStockEnabled);
+                  if (!eff.tracked) {
+                    return (
+                      <Badge variant="default" className="absolute top-2 right-2 text-[10px]">
+                        In stock
+                      </Badge>
+                    );
+                  }
+                  return (
+                    <Badge
+                      variant={eff.quantity > 5 ? "default" : eff.quantity > 0 ? "secondary" : "destructive"}
+                      className="absolute top-2 right-2 text-[10px]"
+                    >
+                      {eff.outOfStock ? "Out" : `${eff.quantity} in stock`}
+                    </Badge>
+                  );
+                })()}
                 {(p as any).is_featured && (
                   <Star className="absolute top-2 left-2 h-4 w-4 text-yellow-400 fill-yellow-400" />
                 )}
