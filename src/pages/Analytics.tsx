@@ -8,11 +8,12 @@ import {
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatsSkeleton } from "@/components/ui/loading-states";
 import StatCardDelta from "@/components/dashboard/StatCardDelta";
-import { startOfDay, subDays, startOfYear, format, differenceInHours, getDay, getHours } from "date-fns";
+import { subDays, format, differenceInHours, getDay, getHours } from "date-fns";
 import { downloadCsv } from "@/lib/exportCsv";
+import DatePresetPicker, { DatePreset, resolveRange } from "@/components/DatePresetPicker";
+import type { DateRange } from "react-day-picker";
 import FinancialWaterfall from "@/components/analytics/FinancialWaterfall";
 import HourHeatmap from "@/components/analytics/HourHeatmap";
 import SalespersonLeaderboard from "@/components/analytics/SalespersonLeaderboard";
