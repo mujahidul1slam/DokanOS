@@ -296,7 +296,7 @@ const PosReports = () => {
       </div>
 
       {/* Primary KPIs requested */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCardDelta
           icon={DollarSign}
           title="Total Sales"
@@ -327,6 +327,14 @@ const PosReports = () => {
           value={`৳${stats.dues.toLocaleString()}`}
           subtitle="Outstanding from non-cancelled orders"
           invertDelta
+        />
+        <StatCardDelta
+          icon={ShoppingCart}
+          title="Total Orders"
+          value={stats.orderCount.toLocaleString()}
+          currentValue={stats.orderCount}
+          prevValue={stats.prevOrderCount}
+          subtitle="POS orders in period"
         />
       </div>
 
