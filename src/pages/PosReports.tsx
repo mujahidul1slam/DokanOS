@@ -51,6 +51,13 @@ interface ItemRow {
   order_id: string;
   product_name: string;
   line_total: number;
+  product_id: string | null;
+}
+
+interface ProductRow {
+  id: string;
+  store_id: string | null;
+  woo_product_id: number | null;
 }
 
 interface StoreRow { id: string; name: string; }
@@ -61,6 +68,7 @@ const PosReports = () => {
   const [orders, setOrders] = useState<PosOrder[]>([]);
   const [prevOrders, setPrevOrders] = useState<PosOrder[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
+  const [products, setProducts] = useState<ProductRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,13 +116,26 @@ const PosReports = () => {
       if (ids.length > 0) {
         const [paymentsRes, itemsRes] = await Promise.all([
           supabase.from("order_payments").select("method, amount, order_id").in("order_id", ids),
-          supabase.from("order_items").select("quantity, order_id, product_name, line_total").in("order_id", ids),
+          supabase.from("order_items").select("quantity, order_id, product_name, line_total, product_id").in("order_id", ids),
         ]);
         setPayments((paymentsRes.data || []) as PaymentRow[]);
-        setItems((itemsRes.data || []) as ItemRow[]);
+        const itemRows = (itemsRes.data || []) as ItemRow[];
+        setItems(itemRows);
+
+        const productIds = Array.from(new Set(itemRows.map((i) => i.product_id).filter(Boolean))) as string[];
+        if (productIds.length > 0) {
+          const { data: prodData } = await supabase
+            .from("products")
+            .select("id, store_id, woo_product_id")
+            .in("id", productIds);
+          setProducts((prodData || []) as ProductRow[]);
+        } else {
+          setProducts([]);
+        }
       } else {
         setPayments([]);
         setItems([]);
+        setProducts([]);
       }
 
       setLoading(false);
@@ -183,20 +204,34 @@ const PosReports = () => {
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   }, [items]);
 
-  // Sales by store
+  // Sales by store — attributed by each line item's product origin (which WooCommerce store it belongs to).
+  // Items whose product has no woo_product_id (or no store link) are bucketed as "POS Only".
   const salesByStore = useMemo(() => {
     const storeMap = new Map(stores.map((s) => [s.id, s.name]));
-    const map = new Map<string, { name: string; sales: number; orders: number }>();
-    for (const o of orders) {
-      const key = o.store_id || "none";
-      const name = o.store_id ? (storeMap.get(o.store_id) || "Unknown Store") : "No Store";
-      const cur = map.get(key) || { name, sales: 0, orders: 0 };
-      cur.sales += Number(o.total);
-      cur.orders += 1;
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const map = new Map<string, { name: string; sales: number; qty: number; orderIds: Set<string> }>();
+
+    for (const it of items) {
+      const prod = it.product_id ? productMap.get(it.product_id) : null;
+      let key: string;
+      let name: string;
+      if (prod && prod.store_id && prod.woo_product_id) {
+        key = prod.store_id;
+        name = storeMap.get(prod.store_id) || "Unknown Store";
+      } else {
+        key = "__pos_only__";
+        name = "POS Only (no WooCommerce store)";
+      }
+      const cur = map.get(key) || { name, sales: 0, qty: 0, orderIds: new Set<string>() };
+      cur.sales += Number(it.line_total || 0);
+      cur.qty += Number(it.quantity || 0);
+      cur.orderIds.add(it.order_id);
       map.set(key, cur);
     }
-    return Array.from(map.values()).sort((a, b) => b.sales - a.sales);
-  }, [orders, stores]);
+    return Array.from(map.values())
+      .map((v) => ({ name: v.name, sales: v.sales, qty: v.qty, orders: v.orderIds.size }))
+      .sort((a, b) => b.sales - a.sales);
+  }, [items, products, stores]);
 
   // Trend
   const trendData = useMemo(() => {
@@ -449,22 +484,35 @@ const PosReports = () => {
                   <TableRow>
                     <TableHead className="text-xs">Store</TableHead>
                     <TableHead className="text-xs text-right">Orders</TableHead>
+                    <TableHead className="text-xs text-right">Items</TableHead>
                     <TableHead className="text-xs text-right">Sales</TableHead>
                     <TableHead className="text-xs text-right">Share</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {salesByStore.map((s, i) => {
-                    const share = stats.totalSales > 0 ? (s.sales / stats.totalSales) * 100 : 0;
-                    return (
-                      <TableRow key={s.name + i} className="text-xs">
-                        <TableCell className="font-medium text-foreground">{s.name}</TableCell>
-                        <TableCell className="text-right">{s.orders}</TableCell>
-                        <TableCell className="text-right font-semibold">৳{s.sales.toLocaleString()}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">{share.toFixed(1)}%</TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {(() => {
+                    const totalItemSales = salesByStore.reduce((s, x) => s + x.sales, 0) || 1;
+                    return salesByStore.map((s, i) => {
+                      const share = (s.sales / totalItemSales) * 100;
+                      const isPosOnly = s.name.startsWith("POS Only");
+                      return (
+                        <TableRow key={s.name + i} className="text-xs">
+                          <TableCell className="font-medium text-foreground">
+                            {isPosOnly ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <Badge variant="secondary" className="text-[10px]">POS Only</Badge>
+                                <span className="text-muted-foreground">no WooCommerce store</span>
+                              </span>
+                            ) : s.name}
+                          </TableCell>
+                          <TableCell className="text-right">{s.orders}</TableCell>
+                          <TableCell className="text-right">{s.qty}</TableCell>
+                          <TableCell className="text-right font-semibold">৳{s.sales.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">{share.toFixed(1)}%</TableCell>
+                        </TableRow>
+                      );
+                    });
+                  })()}
                 </TableBody>
               </Table>
             </div>
