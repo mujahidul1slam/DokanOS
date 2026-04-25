@@ -77,11 +77,12 @@ const Dashboard = () => {
   const [lowStockProducts, setLowStockProducts] = useState<ProductLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>();
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const { from, days } = getDateRange(datePreset);
+      const { from, to, days } = resolveRange(datePreset, customRange);
       const prevFrom = from && days ? subDays(from, days) : null;
 
       const baseSel =
@@ -93,6 +94,7 @@ const Dashboard = () => {
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
       if (from) curQ = curQ.gte("created_at", from.toISOString());
+      if (to && datePreset === "custom") curQ = curQ.lte("created_at", to.toISOString());
 
       let prevQ = supabase
         .from("orders")
