@@ -484,22 +484,35 @@ const PosReports = () => {
                   <TableRow>
                     <TableHead className="text-xs">Store</TableHead>
                     <TableHead className="text-xs text-right">Orders</TableHead>
+                    <TableHead className="text-xs text-right">Items</TableHead>
                     <TableHead className="text-xs text-right">Sales</TableHead>
                     <TableHead className="text-xs text-right">Share</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {salesByStore.map((s, i) => {
-                    const share = stats.totalSales > 0 ? (s.sales / stats.totalSales) * 100 : 0;
-                    return (
-                      <TableRow key={s.name + i} className="text-xs">
-                        <TableCell className="font-medium text-foreground">{s.name}</TableCell>
-                        <TableCell className="text-right">{s.orders}</TableCell>
-                        <TableCell className="text-right font-semibold">৳{s.sales.toLocaleString()}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">{share.toFixed(1)}%</TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {(() => {
+                    const totalItemSales = salesByStore.reduce((s, x) => s + x.sales, 0) || 1;
+                    return salesByStore.map((s, i) => {
+                      const share = (s.sales / totalItemSales) * 100;
+                      const isPosOnly = s.name.startsWith("POS Only");
+                      return (
+                        <TableRow key={s.name + i} className="text-xs">
+                          <TableCell className="font-medium text-foreground">
+                            {isPosOnly ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <Badge variant="secondary" className="text-[10px]">POS Only</Badge>
+                                <span className="text-muted-foreground">no WooCommerce store</span>
+                              </span>
+                            ) : s.name}
+                          </TableCell>
+                          <TableCell className="text-right">{s.orders}</TableCell>
+                          <TableCell className="text-right">{s.qty}</TableCell>
+                          <TableCell className="text-right font-semibold">৳{s.sales.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">{share.toFixed(1)}%</TableCell>
+                        </TableRow>
+                      );
+                    });
+                  })()}
                 </TableBody>
               </Table>
             </div>
