@@ -397,6 +397,81 @@ const PosReports = () => {
         </div>
       </div>
 
+      {/* Top POS Products + Sales by Store */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-lg border border-border bg-card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-sm font-medium text-card-foreground flex items-center gap-2">
+              <Package className="h-4 w-4 text-muted-foreground" /> Top POS Products
+            </h2>
+            <span className="text-xs text-muted-foreground">By revenue</span>
+          </div>
+          {topProducts.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No POS sales in this period</p>
+          ) : (
+            <div className="space-y-3">
+              {topProducts.map((p, idx) => {
+                const max = topProducts[0].revenue || 1;
+                return (
+                  <div key={p.name + idx}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-card-foreground truncate pr-2">
+                        <span className="text-muted-foreground tabular-nums mr-2">#{idx + 1}</span>
+                        {p.name}
+                      </span>
+                      <span className="text-muted-foreground shrink-0 tabular-nums">
+                        {p.qty} sold · ৳{p.revenue.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full bg-primary/70 rounded-full" style={{ width: `${(p.revenue / max) * 100}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-sm font-medium text-card-foreground flex items-center gap-2">
+              <Store className="h-4 w-4 text-muted-foreground" /> Sales by Store
+            </h2>
+            <span className="text-xs text-muted-foreground">{salesByStore.length} stores</span>
+          </div>
+          {salesByStore.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No sales in this period</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Store</TableHead>
+                    <TableHead className="text-xs text-right">Orders</TableHead>
+                    <TableHead className="text-xs text-right">Sales</TableHead>
+                    <TableHead className="text-xs text-right">Share</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {salesByStore.map((s, i) => {
+                    const share = stats.totalSales > 0 ? (s.sales / stats.totalSales) * 100 : 0;
+                    return (
+                      <TableRow key={s.name + i} className="text-xs">
+                        <TableCell className="font-medium text-foreground">{s.name}</TableCell>
+                        <TableCell className="text-right">{s.orders}</TableCell>
+                        <TableCell className="text-right font-semibold">৳{s.sales.toLocaleString()}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">{share.toFixed(1)}%</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Orders ledger */}
       <div className="rounded-lg border border-border bg-card">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border-b border-border">
