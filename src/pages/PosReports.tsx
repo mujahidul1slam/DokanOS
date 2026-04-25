@@ -152,6 +152,18 @@ const PosReports = () => {
     return m;
   }, [payments]);
 
+  // Per-order payment methods (from order_payments)
+  const methodsByOrder = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const p of payments) {
+      if (!p.method) continue;
+      const arr = m.get(p.order_id) || [];
+      if (!arr.includes(p.method)) arr.push(p.method);
+      m.set(p.order_id, arr);
+    }
+    return m;
+  }, [payments]);
+
   const itemsByOrder = useMemo(() => {
     const m = new Map<string, number>();
     for (const i of items) {
