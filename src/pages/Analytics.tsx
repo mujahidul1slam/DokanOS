@@ -269,7 +269,7 @@ const Analytics = () => {
       .map((v) => ({ name: v.name, orders: v.orders, revenue: v.revenue }));
 
     return { newCustomers: newC, returningCustomers: retC, repeatRate, avgLtv, topCustomers };
-  }, [orders, allCustomerOrders, datePreset]);
+  }, [orders, allCustomerOrders, datePreset, customRange]);
 
   // Inventory health
   const inventoryStats = useMemo(() => {
