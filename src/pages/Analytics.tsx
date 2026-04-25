@@ -240,7 +240,7 @@ const Analytics = () => {
       ltv[key].firstAt = Math.min(ltv[key].firstAt, ts);
     }
 
-    const dateFrom = getDateFrom(datePreset);
+    const { from: dateFrom } = resolveRange(datePreset, customRange);
     const fromTs = dateFrom ? dateFrom.getTime() : 0;
 
     const buyersInPeriod = new Set<string>();
