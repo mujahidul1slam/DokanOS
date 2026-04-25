@@ -109,7 +109,7 @@ const Dashboard = () => {
   const [allOrdersCount, setAllOrdersCount] = useState(0);
   const [lowStockProducts, setLowStockProducts] = useState<ProductLite[]>([]);
   const [loading, setLoading] = useState(true);
-  const [datePreset, setDatePreset] = useState<DatePreset>("30d");
+  const [datePreset, setDatePreset] = useState<DatePreset>("today");
 
   useEffect(() => {
     const load = async () => {
