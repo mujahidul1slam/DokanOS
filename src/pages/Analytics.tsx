@@ -64,9 +64,10 @@ interface ReturnRow {
   created_at: string;
 }
 
-type DatePreset = "7d" | "30d" | "90d" | "year" | "all";
+type DatePreset = "today" | "7d" | "30d" | "90d" | "year" | "all";
 
 const presetLabel: Record<DatePreset, string> = {
+  today: "Today",
   "7d": "Last 7 Days",
   "30d": "Last 30 Days",
   "90d": "Last 90 Days",
@@ -75,7 +76,7 @@ const presetLabel: Record<DatePreset, string> = {
 };
 
 const presetDays: Record<DatePreset, number> = {
-  "7d": 7, "30d": 30, "90d": 90, year: 365, all: 365,
+  today: 1, "7d": 7, "30d": 30, "90d": 90, year: 365, all: 365,
 };
 
 const COLORS = [
@@ -86,6 +87,7 @@ const COLORS = [
 const getDateFrom = (preset: DatePreset): Date | null => {
   const now = new Date();
   switch (preset) {
+    case "today": return startOfDay(now);
     case "7d": return subDays(now, 7);
     case "30d": return subDays(now, 30);
     case "90d": return subDays(now, 90);
@@ -102,7 +104,7 @@ const Analytics = () => {
   const [returns, setReturns] = useState<ReturnRow[]>([]);
   const [allCustomerOrders, setAllCustomerOrders] = useState<{ customer_id: string | null; customer_name: string | null; total: number; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [datePreset, setDatePreset] = useState<DatePreset>("30d");
+  const [datePreset, setDatePreset] = useState<DatePreset>("today");
 
   useEffect(() => {
     const load = async () => {

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import CategoryFilter from "@/components/CategoryFilter";
 import type { Product } from "./types";
+import { useGlobalStockEnabled, getEffectiveStock } from "@/lib/stockSettings";
 
 interface Props {
   products: Product[];
@@ -23,6 +24,7 @@ interface Props {
 const PER_PAGE_OPTIONS = [12, 24, 48, 96];
 
 const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectProduct, onAddCustomItem, searchInputRef }: Props) => {
+  const globalStockEnabled = useGlobalStockEnabled();
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all"); // category id or "all"
   const [sortBy, setSortBy] = useState<"name" | "newest" | "price_asc" | "price_desc" | "popularity">("name");
@@ -43,7 +45,7 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
         return cat ? p.category === cat.name : false;
       });
     }
-    if (hideOutOfStock) list = list.filter((p) => p.stock_quantity > 0);
+    if (hideOutOfStock) list = list.filter((p) => !getEffectiveStock(p, globalStockEnabled).outOfStock);
     if (selectedStore !== "all") list = list.filter((p) => (p as any).store_id === selectedStore);
     if (search) {
       const q = search.trim().toLowerCase();
@@ -93,7 +95,7 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
     nonFeatured.sort(sortFn);
 
     return [...featured, ...nonFeatured];
-  }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore, productCatMap, categories]);
+  }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore, productCatMap, categories, globalStockEnabled]);
 
   // Reset page on filter change
   useMemo(() => { setPage(1); }, [search, activeCategory, sortBy, hideOutOfStock, selectedStore, perPage]);
@@ -227,12 +229,24 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
                 ) : (
                   <Package className="h-10 w-10 text-muted-foreground/40" />
                 )}
-                <Badge
-                  variant={p.stock_quantity > 5 ? "default" : p.stock_quantity > 0 ? "secondary" : "destructive"}
-                  className="absolute top-2 right-2 text-[10px]"
-                >
-                  {p.stock_quantity > 0 ? `${p.stock_quantity} in stock` : "Out"}
-                </Badge>
+                {(() => {
+                  const eff = getEffectiveStock(p, globalStockEnabled);
+                  if (!eff.tracked) {
+                    return (
+                      <Badge variant="default" className="absolute top-2 right-2 text-[10px]">
+                        In stock
+                      </Badge>
+                    );
+                  }
+                  return (
+                    <Badge
+                      variant={eff.quantity > 5 ? "default" : eff.quantity > 0 ? "secondary" : "destructive"}
+                      className="absolute top-2 right-2 text-[10px]"
+                    >
+                      {eff.outOfStock ? "Out" : `${eff.quantity} in stock`}
+                    </Badge>
+                  );
+                })()}
                 {(p as any).is_featured && (
                   <Star className="absolute top-2 left-2 h-4 w-4 text-yellow-400 fill-yellow-400" />
                 )}
