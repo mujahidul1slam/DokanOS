@@ -267,6 +267,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         threshold: 0.4,
         ignoreLocation: true,
         minMatchCharLength: 2,
+        includeScore: true,
       }),
     [searchIndex],
   );
