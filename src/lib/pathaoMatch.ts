@@ -22,7 +22,74 @@ const LOCATION_ALIAS_GROUPS: string[][] = [
   ["gopalgonj", "gopalganj"],
 ];
 
-const normalize = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
+// --- Bangla → Latin transliteration -----------------------------------------
+// Lightweight phonetic transliteration so users typing addresses in Bangla
+// (e.g. "ঢাকা", "মিরপুর", "সেকশন ১০") still match the Pathao English city/
+// zone/area lists. We don't need linguistic perfection — just enough overlap
+// so the existing matcher's prefix / contains / edit-distance checks fire.
+
+const BANGLA_DIGITS: Record<string, string> = {
+  "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4",
+  "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9",
+};
+
+// Order matters: multi-char clusters first so they're consumed before
+// individual characters. Values use common Banglish spellings that align with
+// Pathao's English location names (e.g. "ঢ" → "dh", "চট্টগ্রাম" → "chottogram").
+const BANGLA_MAP: Array<[string, string]> = [
+  // Conjuncts / common clusters
+  ["ক্ষ", "kkh"], ["জ্ঞ", "ggo"], ["ঞ্চ", "nch"], ["ঞ্ছ", "nch"], ["ঞ্জ", "nj"],
+  ["ঙ্ক", "nk"], ["ঙ্গ", "ng"], ["ন্দ", "nd"], ["ন্ধ", "ndh"], ["ন্ত", "nt"],
+  ["ম্প", "mp"], ["ম্ব", "mb"], ["ম্ম", "mm"], ["ত্ত", "tt"], ["দ্দ", "dd"],
+  ["ত্র", "tr"], ["প্র", "pr"], ["ক্র", "kr"], ["গ্র", "gr"], ["ব্র", "br"],
+  ["শ্র", "shr"], ["স্ত", "st"], ["স্থ", "sth"], ["ষ্ট", "sht"], ["ষ্ঠ", "shth"],
+  ["ট্ট", "tt"], ["দ্ব", "dw"], ["চ্চ", "cch"], ["চ্ছ", "chh"], ["জ্জ", "jj"],
+  // Vowels (independent)
+  ["আ", "a"], ["ই", "i"], ["ঈ", "i"], ["উ", "u"], ["ঊ", "u"],
+  ["ঋ", "ri"], ["এ", "e"], ["ঐ", "oi"], ["ও", "o"], ["ঔ", "ou"], ["অ", "o"],
+  // Vowel signs (kar)
+  ["া", "a"], ["ি", "i"], ["ী", "i"], ["ু", "u"], ["ূ", "u"],
+  ["ৃ", "ri"], ["ে", "e"], ["ৈ", "oi"], ["ো", "o"], ["ৌ", "ou"],
+  // Consonants
+  ["ক", "k"], ["খ", "kh"], ["গ", "g"], ["ঘ", "gh"], ["ঙ", "ng"],
+  ["চ", "ch"], ["ছ", "chh"], ["জ", "j"], ["ঝ", "jh"], ["ঞ", "n"],
+  ["ট", "t"], ["ঠ", "th"], ["ড", "d"], ["ঢ", "dh"], ["ণ", "n"],
+  ["ত", "t"], ["থ", "th"], ["দ", "d"], ["ধ", "dh"], ["ন", "n"],
+  ["প", "p"], ["ফ", "ph"], ["ব", "b"], ["ভ", "bh"], ["ম", "m"],
+  ["য", "y"], ["র", "r"], ["ল", "l"], ["শ", "sh"], ["ষ", "sh"],
+  ["স", "s"], ["হ", "h"], ["ড়", "r"], ["ঢ়", "rh"], ["য়", "y"],
+  ["ৎ", "t"], ["ং", "ng"], ["ঃ", "h"], ["ঁ", ""], ["্", ""],
+];
+
+const hasBangla = (v: string) => /[\u0980-\u09FF]/.test(v);
+
+const transliterateBangla = (input: string): string => {
+  if (!hasBangla(input)) return input;
+  let out = "";
+  let i = 0;
+  while (i < input.length) {
+    // Bangla digit?
+    const digit = BANGLA_DIGITS[input[i]];
+    if (digit) { out += digit; i += 1; continue; }
+    // Try multi-char clusters first
+    let matched = false;
+    for (const [src, tgt] of BANGLA_MAP) {
+      if (src.length > 1 && input.startsWith(src, i)) {
+        out += tgt; i += src.length; matched = true; break;
+      }
+    }
+    if (matched) continue;
+    // Single char map
+    const ch = input[i];
+    const single = BANGLA_MAP.find(([s]) => s === ch);
+    if (single) { out += single[1]; i += 1; continue; }
+    out += ch; i += 1;
+  }
+  return out;
+};
+
+const normalize = (v: string) => transliterateBangla(v).toLowerCase().replace(/[^a-z0-9]/g, "");
+
 
 const editDistance = (a: string, b: string): number => {
   if (a.length === 0) return b.length;
@@ -66,19 +133,24 @@ export function buildAddressCandidates(
     seen.add(n);
     out.push(t);
   };
-  for (const value of values) {
-    if (!value) continue;
-    add(value);
-    for (const segment of value.split(/[\n,]/)) {
-      const t = segment.trim();
-      if (!t) continue;
-      add(t);
-      const afterColon = t.includes(":") ? t.split(":").slice(1).join(":").trim() : "";
-      add(afterColon);
-      add(t.replace(/^(?:village|road|house|flat|sector|block|union|upazila|thana|zilla|district|city)\s*:?\s*/i, ""));
-      for (const word of t.split(/\s+/)) {
-        const nw = normalize(word);
-        if (nw.length >= 3 && !LOCATION_WORD_BLACKLIST.has(nw) && !/^\d+$/.test(nw)) add(word);
+  for (const rawValue of values) {
+    if (!rawValue) continue;
+    // Also feed a transliterated copy of the whole address so multi-word
+    // Bangla phrases produce Latin segments after splitting.
+    const variants = hasBangla(rawValue) ? [rawValue, transliterateBangla(rawValue)] : [rawValue];
+    for (const value of variants) {
+      add(value);
+      for (const segment of value.split(/[\n,।]/)) {
+        const t = segment.trim();
+        if (!t) continue;
+        add(t);
+        const afterColon = t.includes(":") ? t.split(":").slice(1).join(":").trim() : "";
+        add(afterColon);
+        add(t.replace(/^(?:village|road|house|flat|sector|block|union|upazila|thana|zilla|district|city)\s*:?\s*/i, ""));
+        for (const word of t.split(/\s+/)) {
+          const nw = normalize(word);
+          if (nw.length >= 3 && !LOCATION_WORD_BLACKLIST.has(nw) && !/^\d+$/.test(nw)) add(word);
+        }
       }
     }
   }
