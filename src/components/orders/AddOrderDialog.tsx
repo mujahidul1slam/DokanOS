@@ -411,7 +411,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         if (filled.length) bits.push(filled.join(", "));
         if (productsAdded) bits.push(`${productsAdded} product${productsAdded === 1 ? "" : "s"}`);
         toast.success(`Filled: ${bits.join(" + ")}`);
-        setAiOpen(false);
+        setAiText("");
       }
     } catch (err: any) {
       toast.error(err?.message || "Failed to parse text");
