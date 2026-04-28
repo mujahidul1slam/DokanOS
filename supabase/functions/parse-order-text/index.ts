@@ -178,12 +178,12 @@ FIELD SPEC:
       );
     }
 
-    // Apply confidence threshold: drop any field below 0.7. Cross-validate
-    // numeric/string values exist in source text where feasible to catch
-    // hallucinations.
+    // Apply confidence threshold: drop any field below 0.7. When text is
+    // provided, also cross-validate values appear in the source to catch
+    // hallucinations. For image-only input we trust the model's confidence.
     const MIN_CONFIDENCE = 0.7;
-    const sourceLower = String(text).toLowerCase();
-    const sourceDigits = String(text).replace(/\D/g, "");
+    const sourceLower = hasText ? String(text).toLowerCase() : "";
+    const sourceDigits = hasText ? String(text).replace(/\D/g, "") : "";
 
     const pick = (
       f: { value: any; confidence: number } | null | undefined,
@@ -191,26 +191,22 @@ FIELD SPEC:
     ) => {
       if (!f || f.value === null || f.value === undefined) return null;
       if (typeof f.confidence !== "number" || f.confidence < MIN_CONFIDENCE) return null;
-      if (validator && !validator(f.value)) return null;
+      if (hasText && validator && !validator(f.value)) return null;
       return f.value;
     };
 
     const phoneCheck = (v: string) => {
       const digits = String(v).replace(/\D/g, "");
-      // require at least 9 contiguous digits of the phone to appear in the source
       if (digits.length < 9) return false;
       return sourceDigits.includes(digits.slice(-9));
     };
 
     const numberCheck = (v: number) => {
-      // require the number to literally appear in the source (avoid invented totals)
       const s = String(Math.round(v));
       return sourceDigits.includes(s) || sourceLower.includes(s);
     };
 
     const stringInSource = (v: string) => {
-      // Accept if any 4+ char token of value appears in source (loose, since
-      // address transliteration may differ). Skip for very short values.
       const tokens = String(v).toLowerCase().split(/[\s,./-]+/).filter((t) => t.length >= 4);
       if (tokens.length === 0) return true;
       return tokens.some((t) => sourceLower.includes(t));
