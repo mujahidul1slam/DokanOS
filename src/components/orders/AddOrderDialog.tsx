@@ -104,7 +104,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [saving, setSaving] = useState(false);
 
   // AI parse-from-text
-  const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
   const [aiParsing, setAiParsing] = useState(false);
 
