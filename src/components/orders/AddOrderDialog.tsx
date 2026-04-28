@@ -267,6 +267,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         threshold: 0.4,
         ignoreLocation: true,
         minMatchCharLength: 2,
+        includeScore: true,
       }),
     [searchIndex],
   );
@@ -415,22 +416,46 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       }
 
       let productsAdded = 0;
+      let productsSkipped = 0;
       const hints: string[] = Array.isArray(p.product_hints) ? p.product_hints : [];
       for (const hint of hints) {
         const q = hint.trim();
-        if (!q) continue;
-        const exact = searchIndex.find((r) => (r.sku || "").toLowerCase() === q.toLowerCase());
-        const match = exact || fuse.search(q)[0]?.item;
-        if (match) { addItem(match); productsAdded += 1; }
+        if (q.length < 2) continue;
+        const qLower = q.toLowerCase();
+
+        // 1. Exact SKU match always wins
+        const exact = searchIndex.find((r) => (r.sku || "").toLowerCase() === qLower);
+        if (exact) { addItem(exact); productsAdded += 1; continue; }
+
+        // 2. Fuzzy match: require a strong score AND a shared meaningful token
+        // between the hint and the matched product name. Fuse score: 0 = perfect, 1 = no match.
+        const top = fuse.search(q)[0];
+        if (!top || (top.score ?? 1) > 0.25) { productsSkipped += 1; continue; }
+
+        const candidateText = `${top.item.name} ${top.item.variationLabel || ""} ${top.item.sku || ""}`.toLowerCase();
+        const hintTokens = qLower.split(/[\s,./-]+/).filter((t) => t.length >= 3);
+        const sharesToken = hintTokens.length === 0
+          ? false
+          : hintTokens.some((t) => candidateText.includes(t));
+
+        if (sharesToken) { addItem(top.item); productsAdded += 1; }
+        else { productsSkipped += 1; }
       }
 
       if (filled.length === 0 && productsAdded === 0) {
-        toast.warning("AI couldn't find any usable info");
+        toast.warning(
+          productsSkipped > 0
+            ? `No matching products found in catalog — add them manually`
+            : "AI couldn't find any usable info"
+        );
       } else {
         const bits: string[] = [];
         if (filled.length) bits.push(filled.join(", "));
         if (productsAdded) bits.push(`${productsAdded} product${productsAdded === 1 ? "" : "s"}`);
         toast.success(`Filled: ${bits.join(" + ")}`);
+        if (productsSkipped > 0) {
+          toast.info(`Skipped ${productsSkipped} unmatched product${productsSkipped === 1 ? "" : "s"} — add manually if needed`);
+        }
         if (payload.text) setAiText("");
       }
     } catch (err: any) {
