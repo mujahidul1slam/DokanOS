@@ -442,12 +442,19 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       }
 
       if (filled.length === 0 && productsAdded === 0) {
-        toast.warning("AI couldn't find any usable info");
+        toast.warning(
+          productsSkipped > 0
+            ? `No matching products found in catalog — add them manually`
+            : "AI couldn't find any usable info"
+        );
       } else {
         const bits: string[] = [];
         if (filled.length) bits.push(filled.join(", "));
         if (productsAdded) bits.push(`${productsAdded} product${productsAdded === 1 ? "" : "s"}`);
         toast.success(`Filled: ${bits.join(" + ")}`);
+        if (productsSkipped > 0) {
+          toast.info(`Skipped ${productsSkipped} unmatched product${productsSkipped === 1 ? "" : "s"} — add manually if needed`);
+        }
         if (payload.text) setAiText("");
       }
     } catch (err: any) {
