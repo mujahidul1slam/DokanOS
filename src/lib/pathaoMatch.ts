@@ -133,19 +133,24 @@ export function buildAddressCandidates(
     seen.add(n);
     out.push(t);
   };
-  for (const value of values) {
-    if (!value) continue;
-    add(value);
-    for (const segment of value.split(/[\n,]/)) {
-      const t = segment.trim();
-      if (!t) continue;
-      add(t);
-      const afterColon = t.includes(":") ? t.split(":").slice(1).join(":").trim() : "";
-      add(afterColon);
-      add(t.replace(/^(?:village|road|house|flat|sector|block|union|upazila|thana|zilla|district|city)\s*:?\s*/i, ""));
-      for (const word of t.split(/\s+/)) {
-        const nw = normalize(word);
-        if (nw.length >= 3 && !LOCATION_WORD_BLACKLIST.has(nw) && !/^\d+$/.test(nw)) add(word);
+  for (const rawValue of values) {
+    if (!rawValue) continue;
+    // Also feed a transliterated copy of the whole address so multi-word
+    // Bangla phrases produce Latin segments after splitting.
+    const variants = hasBangla(rawValue) ? [rawValue, transliterateBangla(rawValue)] : [rawValue];
+    for (const value of variants) {
+      add(value);
+      for (const segment of value.split(/[\n,।]/)) {
+        const t = segment.trim();
+        if (!t) continue;
+        add(t);
+        const afterColon = t.includes(":") ? t.split(":").slice(1).join(":").trim() : "";
+        add(afterColon);
+        add(t.replace(/^(?:village|road|house|flat|sector|block|union|upazila|thana|zilla|district|city)\s*:?\s*/i, ""));
+        for (const word of t.split(/\s+/)) {
+          const nw = normalize(word);
+          if (nw.length >= 3 && !LOCATION_WORD_BLACKLIST.has(nw) && !/^\d+$/.test(nw)) add(word);
+        }
       }
     }
   }
