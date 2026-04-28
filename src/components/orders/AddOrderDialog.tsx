@@ -355,6 +355,70 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setFulfillment("delivery"); setSource("phone"); setShippingCost(0); setDiscount(0);
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
+    setAiText(""); setAiOpen(false);
+  };
+
+  const handleAiParse = async () => {
+    const text = aiText.trim();
+    if (text.length < 5) { toast.error("Paste a longer message to parse"); return; }
+    setAiParsing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("parse-order-text", { body: { text } });
+      if (error) throw error;
+      const p = (data as any)?.parsed;
+      if (!p) { toast.error("Couldn't extract any details"); return; }
+
+      const filled: string[] = [];
+      if (p.name) { setCustomerName(p.name); filled.push("name"); }
+      if (p.phone) {
+        const norm = normalizeBdPhone(p.phone) || p.phone;
+        setCustomerPhone(norm);
+        filled.push("phone");
+      }
+      // Build a single address line from address + area + zone + city so the
+      // existing pathao auto-detect effect can match the location dropdowns.
+      const addrParts = [p.address, p.area, p.zone, p.city].filter(Boolean);
+      if (addrParts.length > 0) { setCustomerAddress(addrParts.join(", ")); filled.push("address"); }
+      if (typeof p.shipping_cost === "number") { setShippingCost(p.shipping_cost); filled.push("shipping"); }
+      if (typeof p.discount === "number") { setDiscount(p.discount); filled.push("discount"); }
+      if (p.notes) {
+        setNotes((prev) => prev ? `${prev}\n${p.notes}` : p.notes);
+        filled.push("notes");
+      }
+      if (typeof p.due_amount === "number") {
+        const dueLine = `Due: ৳${p.due_amount.toLocaleString()}`;
+        setNotes((prev) => prev ? `${prev}\n${dueLine}` : dueLine);
+        filled.push("due");
+      }
+
+      // Match product hints against catalog using existing fuzzy index
+      let productsAdded = 0;
+      const hints: string[] = Array.isArray(p.product_hints) ? p.product_hints : [];
+      for (const hint of hints) {
+        const q = hint.trim();
+        if (!q) continue;
+        const exact = searchIndex.find((r) => (r.sku || "").toLowerCase() === q.toLowerCase());
+        const match = exact || fuse.search(q)[0]?.item;
+        if (match) {
+          addItem(match);
+          productsAdded += 1;
+        }
+      }
+
+      if (filled.length === 0 && productsAdded === 0) {
+        toast.warning("AI couldn't find any usable info in that text");
+      } else {
+        const bits: string[] = [];
+        if (filled.length) bits.push(filled.join(", "));
+        if (productsAdded) bits.push(`${productsAdded} product${productsAdded === 1 ? "" : "s"}`);
+        toast.success(`Filled: ${bits.join(" + ")}`);
+        setAiOpen(false);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to parse text");
+    } finally {
+      setAiParsing(false);
+    }
   };
 
   const handleCreate = async () => {
