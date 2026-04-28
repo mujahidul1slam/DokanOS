@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import Fuse from "fuse.js";
-import { Search, Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
@@ -102,6 +102,11 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [discount, setDiscount] = useState(0);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // AI parse-from-text
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const [aiParsing, setAiParsing] = useState(false);
 
   // Custom measurements
   const [measurementsEnabled, setMeasurementsEnabled] = useState(true);
@@ -350,6 +355,70 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setFulfillment("delivery"); setSource("phone"); setShippingCost(0); setDiscount(0);
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
+    setAiText(""); setAiOpen(false);
+  };
+
+  const handleAiParse = async () => {
+    const text = aiText.trim();
+    if (text.length < 5) { toast.error("Paste a longer message to parse"); return; }
+    setAiParsing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("parse-order-text", { body: { text } });
+      if (error) throw error;
+      const p = (data as any)?.parsed;
+      if (!p) { toast.error("Couldn't extract any details"); return; }
+
+      const filled: string[] = [];
+      if (p.name) { setCustomerName(p.name); filled.push("name"); }
+      if (p.phone) {
+        const norm = normalizeBdPhone(p.phone) || p.phone;
+        setCustomerPhone(norm);
+        filled.push("phone");
+      }
+      // Build a single address line from address + area + zone + city so the
+      // existing pathao auto-detect effect can match the location dropdowns.
+      const addrParts = [p.address, p.area, p.zone, p.city].filter(Boolean);
+      if (addrParts.length > 0) { setCustomerAddress(addrParts.join(", ")); filled.push("address"); }
+      if (typeof p.shipping_cost === "number") { setShippingCost(p.shipping_cost); filled.push("shipping"); }
+      if (typeof p.discount === "number") { setDiscount(p.discount); filled.push("discount"); }
+      if (p.notes) {
+        setNotes((prev) => prev ? `${prev}\n${p.notes}` : p.notes);
+        filled.push("notes");
+      }
+      if (typeof p.due_amount === "number") {
+        const dueLine = `Due: ৳${p.due_amount.toLocaleString()}`;
+        setNotes((prev) => prev ? `${prev}\n${dueLine}` : dueLine);
+        filled.push("due");
+      }
+
+      // Match product hints against catalog using existing fuzzy index
+      let productsAdded = 0;
+      const hints: string[] = Array.isArray(p.product_hints) ? p.product_hints : [];
+      for (const hint of hints) {
+        const q = hint.trim();
+        if (!q) continue;
+        const exact = searchIndex.find((r) => (r.sku || "").toLowerCase() === q.toLowerCase());
+        const match = exact || fuse.search(q)[0]?.item;
+        if (match) {
+          addItem(match);
+          productsAdded += 1;
+        }
+      }
+
+      if (filled.length === 0 && productsAdded === 0) {
+        toast.warning("AI couldn't find any usable info in that text");
+      } else {
+        const bits: string[] = [];
+        if (filled.length) bits.push(filled.join(", "));
+        if (productsAdded) bits.push(`${productsAdded} product${productsAdded === 1 ? "" : "s"}`);
+        toast.success(`Filled: ${bits.join(" + ")}`);
+        setAiOpen(false);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to parse text");
+    } finally {
+      setAiParsing(false);
+    }
   };
 
   const handleCreate = async () => {
@@ -477,6 +546,42 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+          {/* AI parse-from-text */}
+          <div className="rounded-md border border-dashed border-primary/40 bg-primary/5 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">Paste customer message — AI fills the form</span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setAiOpen((v) => !v)}
+              >
+                {aiOpen ? "Hide" : "Open"}
+              </Button>
+            </div>
+            {aiOpen && (
+              <div className="mt-2 space-y-2">
+                <Textarea
+                  value={aiText}
+                  onChange={(e) => setAiText(e.target.value)}
+                  placeholder={"Paste anything — e.g.\nName: Rahim\n01712345678\nHouse 12, Road 5, Mirpur 10, Dhaka\n2pcs blue panjabi size L\nShipping 80, due 1200"}
+                  rows={5}
+                  className="text-sm"
+                />
+                <div className="flex justify-end">
+                  <Button type="button" size="sm" onClick={handleAiParse} disabled={aiParsing || aiText.trim().length < 5}>
+                    {aiParsing ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
+                    Parse with AI
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Product Search */}
           <div>
             <Label className="text-xs font-medium">Search Products</Label>
