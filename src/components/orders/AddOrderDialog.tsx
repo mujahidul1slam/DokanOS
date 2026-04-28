@@ -354,7 +354,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setFulfillment("delivery"); setSource("phone"); setShippingCost(0); setDiscount(0);
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
-    setAiText(""); setAiOpen(false);
+    setAiText("");
   };
 
   const handleAiParse = async () => {
