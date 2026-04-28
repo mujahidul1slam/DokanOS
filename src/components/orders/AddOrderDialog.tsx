@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import Fuse from "fuse.js";
-import { Search, Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { Search, Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
@@ -357,12 +357,38 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setAiText("");
   };
 
-  const handleAiParse = async () => {
-    const text = aiText.trim();
-    if (text.length < 5) { toast.error("Paste a longer message to parse"); return; }
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
+  // Downscale large screenshots before sending to keep the request small.
+  const downscaleImage = async (dataUrl: string, maxDim = 1600): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        if (scale === 1) return resolve(dataUrl);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(dataUrl);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
+  const runAiParse = async (payload: { text?: string; image?: string }) => {
     setAiParsing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("parse-order-text", { body: { text } });
+      const { data, error } = await supabase.functions.invoke("parse-order-text", { body: payload });
       if (error) throw error;
       const p = (data as any)?.parsed;
       if (!p) { toast.error("Couldn't extract any details"); return; }
@@ -374,8 +400,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         setCustomerPhone(norm);
         filled.push("phone");
       }
-      // Build a single address line from address + area + zone + city so the
-      // existing pathao auto-detect effect can match the location dropdowns.
       const addrParts = [p.address, p.area, p.zone, p.city].filter(Boolean);
       if (addrParts.length > 0) { setCustomerAddress(addrParts.join(", ")); filled.push("address"); }
       if (typeof p.shipping_cost === "number") { setShippingCost(p.shipping_cost); filled.push("shipping"); }
@@ -390,7 +414,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         filled.push("due");
       }
 
-      // Match product hints against catalog using existing fuzzy index
       let productsAdded = 0;
       const hints: string[] = Array.isArray(p.product_hints) ? p.product_hints : [];
       for (const hint of hints) {
@@ -398,27 +421,44 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         if (!q) continue;
         const exact = searchIndex.find((r) => (r.sku || "").toLowerCase() === q.toLowerCase());
         const match = exact || fuse.search(q)[0]?.item;
-        if (match) {
-          addItem(match);
-          productsAdded += 1;
-        }
+        if (match) { addItem(match); productsAdded += 1; }
       }
 
       if (filled.length === 0 && productsAdded === 0) {
-        toast.warning("AI couldn't find any usable info in that text");
+        toast.warning("AI couldn't find any usable info");
       } else {
         const bits: string[] = [];
         if (filled.length) bits.push(filled.join(", "));
         if (productsAdded) bits.push(`${productsAdded} product${productsAdded === 1 ? "" : "s"}`);
         toast.success(`Filled: ${bits.join(" + ")}`);
-        setAiText("");
+        if (payload.text) setAiText("");
       }
     } catch (err: any) {
-      toast.error(err?.message || "Failed to parse text");
+      toast.error(err?.message || "Failed to parse");
     } finally {
       setAiParsing(false);
     }
   };
+
+  const handleAiParse = async () => {
+    const text = aiText.trim();
+    if (text.length < 5) { toast.error("Paste a longer message to parse"); return; }
+    await runAiParse({ text });
+  };
+
+  const handleAiParseImage = async (file: File) => {
+    if (!file.type.startsWith("image/")) { toast.error("Please select an image"); return; }
+    if (file.size > 8 * 1024 * 1024) { toast.error("Image too large (max 8MB)"); return; }
+    try {
+      const raw = await fileToDataUrl(file);
+      const image = await downscaleImage(raw);
+      const text = aiText.trim();
+      await runAiParse({ image, text: text.length >= 5 ? text : undefined });
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to read image");
+    }
+  };
+
 
   const handleCreate = async () => {
     if (items.length === 0) { toast.error("Add at least one product"); return; }
@@ -558,7 +598,31 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               rows={4}
               className="text-sm"
             />
-            <div className="flex justify-end">
+            <p className="text-[11px] text-muted-foreground">
+              Tip: you can also upload a screenshot of a Messenger / WhatsApp / Business Suite chat.
+            </p>
+            <div className="flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={aiParsing}
+                onClick={() => document.getElementById("ai-screenshot-input")?.click()}
+              >
+                <ImageIcon className="h-3.5 w-3.5 mr-1.5" />
+                Upload screenshot
+              </Button>
+              <input
+                id="ai-screenshot-input"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleAiParseImage(f);
+                  e.target.value = "";
+                }}
+              />
               <Button type="button" size="sm" onClick={handleAiParse} disabled={aiParsing || aiText.trim().length < 5}>
                 {aiParsing ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
                 Parse with AI
