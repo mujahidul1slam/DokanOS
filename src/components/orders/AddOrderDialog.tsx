@@ -598,7 +598,31 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               rows={4}
               className="text-sm"
             />
-            <div className="flex justify-end">
+            <p className="text-[11px] text-muted-foreground">
+              Tip: you can also upload a screenshot of a Messenger / WhatsApp / Business Suite chat.
+            </p>
+            <div className="flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={aiParsing}
+                onClick={() => document.getElementById("ai-screenshot-input")?.click()}
+              >
+                <ImageIcon className="h-3.5 w-3.5 mr-1.5" />
+                Upload screenshot
+              </Button>
+              <input
+                id="ai-screenshot-input"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleAiParseImage(f);
+                  e.target.value = "";
+                }}
+              />
               <Button type="button" size="sm" onClick={handleAiParse} disabled={aiParsing || aiText.trim().length < 5}>
                 {aiParsing ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
                 Parse with AI
