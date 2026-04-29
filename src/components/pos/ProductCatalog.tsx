@@ -271,7 +271,7 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
       </ScrollArea>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between pt-3 border-t border-border mt-2">
+      <div className="flex items-center justify-between gap-2 pt-2 md:pt-3 border-t border-border mt-2 pb-20 md:pb-0">
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Show</span>
           <Select value={String(perPage)} onValueChange={(v) => setPerPage(Number(v))}>
