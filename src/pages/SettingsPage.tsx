@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { logAction } from "@/lib/auditLog";
+import { SettingsSection, SaveButton } from "@/components/settings/SettingsSection";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
 import OrdersSettingsTab from "@/components/settings/OrdersSettingsTab";
