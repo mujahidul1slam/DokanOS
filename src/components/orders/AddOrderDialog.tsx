@@ -411,6 +411,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
     setAiText("");
+    setStoreId("");
   };
 
   const fileToDataUrl = (file: File) =>
