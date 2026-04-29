@@ -576,7 +576,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           }
         }
 
-        const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: null, p_source: "manual" });
+        const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: storeId || null, p_source: "manual" });
         const orderNumber = (genNum as string) || `ORD-${Date.now().toString(36).toUpperCase()}`;
 
         const paymentStatus =
@@ -594,6 +594,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           customer_phone: normalizedCustomerPhone,
           customer_address: customerAddress || null,
           customer_city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
+          store_id: storeId || null,
           subtotal,
           discount,
           shipping_cost: shippingCost,
@@ -608,7 +609,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
       const orderItemsPayload = items.map(i => ({
         order_id: order.id,
-        product_id: i.productId,
+        product_id: i.isCustomItem || !i.productId ? null : i.productId,
         product_name: i.variationLabel ? `${i.name} - ${i.variationLabel}` : i.name,
         unit_price: i.price,
         quantity: i.qty,
