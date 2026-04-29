@@ -376,6 +376,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setSource(def ? def.name : "phone");
     setShippingCost(0); setShippingTouched(false);
     setDiscount(0);
+    setPaidAmount(0);
+    setPaymentMethod("cash");
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
     setAiText("");
