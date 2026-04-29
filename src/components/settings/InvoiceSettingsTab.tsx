@@ -27,6 +27,8 @@ interface InvoiceSettings {
   invoice_template: InvoiceTemplateConfig;
   pickup_slip_template: PickupSlipTemplateConfig;
   shipping_presets: number[];
+  shipping_inside_dhaka: number;
+  shipping_outside_dhaka: number;
 }
 
 const defaultInvoiceTemplate: InvoiceTemplateConfig = {
@@ -67,6 +69,8 @@ const InvoiceSettingsTab = () => {
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
             pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
             shipping_presets: data.shipping_presets || [80, 150],
+            shipping_inside_dhaka: data.shipping_inside_dhaka ?? 80,
+            shipping_outside_dhaka: data.shipping_outside_dhaka ?? 150,
           });
         }
       });
@@ -122,6 +126,8 @@ const InvoiceSettingsTab = () => {
         invoice_template: settings.invoice_template,
         pickup_slip_template: settings.pickup_slip_template,
         shipping_presets: settings.shipping_presets,
+        shipping_inside_dhaka: settings.shipping_inside_dhaka,
+        shipping_outside_dhaka: settings.shipping_outside_dhaka,
       } as any)
       .eq("id", settings.id);
     setSaving(false);
@@ -350,6 +356,36 @@ const InvoiceSettingsTab = () => {
           <Button variant="outline" size="sm" onClick={() => updatePickupTemplate("custom_fields", [...pickupTpl.custom_fields, { label: "", value: "" }])} className="gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Add Field
           </Button>
+        </div>
+      </div>
+
+      {/* Shipping Cost Defaults */}
+      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <div>
+          <h2 className="font-heading text-lg font-semibold mb-1">Shipping Cost Defaults</h2>
+          <p className="text-sm text-muted-foreground">
+            These costs auto-fill the shipping field when creating an order, based on whether
+            the customer's city is Dhaka or outside. They also appear as one-click quick buttons
+            next to the shipping cost field.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Inside Dhaka (৳)</Label>
+            <Input
+              type="number"
+              value={settings.shipping_inside_dhaka}
+              onChange={(e) => updateField("shipping_inside_dhaka", Number(e.target.value) || 0)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Outside Dhaka (৳)</Label>
+            <Input
+              type="number"
+              value={settings.shipping_outside_dhaka}
+              onChange={(e) => updateField("shipping_outside_dhaka", Number(e.target.value) || 0)}
+            />
+          </div>
         </div>
       </div>
 
