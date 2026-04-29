@@ -50,6 +50,20 @@ import { printMeasurementSlipsBulk } from "@/components/orders/MeasurementSlipPr
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import CategoryFilter from "@/components/CategoryFilter";
 import { useDebounce } from "@/hooks/useDebounce";
+import {
+  usePreOrderCategoryIds,
+  setPreOrderCategoryIds,
+  expandWithDescendants,
+} from "@/lib/preOrderSettings";
+import { Settings as SettingsIcon } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface OrderRow {
   id: string;
