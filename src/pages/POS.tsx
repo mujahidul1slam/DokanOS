@@ -356,7 +356,8 @@ const POS = () => {
     const total = afterDiscount + taxAmount + (cart.fulfillment === "delivery" ? cart.shippingFee : 0);
 
     const storeIdForNum = cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null);
-    const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: storeIdForNum });
+    const { data: genNum, error: genErr } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: storeIdForNum, p_source: "pos" });
+    if (genErr) console.error("generate_pos_order_number failed", genErr);
     const orderNumber = (genNum as string) || `POS-${Date.now().toString(36).toUpperCase()}`;
 
     const normalizedCustomerPhone = normalizeBdPhone(cart.customer?.phone);
