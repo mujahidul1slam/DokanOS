@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Plus, Trash2, GripVertical, Tag, Package, Layers } from "lucide-react";
+import { Plus, Trash2, GripVertical, Tag, Package, Layers, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -108,6 +108,31 @@ const MeasurementsTab = () => {
     }
     setGroups(groups.filter((g) => g.id !== id));
     toast.success("Group deleted");
+  };
+
+  const duplicateGroup = (id: string) => {
+    const src = groups.find((g) => g.id === id);
+    if (!src) return;
+    const copy: Group = {
+      id: `tmp-${crypto.randomUUID()}`,
+      name: `${src.name} (Copy)`,
+      display_format: src.display_format,
+      unit: src.unit,
+      sort_order: groups.length,
+      fields: src.fields.map((f, i) => ({
+        id: `tmp-${crypto.randomUUID()}`,
+        name: f.name,
+        sort_order: i,
+        _isNew: true,
+      })),
+      // Don't copy assignments — duplicate is unassigned by default
+      assignments: [],
+    };
+    const idx = groups.findIndex((g) => g.id === id);
+    const next = [...groups];
+    next.splice(idx + 1, 0, copy);
+    setGroups(next);
+    toast.success("Group duplicated — remember to Save");
   };
 
   const addField = (groupId: string) => {
@@ -281,8 +306,11 @@ const MeasurementsTab = () => {
                     <Label className="text-xs">Unit</Label>
                     <Input value={g.unit} onChange={(e) => updateGroup(g.id, { unit: e.target.value })} className="h-9" placeholder="in" />
                   </div>
-                  <div className="col-span-2 flex justify-end">
-                    <Button variant="ghost" size="icon" onClick={() => deleteGroup(g.id)} className="text-destructive">
+                  <div className="col-span-2 flex justify-end gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => duplicateGroup(g.id)} title="Duplicate group">
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => deleteGroup(g.id)} className="text-destructive" title="Delete group">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
