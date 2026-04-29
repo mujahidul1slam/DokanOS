@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { usePosSound } from "@/hooks/usePosSound";
+import { useIsMobile } from "@/hooks/use-mobile";
 import ProductCatalog from "@/components/pos/ProductCatalog";
 import VariationModal from "@/components/pos/VariationModal";
 import CartPanel from "@/components/pos/CartPanel";
@@ -19,6 +20,10 @@ import { saveOrderItemMeasurements } from "@/lib/measurements";
 import { printMeasurementSlip } from "@/components/orders/MeasurementSlipPrint";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ShoppingCart, X } from "lucide-react";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
