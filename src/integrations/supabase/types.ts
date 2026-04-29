@@ -345,6 +345,8 @@ export type Database = {
           pos_custom_measurements_enabled: boolean
           pos_order_prefix: string
           pos_order_suffix: string
+          shipping_inside_dhaka: number
+          shipping_outside_dhaka: number
           shipping_presets: Json
           tagline: string | null
           terms_text: string | null
@@ -371,6 +373,8 @@ export type Database = {
           pos_custom_measurements_enabled?: boolean
           pos_order_prefix?: string
           pos_order_suffix?: string
+          shipping_inside_dhaka?: number
+          shipping_outside_dhaka?: number
           shipping_presets?: Json
           tagline?: string | null
           terms_text?: string | null
@@ -397,6 +401,8 @@ export type Database = {
           pos_custom_measurements_enabled?: boolean
           pos_order_prefix?: string
           pos_order_suffix?: string
+          shipping_inside_dhaka?: number
+          shipping_outside_dhaka?: number
           shipping_presets?: Json
           tagline?: string | null
           terms_text?: string | null
