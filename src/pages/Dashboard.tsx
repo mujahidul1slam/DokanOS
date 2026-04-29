@@ -32,6 +32,7 @@ import { StatsSkeleton, TableSkeleton } from "@/components/ui/loading-states";
 import { format, subDays } from "date-fns";
 import DatePresetPicker, { DatePreset, presetLabel, resolveRange } from "@/components/DatePresetPicker";
 import type { DateRange } from "react-day-picker";
+import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 
 interface OrderRow {
   id: string;
@@ -65,6 +66,8 @@ interface ProductLite {
   stock_quantity: number;
   price: number;
   cost_price: number | null;
+  manage_stock?: boolean | null;
+  stock_status?: string | null;
 }
 
 
@@ -78,6 +81,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
+  const globalStockEnabled = useGlobalStockEnabled();
 
   useEffect(() => {
     const load = async () => {
@@ -110,7 +114,7 @@ const Dashboard = () => {
       const [curRes, prevRes, productsRes, allCountRes] = await Promise.all([
         curQ,
         prevQ,
-        supabase.from("products").select("id, name, sku, stock_quantity, price, cost_price"),
+        supabase.from("products").select("id, name, sku, stock_quantity, stock_status, manage_stock, price, cost_price"),
         supabase.from("orders").select("id", { count: "exact", head: true }).is("deleted_at", null),
       ]);
 
@@ -136,15 +140,18 @@ const Dashboard = () => {
       setAllOrdersCount(allCountRes.count || 0);
 
       const lowStockList = allProducts
-        .filter((p) => p.stock_quantity > 0 && p.stock_quantity <= 10)
-        .sort((a, b) => a.stock_quantity - b.stock_quantity)
+        .filter((p) => {
+          const stock = getEffectiveStock(p, globalStockEnabled);
+          return stock.tracked && stock.quantity > 0 && stock.quantity <= 10;
+        })
+        .sort((a, b) => getEffectiveStock(a, globalStockEnabled).quantity - getEffectiveStock(b, globalStockEnabled).quantity)
         .slice(0, 12);
       setLowStockProducts(lowStockList);
 
       setLoading(false);
     };
     load();
-  }, [datePreset, customRange]);
+  }, [datePreset, customRange, globalStockEnabled]);
 
   // ============ Aggregations ============
   const productCostMap = useMemo(() => {
@@ -316,8 +323,11 @@ const Dashboard = () => {
     );
   }
 
-  const lowStockCount = products.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= 10).length;
-  const outOfStockCount = products.filter((p) => p.stock_quantity === 0).length;
+  const lowStockCount = products.filter((p) => {
+    const stock = getEffectiveStock(p, globalStockEnabled);
+    return stock.tracked && stock.quantity > 0 && stock.quantity <= 10;
+  }).length;
+  const outOfStockCount = products.filter((p) => getEffectiveStock(p, globalStockEnabled).outOfStock).length;
 
   return (
     <div className="space-y-6">
