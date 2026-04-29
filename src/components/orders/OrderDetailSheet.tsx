@@ -8,6 +8,7 @@ import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { postWooOrderNote } from "@/lib/wooNotes";
 import { usePermissions } from "@/hooks/usePermissions";
+import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -413,10 +414,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       const remaining = Math.max(orderTotal - totalPaid, 0);
       const newPaymentStatus = remaining <= 0.0001 ? "paid" : "partial";
 
-      // Update order: status moves to processing (new order flow), payment status reflects paid/partial,
-      // amount_to_collect carries any remaining due to Pathao dispatch.
+      // Detect pre-order: if any line item belongs to a configured Pre-Order category,
+      // the order goes into the Pre-Order flow instead of the standard New Order flow.
+      const productIds = (items || []).map((i: any) => i.product_id).filter(Boolean);
+      const isPreOrder = await isOrderPreOrderByProducts(productIds);
+      const nextStatus = isPreOrder ? "pre_order_pending" : "processing";
+
+      // Update order: status moves to pre_order_pending (pre-order flow) or processing
+      // (new order flow); payment status reflects paid/partial; amount_to_collect carries
+      // any remaining due to Pathao dispatch.
       await supabase.from("orders").update({
-        status: "processing",
+        status: nextStatus,
         payment_status: newPaymentStatus,
         amount_to_collect: remaining,
       }).eq("id", order.id);
@@ -431,8 +439,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       await addOrderTimeline({
         order_id: order.id,
         event: "status_changed",
-        description: `Status changed from "payment_pending" to "processing" (payment confirmed)`,
-        metadata: { from: "payment_pending", to: "processing" },
+        description: `Status changed from "payment_pending" to "${nextStatus}" (payment confirmed${isPreOrder ? "; pre-order item detected" : ""})`,
+        metadata: { from: "payment_pending", to: nextStatus, pre_order: isPreOrder },
       });
       await addOrderTimeline({
         order_id: order.id,
