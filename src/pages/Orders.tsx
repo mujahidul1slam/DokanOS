@@ -1130,7 +1130,12 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                       {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (
                         <div className="text-xs text-amber-400">Due: ৳{Number(order.amount_to_collect).toLocaleString()}</div>
                       )}
-                      <div className="mt-0.5"><PaymentBadge status={order.payment_status} /></div>
+                      <div className="mt-0.5 flex flex-col items-end gap-0.5">
+                        <PaymentBadge status={order.payment_status} />
+                        {order.payment_method && order.payment_status !== "cod" && (
+                          <span className="text-[11px] text-muted-foreground">{order.payment_method}</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <DeliveryBadge type={order.fulfillment_type} />
