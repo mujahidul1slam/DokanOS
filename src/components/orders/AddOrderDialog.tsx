@@ -672,6 +672,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   };
 
   return (
+    <>
     <ResponsiveDialog
       open={open}
       onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v); }}
