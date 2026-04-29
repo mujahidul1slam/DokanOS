@@ -108,24 +108,24 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
 
   return (
     <div className="flex flex-col h-full min-w-0">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="relative flex-1">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="relative flex-1 min-w-0">
           <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
             ref={searchInputRef as any}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Scan barcode or search products... (F1)"
-            className="pl-11 h-12 text-base bg-secondary border-border"
+            placeholder="Scan or search... (F1)"
+            className="pl-11 h-11 md:h-12 text-base bg-secondary border-border"
             data-barcode-enabled="true"
           />
         </div>
-        <Button onClick={onAddCustomItem} className="h-12 gap-2 px-5 shrink-0">
-          <Plus className="h-4 w-4" /> Custom
+        <Button onClick={onAddCustomItem} className="h-11 md:h-12 gap-1.5 px-3 md:px-5 shrink-0">
+          <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Custom</span>
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
+      <div className="flex items-center gap-2 mb-3 overflow-x-auto scrollbar-none -mx-1 px-1">
         <CategoryFilter
           mode="single"
           categories={categories}
@@ -135,11 +135,11 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
           onChange={setActiveCategory}
           placeholder="All Categories"
           size="sm"
-          className="h-9 w-44 bg-secondary text-sm"
+          className="h-9 w-36 md:w-44 bg-secondary text-sm shrink-0"
         />
 
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
-          <SelectTrigger className="h-9 w-40 bg-secondary text-sm">
+          <SelectTrigger className="h-9 w-32 md:w-40 bg-secondary text-sm shrink-0">
             <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
             <SelectValue />
           </SelectTrigger>
@@ -154,11 +154,11 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5 bg-secondary border-border">
+            <Button variant="outline" size="sm" className="h-9 gap-1.5 bg-secondary border-border shrink-0">
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              Filters
+              <span className="hidden sm:inline">Filters</span>
               {activeFilterCount > 0 && (
-                <Badge className="text-[10px] px-1.5 py-0 ml-1">{activeFilterCount}</Badge>
+                <Badge className="text-[10px] px-1.5 py-0 ml-0.5">{activeFilterCount}</Badge>
               )}
             </Button>
           </DropdownMenuTrigger>
@@ -187,10 +187,11 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {/* Show All toggle — desktop only (mobile uses dropdown) */}
         <Button
           variant={hideOutOfStock ? "default" : "outline"}
           size="sm"
-          className="h-9 gap-1.5 ml-auto"
+          className="h-9 gap-1.5 ml-auto shrink-0 hidden md:inline-flex"
           onClick={() => setHideOutOfStock(!hideOutOfStock)}
         >
           {hideOutOfStock ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -270,11 +271,11 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
       </ScrollArea>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between pt-3 border-t border-border mt-2">
+      <div className="flex items-center justify-between gap-2 pt-2 md:pt-3 border-t border-border mt-2 pb-20 md:pb-0">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Show</span>
+          <span className="text-xs text-muted-foreground hidden md:inline">Show</span>
           <Select value={String(perPage)} onValueChange={(v) => setPerPage(Number(v))}>
-            <SelectTrigger className="h-8 w-20 text-xs bg-secondary">
+            <SelectTrigger className="h-8 w-16 md:w-20 text-xs bg-secondary">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -283,8 +284,8 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground">
-            of {filtered.length} products
+          <span className="text-xs text-muted-foreground truncate">
+            <span className="hidden md:inline">of </span>{filtered.length}<span className="hidden sm:inline"> products</span>
           </span>
         </div>
         <div className="flex items-center gap-1">

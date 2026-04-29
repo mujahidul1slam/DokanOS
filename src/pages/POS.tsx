@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { usePosSound } from "@/hooks/usePosSound";
+import { useIsMobile } from "@/hooks/use-mobile";
 import ProductCatalog from "@/components/pos/ProductCatalog";
 import VariationModal from "@/components/pos/VariationModal";
 import CartPanel from "@/components/pos/CartPanel";
@@ -19,6 +20,10 @@ import { saveOrderItemMeasurements } from "@/lib/measurements";
 import { printMeasurementSlip } from "@/components/orders/MeasurementSlipPrint";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ShoppingCart, X } from "lucide-react";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
@@ -74,6 +79,8 @@ const POS = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [heldCount, setHeldCount] = useState(0);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const { scanBeep, addBeep, errorBeep, successChime } = usePosSound(soundEnabled);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -575,8 +582,32 @@ const POS = () => {
     );
   }
 
+  // Active cart summary for mobile floating bar
+  const activeCart = carts.find((c) => c.id === activeCartId);
+  const mobileCartCount = activeCart?.items.reduce((s, i) => s + i.qty, 0) || 0;
+  const mobileCartTotal = (() => {
+    if (!activeCart) return 0;
+    const sub = activeCart.items.reduce((s, i) => {
+      const lt = i.price * i.qty;
+      const id = i.discountType === "percent" ? lt * (i.discountValue || 0) / 100 : (i.discountValue || 0);
+      return s + lt - id;
+    }, 0);
+    const cd = activeCart.discountType === "percent" ? sub * activeCart.discount / 100 : activeCart.discount;
+    const after = sub - cd;
+    const tax = after * activeCart.taxRate / 100;
+    return after + tax + (activeCart.fulfillment === "delivery" ? activeCart.shippingFee : 0);
+  })();
+
+  // Auto-close mobile cart when items are cleared (e.g. after order completion)
+  useEffect(() => {
+    if (isMobile && mobileCartOpen && mobileCartCount === 0) {
+      setMobileCartOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileCartCount, isMobile]);
+
   return (
-    <div className="flex flex-col h-[calc(100vh-3rem)] -m-6">
+    <div className="flex flex-col h-[calc(100dvh-3rem)] md:h-[calc(100vh-3rem)] -m-4 lg:-m-6 pb-16 lg:pb-0">
       <POSToolbar
         stores={stores}
         selectedStoreId={selectedStoreId}
@@ -596,7 +627,8 @@ const POS = () => {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="lg:w-[60%] w-full p-4 overflow-hidden">
+        {/* Products: full width on mobile, 60% on desktop */}
+        <div className="md:w-[60%] w-full p-3 md:p-4 overflow-hidden">
           <ProductCatalog
             products={products}
             categories={categories}
@@ -607,7 +639,8 @@ const POS = () => {
             searchInputRef={searchInputRef}
           />
         </div>
-        <div className="lg:w-[40%] w-full border-l border-border">
+        {/* Cart: hidden on mobile (opens via sheet), inline on desktop */}
+        <div className="hidden md:block md:w-[40%] border-l border-border">
           <CartPanel
             carts={carts}
             activeCartId={activeCartId}
@@ -623,6 +656,57 @@ const POS = () => {
           />
         </div>
       </div>
+
+      {/* Mobile sticky cart bar */}
+      {isMobile && (
+        <div className="md:hidden fixed bottom-16 inset-x-0 z-40 px-3 pb-2 pt-1 pointer-events-none">
+          <Button
+            onClick={() => setMobileCartOpen(true)}
+            size="lg"
+            className="w-full h-14 shadow-2xl shadow-primary/30 gap-3 pointer-events-auto rounded-xl"
+          >
+            <div className="relative">
+              <ShoppingCart className="h-5 w-5" />
+              {mobileCartCount > 0 && (
+                <Badge className="absolute -top-2 -right-2 h-5 min-w-5 px-1 text-[10px] bg-primary-foreground text-primary border-0 flex items-center justify-center">
+                  {mobileCartCount}
+                </Badge>
+              )}
+            </div>
+            <span className="flex-1 text-left">
+              {mobileCartCount === 0 ? "Cart Empty" : `${mobileCartCount} ${mobileCartCount === 1 ? "item" : "items"}`}
+            </span>
+            <span className="font-heading text-base">৳{mobileCartTotal.toLocaleString()}</span>
+          </Button>
+        </div>
+      )}
+
+      {/* Mobile cart sheet */}
+      <Sheet open={isMobile && mobileCartOpen} onOpenChange={setMobileCartOpen}>
+        <SheetContent side="bottom" className="h-[100dvh] p-0 flex flex-col gap-0 [&>button]:hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-card">
+            <span className="text-sm font-semibold">Cart</span>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setMobileCartOpen(false)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <CartPanel
+              carts={carts}
+              activeCartId={activeCartId}
+              onSetActiveCart={setActiveCartId}
+              onAddCart={addCart}
+              onRemoveCart={removeCart}
+              onUpdateCart={updateCart}
+              onUpdateItem={updateItem}
+              onRemoveItem={removeItem}
+              onCompleteOrder={completeOrder}
+              customers={customers}
+              onSearchCustomers={searchCustomers}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <VariationModal
         product={selectedProduct}
