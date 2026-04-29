@@ -660,7 +660,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         </div>
         <div className="flex items-center gap-2">
           {canWrite && !preOrderMode && (
-            <Button size="sm" onClick={() => setAddOrderOpen(true)}>
+            <Button size="sm" onClick={() => setAddOrderOpen(true)} className="hidden sm:inline-flex">
               <Plus className="h-4 w-4 mr-1" /> Add Order
             </Button>
           )}
