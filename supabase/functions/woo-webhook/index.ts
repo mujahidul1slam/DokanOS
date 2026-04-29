@@ -217,6 +217,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     customer_address: billingAddr,
     customer_city: o.billing?.city || null,
     notes: o.customer_note || null,
+    payment_meta,
   };
 
   const { data: existingOrder } = await supabase
