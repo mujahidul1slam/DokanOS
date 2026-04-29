@@ -624,13 +624,21 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v); }}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Add New Order</DialogTitle>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+    <ResponsiveDialog
+      open={open}
+      onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v); }}
+      title="Add New Order"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
+          <Button onClick={handleCreate} disabled={saving || items.length === 0}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Create Order
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
           {/* AI parse-from-text — always visible */}
           <div className="rounded-md border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
             <div className="flex items-center gap-2">
@@ -932,16 +940,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             <Separator />
             <div className="flex justify-between font-semibold text-base"><span>Total</span><span>৳{total.toLocaleString()}</span></div>
           </div>
-        </div>
-
-        <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
-          <Button onClick={handleCreate} disabled={saving || items.length === 0}>
-            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Create Order
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </ResponsiveDialog>
   );
 }
