@@ -1734,9 +1734,10 @@ export type Database = {
         Args: { p_base: string; p_source: string; p_store_id: string }
         Returns: string
       }
-      generate_pos_order_number:
-        | { Args: { p_store_id?: string }; Returns: string }
-        | { Args: { p_source?: string; p_store_id?: string }; Returns: string }
+      generate_pos_order_number: {
+        Args: { p_source?: string; p_store_id?: string }
+        Returns: string
+      }
       get_user_permissions: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_permission"][]
