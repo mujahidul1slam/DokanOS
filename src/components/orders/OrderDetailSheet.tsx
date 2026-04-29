@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer } from "lucide-react";
+import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
@@ -129,6 +129,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [payAmount, setPayAmount] = useState("");
   const [payTrxId, setPayTrxId] = useState("");
   const [payNotes, setPayNotes] = useState("");
+
+  // Confirm pending payment
+  const [confirmPayMethod, setConfirmPayMethod] = useState("bkash");
+  const [confirmPayAmount, setConfirmPayAmount] = useState("");
+  const [confirmPayTrxId, setConfirmPayTrxId] = useState("");
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
 
   const load = useCallback(async () => {
     if (!orderId) return;
@@ -380,7 +386,80 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     load();
   };
 
-  /* ---------- Process Return ---------- */
+  /* ---------- Confirm pending payment ---------- */
+
+  const confirmPendingPayment = async () => {
+    if (!order) return;
+    const amt = parseFloat(confirmPayAmount);
+    if (!amt || amt <= 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    setConfirmingPayment(true);
+    try {
+      // Insert payment record
+      await supabase.from("order_payments").insert({
+        order_id: order.id,
+        method: confirmPayMethod,
+        amount: amt,
+        trx_id: confirmPayTrxId || null,
+        notes: "Pending payment confirmed",
+      });
+
+      // Compute new totals
+      const previouslyPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+      const totalPaid = previouslyPaid + amt;
+      const orderTotal = Number(order.total) || 0;
+      const remaining = Math.max(orderTotal - totalPaid, 0);
+      const newPaymentStatus = remaining <= 0.0001 ? "paid" : "partial";
+
+      // Update order: payment status + amount_to_collect (carries due to Pathao dispatch)
+      await supabase.from("orders").update({
+        payment_status: newPaymentStatus,
+        amount_to_collect: remaining,
+      }).eq("id", order.id);
+
+      // Timeline (auto-syncs to Woo notes via addOrderTimeline)
+      await addOrderTimeline({
+        order_id: order.id,
+        event: "payment_confirmed",
+        description: `Payment of ৳${amt.toLocaleString()} via ${confirmPayMethod} confirmed${confirmPayTrxId ? ` (TrxID: ${confirmPayTrxId})` : ""}. ${remaining <= 0.0001 ? "Order fully paid." : `৳${remaining.toLocaleString()} due — to be collected on delivery.`}`,
+        metadata: { method: confirmPayMethod, amount: amt, trx_id: confirmPayTrxId || null, total_paid: totalPaid, remaining },
+      });
+      await addOrderTimeline({
+        order_id: order.id,
+        event: "payment_status_changed",
+        description: `Payment status changed from pending_payment to ${newPaymentStatus}`,
+        metadata: { from: "pending_payment", to: newPaymentStatus },
+      });
+
+      // Audit log
+      await logAction("update", "order_payment_confirmed", order.id, {
+        order_number: order.order_number,
+        method: confirmPayMethod,
+        amount: amt,
+        trx_id: confirmPayTrxId || null,
+        new_payment_status: newPaymentStatus,
+        amount_to_collect: remaining,
+      });
+
+      // Push to WooCommerce
+      supabase.functions.invoke("woo-push", {
+        body: { action: "push_order", order_id: order.id },
+      }).catch((e) => console.warn("Woo push failed:", e));
+
+      setConfirmPayAmount("");
+      setConfirmPayTrxId("");
+      toast.success(remaining <= 0.0001 ? "Payment confirmed — order marked Paid" : `Payment confirmed — ৳${remaining.toLocaleString()} due`);
+      onSaved?.();
+      load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to confirm payment");
+    } finally {
+      setConfirmingPayment(false);
+    }
+  };
 
   const handleReturn = async () => {
     if (!order) return;
@@ -498,6 +577,78 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
               {/* ====== Order Info ====== */}
               <TabsContent value="info" className="px-6 py-4 space-y-6 mt-0">
+                {/* Pending payment confirmation panel */}
+                {order?.payment_status === "pending_payment" && canLogPayment && (
+                  <section className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <CircleDot className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold text-amber-400">Payment Awaiting Confirmation</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          This order is on hold pending payment via {order.payment_method || "non-COD method"}. Confirm the amount received — any remaining balance will be set as the COD amount for Pathao dispatch.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Method</Label>
+                        <Select value={confirmPayMethod} onValueChange={setConfirmPayMethod}>
+                          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="bkash">bKash</SelectItem>
+                            <SelectItem value="nagad">Nagad</SelectItem>
+                            <SelectItem value="rocket">Rocket</SelectItem>
+                            <SelectItem value="bank">Bank</SelectItem>
+                            <SelectItem value="card">Card</SelectItem>
+                            <SelectItem value="cash">Cash</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Amount Received (৳)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          inputMode="decimal"
+                          placeholder={String(order.total)}
+                          value={confirmPayAmount}
+                          onChange={(e) => setConfirmPayAmount(e.target.value)}
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Trx ID (optional)</Label>
+                        <Input
+                          value={confirmPayTrxId}
+                          onChange={(e) => setConfirmPayTrxId(e.target.value)}
+                          className="h-9"
+                        />
+                      </div>
+                    </div>
+                    {confirmPayAmount && parseFloat(confirmPayAmount) > 0 && (
+                      <div className="text-xs text-muted-foreground">
+                        {(() => {
+                          const amt = parseFloat(confirmPayAmount);
+                          const prev = payments.reduce((s, p) => s + Number(p.amount), 0);
+                          const remaining = Math.max(Number(order.total) - prev - amt, 0);
+                          return remaining <= 0.0001
+                            ? <span className="text-emerald-400">Order will be marked <strong>Paid</strong>.</span>
+                            : <>৳{remaining.toLocaleString()} will remain due (collected on delivery).</>;
+                        })()}
+                      </div>
+                    )}
+                    <Button
+                      size="sm"
+                      onClick={confirmPendingPayment}
+                      disabled={confirmingPayment || !confirmPayAmount}
+                      className="gap-1.5 bg-amber-500 hover:bg-amber-500/90 text-amber-950"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {confirmingPayment ? "Confirming…" : "Confirm Payment Received"}
+                    </Button>
+                  </section>
+                )}
+
                 {/* Payment & Source Info */}
                 <section>
                   <h3 className="text-sm font-semibold text-foreground mb-3">Payment & Source</h3>
