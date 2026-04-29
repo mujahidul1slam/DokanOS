@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
-import { logAction } from "@/lib/auditLog";
+import { logAction, logChange } from "@/lib/auditLog";
 import {
   fetchPreOrderCategoriesFromDB,
   setPreOrderCategoryIds,
