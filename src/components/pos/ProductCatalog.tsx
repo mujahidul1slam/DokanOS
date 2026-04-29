@@ -108,20 +108,20 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
 
   return (
     <div className="flex flex-col h-full min-w-0">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="relative flex-1">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="relative flex-1 min-w-0">
           <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
             ref={searchInputRef as any}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Scan barcode or search products... (F1)"
-            className="pl-11 h-12 text-base bg-secondary border-border"
+            placeholder="Scan or search... (F1)"
+            className="pl-11 h-11 md:h-12 text-base bg-secondary border-border"
             data-barcode-enabled="true"
           />
         </div>
-        <Button onClick={onAddCustomItem} className="h-12 gap-2 px-5 shrink-0">
-          <Plus className="h-4 w-4" /> Custom
+        <Button onClick={onAddCustomItem} className="h-11 md:h-12 gap-1.5 px-3 md:px-5 shrink-0">
+          <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Custom</span>
         </Button>
       </div>
 
