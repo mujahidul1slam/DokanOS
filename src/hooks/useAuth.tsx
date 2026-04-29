@@ -32,6 +32,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    const stopAuthAutoRefresh = () => {
+      supabase.auth.stopAutoRefresh().catch(() => {});
+    };
+
+    stopAuthAutoRefresh();
+    const stopRefreshTimer = window.setTimeout(stopAuthAutoRefresh, 1000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
@@ -54,7 +61,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      window.clearTimeout(stopRefreshTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
