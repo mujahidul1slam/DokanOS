@@ -144,7 +144,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
       supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled, shipping_inside_dhaka, shipping_outside_dhaka").limit(1).maybeSingle(),
-    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes]) => {
+      supabase.from("stores").select("id, name").order("name"),
+    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes, stRes]) => {
       setProducts(pRes.data || []);
       setVariations((vRes.data || []) as VariationRow[]);
       const srcs = (sRes.data || []) as any[];
@@ -158,6 +159,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       setMeasurementsEnabled(isData?.pos_custom_measurements_enabled !== false);
       if (isData?.shipping_inside_dhaka != null) setShippingInsideDhaka(Number(isData.shipping_inside_dhaka));
       if (isData?.shipping_outside_dhaka != null) setShippingOutsideDhaka(Number(isData.shipping_outside_dhaka));
+      setStores((stRes.data || []) as any[]);
     });
   }, [open]);
 
