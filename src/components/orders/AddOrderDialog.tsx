@@ -906,6 +906,20 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
           <Separator />
 
+          {/* Store */}
+          {stores.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Store</Label>
+              <Select value={storeId || "__none__"} onValueChange={(v) => setStoreId(v === "__none__" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Select store" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No store</SelectItem>
+                  {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Customer & Fulfillment */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
