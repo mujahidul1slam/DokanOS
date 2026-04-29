@@ -20,7 +20,7 @@ import { saveOrderItemMeasurements } from "@/lib/measurements";
 import { printMeasurementSlip } from "@/components/orders/MeasurementSlipPrint";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
-import { useGlobalStockEnabled } from "@/lib/stockSettings";
+import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -185,6 +185,11 @@ const POS = () => {
         setSelectedProduct(product);
         setShowVariationModal(true);
       } else {
+        if (getEffectiveStock(product, globalStockEnabled).outOfStock) {
+          errorBeep();
+          toast({ title: "Out of stock", description: product.name, variant: "destructive" });
+          return;
+        }
         addToCart({
           uid: crypto.randomUUID(),
           productId: product.id,
@@ -199,12 +204,17 @@ const POS = () => {
     } else {
       const { data: varMatch } = await supabase
         .from("product_variations")
-        .select("id, name, price, product_id, barcode")
+        .select("id, name, price, product_id, barcode, stock_quantity, manage_stock, stock_status")
         .eq("barcode", barcode)
         .limit(1);
 
       if (varMatch && varMatch.length > 0) {
         const v = varMatch[0];
+        if (getEffectiveStock(v, globalStockEnabled).outOfStock) {
+          errorBeep();
+          toast({ title: "Out of stock", description: v.name, variant: "destructive" });
+          return;
+        }
         const parentProduct = products.find((p) => p.id === v.product_id);
         addToCart({
           uid: crypto.randomUUID(),
