@@ -186,12 +186,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       productItems: (o.order_items || [])
         .filter((i: any) => i.product_name)
         .map((i: any) => ({ name: i.product_name, qty: i.quantity || 1 })),
-      hasBackorder: (o.order_items || []).some(
-        (i: any) => {
-          const s = (i.products?.stock_status || "").toLowerCase().replace(/[_-\s]/g, "");
-          return s === "onbackorder";
-        }
-      ),
+      isPreOrder: false, // recomputed reactively from category settings
     }));
     setOrders(mapped as OrderRow[]);
 
