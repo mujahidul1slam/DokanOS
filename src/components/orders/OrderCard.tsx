@@ -16,6 +16,7 @@ interface OrderCardProps {
     status: string;
     source: string;
     payment_status: string;
+    payment_method?: string | null;
     consignment_id: string | null;
     tracking_status: string | null;
     fulfillment_type: string;
