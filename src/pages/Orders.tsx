@@ -289,7 +289,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           return true;
       }
     });
-  }, [orders]);
+  }, [orders, preOrderOrderIds]);
 
   // Categories scoped to currently selected store filter
   const scopedCategories = useMemo(() => {
