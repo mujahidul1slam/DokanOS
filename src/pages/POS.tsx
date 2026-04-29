@@ -233,7 +233,7 @@ const POS = () => {
         toast({ title: "Product not found", description: `No match for barcode: ${barcode}`, variant: "destructive" });
       }
     }
-  }, [products, scanBeep, addBeep, errorBeep]));
+  }, [products, scanBeep, addBeep, errorBeep, globalStockEnabled, toast]));
 
   useEffect(() => {
     const load = async () => {
