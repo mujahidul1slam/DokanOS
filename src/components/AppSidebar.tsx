@@ -137,14 +137,6 @@ const AppSidebar = ({ mobileOpen: mobileOpenProp, onMobileOpenChange }: AppSideb
 
   return (
     <>
-      {/* Mobile hamburger */}
-      <button
-        className="fixed left-4 top-4 z-50 lg:hidden rounded-md bg-card border border-border p-2"
-        onClick={() => setMobileOpen(true)}
-      >
-        <Menu className="h-5 w-5 text-foreground" />
-      </button>
-
       {/* Mobile overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden" onClick={() => setMobileOpen(false)} />
