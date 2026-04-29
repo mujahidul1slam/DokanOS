@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { logAction } from "@/lib/auditLog";
+import { logChange } from "@/lib/auditLog";
 import { SettingsSection, SaveButton } from "./SettingsSection";
 
 interface StoreRow {
@@ -30,7 +30,9 @@ const OrdersSettingsTab = () => {
     manual_prefix: "", manual_suffix: "",
     woo_prefix: "", woo_suffix: "",
   });
+  const [originalDefaults, setOriginalDefaults] = useState(defaults);
   const [stores, setStores] = useState<StoreRow[]>([]);
+  const [originalStores, setOriginalStores] = useState<StoreRow[]>([]);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -42,11 +44,13 @@ const OrdersSettingsTab = () => {
       .then(({ data }: any) => {
         if (data) {
           setSettingsId(data.id);
-          setDefaults({
+          const d = {
             pos_prefix: data.pos_order_prefix || "", pos_suffix: data.pos_order_suffix || "",
             manual_prefix: data.manual_order_prefix || "", manual_suffix: data.manual_order_suffix || "",
             woo_prefix: data.woo_order_prefix || "", woo_suffix: data.woo_order_suffix || "",
-          });
+          };
+          setDefaults(d);
+          setOriginalDefaults(d);
         }
       });
 
@@ -54,7 +58,7 @@ const OrdersSettingsTab = () => {
       .from("stores" as any)
       .select("id, name, pos_order_prefix, pos_order_suffix, manual_order_prefix, manual_order_suffix, woo_order_prefix, woo_order_suffix")
       .order("name")
-      .then(({ data }: any) => { if (data) setStores(data as StoreRow[]); });
+      .then(({ data }: any) => { if (data) { setStores(data as StoreRow[]); setOriginalStores(data as StoreRow[]); } });
   }, []);
 
   const handleSave = async () => {
@@ -79,7 +83,12 @@ const OrdersSettingsTab = () => {
 
     setSaving(false);
     if (error) { toast.error("Failed to save"); return; }
-    await logAction("update", "orders_settings", settingsId, { defaults, stores });
+    await logChange("orders_settings", settingsId,
+      { defaults: originalDefaults, stores: originalStores },
+      { defaults, stores },
+    );
+    setOriginalDefaults(defaults);
+    setOriginalStores(stores);
     toast.success("Order number settings saved");
   };
 
