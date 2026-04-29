@@ -249,7 +249,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     return active.filter((o) => {
       switch (tabKey) {
         case "new":
-          return o.status === "processing" && !o.consignment_id && !preOrderOrderIds.has(o.id);
+          return ["processing", "pending"].includes(o.status) && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "ready":
           return o.status === "ready_to_ship" && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "pre_order":
