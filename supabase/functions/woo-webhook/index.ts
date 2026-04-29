@@ -200,7 +200,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     woo_order_id: o.id,
     order_number: (formatted as string) || baseOrderNum,
     source: "online",
-    status: mapWooStatus(o.status),
+    status: mapWooStatus(o.status, o.payment_method || o.payment_method_title || ""),
     payment_method: o.payment_method_title || o.payment_method || null,
     payment_status: derivePaymentStatus(o),
     fulfillment_type: fromWooShipping(o),
@@ -442,9 +442,13 @@ async function resolveOrCreateCustomer(supabase: any, store_id: string, o: any):
   return customerId;
 }
 
-function mapWooStatus(status: string): string {
+function mapWooStatus(status: string, paymentMethod?: string): string {
+  const isCod = (paymentMethod || "").toLowerCase().includes("cod") ||
+                (paymentMethod || "").toLowerCase().includes("cash on delivery");
   const map: Record<string, string> = {
-    pending: "pending", processing: "processing", "on-hold": "pending",
+    pending: "pending",
+    processing: "processing",
+    "on-hold": isCod ? "processing" : "payment_pending",
     completed: "completed", cancelled: "cancelled", refunded: "returned",
     failed: "cancelled", shipped: "shipped",
   };
@@ -453,10 +457,13 @@ function mapWooStatus(status: string): string {
 
 function derivePaymentStatus(o: any): string {
   const method = (o.payment_method || "").toLowerCase();
-  if (method === "cod" || (o.payment_method_title || "").toLowerCase().includes("cash on delivery")) return "cod";
+  const title = (o.payment_method_title || "").toLowerCase();
   const status = (o.status || "").toLowerCase();
-  // WooCommerce "on-hold" for non-COD orders means awaiting payment confirmation (e.g. bKash manual)
-  if (status === "on-hold" || status === "pending") return "pending_payment";
+  const isCod = method === "cod" || title.includes("cash on delivery");
+  if (isCod) return "cod";
+  // Non-COD: on-hold = awaiting confirmation
+  if (status === "on-hold") return "online";
+  if (status === "pending") return "unpaid";
   if (status === "completed" || status === "processing") return "paid";
   return "unpaid";
 }

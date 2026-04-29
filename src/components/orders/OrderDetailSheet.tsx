@@ -413,8 +413,10 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       const remaining = Math.max(orderTotal - totalPaid, 0);
       const newPaymentStatus = remaining <= 0.0001 ? "paid" : "partial";
 
-      // Update order: payment status + amount_to_collect (carries due to Pathao dispatch)
+      // Update order: status moves to processing (new order flow), payment status reflects paid/partial,
+      // amount_to_collect carries any remaining due to Pathao dispatch.
       await supabase.from("orders").update({
+        status: "processing",
         payment_status: newPaymentStatus,
         amount_to_collect: remaining,
       }).eq("id", order.id);
@@ -428,9 +430,15 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       });
       await addOrderTimeline({
         order_id: order.id,
+        event: "status_changed",
+        description: `Status changed from "payment_pending" to "processing" (payment confirmed)`,
+        metadata: { from: "payment_pending", to: "processing" },
+      });
+      await addOrderTimeline({
+        order_id: order.id,
         event: "payment_status_changed",
-        description: `Payment status changed from pending_payment to ${newPaymentStatus}`,
-        metadata: { from: "pending_payment", to: newPaymentStatus },
+        description: `Payment status changed to ${newPaymentStatus}`,
+        metadata: { from: order.payment_status, to: newPaymentStatus },
       });
 
       // Audit log
@@ -578,7 +586,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               {/* ====== Order Info ====== */}
               <TabsContent value="info" className="px-6 py-4 space-y-6 mt-0">
                 {/* Pending payment confirmation panel */}
-                {order?.payment_status === "pending_payment" && canLogPayment && (
+                {order?.status === "payment_pending" && canLogPayment && (
                   <section className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
                     <div className="flex items-start gap-2">
                       <CircleDot className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
@@ -665,7 +673,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="unpaid">Unpaid</SelectItem>
-                          <SelectItem value="pending_payment">Pending Payment</SelectItem>
+                          <SelectItem value="online">Online</SelectItem>
                           <SelectItem value="cod">COD</SelectItem>
                           <SelectItem value="partial">Partial</SelectItem>
                           <SelectItem value="paid">Paid</SelectItem>

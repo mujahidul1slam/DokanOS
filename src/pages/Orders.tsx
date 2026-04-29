@@ -95,7 +95,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 200;
 
-type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
+type TabKey = "all" | "new" | "payment_pending" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
 interface OrdersProps { preOrderMode?: boolean }
 
@@ -249,15 +249,15 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     return active.filter((o) => {
       switch (tabKey) {
         case "new":
-          return ["processing", "pending"].includes(o.status) && !o.consignment_id && !preOrderOrderIds.has(o.id);
+          // New = processing orders not yet dispatched and not pre-order
+          return o.status === "processing" && !o.consignment_id && !preOrderOrderIds.has(o.id);
+        case "payment_pending":
+          // Payment Pending = non-COD orders awaiting payment confirmation, excluding pre-orders
+          return o.status === "payment_pending" && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "ready":
           return o.status === "ready_to_ship" && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "pre_order":
-          // A pre-order is anything sitting in one of the dedicated pre-order
-          // statuses, OR an order containing a product from a configured
-          // Pre-Order category that hasn't been dispatched yet. Once
-          // dispatched (consignment exists) it leaves the pre-order tab and
-          // rejoins the courier flow.
+          // Pre-order tab also catches payment_pending orders that contain pre-order items
           return (
             ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
             (preOrderOrderIds.has(o.id) && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
@@ -376,6 +376,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const counts = useMemo(() => ({
     all: orders.filter((o) => !o.deleted_at).length,
     new: getTabOrders("new").length,
+    payment_pending: getTabOrders("payment_pending").length,
     ready: getTabOrders("ready").length,
     pre_order: getTabOrders("pre_order").length,
     pickup_pending: getTabOrders("pickup_pending").length,
@@ -821,6 +822,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           const tabItems: { key: TabKey; label: string; icon: any; count: number }[] = [
             { key: "all", label: "All", icon: ShoppingCart, count: counts.all },
             { key: "new", label: "New", icon: Package, count: counts.new },
+            { key: "payment_pending", label: "Payment Pending", icon: CreditCard, count: counts.payment_pending },
             { key: "pre_order", label: "Pre-Order", icon: Hourglass, count: counts.pre_order },
             { key: "ready", label: "Ready", icon: PackageCheck, count: counts.ready },
             { key: "pickup_pending", label: "Pickup", icon: Clock, count: counts.pickup_pending },
@@ -920,6 +922,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="processing">New Order</SelectItem>
+                    <SelectItem value="payment_pending">Payment Pending</SelectItem>
                     <SelectItem value="pre_order_pending">Pre-Order</SelectItem>
                     <SelectItem value="pre_order_making">Making</SelectItem>
                     <SelectItem value="pre_order_ready">Pre-Order Ready</SelectItem>
@@ -946,6 +949,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                 <SelectContent>
                   <SelectItem value="all">All Payment</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="online">Online</SelectItem>
                   <SelectItem value="unpaid">Unpaid</SelectItem>
                   <SelectItem value="cod">COD</SelectItem>
                   <SelectItem value="partial">Partial</SelectItem>
@@ -1260,6 +1264,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
   const configs: Record<TabKey, { icon: any; text: string }> = {
     all: { icon: ShoppingCart, text: "No orders found" },
     new: { icon: Package, text: "No new orders to process" },
+    payment_pending: { icon: CreditCard, text: "No orders awaiting payment confirmation" },
     ready: { icon: PackageCheck, text: "No orders ready to ship — mark orders as Ready from the New Orders tab" },
     pre_order: { icon: Hourglass, text: "No pre-orders — orders containing products from configured Pre-Order categories will appear here" },
     pickup_pending: { icon: Clock, text: "No orders waiting for pickup" },
