@@ -463,7 +463,71 @@ const ProductList = () => {
         </Select>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border">
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-2">
+        {paginated.length === 0 && (
+          <div className="rounded-lg border border-border p-6 text-center text-sm text-muted-foreground">No products found.</div>
+        )}
+        {paginated.map(p => (
+          <div
+            key={p.id}
+            onClick={() => openEdit(p.id)}
+            className={`rounded-lg border border-border bg-card p-3 active:bg-accent/50 transition-colors ${selected.has(p.id) ? "border-primary bg-primary/5" : ""}`}
+          >
+            <div className="flex items-start gap-3">
+              <div onClick={e => e.stopPropagation()} className="pt-1">
+                <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleOne(p.id)} className="h-5 w-5" />
+              </div>
+              <div className="h-12 w-12 rounded-md bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                {p.image_url ? (
+                  <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
+                ) : (
+                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-medium text-foreground truncate flex items-center gap-1.5">
+                    {p.name}
+                    {p.is_featured && <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 shrink-0" />}
+                  </div>
+                  <div className="font-semibold text-foreground whitespace-nowrap">৳{Number(p.price).toLocaleString()}</div>
+                </div>
+                <div className="text-[11px] font-mono text-muted-foreground">{p.sku || "—"} · {p.storeName}</div>
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    {stockBadge(p.stock_status)}
+                    <span className="text-xs text-muted-foreground">Qty: {p.manage_stock ? p.stock_quantity : "∞"}</span>
+                  </div>
+                  <div onClick={e => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(p.id)}><Pencil className="h-3.5 w-3.5 mr-2" /> Edit</DropdownMenuItem>
+                        <DropdownMenuItem onClick={async () => {
+                          await supabase.from("products").update({ is_featured: !p.is_featured }).eq("id", p.id);
+                          toast({ title: p.is_featured ? "Removed from featured" : "Marked as featured" });
+                          loadProducts();
+                        }}>
+                          <Star className={`h-3.5 w-3.5 mr-2 ${p.is_featured ? "fill-yellow-400 text-yellow-400" : ""}`} />
+                          {p.is_featured ? "Unmark Featured" : "Mark Featured"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(p.id)}><Trash2 className="h-3.5 w-3.5 mr-2" /> Delete</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-secondary">
