@@ -97,6 +97,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [fulfillment, setFulfillment] = useState<"walkin" | "pickup" | "delivery">("delivery");
   const [source, setSource] = useState("phone");
   const [sources, setSources] = useState<{ id: string; name: string; is_default?: boolean }[]>([]);
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [storeId, setStoreId] = useState<string>("");
+
+  // Custom item dialog
+  const [customItemOpen, setCustomItemOpen] = useState(false);
+  const [customItemName, setCustomItemName] = useState("");
+  const [customItemPrice, setCustomItemPrice] = useState("");
+  const [customItemQty, setCustomItemQty] = useState("1");
   const [shippingCost, setShippingCost] = useState(0);
   const [shippingInsideDhaka, setShippingInsideDhaka] = useState(80);
   const [shippingOutsideDhaka, setShippingOutsideDhaka] = useState(150);
