@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 const KEY = "omnisync-global-stock";
+const DB_KEY = "global_stock_enabled";
+const EVENT = "omnisync-global-stock-change";
 
 export const getGlobalStockEnabled = (): boolean => {
   const v = localStorage.getItem(KEY);
@@ -9,15 +12,47 @@ export const getGlobalStockEnabled = (): boolean => {
   return v === "true";
 };
 
-export const setGlobalStockEnabled = (enabled: boolean) => {
+const writeLocal = (enabled: boolean) => {
   localStorage.setItem(KEY, String(enabled));
-  window.dispatchEvent(new CustomEvent("omnisync-global-stock-change", { detail: enabled }));
+  window.dispatchEvent(new CustomEvent(EVENT, { detail: enabled }));
+};
+
+export const setGlobalStockEnabled = async (enabled: boolean) => {
+  writeLocal(enabled);
+  // Persist to DB so it survives cache clears and syncs across devices
+  try {
+    await supabase
+      .from("app_settings" as any)
+      .upsert({ key: DB_KEY, value: { enabled } }, { onConflict: "key" });
+  } catch (e) {
+    console.warn("Failed to persist global stock setting to DB", e);
+  }
+};
+
+/** Hydrate from DB once on app load, overriding any stale local value. */
+let hydrated = false;
+export const hydrateGlobalStockFromDB = async () => {
+  if (hydrated) return;
+  hydrated = true;
+  try {
+    const { data } = await supabase
+      .from("app_settings" as any)
+      .select("value")
+      .eq("key", DB_KEY)
+      .maybeSingle();
+    if (data && (data as any).value && typeof (data as any).value.enabled === "boolean") {
+      writeLocal((data as any).value.enabled);
+    }
+  } catch (e) {
+    // ignore — fall back to local cache
+  }
 };
 
 /** React hook that reflects current global stock toggle. */
 export const useGlobalStockEnabled = (): boolean => {
   const [enabled, setEnabled] = useState<boolean>(() => getGlobalStockEnabled());
   useEffect(() => {
+    hydrateGlobalStockFromDB();
     const onChange = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       setEnabled(typeof detail === "boolean" ? detail : getGlobalStockEnabled());
