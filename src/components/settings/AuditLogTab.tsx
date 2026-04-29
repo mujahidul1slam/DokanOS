@@ -271,13 +271,13 @@ export default function AuditLogTab() {
                       </TableCell>
                     </TableRow>
                     {isOpen && hasDetail && (
-                      <TableRow key={entry.id + "-detail"} className="bg-muted/20 hover:bg-muted/20">
+                      <TableRow className="bg-muted/20 hover:bg-muted/20">
                         <TableCell colSpan={6} className="p-0">
                           <DiffPanel entry={entry} changes={changes} />
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </TableBody>
