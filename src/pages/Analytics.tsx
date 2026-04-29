@@ -21,6 +21,7 @@ import CustomerInsights from "@/components/analytics/CustomerInsights";
 import InventoryHealth from "@/components/analytics/InventoryHealth";
 import GeoBreakdown from "@/components/analytics/GeoBreakdown";
 import OperationalMetrics from "@/components/analytics/OperationalMetrics";
+import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 
 interface OrderRow {
   id: string;
@@ -56,6 +57,7 @@ interface ProductRow {
   cost_price: number | null;
   stock_quantity: number;
   stock_status: string;
+  manage_stock?: boolean | null;
   sales_count: number;
   updated_at: string;
 }
@@ -80,6 +82,7 @@ const Analytics = () => {
   const [loading, setLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
+  const globalStockEnabled = useGlobalStockEnabled();
 
   useEffect(() => {
     const load = async () => {
@@ -111,7 +114,7 @@ const Analytics = () => {
       const [ordersRes, prevRes, productsRes, returnsRes, allCustRes] = await Promise.all([
         ordersQuery,
         prevQuery,
-        supabase.from("products").select("id, name, price, cost_price, stock_quantity, stock_status, sales_count, updated_at"),
+        supabase.from("products").select("id, name, price, cost_price, stock_quantity, stock_status, manage_stock, sales_count, updated_at"),
         returnsQuery,
         supabase.from("orders").select("customer_id, customer_name, total, created_at").is("deleted_at", null),
       ]);
@@ -274,15 +277,24 @@ const Analytics = () => {
   // Inventory health
   const inventoryStats = useMemo(() => {
     const totalSkus = products.length;
-    const lowStock = products.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= 5).length;
-    const outOfStock = products.filter((p) => p.stock_quantity === 0 || p.stock_status === "outofstock").length;
-    const inventoryValue = products.reduce((s, p) => s + Number(p.cost_price || p.price || 0) * p.stock_quantity, 0);
+    const lowStock = products.filter((p) => {
+      const stock = getEffectiveStock(p, globalStockEnabled);
+      return stock.tracked && stock.quantity > 0 && stock.quantity <= 5;
+    }).length;
+    const outOfStock = products.filter((p) => getEffectiveStock(p, globalStockEnabled).outOfStock).length;
+    const inventoryValue = products.reduce((s, p) => {
+      const stock = getEffectiveStock(p, globalStockEnabled);
+      return s + (stock.tracked ? Number(p.cost_price || p.price || 0) * stock.quantity : 0);
+    }, 0);
 
     const soldProductIds = new Set(orderItems.map((i) => i.product_id).filter(Boolean));
     const cutoff = subDays(new Date(), 60).getTime();
     const slowMovers = products
-      .filter((p) => p.stock_quantity > 0 && !soldProductIds.has(p.id) && new Date(p.updated_at).getTime() < cutoff)
-      .sort((a, b) => b.stock_quantity - a.stock_quantity);
+      .filter((p) => {
+        const stock = getEffectiveStock(p, globalStockEnabled);
+        return stock.tracked && stock.quantity > 0 && !soldProductIds.has(p.id) && new Date(p.updated_at).getTime() < cutoff;
+      })
+      .sort((a, b) => getEffectiveStock(b, globalStockEnabled).quantity - getEffectiveStock(a, globalStockEnabled).quantity);
 
     const deadStock = slowMovers.length;
 
@@ -291,9 +303,9 @@ const Analytics = () => {
 
     return {
       totalSkus, lowStock, outOfStock, deadStock, inventoryValue, turnoverRatio,
-      topSlowMovers: slowMovers.slice(0, 5).map((p) => ({ name: p.name, stock: p.stock_quantity, lastSold: null })),
+      topSlowMovers: slowMovers.slice(0, 5).map((p) => ({ name: p.name, stock: getEffectiveStock(p, globalStockEnabled).quantity, lastSold: null })),
     };
-  }, [products, orderItems, stats.totalCost]);
+  }, [products, orderItems, stats.totalCost, globalStockEnabled]);
 
   // Operational metrics
   const opMetrics = useMemo(() => {
