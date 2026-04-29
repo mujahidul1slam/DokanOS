@@ -105,7 +105,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const canWrite = role === "admin" || role === "staff";
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [orderCategoryMap, setOrderCategoryMap] = useState<Map<string, Set<string>>>(new Map());
-  const [allCategories, setAllCategories] = useState<{ id: string; name: string; store_id: string | null }[]>([]);
+  const [allCategories, setAllCategories] = useState<{ id: string; name: string; parent_id: string | null; store_id: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -218,7 +218,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const loadStores = useCallback(async () => {
     const [{ data: storeData }, { data: catData }] = await Promise.all([
       supabase.from("stores").select("id, name").order("name"),
-      supabase.from("categories").select("id, name, store_id").order("name"),
+      supabase.from("categories").select("id, name, parent_id, store_id").order("name"),
     ]);
     setStores(storeData || []);
     setAllCategories((catData || []) as any);
