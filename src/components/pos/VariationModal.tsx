@@ -35,6 +35,7 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
   const [variations, setVariations] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedVar, setSelectedVar] = useState<Variation | null>(null);
+  const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>({});
   const [customTailoring, setCustomTailoring] = useState(false);
   const [qty, setQty] = useState(1);
   const globalStockEnabled = useGlobalStockEnabled();
@@ -49,6 +50,7 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
   useEffect(() => {
     if (!product || !open) return;
     setSelectedVar(null);
+    setSelectedAttrs({});
     setCustomTailoring(false);
     setQty(1);
     setGroupValues({});
@@ -145,13 +147,31 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {attrGroups[key].map((opt) => {
-                    const isSelected = selectedVar && opt.variations.some((v) => v.id === selectedVar.id);
+                    const isSelected = selectedAttrs[key] === opt.value;
                     return (
                       <button
                         key={opt.value}
                         onClick={() => {
-                          const match = opt.variations[0];
-                          setSelectedVar(selectedVar?.id === match.id ? null : match);
+                          const nextAttrs = { ...selectedAttrs };
+                          if (isSelected) {
+                            delete nextAttrs[key];
+                          } else {
+                            nextAttrs[key] = opt.value;
+                          }
+                          setSelectedAttrs(nextAttrs);
+                          // Resolve variation only when every attribute key has a selection
+                          const allChosen = attrKeys.every((k) => nextAttrs[k]);
+                          if (allChosen) {
+                            const match = variations.find((v) => {
+                              const parsed = parseAttributes(v.attributes);
+                              return attrKeys.every((k) =>
+                                parsed.some((p) => p.key === k && p.value === nextAttrs[k])
+                              );
+                            });
+                            setSelectedVar(match || null);
+                          } else {
+                            setSelectedVar(null);
+                          }
                         }}
                         className={`rounded-md border px-3 py-2 text-sm transition-colors ${
                           isSelected
