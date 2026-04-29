@@ -750,7 +750,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
           {/* Product Search */}
           <div>
-            <Label className="text-xs font-medium">Search Products</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium">Search Products</Label>
+              <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setCustomItemOpen(true)}>
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add custom item
+              </Button>
+            </div>
             <div className="relative mt-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Search by name, SKU, or variation..." className="pl-9" />
