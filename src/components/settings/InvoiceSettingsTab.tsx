@@ -27,6 +27,8 @@ interface InvoiceSettings {
   invoice_template: InvoiceTemplateConfig;
   pickup_slip_template: PickupSlipTemplateConfig;
   shipping_presets: number[];
+  shipping_inside_dhaka: number;
+  shipping_outside_dhaka: number;
 }
 
 const defaultInvoiceTemplate: InvoiceTemplateConfig = {
@@ -67,6 +69,8 @@ const InvoiceSettingsTab = () => {
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
             pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
             shipping_presets: data.shipping_presets || [80, 150],
+            shipping_inside_dhaka: data.shipping_inside_dhaka ?? 80,
+            shipping_outside_dhaka: data.shipping_outside_dhaka ?? 150,
           });
         }
       });
@@ -122,6 +126,8 @@ const InvoiceSettingsTab = () => {
         invoice_template: settings.invoice_template,
         pickup_slip_template: settings.pickup_slip_template,
         shipping_presets: settings.shipping_presets,
+        shipping_inside_dhaka: settings.shipping_inside_dhaka,
+        shipping_outside_dhaka: settings.shipping_outside_dhaka,
       } as any)
       .eq("id", settings.id);
     setSaving(false);
