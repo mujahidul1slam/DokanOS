@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
-import { logAction } from "@/lib/auditLog";
+import { logChange } from "@/lib/auditLog";
 import {
   fetchPreOrderCategoriesFromDB,
   setPreOrderCategoryIds,
@@ -68,6 +68,7 @@ const PreOrderCategoriesDialog = ({ open, onOpenChange }: Props) => {
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [originalIds, setOriginalIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -83,7 +84,9 @@ const PreOrderCategoriesDialog = ({ open, onOpenChange }: Props) => {
       setCategories((cats || []) as CategoryRow[]);
       setStores((sts || []) as StoreRow[]);
       const dbIds = await fetchPreOrderCategoriesFromDB();
-      setSelected(new Set(dbIds || []));
+      const ids = dbIds || [];
+      setSelected(new Set(ids));
+      setOriginalIds(ids);
       setLoading(false);
     })();
   }, [open]);
@@ -121,7 +124,14 @@ const PreOrderCategoriesDialog = ({ open, onOpenChange }: Props) => {
     const ids = Array.from(selected);
     try {
       await setPreOrderCategoryIds(ids);
-      logAction("update", "settings_preorder_categories", undefined, { count: ids.length });
+      // Resolve names for readable diff
+      const nameMap = new Map(categories.map((c) => [c.id, c.name]));
+      const beforeNames = originalIds.map((id) => nameMap.get(id) || id).sort();
+      const afterNames = ids.map((id) => nameMap.get(id) || id).sort();
+      await logChange("settings_preorder_categories", undefined,
+        { categories: beforeNames, count: originalIds.length },
+        { categories: afterNames, count: ids.length },
+      );
       toast.success("Pre-Order categories saved");
       onOpenChange(false);
     } catch {

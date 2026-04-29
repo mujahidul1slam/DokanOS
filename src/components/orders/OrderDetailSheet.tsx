@@ -267,7 +267,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           description: `Status changed from "${order.status}" to "${status}"`,
           metadata: { from: order.status, to: status },
         });
-        await logAction("update", "order_status", order.id, { from: order.status, to: status, order_number: order.order_number });
+        await logAction("update", "order_status", order.id, { order_number: order.order_number, changes: { status: { from: order.status, to: status } }, before: { status: order.status }, after: { status } });
       }
 
       if (paymentStatus !== order.payment_status) {
@@ -277,7 +277,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           description: `Payment status changed from "${order.payment_status}" to "${paymentStatus}"`,
           metadata: { from: order.payment_status, to: paymentStatus },
         });
-        await logAction("update", "order_payment_status", order.id, { from: order.payment_status, to: paymentStatus, order_number: order.order_number });
+        await logAction("update", "order_payment_status", order.id, { order_number: order.order_number, changes: { payment_status: { from: order.payment_status, to: paymentStatus } }, before: { payment_status: order.payment_status }, after: { payment_status: paymentStatus } });
       }
 
       // Customer info changes
@@ -331,9 +331,32 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         });
       }
 
-      await logAction("update", "order", order.id, {
-        order_number: order.order_number, total: computedTotal, discount, shipping_cost: shippingCost,
-      });
+      {
+        const beforeOrder = {
+          customer_name: order.customer_name || "",
+          customer_phone: order.customer_phone || "",
+          customer_email: order.customer_email || "",
+          customer_address: order.customer_address || "",
+          discount: Number(order.discount || 0),
+          shipping_cost: Number(order.shipping_cost || 0),
+          fulfillment_type: order.fulfillment_type || "delivery",
+          notes: order.notes || "",
+          total: Number(order.total || 0),
+        };
+        const afterOrder = {
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          customer_email: customerEmail,
+          customer_address: customerAddress,
+          discount,
+          shipping_cost: shippingCost,
+          fulfillment_type: fulfillmentType,
+          notes,
+          total: computedTotal,
+        };
+        const { logChange } = await import("@/lib/auditLog");
+        await logChange("order", order.id, beforeOrder, afterOrder, { order_number: order.order_number });
+      }
 
       // Push status/notes change to WooCommerce if linked
       if (order.id) {

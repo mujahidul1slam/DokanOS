@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Upload, X, FileText } from "lucide-react";
-import { logAction } from "@/lib/auditLog";
+import { logChange } from "@/lib/auditLog";
 import { SettingsSection, SaveButton } from "./SettingsSection";
 
 interface BusinessProfile {
@@ -21,6 +21,7 @@ interface BusinessProfile {
 
 export default function BusinessProfileTab() {
   const [data, setData] = useState<BusinessProfile | null>(null);
+  const [original, setOriginal] = useState<BusinessProfile | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -32,7 +33,7 @@ export default function BusinessProfileTab() {
       .limit(1)
       .single()
       .then(({ data: row }: any) => {
-        if (row) setData(row);
+        if (row) { setData(row); setOriginal(row); }
       });
   }, []);
 
@@ -73,11 +74,11 @@ export default function BusinessProfileTab() {
       .eq("id", data.id);
     setSaving(false);
     if (error) { toast.error("Failed to save"); return; }
-    await logAction("update", "business_profile", data.id, {
-      business_name: data.business_name,
-      phone: data.phone,
-      email: data.email,
-    });
+    await logChange("business_profile", data.id,
+      original ? { business_name: original.business_name, tagline: original.tagline, address: original.address, phone: original.phone, email: original.email, logo_url: original.logo_url } : null,
+      { business_name: data.business_name, tagline: data.tagline, address: data.address, phone: data.phone, email: data.email, logo_url: data.logo_url },
+    );
+    setOriginal(data);
     toast.success("Business profile saved");
   };
 

@@ -5,11 +5,12 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
-import { logAction } from "@/lib/auditLog";
+import { logChange } from "@/lib/auditLog";
 import { SettingsSection, SaveButton } from "./SettingsSection";
 
 const PosSettingsTab = () => {
   const [shippingPresets, setShippingPresets] = useState<number[]>([80, 150]);
+  const [originalPresets, setOriginalPresets] = useState<number[]>([80, 150]);
   const [saving, setSaving] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
 
@@ -22,7 +23,9 @@ const PosSettingsTab = () => {
       .then(({ data }: any) => {
         if (data) {
           setSettingsId(data.id);
-          setShippingPresets(data.shipping_presets || [80, 150]);
+          const p = data.shipping_presets || [80, 150];
+          setShippingPresets(p);
+          setOriginalPresets(p);
         }
       });
   }, []);
@@ -37,7 +40,11 @@ const PosSettingsTab = () => {
 
     setSaving(false);
     if (error) { toast.error("Failed to save"); return; }
-    await logAction("update", "pos_settings", settingsId, { shipping_presets: shippingPresets });
+    await logChange("pos_settings", settingsId,
+      { shipping_presets: originalPresets },
+      { shipping_presets: shippingPresets },
+    );
+    setOriginalPresets(shippingPresets);
     toast.success("POS settings saved");
   };
 

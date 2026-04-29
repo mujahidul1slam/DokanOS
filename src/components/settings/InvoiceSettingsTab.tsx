@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Upload, X, FileText, Plus, Trash2 } from "lucide-react";
-import { logAction } from "@/lib/auditLog";
+import { logChange } from "@/lib/auditLog";
 import type { InvoiceTemplateConfig, PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
 
 interface InvoiceSettings {
@@ -51,6 +51,7 @@ const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
 
 const InvoiceSettingsTab = () => {
   const [settings, setSettings] = useState<InvoiceSettings | null>(null);
+  const [original, setOriginal] = useState<InvoiceSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,7 +64,7 @@ const InvoiceSettingsTab = () => {
       .single()
       .then(({ data }: any) => {
         if (data) {
-          setSettings({
+          const merged: InvoiceSettings = {
             ...data,
             pickup_slip_print_format: data.pickup_slip_print_format || "thermal",
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
@@ -71,7 +72,9 @@ const InvoiceSettingsTab = () => {
             shipping_presets: data.shipping_presets || [80, 150],
             shipping_inside_dhaka: data.shipping_inside_dhaka ?? 80,
             shipping_outside_dhaka: data.shipping_outside_dhaka ?? 150,
-          });
+          };
+          setSettings(merged);
+          setOriginal(merged);
         }
       });
   }, []);
@@ -132,10 +135,19 @@ const InvoiceSettingsTab = () => {
       .eq("id", settings.id);
     setSaving(false);
     if (error) { toast.error("Failed to save"); return; }
-    await logAction("update", "invoice_settings", settings.id, {
-      default_print_format: settings.default_print_format,
-      pickup_slip_print_format: settings.pickup_slip_print_format,
-    });
+    const trackedKeys: (keyof InvoiceSettings)[] = [
+      "business_name", "tagline", "address", "phone", "email", "logo_url", "footer_text", "terms_text",
+      "default_print_format", "pickup_slip_print_format", "invoice_template", "pickup_slip_template",
+      "shipping_presets", "shipping_inside_dhaka", "shipping_outside_dhaka",
+    ];
+    const pick = (s: InvoiceSettings | null) => {
+      if (!s) return null;
+      const o: Record<string, unknown> = {};
+      trackedKeys.forEach((k) => (o[k as string] = (s as any)[k]));
+      return o;
+    };
+    await logChange("invoice_settings", settings.id, pick(original), pick(settings));
+    setOriginal(settings);
     toast.success("Invoice settings saved");
   };
 
