@@ -50,6 +50,12 @@ import { printMeasurementSlipsBulk } from "@/components/orders/MeasurementSlipPr
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import CategoryFilter from "@/components/CategoryFilter";
 import { useDebounce } from "@/hooks/useDebounce";
+import {
+  usePreOrderCategoryIds,
+  expandWithDescendants,
+} from "@/lib/preOrderSettings";
+import { Settings as SettingsIcon } from "lucide-react";
+import PreOrderCategoriesDialog from "@/components/settings/PreOrderCategoriesDialog";
 
 interface OrderRow {
   id: string;
@@ -82,7 +88,7 @@ interface OrderRow {
   stores: { name: string } | null;
   itemCount: number;
   productItems: { name: string; qty: number }[];
-  hasBackorder: boolean;
+  isPreOrder: boolean;
 }
 
 interface StoreOption { id: string; name: string }
@@ -118,6 +124,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const preOrderCategoryIds = usePreOrderCategoryIds();
+  const [preOrderSettingsOpen, setPreOrderSettingsOpen] = useState(false);
 
   // Dispatch
   const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
@@ -172,12 +180,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       productItems: (o.order_items || [])
         .filter((i: any) => i.product_name)
         .map((i: any) => ({ name: i.product_name, qty: i.quantity || 1 })),
-      hasBackorder: (o.order_items || []).some(
-        (i: any) => {
-          const s = (i.products?.stock_status || "").toLowerCase().replace(/[_-\s]/g, "");
-          return s === "onbackorder";
-        }
-      ),
+      isPreOrder: false, // recomputed reactively from category settings
     }));
     setOrders(mapped as OrderRow[]);
 
@@ -223,6 +226,19 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
 
   useEffect(() => { loadOrders(); loadStores(); }, [loadOrders, loadStores]);
 
+  /* ─── Pre-order detection: order has at least one item whose category is configured as Pre-Order ─── */
+  const preOrderOrderIds = useMemo(() => {
+    if (preOrderCategoryIds.size === 0) return new Set<string>();
+    const expanded = expandWithDescendants(preOrderCategoryIds, allCategories);
+    const out = new Set<string>();
+    orderCategoryMap.forEach((cats, orderId) => {
+      for (const c of cats) {
+        if (expanded.has(c)) { out.add(orderId); break; }
+      }
+    });
+    return out;
+  }, [preOrderCategoryIds, allCategories, orderCategoryMap]);
+
   /* ─── Tab-based filtering ─── */
   const getTabOrders = useCallback((tabKey: TabKey) => {
     if (tabKey === "trash") {
@@ -233,17 +249,18 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     return active.filter((o) => {
       switch (tabKey) {
         case "new":
-          return o.status === "processing" && !o.consignment_id && !o.hasBackorder;
+          return o.status === "processing" && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "ready":
-          return o.status === "ready_to_ship" && !o.consignment_id && !o.hasBackorder;
+          return o.status === "ready_to_ship" && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "pre_order":
           // A pre-order is anything sitting in one of the dedicated pre-order
-          // statuses, OR a legacy backordered order that hasn't been dispatched
-          // yet. Once dispatched (consignment exists) it leaves the pre-order
-          // tab and rejoins the courier flow.
+          // statuses, OR an order containing a product from a configured
+          // Pre-Order category that hasn't been dispatched yet. Once
+          // dispatched (consignment exists) it leaves the pre-order tab and
+          // rejoins the courier flow.
           return (
             ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
-            (o.hasBackorder && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
+            (preOrderOrderIds.has(o.id) && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
           );
         case "pickup_pending":
           return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up","Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || "");
@@ -264,7 +281,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           return true;
       }
     });
-  }, [orders]);
+  }, [orders, preOrderOrderIds]);
 
   // Categories scoped to currently selected store filter
   const scopedCategories = useMemo(() => {
@@ -683,11 +700,19 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           <h1 className="font-heading text-2xl font-semibold">{preOrderMode ? "Pre-Orders" : "Orders"}</h1>
           <p className="text-sm text-muted-foreground">
             {preOrderMode
-              ? "Orders containing backordered products awaiting stock"
+              ? "Orders containing products from configured Pre-Order categories"
               : "Manage your order pipeline — from new orders to delivery"}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {preOrderMode && canWrite && (
+            <Button variant="outline" size="sm" onClick={() => setPreOrderSettingsOpen(true)} className="gap-1.5">
+              <SettingsIcon className="h-4 w-4" /> Pre-Order Categories
+              {preOrderCategoryIds.size > 0 && (
+                <Badge variant="secondary" className="ml-0.5 h-5 px-1.5 text-[10px]">{preOrderCategoryIds.size}</Badge>
+              )}
+            </Button>
+          )}
           {canWrite && !preOrderMode && (
             <Button size="sm" onClick={() => setAddOrderOpen(true)} className="hidden sm:inline-flex">
               <Plus className="h-4 w-4 mr-1" /> Add Order
@@ -1177,6 +1202,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         </button>
       )}
 
+      <PreOrderCategoriesDialog open={preOrderSettingsOpen} onOpenChange={setPreOrderSettingsOpen} />
+
       <OrderDetailSheet
         orderId={detailOrderId}
         open={!!detailOrderId}
@@ -1216,7 +1243,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
     all: { icon: ShoppingCart, text: "No orders found" },
     new: { icon: Package, text: "No new orders to process" },
     ready: { icon: PackageCheck, text: "No orders ready to ship — mark orders as Ready from the New Orders tab" },
-    pre_order: { icon: Hourglass, text: "No pre-orders — orders containing backordered products will appear here" },
+    pre_order: { icon: Hourglass, text: "No pre-orders — orders containing products from configured Pre-Order categories will appear here" },
     pickup_pending: { icon: Clock, text: "No orders waiting for pickup" },
     in_transit: { icon: Truck, text: "No orders in transit" },
     delivered: { icon: CheckCircle2, text: "No delivered orders" },

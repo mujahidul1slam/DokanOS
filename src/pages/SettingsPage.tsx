@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler, Building2, Hash } from "lucide-react";
+import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler, Building2, Hash, Hourglass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
+import PreOrdersSettingsTab from "@/components/settings/PreOrdersSettingsTab";
 import InstallAppButton from "@/components/InstallAppButton";
 import { getGlobalStockEnabled, setGlobalStockEnabled } from "@/lib/stockSettings";
 
@@ -24,6 +25,7 @@ const tabs = [
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "pos", label: "POS Settings", icon: ShoppingCart },
   { id: "orders", label: "Orders", icon: Hash },
+  { id: "preorders", label: "Pre-Orders", icon: Hourglass },
   { id: "measurements", label: "Measurements", icon: Ruler },
   { id: "invoice", label: "Invoice/Pick up Slip", icon: FileText },
   { id: "sources", label: "Order Sources", icon: Tags },
@@ -162,6 +164,8 @@ const SettingsPage = () => {
           {activeTab === "pos" && <PosSettingsTab />}
 
           {activeTab === "orders" && <OrdersSettingsTab />}
+
+          {activeTab === "preorders" && <PreOrdersSettingsTab />}
 
           {activeTab === "invoice" && <InvoiceSettingsTab />}
 
