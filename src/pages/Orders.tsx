@@ -1198,13 +1198,6 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           className="sm:hidden fixed right-4 bottom-20 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-95 transition-transform"
           style={{ marginBottom: "env(safe-area-inset-bottom, 0px)" }}
         >
-      {canWrite && !preOrderMode && (
-        <button
-          onClick={() => setAddOrderOpen(true)}
-          aria-label="Add order"
-          className="sm:hidden fixed right-4 bottom-20 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-95 transition-transform"
-          style={{ marginBottom: "env(safe-area-inset-bottom, 0px)" }}
-        >
           <Plus className="h-6 w-6" />
         </button>
       )}
