@@ -413,19 +413,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       const remaining = Math.max(orderTotal - totalPaid, 0);
       const newPaymentStatus = remaining <= 0.0001 ? "paid" : "partial";
 
-      // Status: once payment is confirmed (full or partial), the order moves to New Order
-      // (processing) unless it's a pre-order or already further along in fulfillment.
-      const preserveStatuses = [
-        "pre_order_pending", "pre_order_making", "pre_order_ready",
-        "ready_to_ship", "shipped", "delivered", "completed",
-        "cancelled", "returned",
-      ];
-      const shouldPromoteStatus = !preserveStatuses.includes(order.status);
-      const newOrderStatus = shouldPromoteStatus ? "processing" : order.status;
-
       // Update order: payment status + amount_to_collect (carries due to Pathao dispatch)
       await supabase.from("orders").update({
-        status: newOrderStatus,
         payment_status: newPaymentStatus,
         amount_to_collect: remaining,
       }).eq("id", order.id);
@@ -443,14 +432,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         description: `Payment status changed from pending_payment to ${newPaymentStatus}`,
         metadata: { from: "pending_payment", to: newPaymentStatus },
       });
-      if (shouldPromoteStatus && order.status !== "processing") {
-        await addOrderTimeline({
-          order_id: order.id,
-          event: "status_changed",
-          description: `Order status changed from ${order.status} to processing (New Order) after payment confirmation`,
-          metadata: { from: order.status, to: "processing" },
-        });
-      }
 
       // Audit log
       await logAction("update", "order_payment_confirmed", order.id, {
