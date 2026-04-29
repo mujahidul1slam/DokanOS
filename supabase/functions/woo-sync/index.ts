@@ -760,9 +760,14 @@ Deno.serve(async (req) => {
   }
 });
 
-function mapWooStatus(status: string): string {
+function mapWooStatus(status: string, paymentMethod?: string): string {
+  const isCod = (paymentMethod || "").toLowerCase().includes("cod") ||
+                (paymentMethod || "").toLowerCase().includes("cash on delivery");
   const map: Record<string, string> = {
-    pending: "pending", processing: "processing", "on-hold": "pending",
+    pending: "pending",
+    processing: "processing",
+    // Non-COD on-hold = awaiting payment confirmation; COD on-hold falls back to processing
+    "on-hold": isCod ? "processing" : "payment_pending",
     completed: "completed", cancelled: "cancelled", refunded: "returned",
     failed: "cancelled", shipped: "shipped",
   };
@@ -778,11 +783,14 @@ function fromWooStockStatus(status: string): string {
 
 function derivePaymentStatus(o: any): string {
   const method = (o.payment_method || "").toLowerCase();
+  const title = (o.payment_method_title || "").toLowerCase();
   const status = (o.status || "").toLowerCase();
-  if (method === "cod" || (o.payment_method_title || "").toLowerCase().includes("cash on delivery")) return "cod";
-  // WooCommerce "on-hold" for non-COD orders means awaiting payment confirmation (e.g. bKash manual)
-  if (status === "on-hold") return "pending_payment";
-  if (status === "pending") return "pending_payment";
+  const isCod = method === "cod" || title.includes("cash on delivery");
+  if (isCod) return "cod";
+  // Non-COD orders (bKash, Nagad, card, bank, etc.)
+  // on-hold = awaiting payment confirmation
+  if (status === "on-hold") return "online";
+  if (status === "pending") return "unpaid";
   if (status === "completed" || status === "processing") return "paid";
   return "unpaid";
 }
