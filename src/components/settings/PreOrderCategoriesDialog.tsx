@@ -115,10 +115,10 @@ const PreOrderCategoriesDialog = ({ open, onOpenChange }: Props) => {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
     const ids = Array.from(selected);
-    setPreOrderCategoryIds(ids);
+    await setPreOrderCategoryIds(ids);
     logAction("update", "settings_preorder_categories", undefined, { count: ids.length });
     toast.success("Pre-Order categories saved");
     setSaving(false);
