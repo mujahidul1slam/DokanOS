@@ -486,6 +486,16 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Method</Label>
                       <p className="text-sm font-medium">{order?.payment_method || "N/A"}</p>
+                      {order?.payment_meta?.sender_number && (
+                        <p className="text-xs text-muted-foreground">
+                          Sender: <span className="font-mono text-foreground">{order.payment_meta.sender_number}</span>
+                        </p>
+                      )}
+                      {order?.payment_meta?.transaction_id && (
+                        <p className="text-xs text-muted-foreground">
+                          TrxID: <span className="font-mono text-foreground">{order.payment_meta.transaction_id}</span>
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Status</Label>
