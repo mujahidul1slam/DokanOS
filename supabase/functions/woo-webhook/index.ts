@@ -463,3 +463,62 @@ function derivePaymentStatus(o: any): string {
   if (status === "completed" || status === "processing") return "paid";
   return "unpaid";
 }
+
+/**
+ * Extract extra payment details (e.g. bKash sender number, transaction ID) from
+ * a WooCommerce order's meta_data. Most BD payment plugins (bKash, Nagad, Rocket,
+ * SSLCommerz, etc.) store these as keys like `_bkash_trx_id`, `bkash_sender_number`,
+ * `_transaction_id`, `_payer_account_number`, etc. We also scan visible (non-`_`)
+ * meta keys whose names hint at a transaction id or sender/payer number.
+ */
+function extractPaymentMeta(o: any): Record<string, string> | null {
+  const meta: any[] = Array.isArray(o?.meta_data) ? o.meta_data : [];
+  if (meta.length === 0) return null;
+
+  const out: Record<string, string> = {};
+  const set = (k: string, v: any) => {
+    const val = String(v ?? "").trim();
+    if (val && !out[k]) out[k] = val;
+  };
+
+  const TRX_KEYS = [
+    "_bkash_trx_id", "bkash_trx_id", "_bkash_transaction_id", "bkash_transaction_id",
+    "_nagad_trx_id", "nagad_trx_id", "_nagad_transaction_id",
+    "_rocket_trx_id", "rocket_trx_id",
+    "_transaction_id", "transaction_id", "trx_id", "trxid", "txn_id", "txnid",
+  ];
+  const SENDER_KEYS = [
+    "_bkash_sender_number", "bkash_sender_number", "_bkash_number", "bkash_number",
+    "_nagad_sender_number", "nagad_sender_number", "_nagad_number",
+    "_rocket_sender_number", "rocket_sender_number",
+    "_payer_account_number", "payer_account_number", "_payer_number", "payer_number",
+    "sender_number", "sender_phone",
+  ];
+
+  for (const m of meta) {
+    const rawKey = String(m?.key ?? "").trim();
+    if (!rawKey) continue;
+    const lower = rawKey.toLowerCase();
+    const value = m?.value;
+    if (TRX_KEYS.includes(lower)) set("transaction_id", value);
+    if (SENDER_KEYS.includes(lower)) set("sender_number", value);
+  }
+
+  // Fallback: scan visible (non-underscore) meta keys with hint words.
+  if (!out.transaction_id || !out.sender_number) {
+    for (const m of meta) {
+      const rawKey = String(m?.display_key ?? m?.key ?? "").trim();
+      if (!rawKey || rawKey.startsWith("_")) continue;
+      const lower = rawKey.toLowerCase();
+      const value = m?.display_value ?? m?.value;
+      if (!out.transaction_id && (lower.includes("trx") || lower.includes("transaction") || lower.includes("txn"))) {
+        set("transaction_id", value);
+      }
+      if (!out.sender_number && (lower.includes("sender") || lower.includes("payer") || (lower.includes("bkash") && lower.includes("number")))) {
+        set("sender_number", value);
+      }
+    }
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
+}
