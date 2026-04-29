@@ -95,7 +95,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 200;
 
-type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
+type TabKey = "all" | "new" | "payment_pending" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
 interface OrdersProps { preOrderMode?: boolean }
 
@@ -249,15 +249,15 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     return active.filter((o) => {
       switch (tabKey) {
         case "new":
-          return ["processing", "pending"].includes(o.status) && !o.consignment_id && !preOrderOrderIds.has(o.id);
+          // New = processing orders not yet dispatched and not pre-order
+          return o.status === "processing" && !o.consignment_id && !preOrderOrderIds.has(o.id);
+        case "payment_pending":
+          // Payment Pending = non-COD orders awaiting payment confirmation, excluding pre-orders
+          return o.status === "payment_pending" && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "ready":
           return o.status === "ready_to_ship" && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "pre_order":
-          // A pre-order is anything sitting in one of the dedicated pre-order
-          // statuses, OR an order containing a product from a configured
-          // Pre-Order category that hasn't been dispatched yet. Once
-          // dispatched (consignment exists) it leaves the pre-order tab and
-          // rejoins the courier flow.
+          // Pre-order tab also catches payment_pending orders that contain pre-order items
           return (
             ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
             (preOrderOrderIds.has(o.id) && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
@@ -376,6 +376,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const counts = useMemo(() => ({
     all: orders.filter((o) => !o.deleted_at).length,
     new: getTabOrders("new").length,
+    payment_pending: getTabOrders("payment_pending").length,
     ready: getTabOrders("ready").length,
     pre_order: getTabOrders("pre_order").length,
     pickup_pending: getTabOrders("pickup_pending").length,
