@@ -24,11 +24,21 @@ const navItems = [
   { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },
 ];
 
-const AppSidebar = () => {
+interface AppSidebarProps {
+  mobileOpen?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
+}
+
+const AppSidebar = ({ mobileOpen: mobileOpenProp, onMobileOpenChange }: AppSidebarProps = {}) => {
   const location = useLocation();
   const { user, role, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const mobileOpen = mobileOpenProp ?? internalOpen;
+  const setMobileOpen = (v: boolean) => {
+    if (onMobileOpenChange) onMobileOpenChange(v);
+    else setInternalOpen(v);
+  };
 
   const visibleItems = navItems.filter(
     (item) => role && item.roles.includes(role)
