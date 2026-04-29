@@ -72,6 +72,7 @@ interface OrderItem {
   variationLabel?: string;
   price: number;
   qty: number;
+  isCustomItem?: boolean;
   customMeasurements?: boolean;
   // groupId -> { fieldId -> value }
   measurementValues?: Record<string, Record<string, string>>;
@@ -96,6 +97,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [fulfillment, setFulfillment] = useState<"walkin" | "pickup" | "delivery">("delivery");
   const [source, setSource] = useState("phone");
   const [sources, setSources] = useState<{ id: string; name: string; is_default?: boolean }[]>([]);
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [storeId, setStoreId] = useState<string>("");
+
+  // Custom item dialog
+  const [customItemOpen, setCustomItemOpen] = useState(false);
+  const [customItemName, setCustomItemName] = useState("");
+  const [customItemPrice, setCustomItemPrice] = useState("");
+  const [customItemQty, setCustomItemQty] = useState("1");
   const [shippingCost, setShippingCost] = useState(0);
   const [shippingInsideDhaka, setShippingInsideDhaka] = useState(80);
   const [shippingOutsideDhaka, setShippingOutsideDhaka] = useState(150);
@@ -135,7 +144,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
       supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled, shipping_inside_dhaka, shipping_outside_dhaka").limit(1).maybeSingle(),
-    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes]) => {
+      supabase.from("stores").select("id, name").order("name"),
+    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes, stRes]) => {
       setProducts(pRes.data || []);
       setVariations((vRes.data || []) as VariationRow[]);
       const srcs = (sRes.data || []) as any[];
@@ -149,6 +159,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       setMeasurementsEnabled(isData?.pos_custom_measurements_enabled !== false);
       if (isData?.shipping_inside_dhaka != null) setShippingInsideDhaka(Number(isData.shipping_inside_dhaka));
       if (isData?.shipping_outside_dhaka != null) setShippingOutsideDhaka(Number(isData.shipping_outside_dhaka));
+      setStores((stRes.data || []) as any[]);
     });
   }, [open]);
 
@@ -324,6 +335,25 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   const removeItem = (uid: string) => setItems(prev => prev.filter(i => i.uid !== uid));
 
+  const addCustomItem = () => {
+    const name = customItemName.trim();
+    const price = Number(customItemPrice);
+    const qty = Math.max(1, Number(customItemQty) || 1);
+    if (!name) { toast.error("Enter a name"); return; }
+    if (!Number.isFinite(price) || price < 0) { toast.error("Enter a valid price"); return; }
+    const uid = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setItems(prev => [...prev, {
+      uid,
+      productId: "",
+      name,
+      price,
+      qty,
+      isCustomItem: true,
+    }]);
+    setCustomItemName(""); setCustomItemPrice(""); setCustomItemQty("1");
+    setCustomItemOpen(false);
+  };
+
   const updateItem = (uid: string, patch: Partial<OrderItem>) =>
     setItems(prev => prev.map(i => i.uid === uid ? { ...i, ...patch } : i));
 
@@ -381,6 +411,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
     setAiText("");
+    setStoreId("");
   };
 
   const fileToDataUrl = (file: File) =>
@@ -545,7 +576,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           }
         }
 
-        const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: null, p_source: "manual" });
+        const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: storeId || null, p_source: "manual" });
         const orderNumber = (genNum as string) || `ORD-${Date.now().toString(36).toUpperCase()}`;
 
         const paymentStatus =
@@ -563,6 +594,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           customer_phone: normalizedCustomerPhone,
           customer_address: customerAddress || null,
           customer_city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
+          store_id: storeId || null,
           subtotal,
           discount,
           shipping_cost: shippingCost,
@@ -577,7 +609,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
       const orderItemsPayload = items.map(i => ({
         order_id: order.id,
-        product_id: i.productId,
+        product_id: i.isCustomItem || !i.productId ? null : i.productId,
         product_name: i.variationLabel ? `${i.name} - ${i.variationLabel}` : i.name,
         unit_price: i.price,
         quantity: i.qty,
@@ -640,6 +672,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   };
 
   return (
+    <>
     <ResponsiveDialog
       open={open}
       onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v); }}
@@ -718,7 +751,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
           {/* Product Search */}
           <div>
-            <Label className="text-xs font-medium">Search Products</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium">Search Products</Label>
+              <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setCustomItemOpen(true)}>
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add custom item
+              </Button>
+            </div>
             <div className="relative mt-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Search by name, SKU, or variation..." className="pl-9" />
@@ -868,6 +906,20 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           )}
 
           <Separator />
+
+          {/* Store */}
+          {stores.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Store</Label>
+              <Select value={storeId || "__none__"} onValueChange={(v) => setStoreId(v === "__none__" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Select store" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No store</SelectItem>
+                  {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Customer & Fulfillment */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1047,5 +1099,38 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           </div>
       </div>
     </ResponsiveDialog>
+
+    <ResponsiveDialog
+      open={customItemOpen}
+      onOpenChange={(v) => { if (!v) { setCustomItemName(""); setCustomItemPrice(""); setCustomItemQty("1"); } setCustomItemOpen(v); }}
+      title="Add custom item"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => setCustomItemOpen(false)}>Cancel</Button>
+          <Button onClick={addCustomItem}>Add to order</Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Item name</Label>
+          <Input value={customItemName} onChange={(e) => setCustomItemName(e.target.value)} placeholder="e.g. Custom alteration" autoFocus />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Price</Label>
+            <Input type="number" inputMode="decimal" value={customItemPrice} onChange={(e) => setCustomItemPrice(e.target.value)} placeholder="0" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Quantity</Label>
+            <Input type="number" inputMode="numeric" value={customItemQty} onChange={(e) => setCustomItemQty(e.target.value)} placeholder="1" />
+          </div>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Custom items are not linked to a product and will not affect inventory.
+        </p>
+      </div>
+    </ResponsiveDialog>
+    </>
   );
 }
