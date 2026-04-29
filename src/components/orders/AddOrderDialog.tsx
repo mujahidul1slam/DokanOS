@@ -548,11 +548,15 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: null, p_source: "manual" });
         const orderNumber = (genNum as string) || `ORD-${Date.now().toString(36).toUpperCase()}`;
 
+        const paymentStatus =
+          paidAmount <= 0 ? "unpaid" : paidAmount >= total ? "paid" : "partial";
+
         const { data: order, error } = await supabase.from("orders").insert({
           order_number: orderNumber,
           source,
           status: "processing",
-          payment_status: "unpaid",
+          payment_status: paymentStatus,
+          payment_method: paidAmount > 0 ? paymentMethod : null,
           fulfillment_type: fulfillment,
           customer_id: customerId,
           customer_name: customerName || null,
