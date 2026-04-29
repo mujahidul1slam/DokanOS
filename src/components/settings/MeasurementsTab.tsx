@@ -110,6 +110,31 @@ const MeasurementsTab = () => {
     toast.success("Group deleted");
   };
 
+  const duplicateGroup = (id: string) => {
+    const src = groups.find((g) => g.id === id);
+    if (!src) return;
+    const copy: Group = {
+      id: `tmp-${crypto.randomUUID()}`,
+      name: `${src.name} (Copy)`,
+      display_format: src.display_format,
+      unit: src.unit,
+      sort_order: groups.length,
+      fields: src.fields.map((f, i) => ({
+        id: `tmp-${crypto.randomUUID()}`,
+        name: f.name,
+        sort_order: i,
+        _isNew: true,
+      })),
+      // Don't copy assignments — duplicate is unassigned by default
+      assignments: [],
+    };
+    const idx = groups.findIndex((g) => g.id === id);
+    const next = [...groups];
+    next.splice(idx + 1, 0, copy);
+    setGroups(next);
+    toast.success("Group duplicated — remember to Save");
+  };
+
   const addField = (groupId: string) => {
     setGroups(groups.map((g) => g.id === groupId ? {
       ...g,
