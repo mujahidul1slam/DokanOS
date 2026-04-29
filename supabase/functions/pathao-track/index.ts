@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
           });
 
           // Mirror status update into WooCommerce notes timeline (no-op for non-Woo orders)
-          await postWooNote(order.id, `[OmniSync] Pathao courier status: ${pathaoStatus} — by Pathao Tracking`);
+          await postWooNote(order.id, `[DokanOS] Pathao courier status: ${pathaoStatus} — by Pathao Tracking`);
 
           // Once the Pathao cycle has terminated (delivered/returned), close out the
           // linked WooCommerce order — woo-push maps both to "completed".

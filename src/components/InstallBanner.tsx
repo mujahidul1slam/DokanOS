@@ -102,7 +102,7 @@ const InstallBanner = () => {
       style={{ bottom: "calc(64px + env(safe-area-inset-bottom, 0px) + 8px)" }}
     >
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-foreground">Install OmniSync</div>
+        <div className="text-sm font-medium text-foreground">Install DokanOS</div>
         <p className="text-xs text-muted-foreground truncate">Add to home screen for a faster, native-like experience.</p>
       </div>
       <Button onClick={install} size="sm" className="gap-1.5 shrink-0 h-9 px-3">

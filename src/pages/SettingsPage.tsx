@@ -39,7 +39,7 @@ const SettingsPage = () => {
   const { theme, toggleTheme } = useTheme();
 
   // Business settings
-  const [businessName, setBusinessName] = useState(() => localStorage.getItem("omnisync-business-name") || "OmniSync");
+  const [businessName, setBusinessName] = useState(() => localStorage.getItem("omnisync-business-name") || "DokanOS");
   const [currency, setCurrency] = useState(() => localStorage.getItem("omnisync-currency") || "৳");
   const [timezone, setTimezone] = useState(() => localStorage.getItem("omnisync-timezone") || "Asia/Dhaka");
 

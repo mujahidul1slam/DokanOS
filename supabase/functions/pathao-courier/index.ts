@@ -326,7 +326,7 @@ Deno.serve(async (req) => {
             metadata: { consignment_id, integration_id: creds.id },
           });
 
-          await postWooOrderNote(order_id, `[OmniSync] Dispatched to Pathao. Consignment: ${consignment_id}`);
+          await postWooOrderNote(order_id, `[DokanOS] Dispatched to Pathao. Consignment: ${consignment_id}`);
         }
 
         result = { consignment_id, raw: data };
@@ -361,7 +361,7 @@ Deno.serve(async (req) => {
                     metadata: { consignment_id, integration_id: creds.id },
                   });
 
-                  await postWooOrderNote(entry.order_id, `[OmniSync] Dispatched to Pathao. Consignment: ${consignment_id}`);
+                  await postWooOrderNote(entry.order_id, `[DokanOS] Dispatched to Pathao. Consignment: ${consignment_id}`);
                 }
 
                 return { order_id: entry.order_id, success: true, consignment_id };
@@ -397,7 +397,7 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (ord?.id && ord.tracking_status !== order_status) {
-            await postWooOrderNote(ord.id, `[OmniSync] Pathao status update: ${order_status}`);
+            await postWooOrderNote(ord.id, `[DokanOS] Pathao status update: ${order_status}`);
           }
 
           // Once the Pathao cycle has terminated (delivered/returned), close out the
@@ -464,7 +464,7 @@ Deno.serve(async (req) => {
                 },
               });
 
-              await postWooOrderNote(order.id, `[OmniSync] Pathao status update: ${order_status}`);
+              await postWooOrderNote(order.id, `[DokanOS] Pathao status update: ${order_status}`);
 
               // Once the Pathao cycle has terminated (delivered/returned), close out the
               // linked WooCommerce order — woo-push maps both to "completed".

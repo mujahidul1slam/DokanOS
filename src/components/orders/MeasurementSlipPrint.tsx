@@ -115,7 +115,7 @@ export async function printMeasurementSlip(orderId: string) {
   }
 
   const tpl: SlipTpl = ((settingsRes as any).data?.measurement_slip_template) || {};
-  const businessName = (settingsRes as any).data?.business_name || "OmniSync";
+  const businessName = (settingsRes as any).data?.business_name || "DokanOS";
   const items = (itemsRes.data || []) as any[];
   const allMeasurements = (measurementsRes as any).data || [];
 

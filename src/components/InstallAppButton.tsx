@@ -83,7 +83,7 @@ const InstallAppButton = () => {
             Install as Mobile App
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed max-w-md">
-            Install OmniSync on your phone's home screen for a native-like, full-screen experience.
+            Install DokanOS on your phone's home screen for a native-like, full-screen experience.
             Works on Android (Chrome/Edge) and iOS (Safari).
           </p>
         </div>
