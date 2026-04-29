@@ -20,6 +20,7 @@ import { saveOrderItemMeasurements } from "@/lib/measurements";
 import { printMeasurementSlip } from "@/components/orders/MeasurementSlipPrint";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
+import { useGlobalStockEnabled } from "@/lib/stockSettings";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +61,7 @@ const POS = () => {
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<CustomerData[]>([]);
+  const globalStockEnabled = useGlobalStockEnabled();
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showVariationModal, setShowVariationModal] = useState(false);
@@ -538,13 +540,13 @@ const POS = () => {
       for (const item of cart.items) {
         if (item.isCustomItem || !item.productId) continue;
         if (item.variationId) {
-          const { data: v } = await supabase.from("product_variations").select("stock_quantity").eq("id", item.variationId).single();
-          if (v) {
+          const { data: v } = await supabase.from("product_variations").select("stock_quantity, manage_stock").eq("id", item.variationId).single();
+          if (v && (globalStockEnabled || v.manage_stock === true)) {
             await supabase.from("product_variations").update({ stock_quantity: Math.max(0, v.stock_quantity - item.qty) }).eq("id", item.variationId);
           }
         }
-        const { data: prod } = await supabase.from("products").select("stock_quantity, woo_product_id, store_id").eq("id", item.productId).single();
-        if (prod) {
+        const { data: prod } = await supabase.from("products").select("stock_quantity, woo_product_id, store_id, manage_stock").eq("id", item.productId).single();
+        if (prod && (globalStockEnabled || prod.manage_stock === true)) {
           await supabase.from("products").update({ stock_quantity: Math.max(0, prod.stock_quantity - item.qty) }).eq("id", item.productId);
           if (prod.woo_product_id) {
             supabase.functions.invoke("woo-push", {
