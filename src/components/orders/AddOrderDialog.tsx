@@ -1099,5 +1099,38 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           </div>
       </div>
     </ResponsiveDialog>
+
+    <ResponsiveDialog
+      open={customItemOpen}
+      onOpenChange={(v) => { if (!v) { setCustomItemName(""); setCustomItemPrice(""); setCustomItemQty("1"); } setCustomItemOpen(v); }}
+      title="Add custom item"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => setCustomItemOpen(false)}>Cancel</Button>
+          <Button onClick={addCustomItem}>Add to order</Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Item name</Label>
+          <Input value={customItemName} onChange={(e) => setCustomItemName(e.target.value)} placeholder="e.g. Custom alteration" autoFocus />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Price</Label>
+            <Input type="number" inputMode="decimal" value={customItemPrice} onChange={(e) => setCustomItemPrice(e.target.value)} placeholder="0" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Quantity</Label>
+            <Input type="number" inputMode="numeric" value={customItemQty} onChange={(e) => setCustomItemQty(e.target.value)} placeholder="1" />
+          </div>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Custom items are not linked to a product and will not affect inventory.
+        </p>
+      </div>
+    </ResponsiveDialog>
+    </>
   );
 }
