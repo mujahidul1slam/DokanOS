@@ -1064,6 +1064,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               </TableBody>
             </Table>
           </div>
+          </>
         )}
 
         <Pagination page={page} totalPages={totalPages} filtered={filtered} setPage={setPage} />
