@@ -101,6 +101,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [shippingOutsideDhaka, setShippingOutsideDhaka] = useState(150);
   const [shippingTouched, setShippingTouched] = useState(false);
   const [discount, setDiscount] = useState(0);
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
