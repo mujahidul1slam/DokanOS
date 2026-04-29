@@ -234,6 +234,19 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
 
   useEffect(() => { loadOrders(); loadStores(); }, [loadOrders, loadStores]);
 
+  /* ─── Pre-order detection: order has at least one item whose category is configured as Pre-Order ─── */
+  const preOrderOrderIds = useMemo(() => {
+    if (preOrderCategoryIds.size === 0) return new Set<string>();
+    const expanded = expandWithDescendants(preOrderCategoryIds, allCategories);
+    const out = new Set<string>();
+    orderCategoryMap.forEach((cats, orderId) => {
+      for (const c of cats) {
+        if (expanded.has(c)) { out.add(orderId); break; }
+      }
+    });
+    return out;
+  }, [preOrderCategoryIds, allCategories, orderCategoryMap]);
+
   /* ─── Tab-based filtering ─── */
   const getTabOrders = useCallback((tabKey: TabKey) => {
     if (tabKey === "trash") {
