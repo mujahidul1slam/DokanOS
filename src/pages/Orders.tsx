@@ -52,18 +52,10 @@ import CategoryFilter from "@/components/CategoryFilter";
 import { useDebounce } from "@/hooks/useDebounce";
 import {
   usePreOrderCategoryIds,
-  setPreOrderCategoryIds,
   expandWithDescendants,
 } from "@/lib/preOrderSettings";
 import { Settings as SettingsIcon } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import PreOrderCategoriesDialog from "@/components/settings/PreOrderCategoriesDialog";
 
 interface OrderRow {
   id: string;
