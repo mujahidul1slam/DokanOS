@@ -97,8 +97,11 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [customerAddress, setCustomerAddress] = useState("");
   const [fulfillment, setFulfillment] = useState<"walkin" | "pickup" | "delivery">("delivery");
   const [source, setSource] = useState("phone");
-  const [sources, setSources] = useState<{ id: string; name: string }[]>([]);
+  const [sources, setSources] = useState<{ id: string; name: string; is_default?: boolean }[]>([]);
   const [shippingCost, setShippingCost] = useState(0);
+  const [shippingInsideDhaka, setShippingInsideDhaka] = useState(80);
+  const [shippingOutsideDhaka, setShippingOutsideDhaka] = useState(150);
+  const [shippingTouched, setShippingTouched] = useState(false);
   const [discount, setDiscount] = useState(0);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -127,19 +130,25 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     Promise.all([
       supabase.from("products").select("id, name, sku, price, stock_quantity, image_url").eq("is_active", true).order("name"),
       supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes"),
-      supabase.from("order_sources").select("id, name").order("sort_order"),
+      supabase.from("order_sources").select("id, name, is_default").order("sort_order"),
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
-      supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled").limit(1).maybeSingle(),
+      supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled, shipping_inside_dhaka, shipping_outside_dhaka").limit(1).maybeSingle(),
     ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes]) => {
       setProducts(pRes.data || []);
       setVariations((vRes.data || []) as VariationRow[]);
-      setSources((sRes.data || []) as any[]);
+      const srcs = (sRes.data || []) as any[];
+      setSources(srcs);
+      const def = srcs.find((s) => s.is_default);
+      if (def) setSource(def.name);
       setCities((cRes.data || []) as any[]);
       setAllZones((zRes.data || []) as any[]);
       setAllAreas((aRes.data || []) as any[]);
-      setMeasurementsEnabled(((isRes as any).data?.pos_custom_measurements_enabled) !== false);
+      const isData: any = (isRes as any).data;
+      setMeasurementsEnabled(isData?.pos_custom_measurements_enabled !== false);
+      if (isData?.shipping_inside_dhaka != null) setShippingInsideDhaka(Number(isData.shipping_inside_dhaka));
+      if (isData?.shipping_outside_dhaka != null) setShippingOutsideDhaka(Number(isData.shipping_outside_dhaka));
     });
   }, [open]);
 
