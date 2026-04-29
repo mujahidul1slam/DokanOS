@@ -52,7 +52,7 @@ const Login = () => {
           <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
             <span className="text-lg font-bold text-primary-foreground">O</span>
           </div>
-          <CardTitle className="text-xl">OmniSync</CardTitle>
+          <CardTitle className="text-xl">DokanOS</CardTitle>
           <CardDescription>
             {mode === "login" ? "Sign in to your account" : "Reset your password"}
           </CardDescription>

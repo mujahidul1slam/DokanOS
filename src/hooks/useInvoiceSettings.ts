@@ -76,7 +76,7 @@ const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
 };
 
 const defaults: InvoiceSettings = {
-  business_name: "OmniSync",
+  business_name: "DokanOS",
   tagline: "",
   address: "",
   phone: "",

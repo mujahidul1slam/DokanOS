@@ -53,7 +53,7 @@ const AppSidebar = ({ mobileOpen: mobileOpenProp, onMobileOpenChange }: AppSideb
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
             <span className="font-heading text-xs font-bold text-primary-foreground">O</span>
           </div>
-          <span className="font-heading text-base font-semibold text-foreground">OmniSync</span>
+          <span className="font-heading text-base font-semibold text-foreground">DokanOS</span>
         </div>
         <button className="lg:hidden text-muted-foreground" onClick={() => setMobileOpen(false)}>
           <X className="h-5 w-5" />

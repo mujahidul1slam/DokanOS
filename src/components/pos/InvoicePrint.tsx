@@ -19,7 +19,7 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
   const dueAmount = Math.max(0, total - totalPaid);
 
   const biz = invoiceSettings || {
-    business_name: "OmniSync", tagline: "", address: "", phone: "", email: "",
+    business_name: "DokanOS", tagline: "", address: "", phone: "", email: "",
     logo_url: "", footer_text: "Thank you for shopping with us!", terms_text: "",
     default_print_format: "thermal" as const,
     invoice_template: {} as InvoiceTemplateConfig,

@@ -62,7 +62,7 @@ const PageFallback = () => (
 const AppRoutes = () => {
   const { user, loading } = useAuth();
 
-  if (loading) return <FullScreenLoader label="Loading OmniSync..." />;
+  if (loading) return <FullScreenLoader label="Loading DokanOS..." />;
 
   if (!user) {
     return (

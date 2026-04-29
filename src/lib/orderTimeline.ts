@@ -46,7 +46,7 @@ export async function addOrderTimeline(
     for (const e of arr) {
       if (e.metadata?.skip_woo_note) continue;
       const userLabel = userName ? ` — by ${userName}` : "";
-      const note = `[OmniSync] ${e.description}${userLabel}`;
+      const note = `[DokanOS] ${e.description}${userLabel}`;
       // Fire-and-forget; postWooOrderNote already swallows errors.
       void postWooOrderNote(e.order_id, note, Boolean(e.metadata?.woo_customer_note));
     }

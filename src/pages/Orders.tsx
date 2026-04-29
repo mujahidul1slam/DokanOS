@@ -506,7 +506,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       for (const o of wooOrders) {
         try {
           // Note posted before trash so it's visible in WC even if trashed
-          await postWooOrderNote(o.id, "[OmniSync] Order moved to trash");
+          await postWooOrderNote(o.id, "[DokanOS] Order moved to trash");
           await supabase.functions.invoke("woo-push", { body: { action: "trash_order", order_id: o.id } });
         } catch {}
       }
