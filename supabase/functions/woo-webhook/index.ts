@@ -455,6 +455,8 @@ function derivePaymentStatus(o: any): string {
   const method = (o.payment_method || "").toLowerCase();
   if (method === "cod" || (o.payment_method_title || "").toLowerCase().includes("cash on delivery")) return "cod";
   const status = (o.status || "").toLowerCase();
+  // WooCommerce "on-hold" for non-COD orders means awaiting payment confirmation (e.g. bKash manual)
+  if (status === "on-hold" || status === "pending") return "pending_payment";
   if (status === "completed" || status === "processing") return "paid";
   return "unpaid";
 }
