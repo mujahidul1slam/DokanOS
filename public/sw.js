@@ -2,8 +2,8 @@
 // as an installable PWA (enables proper "Install app" prompt + app drawer entry on Android).
 // Strategy: network-first for navigation, cache-first for static assets, never cache API/auth.
 
-const CACHE = "omnisync-v1";
-const CORE = ["/", "/manifest.webmanifest", "/app-icon-192.png", "/app-icon-512.png"];
+const CACHE = "omnisync-v2";
+const CORE = ["/manifest.webmanifest", "/app-icon-192.png", "/app-icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).catch(() => {}));
@@ -35,17 +35,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navigation requests: network-first, fallback to cached shell
+  // Do NOT intercept navigation requests. Letting the browser handle them
+  // preserves the back-forward cache (bfcache) and prevents the PWA / tab
+  // from doing a full page reload every time the user switches tabs or
+  // brings the installed app back to the foreground.
   if (req.mode === "navigate") {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-          return res;
-        })
-        .catch(() => caches.match(req).then((r) => r || caches.match("/")))
-    );
     return;
   }
 
