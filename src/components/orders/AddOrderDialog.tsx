@@ -101,6 +101,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [shippingOutsideDhaka, setShippingOutsideDhaka] = useState(150);
   const [shippingTouched, setShippingTouched] = useState(false);
   const [discount, setDiscount] = useState(0);
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -374,6 +376,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setSource(def ? def.name : "phone");
     setShippingCost(0); setShippingTouched(false);
     setDiscount(0);
+    setPaidAmount(0);
+    setPaymentMethod("cash");
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
     setAiText("");
@@ -544,11 +548,15 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: null, p_source: "manual" });
         const orderNumber = (genNum as string) || `ORD-${Date.now().toString(36).toUpperCase()}`;
 
+        const paymentStatus =
+          paidAmount <= 0 ? "unpaid" : paidAmount >= total ? "paid" : "partial";
+
         const { data: order, error } = await supabase.from("orders").insert({
           order_number: orderNumber,
           source,
           status: "processing",
-          payment_status: "unpaid",
+          payment_status: paymentStatus,
+          payment_method: paidAmount > 0 ? paymentMethod : null,
           fulfillment_type: fulfillment,
           customer_id: customerId,
           customer_name: customerName || null,
@@ -601,6 +609,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         }
       }
 
+      if (paidAmount > 0) {
+        await supabase.from("order_payments").insert({
+          order_id: order.id,
+          method: paymentMethod,
+          amount: paidAmount,
+        });
+      }
+
       await addOrderTimeline({
         order_id: order.id,
         event: "created",
@@ -648,12 +664,28 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             <Textarea
               value={aiText}
               onChange={(e) => setAiText(e.target.value)}
-              placeholder={"Paste anything — e.g.\nName: Rahim\n01712345678\nHouse 12, Road 5, Mirpur 10, Dhaka\n2pcs blue panjabi size L\nShipping 80, due 1200"}
+              onPaste={(e) => {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                for (let i = 0; i < items.length; i++) {
+                  const it = items[i];
+                  if (it.kind === "file" && it.type.startsWith("image/")) {
+                    const file = it.getAsFile();
+                    if (file) {
+                      e.preventDefault();
+                      toast.info("Screenshot pasted — parsing…");
+                      handleAiParseImage(file);
+                      return;
+                    }
+                  }
+                }
+              }}
+              placeholder={"Paste anything — e.g.\nName: Rahim\n01712345678\nHouse 12, Road 5, Mirpur 10, Dhaka\n2pcs blue panjabi size L\nShipping 80, due 1200\n\n📋 Tip: paste a screenshot directly here (Ctrl/Cmd+V)"}
               rows={4}
               className="text-sm"
             />
             <p className="text-[11px] text-muted-foreground">
-              Tip: you can also upload a screenshot of a Messenger / WhatsApp / Business Suite chat.
+              Tip: paste a screenshot directly (Ctrl/Cmd+V) or upload one below.
             </p>
             <div className="flex items-center justify-between gap-2">
               <Button
@@ -947,6 +979,56 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             <div className="space-y-1.5">
               <Label className="text-xs">Discount</Label>
               <Input type="number" inputMode="numeric" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
+            </div>
+          </div>
+
+          {/* Payment */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Paid Amount</Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                value={paidAmount}
+                onChange={(e) => setPaidAmount(Number(e.target.value))}
+                placeholder="0"
+              />
+              <div className="flex gap-1 pt-0.5">
+                <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[10px] flex-1"
+                  onClick={() => setPaidAmount(total)}>
+                  Full ৳{total.toLocaleString()}
+                </Button>
+                <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[10px] flex-1"
+                  onClick={() => setPaidAmount(0)}>
+                  Clear
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Payment Method</Label>
+              <Select value={paymentMethod} onValueChange={setPaymentMethod} disabled={paidAmount <= 0}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="bkash">bKash</SelectItem>
+                  <SelectItem value="nagad">Nagad</SelectItem>
+                  <SelectItem value="rocket">Rocket</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="bank">Bank Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Due</Label>
+              <div className="h-10 flex items-center px-3 rounded-md border border-border bg-secondary/40 text-sm font-medium">
+                ৳{Math.max(0, total - paidAmount).toLocaleString()}
+                {paidAmount > 0 && paidAmount < total && (
+                  <Badge variant="outline" className="ml-2 text-[10px]">Partial</Badge>
+                )}
+                {paidAmount >= total && total > 0 && (
+                  <Badge variant="secondary" className="ml-2 text-[10px]">Paid</Badge>
+                )}
+              </div>
             </div>
           </div>
 
