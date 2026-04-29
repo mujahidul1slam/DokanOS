@@ -136,7 +136,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes, measRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, stores(url)")
         .eq("id", orderId)
         .single(),
       supabase
