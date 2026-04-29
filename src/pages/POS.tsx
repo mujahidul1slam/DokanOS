@@ -574,14 +574,6 @@ const POS = () => {
     }
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-5rem)] text-muted-foreground">
-        <div className="animate-pulse text-lg font-heading">Loading POS...</div>
-      </div>
-    );
-  }
-
   // Active cart summary for mobile floating bar
   const activeCart = carts.find((c) => c.id === activeCartId);
   const mobileCartCount = activeCart?.items.reduce((s, i) => s + i.qty, 0) || 0;
@@ -605,6 +597,14 @@ const POS = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mobileCartCount, isMobile]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-5rem)] text-muted-foreground">
+        <div className="animate-pulse text-lg font-heading">Loading POS...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100dvh-3rem)] md:h-[calc(100vh-3rem)] -m-4 lg:-m-6 pb-16 lg:pb-0">
