@@ -25,6 +25,7 @@ const tabs = [
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "pos", label: "POS Settings", icon: ShoppingCart },
   { id: "orders", label: "Orders", icon: Hash },
+  { id: "preorders", label: "Pre-Orders", icon: Hourglass },
   { id: "measurements", label: "Measurements", icon: Ruler },
   { id: "invoice", label: "Invoice/Pick up Slip", icon: FileText },
   { id: "sources", label: "Order Sources", icon: Tags },
