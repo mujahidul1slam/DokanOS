@@ -132,11 +132,11 @@ const SettingsPage = () => {
     switch (id) {
       case "general":
         return (
-          <div className="rounded-lg border border-border bg-card p-4 sm:p-6 space-y-6">
-            <div>
-              <h2 className="font-heading text-lg font-semibold mb-1">General Settings</h2>
-              <p className="text-sm text-muted-foreground">Basic system preferences and defaults.</p>
-            </div>
+          <SettingsSection
+            title="General Settings"
+            description="Basic system preferences and defaults."
+            footer={<SaveButton onClick={handleSaveGeneral} />}
+          >
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label>Business Name</Label>
@@ -163,20 +163,33 @@ const SettingsPage = () => {
               </div>
               <InstallAppButton />
             </div>
-            <div className="flex justify-end pt-2">
-              <Button onClick={handleSaveGeneral}>Save Changes</Button>
-            </div>
-          </div>
+          </SettingsSection>
         );
       case "business":
         return <BusinessProfileTab />;
       case "inventory":
         return (
-          <div className="rounded-lg border border-border bg-card p-4 sm:p-6 space-y-6">
-            <div>
-              <h2 className="font-heading text-lg font-semibold mb-1">Inventory Settings</h2>
-              <p className="text-sm text-muted-foreground">Control how stock is tracked across all channels.</p>
-            </div>
+          <SettingsSection
+            title="Inventory Settings"
+            description="Control how stock is tracked across all channels."
+            footer={
+              <SaveButton
+                saving={saving}
+                onClick={async () => {
+                  setSaving(true);
+                  try {
+                    await setGlobalStockEnabled(globalStock);
+                    logAction("update", "settings_inventory", undefined, { globalStock });
+                    toast.success("Inventory settings saved");
+                  } catch {
+                    toast.error("Inventory settings could not be saved");
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              />
+            }
+          >
             <div className="rounded-lg border border-border p-4 space-y-3">
               <div className="flex items-center justify-between gap-4">
                 <div className="space-y-0.5 min-w-0">
@@ -195,26 +208,7 @@ const SettingsPage = () => {
                 </div>
               )}
             </div>
-            <div className="flex justify-end pt-2">
-              <Button
-                onClick={async () => {
-                  setSaving(true);
-                  try {
-                    await setGlobalStockEnabled(globalStock);
-                    logAction("update", "settings_inventory", undefined, { globalStock });
-                    toast.success("Inventory settings saved");
-                  } catch {
-                    toast.error("Inventory settings could not be saved");
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-                disabled={saving}
-              >
-                {saving ? "Saving…" : "Save Changes"}
-              </Button>
-            </div>
-          </div>
+          </SettingsSection>
         );
       case "pos": return <PosSettingsTab />;
       case "orders": return <OrdersSettingsTab />;
