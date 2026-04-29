@@ -36,6 +36,7 @@ interface OrderDetail {
   status: string;
   payment_status: string;
   payment_method: string | null;
+  payment_meta: Record<string, string> | null;
   source: string;
   subtotal: number;
   discount: number | null;
