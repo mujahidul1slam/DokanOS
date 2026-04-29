@@ -586,6 +586,7 @@ Deno.serve(async (req) => {
           customer_address: billingAddr,
           customer_city: o.billing?.city || null,
           notes: o.customer_note || null,
+          payment_meta: extractPaymentMeta(o),
           created_at: o.date_created_gmt ? o.date_created_gmt + "Z" : undefined,
         };
       });
