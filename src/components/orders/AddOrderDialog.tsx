@@ -184,6 +184,16 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setAreas(allAreas.filter((a) => a.zone_id === selectedZone));
   }, [selectedZone, allAreas]);
 
+  // Auto-fill shipping cost based on city (Inside vs Outside Dhaka).
+  // Only applies when the user hasn't manually edited the field.
+  useEffect(() => {
+    if (shippingTouched) return;
+    if (!selectedCity || cities.length === 0) return;
+    const cityName = cities.find((c) => c.city_id === selectedCity)?.city_name || "";
+    const isDhaka = cityName.trim().toLowerCase() === "dhaka";
+    setShippingCost(isDhaka ? shippingInsideDhaka : shippingOutsideDhaka);
+  }, [selectedCity, cities, shippingInsideDhaka, shippingOutsideDhaka, shippingTouched]);
+
   // Address auto-detect: try to match an AREA first (most specific) — that
   // back-fills its zone and city. Otherwise match a ZONE which back-fills
   // its city. Otherwise just match the city.
@@ -361,7 +371,11 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   const resetForm = () => {
     setItems([]); setCustomerName(""); setCustomerPhone(""); setCustomerAddress("");
-    setFulfillment("delivery"); setSource("phone"); setShippingCost(0); setDiscount(0);
+    setFulfillment("delivery");
+    const def = sources.find((s) => (s as any).is_default);
+    setSource(def ? def.name : "phone");
+    setShippingCost(0); setShippingTouched(false);
+    setDiscount(0);
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
     setAiText("");
