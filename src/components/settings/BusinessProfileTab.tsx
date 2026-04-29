@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Upload, X, FileText } from "lucide-react";
 import { logAction } from "@/lib/auditLog";
+import { SettingsSection, SaveButton } from "./SettingsSection";
 
 interface BusinessProfile {
   id: string;
@@ -92,73 +93,64 @@ export default function BusinessProfileTab() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-card p-6 space-y-6">
-        <div>
-          <h2 className="font-heading text-lg font-semibold mb-1">Business Profile</h2>
-          <p className="text-sm text-muted-foreground">
-            This information appears on invoices, pickup slips and measurement slips.
-          </p>
-        </div>
-
-        {/* Logo */}
-        <div className="space-y-2">
-          <Label>Business Logo</Label>
-          <div className="flex items-center gap-4">
-            {data.logo_url ? (
-              <div className="relative">
-                <img src={data.logo_url} alt="Logo" className="h-16 w-auto rounded-md border border-border object-contain bg-white p-1" />
-                <button onClick={() => update("logo_url", "")} className="absolute -top-2 -right-2 rounded-full bg-destructive p-0.5 text-destructive-foreground">
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex h-16 w-24 items-center justify-center rounded-md border-2 border-dashed border-border text-muted-foreground">
-                <FileText className="h-6 w-6" />
-              </div>
-            )}
-            <div>
-              <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()} className="gap-1.5">
-                <Upload className="h-3.5 w-3.5" />
-                {uploading ? "Uploading…" : "Upload Logo"}
-              </Button>
-              <p className="text-xs text-muted-foreground mt-1">PNG or JPG, max 2MB</p>
+    <SettingsSection
+      title="Business Profile"
+      description="Appears on invoices, pickup slips and measurement slips."
+      footer={<SaveButton saving={saving} onClick={handleSave} label="Save Profile" />}
+    >
+      {/* Logo */}
+      <div className="space-y-2">
+        <Label>Business Logo</Label>
+        <div className="flex items-center gap-4">
+          {data.logo_url ? (
+            <div className="relative">
+              <img src={data.logo_url} alt="Logo" className="h-16 w-auto rounded-md border border-border object-contain bg-white p-1" />
+              <button onClick={() => update("logo_url", "")} className="absolute -top-2 -right-2 rounded-full bg-destructive p-0.5 text-destructive-foreground">
+                <X className="h-3 w-3" />
+              </button>
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+          ) : (
+            <div className="flex h-16 w-24 items-center justify-center rounded-md border-2 border-dashed border-border text-muted-foreground">
+              <FileText className="h-6 w-6" />
+            </div>
+          )}
+          <div>
+            <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()} className="gap-1.5">
+              <Upload className="h-3.5 w-3.5" />
+              {uploading ? "Uploading…" : "Upload Logo"}
+            </Button>
+            <p className="text-xs text-muted-foreground mt-1">PNG or JPG, max 2MB</p>
           </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Business Name</Label>
-            <Input value={data.business_name} onChange={(e) => update("business_name", e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Tagline</Label>
-            <Input value={data.tagline || ""} onChange={(e) => update("tagline", e.target.value)} placeholder="Optional short tagline" />
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label>Address</Label>
-          <Textarea value={data.address || ""} onChange={(e) => update("address", e.target.value)} rows={2} />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Phone</Label>
-            <Input value={data.phone || ""} onChange={(e) => update("phone", e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Email</Label>
-            <Input type="email" value={data.email || ""} onChange={(e) => update("email", e.target.value)} />
-          </div>
-        </div>
-
-        <div className="flex justify-end pt-2">
-          <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save Profile"}</Button>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
         </div>
       </div>
-    </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <Label>Business Name</Label>
+          <Input value={data.business_name} onChange={(e) => update("business_name", e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Tagline</Label>
+          <Input value={data.tagline || ""} onChange={(e) => update("tagline", e.target.value)} placeholder="Optional short tagline" />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Address</Label>
+        <Textarea value={data.address || ""} onChange={(e) => update("address", e.target.value)} rows={2} />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <Label>Phone</Label>
+          <Input value={data.phone || ""} onChange={(e) => update("phone", e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Email</Label>
+          <Input type="email" value={data.email || ""} onChange={(e) => update("email", e.target.value)} />
+        </div>
+      </div>
+    </SettingsSection>
   );
 }

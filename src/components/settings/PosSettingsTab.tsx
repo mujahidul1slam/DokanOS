@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { logAction } from "@/lib/auditLog";
+import { SettingsSection, SaveButton } from "./SettingsSection";
 
 const PosSettingsTab = () => {
   const [shippingPresets, setShippingPresets] = useState<number[]>([80, 150]);
@@ -41,52 +42,45 @@ const PosSettingsTab = () => {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-card p-6 space-y-6">
-        <div>
-          <h2 className="font-heading text-lg font-semibold mb-1">POS Settings</h2>
-          <p className="text-sm text-muted-foreground">Configure Point of Sale specific options.</p>
+    <SettingsSection
+      title="POS Settings"
+      description="Configure Point of Sale specific options."
+      footer={<SaveButton saving={saving} onClick={handleSave} label="Save POS Settings" />}
+    >
+      <div className="space-y-1.5">
+        <Label>Shipping Charge Presets</Label>
+        <p className="text-xs text-muted-foreground mb-2">Quick-select buttons shown when Delivery is chosen in POS.</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          {shippingPresets.map((amt, i) => (
+            <div key={i} className="flex items-center gap-1">
+              <Input
+                type="number"
+                value={amt}
+                onChange={(e) => {
+                  const presets = [...shippingPresets];
+                  presets[i] = parseFloat(e.target.value) || 0;
+                  setShippingPresets(presets);
+                }}
+                className="w-24"
+                placeholder={`Preset ${i + 1}`}
+              />
+              {shippingPresets.length > 1 && (
+                <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setShippingPresets(shippingPresets.filter((_, j) => j !== i))}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          ))}
+          <Button variant="outline" size="sm" onClick={() => setShippingPresets([...shippingPresets, 0])}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Add
+          </Button>
         </div>
-
-        <div className="space-y-1.5">
-          <Label>Shipping Charge Presets</Label>
-          <p className="text-xs text-muted-foreground mb-2">These appear as quick-select buttons when Delivery is chosen in POS.</p>
-          <div className="flex items-center gap-2 flex-wrap">
-            {shippingPresets.map((amt, i) => (
-              <div key={i} className="flex items-center gap-1">
-                <Input
-                  type="number"
-                  value={amt}
-                  onChange={(e) => {
-                    const presets = [...shippingPresets];
-                    presets[i] = parseFloat(e.target.value) || 0;
-                    setShippingPresets(presets);
-                  }}
-                  className="w-24"
-                  placeholder={`Preset ${i + 1}`}
-                />
-                {shippingPresets.length > 1 && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShippingPresets(shippingPresets.filter((_, j) => j !== i))}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-              </div>
-            ))}
-            <Button variant="outline" size="sm" onClick={() => setShippingPresets([...shippingPresets, 0])}>
-              <Plus className="h-3.5 w-3.5 mr-1" /> Add
-            </Button>
-          </div>
-        </div>
-
-        <p className="text-xs text-muted-foreground">
-          POS &amp; Manual order number prefix/suffix have moved to the <span className="font-medium">Orders</span> tab.
-        </p>
       </div>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save POS Settings"}</Button>
-      </div>
-    </div>
+      <p className="text-xs text-muted-foreground">
+        POS &amp; Manual order number prefix/suffix have moved to the <span className="font-medium">Orders</span> tab.
+      </p>
+    </SettingsSection>
   );
 };
 

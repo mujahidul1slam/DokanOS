@@ -8,6 +8,7 @@ import {
   usePreOrderCategoryIds,
   expandWithDescendants,
 } from "@/lib/preOrderSettings";
+import { SettingsSection } from "./SettingsSection";
 
 interface CategoryRow {
   id: string;
@@ -44,21 +45,14 @@ const PreOrdersSettingsTab = () => {
     .sort((a, b) => a.storeName.localeCompare(b.storeName) || a.name.localeCompare(b.name));
 
   return (
-    <div className="rounded-lg border border-border bg-card p-6 space-y-6">
-      <div>
-        <h2 className="font-heading text-lg font-semibold mb-1 flex items-center gap-2">
-          <Hourglass className="h-4 w-4" /> Pre-Order Categories
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Choose which product categories trigger an order to be flagged as a Pre-Order.
-          Any order containing at least one product from these categories (or their sub-categories)
-          will appear under the Pre-Orders screen instead of New Orders.
-        </p>
-      </div>
-
+    <SettingsSection
+      title="Pre-Order Categories"
+      icon={Hourglass}
+      description="Orders containing products from these categories (or sub-categories) appear under Pre-Orders instead of New Orders."
+    >
       <div className="rounded-lg border border-border p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-sm font-medium">
               {ids.size === 0
                 ? "No categories selected"
@@ -66,17 +60,17 @@ const PreOrdersSettingsTab = () => {
             </p>
             <p className="text-xs text-muted-foreground">
               {ids.size === 0
-                ? "Pre-Orders will only contain orders manually set to a Pre-Order status."
+                ? "Pre-Orders will only contain orders manually flagged."
                 : `${expanded.size} total categories included (with sub-categories).`}
             </p>
           </div>
-          <Button variant="outline" onClick={() => setOpen(true)}>
-            {ids.size === 0 ? "Select Categories" : "Edit"}
+          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+            {ids.size === 0 ? "Select" : "Edit"}
           </Button>
         </div>
 
         {directLabels.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-2 border-t">
+          <div className="flex flex-wrap gap-1.5 pt-2 border-t border-border">
             {directLabels.map((c) => (
               <Badge key={c.id} variant="secondary" className="text-xs">
                 <span className="text-muted-foreground mr-1">{c.storeName}:</span>{c.name}
@@ -87,7 +81,7 @@ const PreOrdersSettingsTab = () => {
       </div>
 
       <PreOrderCategoriesDialog open={open} onOpenChange={setOpen} />
-    </div>
+    </SettingsSection>
   );
 };
 

@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
+import { SettingsSection, SaveButton } from "./SettingsSection";
 
 interface StoreRow {
   id: string;
@@ -87,107 +88,95 @@ const OrdersSettingsTab = () => {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-card p-6 space-y-6">
-        <div>
-          <h2 className="font-heading text-lg font-semibold mb-1">Order Number Format</h2>
-          <p className="text-sm text-muted-foreground">
-            Add prefix/suffix branding to order numbers. POS &amp; Manual orders use a 4-digit
-            sequential number (starting at 3000). WooCommerce orders keep their original
-            store number, wrapped with your prefix/suffix. Reflects on receipts, pickup slips,
-            and reports.
-          </p>
-        </div>
+    <SettingsSection
+      title="Order Number Format"
+      description="Add prefix/suffix branding to order numbers. POS & Manual orders use a 4-digit sequence (from 3000); Woo orders keep their original number wrapped with your prefix/suffix."
+      footer={<SaveButton saving={saving} onClick={handleSave} label="Save Order Settings" />}
+    >
+      <div className="space-y-4">
+        <h3 className="font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">Defaults</h3>
 
-        <div className="space-y-4">
-          <h3 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">Defaults</h3>
-
-          <div className="space-y-2">
-            <Label className="text-sm">POS Orders</Label>
-            <div className="flex items-center gap-2">
-              <Input placeholder="Prefix" value={defaults.pos_prefix}
-                onChange={(e) => setDefaults({ ...defaults, pos_prefix: e.target.value })} className="w-32" />
-              <span className="font-mono text-muted-foreground text-sm">3000</span>
-              <Input placeholder="Suffix" value={defaults.pos_suffix}
-                onChange={(e) => setDefaults({ ...defaults, pos_suffix: e.target.value })} className="w-32" />
-              <PreviewRow prefix={defaults.pos_prefix} base="3000" suffix={defaults.pos_suffix} />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-sm">Manual Orders</Label>
-            <div className="flex items-center gap-2">
-              <Input placeholder="Prefix" value={defaults.manual_prefix}
-                onChange={(e) => setDefaults({ ...defaults, manual_prefix: e.target.value })} className="w-32" />
-              <span className="font-mono text-muted-foreground text-sm">3000</span>
-              <Input placeholder="Suffix" value={defaults.manual_suffix}
-                onChange={(e) => setDefaults({ ...defaults, manual_suffix: e.target.value })} className="w-32" />
-              <PreviewRow prefix={defaults.manual_prefix} base="3000" suffix={defaults.manual_suffix} />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-sm">WooCommerce Orders (wraps Woo's own number)</Label>
-            <div className="flex items-center gap-2">
-              <Input placeholder="Prefix" value={defaults.woo_prefix}
-                onChange={(e) => setDefaults({ ...defaults, woo_prefix: e.target.value })} className="w-32" />
-              <span className="font-mono text-muted-foreground text-sm">12345</span>
-              <Input placeholder="Suffix" value={defaults.woo_suffix}
-                onChange={(e) => setDefaults({ ...defaults, woo_suffix: e.target.value })} className="w-32" />
-              <PreviewRow prefix={defaults.woo_prefix} base="12345" suffix={defaults.woo_suffix} />
-            </div>
+        <div className="space-y-2">
+          <Label className="text-sm">POS Orders</Label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input placeholder="Prefix" value={defaults.pos_prefix}
+              onChange={(e) => setDefaults({ ...defaults, pos_prefix: e.target.value })} className="w-28" />
+            <span className="font-mono text-muted-foreground text-sm">3000</span>
+            <Input placeholder="Suffix" value={defaults.pos_suffix}
+              onChange={(e) => setDefaults({ ...defaults, pos_suffix: e.target.value })} className="w-28" />
+            <PreviewRow prefix={defaults.pos_prefix} base="3000" suffix={defaults.pos_suffix} />
           </div>
         </div>
 
-        <div className="space-y-3 pt-2 border-t border-border">
-          <h3 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">Per-Store Overrides</h3>
-          {stores.length === 0 && (
-            <p className="text-xs text-muted-foreground">No connected stores yet.</p>
-          )}
-          {stores.map((s, i) => (
-            <div key={s.id} className="rounded-md border border-border p-3 space-y-2">
-              <div className="font-medium text-sm">{s.name}</div>
+        <div className="space-y-2">
+          <Label className="text-sm">Manual Orders</Label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input placeholder="Prefix" value={defaults.manual_prefix}
+              onChange={(e) => setDefaults({ ...defaults, manual_prefix: e.target.value })} className="w-28" />
+            <span className="font-mono text-muted-foreground text-sm">3000</span>
+            <Input placeholder="Suffix" value={defaults.manual_suffix}
+              onChange={(e) => setDefaults({ ...defaults, manual_suffix: e.target.value })} className="w-28" />
+            <PreviewRow prefix={defaults.manual_prefix} base="3000" suffix={defaults.manual_suffix} />
+          </div>
+        </div>
 
-              <div className="grid grid-cols-[80px_1fr] items-center gap-2">
-                <Label className="text-xs text-muted-foreground">POS</Label>
-                <div className="flex items-center gap-2">
-                  <Input placeholder="Prefix" value={s.pos_order_prefix || ""}
-                    onChange={(e) => updateStore(i, { pos_order_prefix: e.target.value })} className="w-28 h-8" />
-                  <span className="font-mono text-muted-foreground text-xs">3000</span>
-                  <Input placeholder="Suffix" value={s.pos_order_suffix || ""}
-                    onChange={(e) => updateStore(i, { pos_order_suffix: e.target.value })} className="w-28 h-8" />
-                  <span className="text-xs text-muted-foreground ml-1 font-mono">{s.pos_order_prefix || ""}3000{s.pos_order_suffix || ""}</span>
-                </div>
+        <div className="space-y-2">
+          <Label className="text-sm">WooCommerce Orders <span className="text-xs text-muted-foreground font-normal">(wraps Woo's own number)</span></Label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input placeholder="Prefix" value={defaults.woo_prefix}
+              onChange={(e) => setDefaults({ ...defaults, woo_prefix: e.target.value })} className="w-28" />
+            <span className="font-mono text-muted-foreground text-sm">12345</span>
+            <Input placeholder="Suffix" value={defaults.woo_suffix}
+              onChange={(e) => setDefaults({ ...defaults, woo_suffix: e.target.value })} className="w-28" />
+            <PreviewRow prefix={defaults.woo_prefix} base="12345" suffix={defaults.woo_suffix} />
+          </div>
+        </div>
+      </div>
 
-                <Label className="text-xs text-muted-foreground">Manual</Label>
-                <div className="flex items-center gap-2">
-                  <Input placeholder="Prefix" value={s.manual_order_prefix || ""}
-                    onChange={(e) => updateStore(i, { manual_order_prefix: e.target.value })} className="w-28 h-8" />
-                  <span className="font-mono text-muted-foreground text-xs">3000</span>
-                  <Input placeholder="Suffix" value={s.manual_order_suffix || ""}
-                    onChange={(e) => updateStore(i, { manual_order_suffix: e.target.value })} className="w-28 h-8" />
-                  <span className="text-xs text-muted-foreground ml-1 font-mono">{s.manual_order_prefix || ""}3000{s.manual_order_suffix || ""}</span>
-                </div>
+      <div className="space-y-3 pt-4 border-t border-border">
+        <h3 className="font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">Per-Store Overrides</h3>
+        {stores.length === 0 && (
+          <p className="text-xs text-muted-foreground">No connected stores yet.</p>
+        )}
+        {stores.map((s, i) => (
+          <div key={s.id} className="rounded-md border border-border p-3 space-y-2">
+            <div className="font-medium text-sm">{s.name}</div>
 
-                <Label className="text-xs text-muted-foreground">Woo</Label>
-                <div className="flex items-center gap-2">
-                  <Input placeholder="Prefix" value={s.woo_order_prefix || ""}
-                    onChange={(e) => updateStore(i, { woo_order_prefix: e.target.value })} className="w-28 h-8" />
-                  <span className="font-mono text-muted-foreground text-xs">12345</span>
-                  <Input placeholder="Suffix" value={s.woo_order_suffix || ""}
-                    onChange={(e) => updateStore(i, { woo_order_suffix: e.target.value })} className="w-28 h-8" />
-                  <span className="text-xs text-muted-foreground ml-1 font-mono">{s.woo_order_prefix || ""}12345{s.woo_order_suffix || ""}</span>
-                </div>
+            <div className="grid grid-cols-[70px_1fr] items-center gap-2">
+              <Label className="text-xs text-muted-foreground">POS</Label>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input placeholder="Prefix" value={s.pos_order_prefix || ""}
+                  onChange={(e) => updateStore(i, { pos_order_prefix: e.target.value })} className="w-24 h-8" />
+                <span className="font-mono text-muted-foreground text-xs">3000</span>
+                <Input placeholder="Suffix" value={s.pos_order_suffix || ""}
+                  onChange={(e) => updateStore(i, { pos_order_suffix: e.target.value })} className="w-24 h-8" />
+                <span className="text-xs text-muted-foreground ml-1 font-mono">{s.pos_order_prefix || ""}3000{s.pos_order_suffix || ""}</span>
+              </div>
+
+              <Label className="text-xs text-muted-foreground">Manual</Label>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input placeholder="Prefix" value={s.manual_order_prefix || ""}
+                  onChange={(e) => updateStore(i, { manual_order_prefix: e.target.value })} className="w-24 h-8" />
+                <span className="font-mono text-muted-foreground text-xs">3000</span>
+                <Input placeholder="Suffix" value={s.manual_order_suffix || ""}
+                  onChange={(e) => updateStore(i, { manual_order_suffix: e.target.value })} className="w-24 h-8" />
+                <span className="text-xs text-muted-foreground ml-1 font-mono">{s.manual_order_prefix || ""}3000{s.manual_order_suffix || ""}</span>
+              </div>
+
+              <Label className="text-xs text-muted-foreground">Woo</Label>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input placeholder="Prefix" value={s.woo_order_prefix || ""}
+                  onChange={(e) => updateStore(i, { woo_order_prefix: e.target.value })} className="w-24 h-8" />
+                <span className="font-mono text-muted-foreground text-xs">12345</span>
+                <Input placeholder="Suffix" value={s.woo_order_suffix || ""}
+                  onChange={(e) => updateStore(i, { woo_order_suffix: e.target.value })} className="w-24 h-8" />
+                <span className="text-xs text-muted-foreground ml-1 font-mono">{s.woo_order_prefix || ""}12345{s.woo_order_suffix || ""}</span>
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
-
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save Order Settings"}</Button>
-      </div>
-    </div>
+    </SettingsSection>
   );
 };
 
