@@ -75,7 +75,7 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
             <FulfillmentBadge status={order.status} />
             <DeliveryBadge type={order.fulfillment_type} />
             <PaymentBadge status={order.payment_status} />
-            {order.payment_method && order.payment_status !== "cod" && order.payment_status !== "paid" && (
+            {order.payment_method && order.payment_status !== "cod" && (
               <span className="text-[11px] text-muted-foreground">{order.payment_method}</span>
             )}
             {order.consignment_id && <TrackingBadge status={order.tracking_status} />}
