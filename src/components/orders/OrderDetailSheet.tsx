@@ -441,13 +441,30 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       <SheetContent side="right" className="sm:max-w-2xl w-full flex flex-col p-0 gap-0">
         {/* Header */}
         <SheetHeader className="px-6 py-4 border-b border-border shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 min-w-0">
               <SheetTitle className="text-lg font-semibold">
                 #{order?.order_number || "..."}
               </SheetTitle>
               {order && <FulfillmentBadge status={order.status} />}
             </div>
+            {order?.woo_order_id && order.stores?.url && (
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+                className="gap-1.5 mr-8"
+              >
+                <a
+                  href={`${order.stores.url.replace(/\/+$/, "")}/wp-admin/post.php?post=${order.woo_order_id}&action=edit`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  View on WooCommerce
+                </a>
+              </Button>
+            )}
           </div>
           {order && (
             <p className="text-xs text-muted-foreground mt-1">
