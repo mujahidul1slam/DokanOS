@@ -72,6 +72,7 @@ interface OrderItem {
   variationLabel?: string;
   price: number;
   qty: number;
+  isCustomItem?: boolean;
   customMeasurements?: boolean;
   // groupId -> { fieldId -> value }
   measurementValues?: Record<string, Record<string, string>>;
