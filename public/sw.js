@@ -12,17 +12,6 @@ self.addEventListener("activate", (event) => {
       await self.clients.claim();
       const cacheNames = await caches.keys();
       await Promise.all(cacheNames.map((name) => caches.delete(name)));
-      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      await Promise.all(
-        clients.map((client) => {
-          const url = new URL(client.url);
-          if (!url.searchParams.has("sw-cleanup")) {
-            url.searchParams.set("sw-cleanup", Date.now().toString());
-            return client.navigate(url.toString());
-          }
-          return undefined;
-        })
-      );
       await self.registration.unregister();
     })()
   );
