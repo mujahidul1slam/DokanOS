@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { logAction } from "@/lib/auditLog";
+import { logAction, logChange } from "@/lib/auditLog";
 import { SettingsSection, SaveButton } from "@/components/settings/SettingsSection";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
@@ -106,11 +106,16 @@ const SettingsPage = () => {
   const [currency, setCurrency] = useState(() => localStorage.getItem("omnisync-currency") || "৳");
   const [timezone, setTimezone] = useState(() => localStorage.getItem("omnisync-timezone") || "Asia/Dhaka");
 
-  const handleSaveGeneral = () => {
+  const handleSaveGeneral = async () => {
+    const before = {
+      businessName: localStorage.getItem("omnisync-business-name") || "DokanOS",
+      currency: localStorage.getItem("omnisync-currency") || "৳",
+      timezone: localStorage.getItem("omnisync-timezone") || "Asia/Dhaka",
+    };
     localStorage.setItem("omnisync-business-name", businessName);
     localStorage.setItem("omnisync-currency", currency);
     localStorage.setItem("omnisync-timezone", timezone);
-    logAction("update", "settings_general", undefined, { businessName, currency, timezone });
+    await logChange("settings_general", undefined, before, { businessName, currency, timezone });
     toast.success("Settings saved");
   };
 
@@ -179,7 +184,7 @@ const SettingsPage = () => {
                   setSaving(true);
                   try {
                     await setGlobalStockEnabled(globalStock);
-                    logAction("update", "settings_inventory", undefined, { globalStock });
+                    await logChange("settings_inventory", undefined, { globalStock: persistedGlobalStock }, { globalStock });
                     toast.success("Inventory settings saved");
                   } catch {
                     toast.error("Inventory settings could not be saved");
