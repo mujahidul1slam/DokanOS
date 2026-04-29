@@ -195,6 +195,8 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     p_store_id: store_id, p_source: "woo", p_base: baseOrderNum,
   });
 
+  const payment_meta = extractPaymentMeta(o);
+
   const orderData = {
     store_id,
     woo_order_id: o.id,
