@@ -359,6 +359,36 @@ const InvoiceSettingsTab = () => {
         </div>
       </div>
 
+      {/* Shipping Cost Defaults */}
+      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <div>
+          <h2 className="font-heading text-lg font-semibold mb-1">Shipping Cost Defaults</h2>
+          <p className="text-sm text-muted-foreground">
+            These costs auto-fill the shipping field when creating an order, based on whether
+            the customer's city is Dhaka or outside. They also appear as one-click quick buttons
+            next to the shipping cost field.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Inside Dhaka (৳)</Label>
+            <Input
+              type="number"
+              value={settings.shipping_inside_dhaka}
+              onChange={(e) => updateField("shipping_inside_dhaka", Number(e.target.value) || 0)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Outside Dhaka (৳)</Label>
+            <Input
+              type="number"
+              value={settings.shipping_outside_dhaka}
+              onChange={(e) => updateField("shipping_outside_dhaka", Number(e.target.value) || 0)}
+            />
+          </div>
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save All Settings"}</Button>
       </div>
