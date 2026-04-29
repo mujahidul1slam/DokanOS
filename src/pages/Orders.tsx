@@ -808,8 +808,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           const tabItems: { key: TabKey; label: string; icon: any; count: number }[] = [
             { key: "all", label: "All", icon: ShoppingCart, count: counts.all },
             { key: "new", label: "New", icon: Package, count: counts.new },
-            { key: "ready", label: "Ready", icon: PackageCheck, count: counts.ready },
             { key: "pre_order", label: "Pre-Order", icon: Hourglass, count: counts.pre_order },
+            { key: "ready", label: "Ready", icon: PackageCheck, count: counts.ready },
             { key: "pickup_pending", label: "Pickup", icon: Clock, count: counts.pickup_pending },
             { key: "in_transit", label: "Transit", icon: Truck, count: counts.in_transit },
             { key: "delivered", label: "Delivered", icon: CheckCircle2, count: counts.delivered },
