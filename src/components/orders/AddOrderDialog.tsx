@@ -13,9 +13,7 @@ import {
   type CapturedMeasurement,
 } from "@/lib/measurements";
 
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
+import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -626,13 +624,21 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v); }}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Add New Order</DialogTitle>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+    <ResponsiveDialog
+      open={open}
+      onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v); }}
+      title="Add New Order"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
+          <Button onClick={handleCreate} disabled={saving || items.length === 0}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Create Order
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
           {/* AI parse-from-text — always visible */}
           <div className="rounded-md border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
             <div className="flex items-center gap-2">
@@ -712,7 +718,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           {/* Cart Items */}
           {items.length > 0 && (
             <div className="rounded-md border border-border">
-              <div className="px-3 py-2 bg-secondary text-xs font-medium text-muted-foreground grid grid-cols-[1fr_80px_100px_80px_32px]">
+              <div className="hidden sm:grid px-3 py-2 bg-secondary text-xs font-medium text-muted-foreground grid-cols-[1fr_80px_100px_80px_32px]">
                 <span>Product</span><span className="text-right">Price</span><span className="text-center">Qty</span><span className="text-right">Total</span><span></span>
               </div>
               {items.map(item => {
@@ -720,19 +726,41 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 const showMeasureToggle = measurementsEnabled && groups.length > 0;
                 return (
                   <div key={item.uid} className="border-t border-border">
-                    <div className="px-3 py-2 grid grid-cols-[1fr_80px_100px_80px_32px] items-center text-sm">
+                    {/* Desktop: single-row grid */}
+                    <div className="hidden sm:grid px-3 py-2 grid-cols-[1fr_80px_100px_80px_32px] items-center text-sm">
                       <div className="truncate">
                         <span className="font-medium">{item.name}</span>
                         {item.variationLabel && <span className="ml-1 text-xs text-muted-foreground">({item.variationLabel})</span>}
                       </div>
                       <span className="text-right text-muted-foreground">৳{item.price.toLocaleString()}</span>
                       <div className="flex items-center justify-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty - 1)}><Minus className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => updateQty(item.uid, item.qty - 1)}><Minus className="h-3.5 w-3.5" /></Button>
                         <span className="w-6 text-center">{item.qty}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQty(item.uid, item.qty + 1)}><Plus className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => updateQty(item.uid, item.qty + 1)}><Plus className="h-3.5 w-3.5" /></Button>
                       </div>
                       <span className="text-right font-medium">৳{(item.price * item.qty).toLocaleString()}</span>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeItem(item.uid)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeItem(item.uid)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
+                    </div>
+                    {/* Mobile: stacked card */}
+                    <div className="sm:hidden px-3 py-2.5 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium leading-tight">{item.name}</div>
+                          {item.variationLabel && <div className="text-xs text-muted-foreground mt-0.5">{item.variationLabel}</div>}
+                          <div className="text-xs text-muted-foreground mt-1">৳{item.price.toLocaleString()} each</div>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-9 w-9 -mr-1 shrink-0" onClick={() => removeItem(item.uid)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 rounded-md border border-border">
+                          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => updateQty(item.uid, item.qty - 1)}><Minus className="h-4 w-4" /></Button>
+                          <span className="w-8 text-center text-sm font-medium">{item.qty}</span>
+                          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => updateQty(item.uid, item.qty + 1)}><Plus className="h-4 w-4" /></Button>
+                        </div>
+                        <span className="text-sm font-semibold">৳{(item.price * item.qty).toLocaleString()}</span>
+                      </div>
                     </div>
 
                     {showMeasureToggle && (
@@ -810,14 +838,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           <Separator />
 
           {/* Customer & Fulfillment */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Customer Name</Label>
               <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Phone</Label>
-              <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="01XXXXXXXXX" />
+              <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="01XXXXXXXXX" type="tel" inputMode="tel" autoComplete="tel" />
             </div>
             <div className="space-y-1.5 col-span-2">
               <Label className="text-xs">Address</Label>
@@ -826,7 +854,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           </div>
 
           {/* Pathao Location */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">City</Label>
               <SearchableSelect
@@ -864,7 +892,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Delivery Method</Label>
               <Select value={fulfillment} onValueChange={(v: any) => setFulfillment(v)}>
@@ -889,6 +917,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               <Label className="text-xs">Shipping Cost</Label>
               <Input
                 type="number"
+                inputMode="numeric"
                 value={shippingCost}
                 onChange={(e) => { setShippingCost(Number(e.target.value)); setShippingTouched(true); }}
               />
@@ -917,7 +946,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Discount</Label>
-              <Input type="number" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
+              <Input type="number" inputMode="numeric" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
             </div>
           </div>
 
@@ -934,16 +963,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             <Separator />
             <div className="flex justify-between font-semibold text-base"><span>Total</span><span>৳{total.toLocaleString()}</span></div>
           </div>
-        </div>
-
-        <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
-          <Button onClick={handleCreate} disabled={saving || items.length === 0}>
-            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Create Order
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </ResponsiveDialog>
   );
 }

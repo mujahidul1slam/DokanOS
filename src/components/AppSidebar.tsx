@@ -24,11 +24,21 @@ const navItems = [
   { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },
 ];
 
-const AppSidebar = () => {
+interface AppSidebarProps {
+  mobileOpen?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
+}
+
+const AppSidebar = ({ mobileOpen: mobileOpenProp, onMobileOpenChange }: AppSidebarProps = {}) => {
   const location = useLocation();
   const { user, role, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const mobileOpen = mobileOpenProp ?? internalOpen;
+  const setMobileOpen = (v: boolean) => {
+    if (onMobileOpenChange) onMobileOpenChange(v);
+    else setInternalOpen(v);
+  };
 
   const visibleItems = navItems.filter(
     (item) => role && item.roles.includes(role)
@@ -127,14 +137,6 @@ const AppSidebar = () => {
 
   return (
     <>
-      {/* Mobile hamburger */}
-      <button
-        className="fixed left-4 top-4 z-50 lg:hidden rounded-md bg-card border border-border p-2"
-        onClick={() => setMobileOpen(true)}
-      >
-        <Menu className="h-5 w-5 text-foreground" />
-      </button>
-
       {/* Mobile overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden" onClick={() => setMobileOpen(false)} />

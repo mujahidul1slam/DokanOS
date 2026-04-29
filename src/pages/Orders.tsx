@@ -660,7 +660,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         </div>
         <div className="flex items-center gap-2">
           {canWrite && !preOrderMode && (
-            <Button size="sm" onClick={() => setAddOrderOpen(true)}>
+            <Button size="sm" onClick={() => setAddOrderOpen(true)} className="hidden sm:inline-flex">
               <Plus className="h-4 w-4 mr-1" /> Add Order
             </Button>
           )}
@@ -1006,6 +1006,18 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
 
         <Pagination page={page} totalPages={totalPages} filtered={filtered} setPage={setPage} />
       </Tabs>
+
+      {/* Mobile FAB — Add Order */}
+      {canWrite && !preOrderMode && (
+        <button
+          onClick={() => setAddOrderOpen(true)}
+          aria-label="Add order"
+          className="sm:hidden fixed right-4 bottom-20 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+          style={{ marginBottom: "env(safe-area-inset-bottom, 0px)" }}
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      )}
 
       <OrderDetailSheet
         orderId={detailOrderId}
