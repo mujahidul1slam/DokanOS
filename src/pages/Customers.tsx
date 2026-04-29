@@ -256,7 +256,55 @@ const Customers = () => {
         </Button>
       </div>
 
-      <div className="rounded-lg border border-border overflow-hidden">
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-2">
+        {paginated.length === 0 ? (
+          <div className="rounded-lg border border-border p-6 text-center text-sm text-muted-foreground">
+            <Users className="h-8 w-8 mx-auto mb-2 opacity-50" /> No customers found
+          </div>
+        ) : paginated.map((c) => (
+          <div
+            key={c.id}
+            onClick={() => openDetail(c)}
+            className="rounded-lg border border-border bg-card p-3 active:bg-accent/50 transition-colors"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary shrink-0">
+                {c.primaryName.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-medium text-foreground truncate">{c.primaryName}</div>
+                  <div className="font-semibold text-foreground whitespace-nowrap">৳{c.total_spent.toLocaleString()}</div>
+                </div>
+                {c.phone && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                    <Phone className="h-3 w-3" />{c.phone}
+                  </div>
+                )}
+                {c.primaryEmail && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
+                    <Mail className="h-3 w-3" />{c.primaryEmail}
+                  </div>
+                )}
+                {c.city && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <MapPin className="h-3 w-3" />{c.city}
+                  </div>
+                )}
+                <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground">
+                  <Badge variant="outline" className="gap-1">
+                    <ShoppingCart className="h-3 w-3" />{c.order_count} orders
+                  </Badge>
+                  <span>Since {format(new Date(c.created_at), "MMM yyyy")}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden md:block rounded-lg border border-border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-secondary hover:bg-secondary">
