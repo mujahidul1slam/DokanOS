@@ -35,6 +35,7 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
   const [variations, setVariations] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedVar, setSelectedVar] = useState<Variation | null>(null);
+  const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>({});
   const [customTailoring, setCustomTailoring] = useState(false);
   const [qty, setQty] = useState(1);
   const globalStockEnabled = useGlobalStockEnabled();
@@ -49,6 +50,7 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
   useEffect(() => {
     if (!product || !open) return;
     setSelectedVar(null);
+    setSelectedAttrs({});
     setCustomTailoring(false);
     setQty(1);
     setGroupValues({});
