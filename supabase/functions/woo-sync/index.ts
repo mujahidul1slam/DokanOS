@@ -762,11 +762,13 @@ Deno.serve(async (req) => {
 
 function mapWooStatus(status: string): string {
   const map: Record<string, string> = {
-    pending: "pending", processing: "processing", "on-hold": "pending",
+    // Both "processing" (COD) and "on-hold" (non-COD awaiting payment) are New Orders in DokanOS.
+    // The payment_status field distinguishes them (cod vs pending_payment).
+    pending: "processing", processing: "processing", "on-hold": "processing",
     completed: "completed", cancelled: "cancelled", refunded: "returned",
     failed: "cancelled", shipped: "shipped",
   };
-  return map[status] || "pending";
+  return map[status] || "processing";
 }
 
 function fromWooStockStatus(status: string): string {
