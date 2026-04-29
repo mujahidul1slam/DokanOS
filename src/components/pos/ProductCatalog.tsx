@@ -273,9 +273,9 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
       {/* Pagination */}
       <div className="flex items-center justify-between gap-2 pt-2 md:pt-3 border-t border-border mt-2 pb-20 md:pb-0">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Show</span>
+          <span className="text-xs text-muted-foreground hidden md:inline">Show</span>
           <Select value={String(perPage)} onValueChange={(v) => setPerPage(Number(v))}>
-            <SelectTrigger className="h-8 w-20 text-xs bg-secondary">
+            <SelectTrigger className="h-8 w-16 md:w-20 text-xs bg-secondary">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -284,8 +284,8 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground">
-            of {filtered.length} products
+          <span className="text-xs text-muted-foreground truncate">
+            <span className="hidden md:inline">of </span>{filtered.length}<span className="hidden sm:inline"> products</span>
           </span>
         </div>
         <div className="flex items-center gap-1">
