@@ -664,12 +664,28 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             <Textarea
               value={aiText}
               onChange={(e) => setAiText(e.target.value)}
-              placeholder={"Paste anything — e.g.\nName: Rahim\n01712345678\nHouse 12, Road 5, Mirpur 10, Dhaka\n2pcs blue panjabi size L\nShipping 80, due 1200"}
+              onPaste={(e) => {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                for (let i = 0; i < items.length; i++) {
+                  const it = items[i];
+                  if (it.kind === "file" && it.type.startsWith("image/")) {
+                    const file = it.getAsFile();
+                    if (file) {
+                      e.preventDefault();
+                      toast.info("Screenshot pasted — parsing…");
+                      handleAiParseImage(file);
+                      return;
+                    }
+                  }
+                }
+              }}
+              placeholder={"Paste anything — e.g.\nName: Rahim\n01712345678\nHouse 12, Road 5, Mirpur 10, Dhaka\n2pcs blue panjabi size L\nShipping 80, due 1200\n\n📋 Tip: paste a screenshot directly here (Ctrl/Cmd+V)"}
               rows={4}
               className="text-sm"
             />
             <p className="text-[11px] text-muted-foreground">
-              Tip: you can also upload a screenshot of a Messenger / WhatsApp / Business Suite chat.
+              Tip: paste a screenshot directly (Ctrl/Cmd+V) or upload one below.
             </p>
             <div className="flex items-center justify-between gap-2">
               <Button
