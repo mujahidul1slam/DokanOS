@@ -444,7 +444,7 @@ async function resolveOrCreateCustomer(supabase: any, store_id: string, o: any):
 
 function mapWooStatus(status: string): string {
   const map: Record<string, string> = {
-    pending: "pending", processing: "processing", "on-hold": "pending",
+    pending: "pending", processing: "processing", "on-hold": "on_hold",
     completed: "completed", cancelled: "cancelled", refunded: "returned",
     failed: "cancelled", shipped: "shipped",
   };

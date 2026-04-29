@@ -318,6 +318,7 @@ function reverseMapStatus(status: string): string {
   // Pre-order states map to "on-hold" on Woo so customers see production is in progress.
   const map: Record<string, string> = {
     pending: "pending",
+    on_hold: "on-hold",
     processing: "processing",
     pre_order_pending: "on-hold",
     pre_order_making: "on-hold",
