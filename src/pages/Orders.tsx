@@ -922,6 +922,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="processing">New Order</SelectItem>
+                    <SelectItem value="payment_pending">Payment Pending</SelectItem>
                     <SelectItem value="pre_order_pending">Pre-Order</SelectItem>
                     <SelectItem value="pre_order_making">Making</SelectItem>
                     <SelectItem value="pre_order_ready">Pre-Order Ready</SelectItem>
@@ -948,6 +949,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                 <SelectContent>
                   <SelectItem value="all">All Payment</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="online">Online</SelectItem>
                   <SelectItem value="unpaid">Unpaid</SelectItem>
                   <SelectItem value="cod">COD</SelectItem>
                   <SelectItem value="partial">Partial</SelectItem>
