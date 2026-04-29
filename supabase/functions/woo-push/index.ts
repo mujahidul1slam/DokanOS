@@ -319,6 +319,7 @@ function reverseMapStatus(status: string): string {
   const map: Record<string, string> = {
     pending: "pending",
     processing: "processing",
+    payment_pending: "on-hold",
     pre_order_pending: "on-hold",
     pre_order_making: "on-hold",
     pre_order_ready: "processing",
