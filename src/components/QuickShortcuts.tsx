@@ -5,9 +5,9 @@ import dokanosLogo from "@/assets/dokanos-logo-horizontal.png";
 
 const QuickShortcuts = () => (
   <div className="sticky top-0 z-30 -mx-4 -mt-4 mb-4 border-b border-border bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:-mx-6 lg:-mt-6 lg:px-6">
-    {/* Mobile-only: logo row above shortcuts */}
-    <div className="flex h-14 items-center justify-end pl-12 lg:hidden">
-      <img src={dokanosLogo} alt="DokanOS" className="h-10 w-auto object-contain" />
+    {/* Mobile-only: centered, full-width logo row above shortcuts */}
+    <div className="flex h-14 items-center justify-center lg:hidden">
+      <img src={dokanosLogo} alt="DokanOS" className="h-full w-auto max-w-full object-contain py-1" />
     </div>
 
     {/* Shortcuts row (with logo on right for desktop) */}
@@ -32,8 +32,8 @@ const QuickShortcuts = () => (
         </Link>
       </Button>
 
-      {/* Desktop-only: logo on the far right */}
-      <img src={dokanosLogo} alt="DokanOS" className="hidden lg:block ml-auto h-12 w-auto object-contain shrink-0" />
+      {/* Desktop-only: logo fills the full header height on the right */}
+      <img src={dokanosLogo} alt="DokanOS" className="hidden lg:block ml-auto h-full w-auto object-contain shrink-0" />
     </div>
   </div>
 );
