@@ -708,11 +708,19 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           <h1 className="font-heading text-2xl font-semibold">{preOrderMode ? "Pre-Orders" : "Orders"}</h1>
           <p className="text-sm text-muted-foreground">
             {preOrderMode
-              ? "Orders containing backordered products awaiting stock"
+              ? "Orders containing products from configured Pre-Order categories"
               : "Manage your order pipeline — from new orders to delivery"}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {preOrderMode && canWrite && (
+            <Button variant="outline" size="sm" onClick={() => setPreOrderSettingsOpen(true)} className="gap-1.5">
+              <SettingsIcon className="h-4 w-4" /> Pre-Order Categories
+              {preOrderCategoryIds.size > 0 && (
+                <Badge variant="secondary" className="ml-0.5 h-5 px-1.5 text-[10px]">{preOrderCategoryIds.size}</Badge>
+              )}
+            </Button>
+          )}
           {canWrite && !preOrderMode && (
             <Button size="sm" onClick={() => setAddOrderOpen(true)} className="hidden sm:inline-flex">
               <Plus className="h-4 w-4 mr-1" /> Add Order
