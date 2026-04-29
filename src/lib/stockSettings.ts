@@ -29,30 +29,45 @@ export const setGlobalStockEnabled = async (enabled: boolean) => {
   }
 };
 
-/** Hydrate from DB once on app load, overriding any stale local value. */
-let hydrated = false;
-export const hydrateGlobalStockFromDB = async () => {
-  if (hydrated) return;
-  hydrated = true;
-  try {
-    const { data } = await supabase
-      .from("app_settings" as any)
-      .select("value")
-      .eq("key", DB_KEY)
-      .maybeSingle();
-    if (data && (data as any).value && typeof (data as any).value.enabled === "boolean") {
-      writeLocal((data as any).value.enabled);
+/**
+ * Fetch from DB. Returns the authoritative boolean (or null if no row exists / error).
+ * Concurrent calls share the same in-flight promise.
+ */
+let inflight: Promise<boolean | null> | null = null;
+export const fetchGlobalStockFromDB = (): Promise<boolean | null> => {
+  if (inflight) return inflight;
+  inflight = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from("app_settings" as any)
+        .select("value")
+        .eq("key", DB_KEY)
+        .maybeSingle();
+      if (error) return null;
+      if (data && (data as any).value && typeof (data as any).value.enabled === "boolean") {
+        const enabled = (data as any).value.enabled;
+        writeLocal(enabled);
+        return enabled;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      setTimeout(() => { inflight = null; }, 0);
     }
-  } catch (e) {
-    // ignore — fall back to local cache
-  }
+  })();
+  return inflight;
 };
 
 /** React hook that reflects current global stock toggle. */
 export const useGlobalStockEnabled = (): boolean => {
   const [enabled, setEnabled] = useState<boolean>(() => getGlobalStockEnabled());
   useEffect(() => {
-    hydrateGlobalStockFromDB();
+    let cancelled = false;
+    fetchGlobalStockFromDB().then((v) => {
+      if (cancelled) return;
+      if (v !== null) setEnabled(v);
+    });
     const onChange = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       setEnabled(typeof detail === "boolean" ? detail : getGlobalStockEnabled());
@@ -63,6 +78,7 @@ export const useGlobalStockEnabled = (): boolean => {
     window.addEventListener("omnisync-global-stock-change", onChange);
     window.addEventListener("storage", onStorage);
     return () => {
+      cancelled = true;
       window.removeEventListener("omnisync-global-stock-change", onChange);
       window.removeEventListener("storage", onStorage);
     };

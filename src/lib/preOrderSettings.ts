@@ -26,38 +26,56 @@ export const setPreOrderCategoryIds = async (ids: string[]) => {
   const unique = Array.from(new Set(ids));
   writeLocal(unique);
   try {
-    await supabase
+    const { error } = await supabase
       .from("app_settings" as any)
       .upsert({ key: DB_KEY, value: { ids: unique } }, { onConflict: "key" });
+    if (error) console.warn("Failed to persist pre-order categories to DB", error);
   } catch (e) {
     console.warn("Failed to persist pre-order categories to DB", e);
   }
 };
 
-/** Hydrate from DB once on app load, overriding any stale local value. */
-let hydrated = false;
-export const hydratePreOrderCategoriesFromDB = async () => {
-  if (hydrated) return;
-  hydrated = true;
-  try {
-    const { data } = await supabase
-      .from("app_settings" as any)
-      .select("value")
-      .eq("key", DB_KEY)
-      .maybeSingle();
-    if (data && (data as any).value && Array.isArray((data as any).value.ids)) {
-      writeLocal((data as any).value.ids.filter((x: any) => typeof x === "string"));
+/**
+ * Fetch from DB. Returns the authoritative ids array (or null if no row exists / error).
+ * Concurrent calls share the same in-flight promise.
+ */
+let inflight: Promise<string[] | null> | null = null;
+export const fetchPreOrderCategoriesFromDB = (): Promise<string[] | null> => {
+  if (inflight) return inflight;
+  inflight = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from("app_settings" as any)
+        .select("value")
+        .eq("key", DB_KEY)
+        .maybeSingle();
+      if (error) return null;
+      if (data && (data as any).value && Array.isArray((data as any).value.ids)) {
+        const ids = (data as any).value.ids.filter((x: any) => typeof x === "string");
+        writeLocal(ids);
+        return ids;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      // Allow refresh on next caller after a short delay so simultaneous mounts share, but later visits re-fetch
+      setTimeout(() => { inflight = null; }, 0);
     }
-  } catch (e) {
-    // ignore — fall back to local cache
-  }
+  })();
+  return inflight;
 };
 
 /** React hook reflecting the configured pre-order category id set. */
 export const usePreOrderCategoryIds = (): Set<string> => {
   const [ids, setIds] = useState<Set<string>>(() => new Set(getPreOrderCategoryIds()));
   useEffect(() => {
-    hydratePreOrderCategoriesFromDB();
+    let cancelled = false;
+    // Always re-fetch from DB on mount so every screen sees the same authoritative value
+    fetchPreOrderCategoriesFromDB().then((dbIds) => {
+      if (cancelled) return;
+      if (dbIds !== null) setIds(new Set(dbIds));
+    });
     const onChange = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (Array.isArray(detail)) setIds(new Set(detail));
@@ -69,6 +87,7 @@ export const usePreOrderCategoryIds = (): Set<string> => {
     window.addEventListener(EVENT, onChange);
     window.addEventListener("storage", onStorage);
     return () => {
+      cancelled = true;
       window.removeEventListener(EVENT, onChange);
       window.removeEventListener("storage", onStorage);
     };
@@ -104,9 +123,11 @@ export const expandWithDescendants = (
 /**
  * Lookup helper: given an order's product ids, decide if it's a pre-order
  * based on configured category ids. Used in non-React contexts (e.g. slip print).
+ * Always reads from DB to guarantee consistency.
  */
 export const isOrderPreOrderByProducts = async (productIds: string[]): Promise<boolean> => {
-  const configured = getPreOrderCategoryIds();
+  let configured = await fetchPreOrderCategoriesFromDB();
+  if (configured === null) configured = getPreOrderCategoryIds();
   if (configured.length === 0 || productIds.length === 0) return false;
 
   const [{ data: cats }, { data: pcs }] = await Promise.all([
