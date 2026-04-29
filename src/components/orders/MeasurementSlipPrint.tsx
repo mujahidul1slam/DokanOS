@@ -23,8 +23,8 @@ async function promotePreOrderOnSlipPrint(orderId: string) {
     }
 
     // Detect whether this order is treated as a pre-order: either it sits in
-    // pre_order_pending, or it's still in processing/on_hold/pending with at
-    // least one backordered line item (matches the Pre-Orders tab logic).
+    // pre_order_pending, or it's still in processing/on_hold/pending and
+    // contains a product whose category is configured as a Pre-Order category.
     let isPreOrder = order.status === "pre_order_pending";
     let fromLabel = "Pre-Order";
     let fromStatus = order.status;
@@ -32,14 +32,10 @@ async function promotePreOrderOnSlipPrint(orderId: string) {
     if (!isPreOrder && ["processing", "on_hold", "pending"].includes(order.status) && !order.consignment_id) {
       const { data: items } = await supabase
         .from("order_items")
-        .select("products:product_id(stock_status, backorders)")
+        .select("product_id")
         .eq("order_id", orderId);
-      const hasBackorder = (items || []).some((i: any) => {
-        const s = String(i.products?.stock_status || "").toLowerCase().replace(/[_\-\s]/g, "");
-        const b = String(i.products?.backorders || "").toLowerCase();
-        return s === "onbackorder" || b === "yes" || b === "notify";
-      });
-      if (hasBackorder) {
+      const productIds = (items || []).map((i: any) => i.product_id).filter(Boolean);
+      if (await isOrderPreOrderByProducts(productIds)) {
         isPreOrder = true;
         fromLabel = order.status === "processing" ? "New Order" : order.status;
       }
