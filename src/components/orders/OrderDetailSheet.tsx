@@ -494,6 +494,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="unpaid">Unpaid</SelectItem>
+                          <SelectItem value="pending_payment">Pending Payment</SelectItem>
+                          <SelectItem value="cod">COD</SelectItem>
                           <SelectItem value="partial">Partial</SelectItem>
                           <SelectItem value="paid">Paid</SelectItem>
                           <SelectItem value="refunded">Refunded</SelectItem>

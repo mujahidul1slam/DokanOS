@@ -16,6 +16,7 @@ interface OrderCardProps {
     status: string;
     source: string;
     payment_status: string;
+    payment_method?: string | null;
     consignment_id: string | null;
     tracking_status: string | null;
     fulfillment_type: string;
@@ -74,6 +75,9 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
             <FulfillmentBadge status={order.status} />
             <DeliveryBadge type={order.fulfillment_type} />
             <PaymentBadge status={order.payment_status} />
+            {order.payment_method && order.payment_status !== "cod" && (
+              <span className="text-[11px] text-muted-foreground">{order.payment_method}</span>
+            )}
             {order.consignment_id && <TrackingBadge status={order.tracking_status} />}
           </div>
 

@@ -31,6 +31,10 @@ export function PaymentBadge({ status }: { status: string }) {
       return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">COD</Badge>;
     case "partial":
       return <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/20 hover:bg-orange-500/25">Partial</Badge>;
+    case "pending_payment":
+      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">Pending Payment</Badge>;
+    case "refunded":
+      return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">Refunded</Badge>;
     default:
       return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">Unpaid</Badge>;
   }
