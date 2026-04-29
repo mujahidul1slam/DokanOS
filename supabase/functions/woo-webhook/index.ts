@@ -200,7 +200,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     woo_order_id: o.id,
     order_number: (formatted as string) || baseOrderNum,
     source: "online",
-    status: mapWooStatus(o.status),
+    status: mapWooStatus(o.status, o.payment_method || o.payment_method_title || ""),
     payment_method: o.payment_method_title || o.payment_method || null,
     payment_status: derivePaymentStatus(o),
     fulfillment_type: fromWooShipping(o),

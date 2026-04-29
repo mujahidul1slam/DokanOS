@@ -571,7 +571,7 @@ Deno.serve(async (req) => {
           woo_order_id: o.id,
           order_number: `${wPrefix}${baseNum}${wSuffix}`,
           source: "online",
-          status: mapWooStatus(o.status),
+          status: mapWooStatus(o.status, o.payment_method || o.payment_method_title || ""),
           payment_method: o.payment_method_title || o.payment_method || null,
           payment_status: derivePaymentStatus(o),
           fulfillment_type: fromWooShipping(o),
