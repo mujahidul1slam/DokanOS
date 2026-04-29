@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
 import AddOrderDialog from "@/components/orders/AddOrderDialog";
+import OrderCard from "@/components/orders/OrderCard";
 import DispatchDialog from "@/components/orders/DispatchDialog";
 import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
 import {
