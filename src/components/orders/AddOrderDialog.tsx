@@ -426,7 +426,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       }
       const addrParts = [p.address, p.area, p.zone, p.city].filter(Boolean);
       if (addrParts.length > 0) { setCustomerAddress(addrParts.join(", ")); filled.push("address"); }
-      if (typeof p.shipping_cost === "number") { setShippingCost(p.shipping_cost); filled.push("shipping"); }
+      if (typeof p.shipping_cost === "number") { setShippingCost(p.shipping_cost); setShippingTouched(true); filled.push("shipping"); }
       if (typeof p.discount === "number") { setDiscount(p.discount); filled.push("discount"); }
       if (p.notes) {
         setNotes((prev) => prev ? `${prev}\n${p.notes}` : p.notes);
@@ -887,7 +887,33 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Shipping Cost</Label>
-              <Input type="number" value={shippingCost} onChange={(e) => setShippingCost(Number(e.target.value))} />
+              <Input
+                type="number"
+                value={shippingCost}
+                onChange={(e) => { setShippingCost(Number(e.target.value)); setShippingTouched(true); }}
+              />
+              <div className="flex gap-1 pt-0.5">
+                <Button
+                  type="button"
+                  variant={shippingCost === shippingInsideDhaka ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-6 px-2 text-[10px] flex-1"
+                  onClick={() => { setShippingCost(shippingInsideDhaka); setShippingTouched(true); }}
+                  title="Inside Dhaka"
+                >
+                  In ৳{shippingInsideDhaka}
+                </Button>
+                <Button
+                  type="button"
+                  variant={shippingCost === shippingOutsideDhaka ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-6 px-2 text-[10px] flex-1"
+                  onClick={() => { setShippingCost(shippingOutsideDhaka); setShippingTouched(true); }}
+                  title="Outside Dhaka"
+                >
+                  Out ৳{shippingOutsideDhaka}
+                </Button>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Discount</Label>
