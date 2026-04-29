@@ -15,6 +15,7 @@ import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
+import PreOrdersSettingsTab from "@/components/settings/PreOrdersSettingsTab";
 import InstallAppButton from "@/components/InstallAppButton";
 import { getGlobalStockEnabled, setGlobalStockEnabled } from "@/lib/stockSettings";
 
