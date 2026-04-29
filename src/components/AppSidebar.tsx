@@ -37,6 +37,7 @@ const AppSidebar = ({ mobileOpen: mobileOpenProp, onMobileOpenChange }: AppSideb
   const location = useLocation();
   const { user, role, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { active, profiles, setActive } = useBusinessProfile();
   const [internalOpen, setInternalOpen] = useState(false);
   const mobileOpen = mobileOpenProp ?? internalOpen;
   const setMobileOpen = (v: boolean) => {
@@ -50,16 +51,55 @@ const AppSidebar = ({ mobileOpen: mobileOpenProp, onMobileOpenChange }: AppSideb
 
   const initials = user?.email?.slice(0, 2).toUpperCase() || "??";
 
+  const businessName = active?.business_name || "DokanOS";
+  const businessLogo = active?.logo_url || "";
+  const businessInitial = businessName.charAt(0).toUpperCase();
+  const hasMultiple = profiles.length > 1;
+
+  const BrandBlock = (
+    <div className="flex items-center gap-2 min-w-0">
+      {businessLogo ? (
+        <img src={businessLogo} alt={businessName} className="h-7 w-7 rounded-md object-contain bg-white p-0.5 border border-border shrink-0" />
+      ) : (
+        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary shrink-0">
+          <span className="font-heading text-xs font-bold text-primary-foreground">{businessInitial}</span>
+        </div>
+      )}
+      <span className="font-heading text-sm font-semibold text-foreground truncate">{businessName}</span>
+      {hasMultiple && <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+    </div>
+  );
+
   const sidebar = (
     <>
       <div className="flex h-14 items-center justify-between border-b border-border px-5">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
-            <span className="font-heading text-xs font-bold text-primary-foreground">O</span>
-          </div>
-          <span className="font-heading text-base font-semibold text-foreground">DokanOS</span>
-        </div>
-        <button className="lg:hidden text-muted-foreground" onClick={() => setMobileOpen(false)}>
+        {hasMultiple ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex-1 min-w-0 text-left rounded-md hover:bg-secondary/60 -mx-1 px-1 py-1 transition-colors">
+              {BrandBlock}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel>Switch business</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {profiles.map((p) => (
+                <DropdownMenuItem key={p.id} onClick={() => setActive(p.id)} className="gap-2">
+                  {p.logo_url ? (
+                    <img src={p.logo_url} alt="" className="h-5 w-5 rounded object-contain bg-white p-0.5 border border-border" />
+                  ) : (
+                    <div className="flex h-5 w-5 items-center justify-center rounded bg-primary text-[10px] font-bold text-primary-foreground">
+                      {p.business_name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="flex-1 truncate">{p.business_name}</span>
+                  {active?.id === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          BrandBlock
+        )}
+        <button className="lg:hidden text-muted-foreground ml-2 shrink-0" onClick={() => setMobileOpen(false)}>
           <X className="h-5 w-5" />
         </button>
       </div>
