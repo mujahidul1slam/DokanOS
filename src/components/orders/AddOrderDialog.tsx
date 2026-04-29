@@ -335,6 +335,25 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   const removeItem = (uid: string) => setItems(prev => prev.filter(i => i.uid !== uid));
 
+  const addCustomItem = () => {
+    const name = customItemName.trim();
+    const price = Number(customItemPrice);
+    const qty = Math.max(1, Number(customItemQty) || 1);
+    if (!name) { toast.error("Enter a name"); return; }
+    if (!Number.isFinite(price) || price < 0) { toast.error("Enter a valid price"); return; }
+    const uid = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setItems(prev => [...prev, {
+      uid,
+      productId: "",
+      name,
+      price,
+      qty,
+      isCustomItem: true,
+    }]);
+    setCustomItemName(""); setCustomItemPrice(""); setCustomItemQty("1");
+    setCustomItemOpen(false);
+  };
+
   const updateItem = (uid: string, patch: Partial<OrderItem>) =>
     setItems(prev => prev.map(i => i.uid === uid ? { ...i, ...patch } : i));
 
