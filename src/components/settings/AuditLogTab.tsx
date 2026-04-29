@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { Fragment, useEffect, useState, useMemo } from "react";
 import { format } from "date-fns";
 import { Search, Download, ChevronDown, ChevronRight, ArrowRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -244,8 +244,8 @@ export default function AuditLogTab() {
                 const isOpen = expanded.has(entry.id);
                 const hasDetail = changes.length > 0 || (entry.details && Object.keys(entry.details).length > 0);
                 return (
-                  <>
-                    <TableRow key={entry.id} className={cn("group", hasDetail && "cursor-pointer")} onClick={() => hasDetail && toggleExpand(entry.id)}>
+                  <Fragment key={entry.id}>
+                    <TableRow className={cn("group", hasDetail && "cursor-pointer")} onClick={() => hasDetail && toggleExpand(entry.id)}>
                       <TableCell>
                         {hasDetail ? (
                           isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />
