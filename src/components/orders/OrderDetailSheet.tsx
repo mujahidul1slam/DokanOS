@@ -386,7 +386,80 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     load();
   };
 
-  /* ---------- Process Return ---------- */
+  /* ---------- Confirm pending payment ---------- */
+
+  const confirmPendingPayment = async () => {
+    if (!order) return;
+    const amt = parseFloat(confirmPayAmount);
+    if (!amt || amt <= 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    setConfirmingPayment(true);
+    try {
+      // Insert payment record
+      await supabase.from("order_payments").insert({
+        order_id: order.id,
+        method: confirmPayMethod,
+        amount: amt,
+        trx_id: confirmPayTrxId || null,
+        notes: "Pending payment confirmed",
+      });
+
+      // Compute new totals
+      const previouslyPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+      const totalPaid = previouslyPaid + amt;
+      const orderTotal = Number(order.total) || 0;
+      const remaining = Math.max(orderTotal - totalPaid, 0);
+      const newPaymentStatus = remaining <= 0.0001 ? "paid" : "partial";
+
+      // Update order: payment status + amount_to_collect (carries due to Pathao dispatch)
+      await supabase.from("orders").update({
+        payment_status: newPaymentStatus,
+        amount_to_collect: remaining,
+      }).eq("id", order.id);
+
+      // Timeline (auto-syncs to Woo notes via addOrderTimeline)
+      await addOrderTimeline({
+        order_id: order.id,
+        event: "payment_confirmed",
+        description: `Payment of ৳${amt.toLocaleString()} via ${confirmPayMethod} confirmed${confirmPayTrxId ? ` (TrxID: ${confirmPayTrxId})` : ""}. ${remaining <= 0.0001 ? "Order fully paid." : `৳${remaining.toLocaleString()} due — to be collected on delivery.`}`,
+        metadata: { method: confirmPayMethod, amount: amt, trx_id: confirmPayTrxId || null, total_paid: totalPaid, remaining },
+      });
+      await addOrderTimeline({
+        order_id: order.id,
+        event: "payment_status_changed",
+        description: `Payment status changed from pending_payment to ${newPaymentStatus}`,
+        metadata: { from: "pending_payment", to: newPaymentStatus },
+      });
+
+      // Audit log
+      await logAction("update", "order_payment_confirmed", order.id, {
+        order_number: order.order_number,
+        method: confirmPayMethod,
+        amount: amt,
+        trx_id: confirmPayTrxId || null,
+        new_payment_status: newPaymentStatus,
+        amount_to_collect: remaining,
+      });
+
+      // Push to WooCommerce
+      supabase.functions.invoke("woo-push", {
+        body: { action: "push_order", order_id: order.id },
+      }).catch((e) => console.warn("Woo push failed:", e));
+
+      setConfirmPayAmount("");
+      setConfirmPayTrxId("");
+      toast.success(remaining <= 0.0001 ? "Payment confirmed — order marked Paid" : `Payment confirmed — ৳${remaining.toLocaleString()} due`);
+      onSaved?.();
+      load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to confirm payment");
+    } finally {
+      setConfirmingPayment(false);
+    }
+  };
 
   const handleReturn = async () => {
     if (!order) return;
