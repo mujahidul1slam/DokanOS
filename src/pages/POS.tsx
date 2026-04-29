@@ -390,13 +390,15 @@ const POS = () => {
     const totalPaid = cart.payments.reduce((s, p) => s + p.amount, 0);
     const dueAmount = Math.max(0, total - totalPaid);
     const paymentStatus = dueAmount > 0 ? "partial" : "paid";
+    const needsFulfillment = cart.fulfillment === "delivery" || cart.fulfillment === "pickup";
+    const orderStatus = needsFulfillment ? "processing" : "completed";
 
     const { data: order } = await supabase
       .from("orders")
       .insert({
         order_number: orderNumber,
         source: "pos",
-        status: "completed",
+        status: orderStatus,
         payment_status: paymentStatus,
         subtotal,
         discount: cartDiscount,
