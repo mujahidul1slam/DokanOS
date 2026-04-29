@@ -793,7 +793,6 @@ export type Database = {
           pathao_recipient_city: number | null
           pathao_recipient_zone: number | null
           pathao_store_id: number | null
-          payment_meta: Json | null
           payment_method: string | null
           payment_status: string
           salesperson_id: string | null
@@ -835,7 +834,6 @@ export type Database = {
           pathao_recipient_city?: number | null
           pathao_recipient_zone?: number | null
           pathao_store_id?: number | null
-          payment_meta?: Json | null
           payment_method?: string | null
           payment_status?: string
           salesperson_id?: string | null
@@ -877,7 +875,6 @@ export type Database = {
           pathao_recipient_city?: number | null
           pathao_recipient_zone?: number | null
           pathao_store_id?: number | null
-          payment_meta?: Json | null
           payment_method?: string | null
           payment_status?: string
           salesperson_id?: string | null

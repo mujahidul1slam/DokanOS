@@ -36,7 +36,6 @@ interface OrderDetail {
   status: string;
   payment_status: string;
   payment_method: string | null;
-  payment_meta: Record<string, string> | null;
   source: string;
   subtotal: number;
   discount: number | null;
@@ -134,7 +133,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes, measRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, payment_meta, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type")
         .eq("id", orderId)
         .single(),
       supabase
@@ -486,16 +485,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Method</Label>
                       <p className="text-sm font-medium">{order?.payment_method || "N/A"}</p>
-                      {order?.payment_meta?.sender_number && (
-                        <p className="text-xs text-muted-foreground">
-                          Sender: <span className="font-mono text-foreground">{order.payment_meta.sender_number}</span>
-                        </p>
-                      )}
-                      {order?.payment_meta?.transaction_id && (
-                        <p className="text-xs text-muted-foreground">
-                          TrxID: <span className="font-mono text-foreground">{order.payment_meta.transaction_id}</span>
-                        </p>
-                      )}
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Status</Label>
