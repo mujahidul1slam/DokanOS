@@ -125,7 +125,7 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
+      <div className="flex items-center gap-2 mb-3 overflow-x-auto scrollbar-none -mx-1 px-1">
         <CategoryFilter
           mode="single"
           categories={categories}
@@ -135,11 +135,11 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
           onChange={setActiveCategory}
           placeholder="All Categories"
           size="sm"
-          className="h-9 w-44 bg-secondary text-sm"
+          className="h-9 w-36 md:w-44 bg-secondary text-sm shrink-0"
         />
 
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
-          <SelectTrigger className="h-9 w-40 bg-secondary text-sm">
+          <SelectTrigger className="h-9 w-32 md:w-40 bg-secondary text-sm shrink-0">
             <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
             <SelectValue />
           </SelectTrigger>
@@ -154,11 +154,11 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5 bg-secondary border-border">
+            <Button variant="outline" size="sm" className="h-9 gap-1.5 bg-secondary border-border shrink-0">
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              Filters
+              <span className="hidden sm:inline">Filters</span>
               {activeFilterCount > 0 && (
-                <Badge className="text-[10px] px-1.5 py-0 ml-1">{activeFilterCount}</Badge>
+                <Badge className="text-[10px] px-1.5 py-0 ml-0.5">{activeFilterCount}</Badge>
               )}
             </Button>
           </DropdownMenuTrigger>
@@ -187,10 +187,11 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {/* Show All toggle — desktop only (mobile uses dropdown) */}
         <Button
           variant={hideOutOfStock ? "default" : "outline"}
           size="sm"
-          className="h-9 gap-1.5 ml-auto"
+          className="h-9 gap-1.5 ml-auto shrink-0 hidden md:inline-flex"
           onClick={() => setHideOutOfStock(!hideOutOfStock)}
         >
           {hideOutOfStock ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
