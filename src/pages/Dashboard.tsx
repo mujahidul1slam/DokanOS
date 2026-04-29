@@ -555,22 +555,23 @@ const Dashboard = () => {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {lowStockProducts.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">{p.sku || "No SKU"}</p>
-                </div>
-                <span
-                  className={`text-sm font-semibold ${
-                    p.stock_quantity <= 3 ? "text-destructive" : "text-amber-400"
-                  }`}
-                >
-                  {p.stock_quantity} left
-                </span>
-              </div>
+              (() => {
+                const stock = getEffectiveStock(p, globalStockEnabled);
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">{p.sku || "No SKU"}</p>
+                    </div>
+                    <span className={`text-sm font-semibold ${stock.quantity <= 3 ? "text-destructive" : "text-amber-400"}`}>
+                      {stock.quantity} left
+                    </span>
+                  </div>
+                );
+              })()
             ))}
           </div>
         </div>
