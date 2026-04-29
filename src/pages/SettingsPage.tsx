@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler, Building2, Hash } from "lucide-react";
+import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler, Building2, Hash, Hourglass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
