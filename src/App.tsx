@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { PermissionsProvider } from "@/hooks/usePermissions";
+import { BusinessProfileProvider } from "@/hooks/useBusinessProfile";
 import { ThemeProvider } from "@/hooks/useTheme";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import PermissionGuard from "@/components/PermissionGuard";
@@ -109,7 +110,9 @@ const App = () => (
           <BrowserRouter>
             <AuthProvider>
               <PermissionsProvider>
-                <AppRoutes />
+                <BusinessProfileProvider>
+                  <AppRoutes />
+                </BusinessProfileProvider>
               </PermissionsProvider>
             </AuthProvider>
           </BrowserRouter>
