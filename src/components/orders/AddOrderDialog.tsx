@@ -609,6 +609,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         }
       }
 
+      if (paidAmount > 0) {
+        await supabase.from("order_payments").insert({
+          order_id: order.id,
+          method: paymentMethod,
+          amount: paidAmount,
+        });
+      }
+
       await addOrderTimeline({
         order_id: order.id,
         event: "created",
