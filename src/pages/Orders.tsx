@@ -435,6 +435,10 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "ready_to_ship" });
+      await Promise.all(ids.map((id) =>
+        supabase.functions.invoke("woo-push", { body: { action: "push_order", order_id: id } })
+          .catch((e) => console.warn("WooCommerce order push failed:", e))
+      ));
       toast({ title: `${ids.length} order(s) marked Ready to Ship` });
       setSelected(new Set());
       loadOrders();
@@ -455,6 +459,10 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "completed" });
+      await Promise.all(ids.map((id) =>
+        supabase.functions.invoke("woo-push", { body: { action: "push_order", order_id: id } })
+          .catch((e) => console.warn("WooCommerce order push failed:", e))
+      ));
       // Woo notes auto-posted via addOrderTimeline above
       toast({ title: `${ids.length} order(s) marked Completed` });
       setSelected(new Set());
@@ -568,6 +576,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: newStatus });
+      // Push status change to WooCommerce for each linked order (same flow as single-order save)
+      await Promise.all(ids.map((id) =>
+        supabase.functions.invoke("woo-push", { body: { action: "push_order", order_id: id } })
+          .catch((e) => console.warn("WooCommerce order push failed:", e))
+      ));
       toast({ title: `${ids.length} order(s) → ${label}` });
       setSelected(new Set());
       loadOrders();
