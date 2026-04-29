@@ -459,18 +459,26 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Dispatch to Pathao ({orders.length} order{orders.length > 1 ? "s" : ""})</DialogTitle>
-          <DialogDescription>Review and confirm recipient details before dispatching.</DialogDescription>
-        </DialogHeader>
-
+    <ResponsiveDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Dispatch to Pathao (${orders.length} order${orders.length > 1 ? "s" : ""})`}
+      desktopMaxWidth="max-w-3xl"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleDispatch} disabled={dispatching} className="gap-2">
+            {dispatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Dispatch {orders.length} Order(s)
+          </Button>
+        </>
+      }
+    >
         {/* Pathao store selector */}
-        <div className="flex items-center gap-3 pb-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 pb-2">
           <Label className="text-sm font-medium whitespace-nowrap">Pathao Store:</Label>
           <Select value={selectedPathaoStore} onValueChange={setSelectedPathaoStore}>
-            <SelectTrigger className="w-[320px]"><SelectValue placeholder="Select Pathao store" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[320px]"><SelectValue placeholder="Select Pathao store" /></SelectTrigger>
             <SelectContent>
               {pathaoStores.map((s) => (
                 <SelectItem key={`${s.integration_id || "env"}-${s.pathao_store_id}`} value={String(s.pathao_store_id)}>
@@ -490,7 +498,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
             const areas = areasMap[zoneId] || [];
 
             return (
-              <div key={order.id} className="rounded-lg border border-border p-4 space-y-4">
+              <div key={order.id} className="rounded-lg border border-border p-3 sm:p-4 space-y-3 sm:space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="font-medium text-foreground">#{order.order_number}</span>
@@ -498,21 +506,21 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
                   </div>
                   <Badge variant="outline">{order.itemCount} item(s)</Badge>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Recipient Name</Label>
                     <Input value={ov.recipient_name} onChange={(e) => updateOverride(order.id, "recipient_name", e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Phone</Label>
-                    <Input value={ov.recipient_phone} onChange={(e) => updateOverride(order.id, "recipient_phone", e.target.value)} placeholder="01XXXXXXXXX" />
+                    <Input inputMode="tel" value={ov.recipient_phone} onChange={(e) => updateOverride(order.id, "recipient_phone", e.target.value)} placeholder="01XXXXXXXXX" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Address</Label>
                   <Input value={ov.recipient_address} onChange={(e) => updateOverride(order.id, "recipient_address", e.target.value)} />
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">City</Label>
                     <SearchableSelect
@@ -558,16 +566,16 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">COD Amount</Label>
-                    <Input type="number" value={ov.amount_to_collect} onChange={(e) => updateOverride(order.id, "amount_to_collect", e.target.value)} />
+                    <Input type="number" inputMode="numeric" value={ov.amount_to_collect} onChange={(e) => updateOverride(order.id, "amount_to_collect", e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Weight (kg)</Label>
-                    <Input type="number" step="0.1" value={ov.item_weight} onChange={(e) => updateOverride(order.id, "item_weight", e.target.value)} />
+                    <Input type="number" inputMode="decimal" step="0.1" value={ov.item_weight} onChange={(e) => updateOverride(order.id, "item_weight", e.target.value)} />
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 col-span-2 sm:col-span-1">
                     <Label className="text-xs">Special Instruction</Label>
                     <Input value={ov.special_instruction} onChange={(e) => updateOverride(order.id, "special_instruction", e.target.value)} placeholder="Optional" />
                   </div>
@@ -576,15 +584,6 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
             );
           })}
         </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleDispatch} disabled={dispatching} className="gap-2">
-            {dispatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Dispatch {orders.length} Order(s)
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }
