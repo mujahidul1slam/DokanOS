@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft } from "lucide-react";
+import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -49,10 +50,7 @@ const Login = () => {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <span className="text-lg font-bold text-primary-foreground">O</span>
-          </div>
-          <CardTitle className="text-xl">DokanOS</CardTitle>
+          <img src={dokanosLogo} alt="DokanOS" className="mx-auto mb-2 h-28 w-auto object-contain" />
           <CardDescription>
             {mode === "login" ? "Sign in to your account" : "Reset your password"}
           </CardDescription>
