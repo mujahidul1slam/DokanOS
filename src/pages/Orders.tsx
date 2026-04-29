@@ -95,7 +95,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 200;
 
-type TabKey = "all" | "new" | "payment_pending" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
+type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
 
 interface OrdersProps { preOrderMode?: boolean }
 
@@ -249,11 +249,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     return active.filter((o) => {
       switch (tabKey) {
         case "new":
-          // New = processing orders not yet dispatched and not pre-order
-          return o.status === "processing" && !o.consignment_id && !preOrderOrderIds.has(o.id);
-        case "payment_pending":
-          // Payment Pending = non-COD orders awaiting payment confirmation, excluding pre-orders
-          return o.status === "payment_pending" && !o.consignment_id && !preOrderOrderIds.has(o.id);
+          // New = processing or payment_pending orders not yet dispatched and not pre-order
+          return ["processing", "payment_pending"].includes(o.status) && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "ready":
           return o.status === "ready_to_ship" && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "pre_order":
@@ -376,7 +373,6 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const counts = useMemo(() => ({
     all: orders.filter((o) => !o.deleted_at).length,
     new: getTabOrders("new").length,
-    payment_pending: getTabOrders("payment_pending").length,
     ready: getTabOrders("ready").length,
     pre_order: getTabOrders("pre_order").length,
     pickup_pending: getTabOrders("pickup_pending").length,
@@ -822,7 +818,6 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           const tabItems: { key: TabKey; label: string; icon: any; count: number }[] = [
             { key: "all", label: "All", icon: ShoppingCart, count: counts.all },
             { key: "new", label: "New", icon: Package, count: counts.new },
-            { key: "payment_pending", label: "Payment Pending", icon: CreditCard, count: counts.payment_pending },
             { key: "pre_order", label: "Pre-Order", icon: Hourglass, count: counts.pre_order },
             { key: "ready", label: "Ready", icon: PackageCheck, count: counts.ready },
             { key: "pickup_pending", label: "Pickup", icon: Clock, count: counts.pickup_pending },
