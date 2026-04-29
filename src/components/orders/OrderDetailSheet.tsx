@@ -130,6 +130,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [payTrxId, setPayTrxId] = useState("");
   const [payNotes, setPayNotes] = useState("");
 
+  // Confirm pending payment
+  const [confirmPayMethod, setConfirmPayMethod] = useState("bkash");
+  const [confirmPayAmount, setConfirmPayAmount] = useState("");
+  const [confirmPayTrxId, setConfirmPayTrxId] = useState("");
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
+
   const load = useCallback(async () => {
     if (!orderId) return;
     setLoading(true);
