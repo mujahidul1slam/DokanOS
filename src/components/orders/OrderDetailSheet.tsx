@@ -53,6 +53,9 @@ interface OrderDetail {
   customer_email: string | null;
   customer_city: string | null;
   fulfillment_type: string;
+  woo_order_id: number | null;
+  store_id: string | null;
+  stores: { url: string | null } | null;
 }
 
 interface LineItem {
