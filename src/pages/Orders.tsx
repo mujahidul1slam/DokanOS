@@ -435,6 +435,10 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       }));
       await addOrderTimeline(timelineEntries);
       await logAction("update", "order_status_bulk", undefined, { ids, to: "ready_to_ship" });
+      await Promise.all(ids.map((id) =>
+        supabase.functions.invoke("woo-push", { body: { action: "push_order", order_id: id } })
+          .catch((e) => console.warn("WooCommerce order push failed:", e))
+      ));
       toast({ title: `${ids.length} order(s) marked Ready to Ship` });
       setSelected(new Set());
       loadOrders();
