@@ -79,6 +79,8 @@ const POS = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [heldCount, setHeldCount] = useState(0);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const { scanBeep, addBeep, errorBeep, successChime } = usePosSound(soundEnabled);
   const searchInputRef = useRef<HTMLInputElement>(null);
