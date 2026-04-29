@@ -132,6 +132,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const preOrderCategoryIds = usePreOrderCategoryIds();
+  const [preOrderSettingsOpen, setPreOrderSettingsOpen] = useState(false);
 
   // Dispatch
   const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
