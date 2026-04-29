@@ -249,7 +249,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     return active.filter((o) => {
       switch (tabKey) {
         case "new":
-          return o.status === "processing" && !o.consignment_id && !preOrderOrderIds.has(o.id);
+          return ["processing", "pending"].includes(o.status) && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "ready":
           return o.status === "ready_to_ship" && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "pre_order":
@@ -919,6 +919,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                   <SelectTrigger className="w-[150px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="pending">Payment Pending</SelectItem>
                     <SelectItem value="processing">New Order</SelectItem>
                     <SelectItem value="pre_order_pending">Pre-Order</SelectItem>
                     <SelectItem value="pre_order_making">Making</SelectItem>

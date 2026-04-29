@@ -38,6 +38,8 @@ export function PaymentBadge({ status }: { status: string }) {
 
 export function FulfillmentBadge({ status }: { status: string }) {
   switch (status) {
+    case "pending":
+      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">Payment Pending</Badge>;
     case "processing":
       return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">New Order</Badge>;
     case "ready_to_ship":
