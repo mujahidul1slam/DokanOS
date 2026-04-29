@@ -966,6 +966,56 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             </div>
           </div>
 
+          {/* Payment */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Paid Amount</Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                value={paidAmount}
+                onChange={(e) => setPaidAmount(Number(e.target.value))}
+                placeholder="0"
+              />
+              <div className="flex gap-1 pt-0.5">
+                <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[10px] flex-1"
+                  onClick={() => setPaidAmount(total)}>
+                  Full ৳{total.toLocaleString()}
+                </Button>
+                <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[10px] flex-1"
+                  onClick={() => setPaidAmount(0)}>
+                  Clear
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Payment Method</Label>
+              <Select value={paymentMethod} onValueChange={setPaymentMethod} disabled={paidAmount <= 0}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="bkash">bKash</SelectItem>
+                  <SelectItem value="nagad">Nagad</SelectItem>
+                  <SelectItem value="rocket">Rocket</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="bank">Bank Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Due</Label>
+              <div className="h-10 flex items-center px-3 rounded-md border border-border bg-secondary/40 text-sm font-medium">
+                ৳{Math.max(0, total - paidAmount).toLocaleString()}
+                {paidAmount > 0 && paidAmount < total && (
+                  <Badge variant="outline" className="ml-2 text-[10px]">Partial</Badge>
+                )}
+                {paidAmount >= total && total > 0 && (
+                  <Badge variant="secondary" className="ml-2 text-[10px]">Paid</Badge>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs">Notes</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
