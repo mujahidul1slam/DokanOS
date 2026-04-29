@@ -239,6 +239,49 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     return out;
   }, [preOrderCategoryIds, allCategories, orderCategoryMap]);
 
+  /* ─── Auto-promote COD pre-order items to "Pre-Order" status ───
+     For COD orders containing pre-order items, status should be `pre_order_pending`
+     regardless of incoming Woo status. Non-COD pre-orders only become pre_order_pending
+     after their payment is confirmed (handled in OrderDetailSheet). */
+  useEffect(() => {
+    if (preOrderOrderIds.size === 0 || orders.length === 0) return;
+    const isCod = (m?: string | null) =>
+      !!m && (m.toLowerCase().includes("cod") || m.toLowerCase().includes("cash on delivery"));
+    const toPromote = orders.filter((o) =>
+      preOrderOrderIds.has(o.id) &&
+      !o.consignment_id &&
+      !o.deleted_at &&
+      isCod(o.payment_method) &&
+      ["pending", "processing"].includes(o.status)
+    );
+    if (toPromote.length === 0) return;
+    (async () => {
+      const ids = toPromote.map((o) => o.id);
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: "pre_order_pending" })
+        .in("id", ids);
+      if (error) {
+        console.warn("Pre-order auto-promotion failed:", error.message);
+        return;
+      }
+      // Timeline entries
+      await supabase.from("order_timeline").insert(
+        toPromote.map((o) => ({
+          order_id: o.id,
+          event: "status_changed",
+          description: `Status changed from "${o.status}" to "pre_order_pending" (auto: COD pre-order)`,
+          metadata: { from: o.status, to: "pre_order_pending", auto: true, reason: "cod_pre_order" },
+        }))
+      );
+      // Reflect locally without full refetch
+      setOrders((prev) =>
+        prev.map((o) => (ids.includes(o.id) ? { ...o, status: "pre_order_pending" } : o))
+      );
+    })();
+  }, [preOrderOrderIds, orders]);
+
+
   /* ─── Tab-based filtering ─── */
   const getTabOrders = useCallback((tabKey: TabKey) => {
     if (tabKey === "trash") {
