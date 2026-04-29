@@ -369,6 +369,32 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     trash: getTabOrders("trash").length,
   }), [orders, getTabOrders]);
 
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (statusFilter !== "all") n++;
+    if (paymentFilter !== "all") n++;
+    if (sourceFilter !== "all") n++;
+    if (storeFilter !== "all") n++;
+    if (deliveryFilter !== "all") n++;
+    if (courierFilter !== "all") n++;
+    if (preOrderStatusFilter !== "all") n++;
+    if (categoryFilter.size > 0) n++;
+    if (dateRange?.from) n++;
+    return n;
+  }, [statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, dateRange]);
+
+  const clearAllFilters = () => {
+    setStatusFilter("all");
+    setPaymentFilter("all");
+    setSourceFilter("all");
+    setStoreFilter("all");
+    setDeliveryFilter("all");
+    setCourierFilter("all");
+    setPreOrderStatusFilter("all");
+    setCategoryFilter(new Set());
+    setDateRange(undefined);
+  };
+
   /* ─── Dispatch helpers ─── */
   const openDispatch = (ids: string[]) => {
     setDispatchOrderIds(ids);
