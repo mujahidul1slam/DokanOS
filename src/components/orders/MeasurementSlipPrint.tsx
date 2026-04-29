@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type CapturedMeasurement } from "@/lib/measurements";
 import { addOrderTimeline } from "@/lib/orderTimeline";
+import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 
 /**
  * If the order is currently in pre_order_pending status, promote it to
