@@ -567,7 +567,7 @@ const POS = () => {
     });
 
     return orderNumber;
-  }, [selectedStoreId, user, currentShift, successChime]);
+  }, [selectedStoreId, user, currentShift, successChime, globalStockEnabled]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
