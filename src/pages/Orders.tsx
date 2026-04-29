@@ -117,6 +117,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [tab, setTab] = useState<TabKey>(preOrderMode ? "pre_order" : "new");
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Dispatch
   const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
