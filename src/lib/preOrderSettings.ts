@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const KEY = "omnisync-preorder-category-ids";
+const DB_KEY = "preorder_category_ids";
 const EVENT = "omnisync-preorder-categories-change";
 
 export const getPreOrderCategoryIds = (): string[] => {
@@ -15,16 +16,48 @@ export const getPreOrderCategoryIds = (): string[] => {
   }
 };
 
-export const setPreOrderCategoryIds = (ids: string[]) => {
+const writeLocal = (ids: string[]) => {
   const unique = Array.from(new Set(ids));
   localStorage.setItem(KEY, JSON.stringify(unique));
   window.dispatchEvent(new CustomEvent(EVENT, { detail: unique }));
+};
+
+export const setPreOrderCategoryIds = async (ids: string[]) => {
+  const unique = Array.from(new Set(ids));
+  writeLocal(unique);
+  try {
+    await supabase
+      .from("app_settings" as any)
+      .upsert({ key: DB_KEY, value: { ids: unique } }, { onConflict: "key" });
+  } catch (e) {
+    console.warn("Failed to persist pre-order categories to DB", e);
+  }
+};
+
+/** Hydrate from DB once on app load, overriding any stale local value. */
+let hydrated = false;
+export const hydratePreOrderCategoriesFromDB = async () => {
+  if (hydrated) return;
+  hydrated = true;
+  try {
+    const { data } = await supabase
+      .from("app_settings" as any)
+      .select("value")
+      .eq("key", DB_KEY)
+      .maybeSingle();
+    if (data && (data as any).value && Array.isArray((data as any).value.ids)) {
+      writeLocal((data as any).value.ids.filter((x: any) => typeof x === "string"));
+    }
+  } catch (e) {
+    // ignore — fall back to local cache
+  }
 };
 
 /** React hook reflecting the configured pre-order category id set. */
 export const usePreOrderCategoryIds = (): Set<string> => {
   const [ids, setIds] = useState<Set<string>>(() => new Set(getPreOrderCategoryIds()));
   useEffect(() => {
+    hydratePreOrderCategoriesFromDB();
     const onChange = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (Array.isArray(detail)) setIds(new Set(detail));
