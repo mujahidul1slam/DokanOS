@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { getGroupsForProduct, type MeasurementGroup } from "@/lib/measurements";
+import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 import type { Product, Variation, CartItem, MeasurementGroupCapture } from "./types";
 
 interface Props {
@@ -36,6 +37,7 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
   const [selectedVar, setSelectedVar] = useState<Variation | null>(null);
   const [customTailoring, setCustomTailoring] = useState(false);
   const [qty, setQty] = useState(1);
+  const globalStockEnabled = useGlobalStockEnabled();
 
   // Dynamic measurement groups
   const [globalEnabled, setGlobalEnabled] = useState(true);
@@ -54,7 +56,7 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
     setLoading(true);
 
     Promise.all([
-      supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes").eq("product_id", product.id),
+      supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, stock_status, manage_stock, attributes").eq("product_id", product.id),
       supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled").limit(1).single(),
       getGroupsForProduct(product.id),
     ]).then(([vars, settings, grps]) => {
@@ -81,6 +83,8 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
   const hasVariations = variations.length > 0;
   const finalPrice = selectedVar ? Number(selectedVar.price) : Number(product.price);
   const showMeasurementToggle = globalEnabled && groups.length > 0;
+  const selectedStock = getEffectiveStock(selectedVar || product, globalStockEnabled);
+  const addDisabled = (hasVariations && !selectedVar) || selectedStock.outOfStock;
 
   const handleAdd = () => {
     const measurementGroups: MeasurementGroupCapture[] = customTailoring
@@ -156,10 +160,13 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
                         }`}
                       >
                         <span>{opt.value}</span>
-                        {opt.variations.some((v) => v.stock_quantity <= 3 && v.stock_quantity > 0) && (
+                        {opt.variations.some((v) => {
+                          const stock = getEffectiveStock(v, globalStockEnabled);
+                          return stock.tracked && stock.quantity <= 3 && stock.quantity > 0;
+                        }) && (
                           <Badge variant="secondary" className="ml-2 text-[10px]">Low</Badge>
                         )}
-                        {opt.variations.every((v) => v.stock_quantity <= 0) && (
+                        {opt.variations.every((v) => getEffectiveStock(v, globalStockEnabled).outOfStock) && (
                           <Badge variant="destructive" className="ml-2 text-[10px]">OOS</Badge>
                         )}
                       </button>
@@ -188,7 +195,10 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
                   }`}
                 >
                   <span>{v.name || "Variant"}</span>
-                  {v.stock_quantity <= 3 && v.stock_quantity > 0 && (
+                  {(() => {
+                    const stock = getEffectiveStock(v, globalStockEnabled);
+                    return stock.tracked && stock.quantity <= 3 && stock.quantity > 0;
+                  })() && (
                     <Badge variant="secondary" className="ml-2 text-[10px]">Low</Badge>
                   )}
                 </button>
@@ -274,10 +284,10 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
 
         <Button
           onClick={handleAdd}
-          disabled={hasVariations && !selectedVar}
+          disabled={addDisabled}
           className="w-full h-12 text-base font-medium"
         >
-          {hasVariations && !selectedVar ? "Select a variation" : "Add to Cart"}
+          {selectedStock.outOfStock ? "Out of stock" : hasVariations && !selectedVar ? "Select a variation" : "Add to Cart"}
         </Button>
       </DialogContent>
     </Dialog>

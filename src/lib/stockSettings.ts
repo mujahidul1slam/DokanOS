@@ -18,14 +18,15 @@ const writeLocal = (enabled: boolean) => {
 };
 
 export const setGlobalStockEnabled = async (enabled: boolean) => {
-  writeLocal(enabled);
-  // Persist to DB so it survives cache clears and syncs across devices
   try {
-    await supabase
+    const { error } = await supabase
       .from("app_settings" as any)
       .upsert({ key: DB_KEY, value: { enabled } }, { onConflict: "key" });
+    if (error) throw error;
+    writeLocal(enabled);
   } catch (e) {
     console.warn("Failed to persist global stock setting to DB", e);
+    throw e;
   }
 };
 
@@ -75,12 +76,24 @@ export const useGlobalStockEnabled = (): boolean => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === KEY) setEnabled(getGlobalStockEnabled());
     };
-    window.addEventListener("omnisync-global-stock-change", onChange);
+    const refresh = () => {
+      fetchGlobalStockFromDB().then((v) => {
+        if (!cancelled && v !== null) setEnabled(v);
+      });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener(EVENT, onChange);
     window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
-      window.removeEventListener("omnisync-global-stock-change", onChange);
+      window.removeEventListener(EVENT, onChange);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
   return enabled;

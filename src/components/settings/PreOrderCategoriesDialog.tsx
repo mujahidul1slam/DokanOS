@@ -15,7 +15,7 @@ import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import {
-  getPreOrderCategoryIds,
+  fetchPreOrderCategoriesFromDB,
   setPreOrderCategoryIds,
 } from "@/lib/preOrderSettings";
 
@@ -82,7 +82,8 @@ const PreOrderCategoriesDialog = ({ open, onOpenChange }: Props) => {
       ]);
       setCategories((cats || []) as CategoryRow[]);
       setStores((sts || []) as StoreRow[]);
-      setSelected(new Set(getPreOrderCategoryIds()));
+      const dbIds = await fetchPreOrderCategoriesFromDB();
+      setSelected(new Set(dbIds || []));
       setLoading(false);
     })();
   }, [open]);
@@ -118,11 +119,16 @@ const PreOrderCategoriesDialog = ({ open, onOpenChange }: Props) => {
   const handleSave = async () => {
     setSaving(true);
     const ids = Array.from(selected);
-    await setPreOrderCategoryIds(ids);
-    logAction("update", "settings_preorder_categories", undefined, { count: ids.length });
-    toast.success("Pre-Order categories saved");
-    setSaving(false);
-    onOpenChange(false);
+    try {
+      await setPreOrderCategoryIds(ids);
+      logAction("update", "settings_preorder_categories", undefined, { count: ids.length });
+      toast.success("Pre-Order categories saved");
+      onOpenChange(false);
+    } catch {
+      toast.error("Pre-Order categories could not be saved");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

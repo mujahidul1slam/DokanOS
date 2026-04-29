@@ -12,6 +12,7 @@ import { Search, RotateCcw, Package } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { logAction } from "@/lib/auditLog";
+import { useGlobalStockEnabled } from "@/lib/stockSettings";
 
 interface Props {
   open: boolean;
@@ -36,6 +37,7 @@ interface OrderItem {
 
 const ReturnDialog = ({ open, onClose }: Props) => {
   const { toast } = useToast();
+  const globalStockEnabled = useGlobalStockEnabled();
   const [searchQuery, setSearchQuery] = useState("");
   const [orders, setOrders] = useState<OrderResult[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<OrderResult | null>(null);
@@ -130,8 +132,8 @@ const ReturnDialog = ({ open, onClose }: Props) => {
       if (restock) {
         for (const item of items) {
           if (item.product_id) {
-            const { data: prod } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id).single();
-            if (prod) {
+            const { data: prod } = await supabase.from("products").select("stock_quantity, manage_stock").eq("id", item.product_id).single();
+            if (prod && (globalStockEnabled || prod.manage_stock === true)) {
               await supabase.from("products").update({ stock_quantity: prod.stock_quantity + item.quantity }).eq("id", item.product_id);
             }
           }

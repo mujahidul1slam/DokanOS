@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler, Building2, Hash, Hourglass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -17,7 +17,7 @@ import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
 import PreOrdersSettingsTab from "@/components/settings/PreOrdersSettingsTab";
 import InstallAppButton from "@/components/InstallAppButton";
-import { getGlobalStockEnabled, setGlobalStockEnabled } from "@/lib/stockSettings";
+import { setGlobalStockEnabled, useGlobalStockEnabled } from "@/lib/stockSettings";
 
 const tabs = [
   { id: "general", label: "General", icon: Settings },
@@ -36,9 +36,14 @@ type TabId = (typeof tabs)[number]["id"];
 
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState<TabId>("general");
-  const [globalStock, setGlobalStock] = useState<boolean>(() => getGlobalStockEnabled());
+  const persistedGlobalStock = useGlobalStockEnabled();
+  const [globalStock, setGlobalStock] = useState<boolean>(persistedGlobalStock);
   const [saving, setSaving] = useState(false);
   const { theme, toggleTheme } = useTheme();
+
+  useEffect(() => {
+    setGlobalStock(persistedGlobalStock);
+  }, [persistedGlobalStock]);
 
   // Business settings
   const [businessName, setBusinessName] = useState(() => localStorage.getItem("omnisync-business-name") || "DokanOS");
@@ -154,7 +159,7 @@ const SettingsPage = () => {
               </div>
 
               <div className="flex justify-end pt-2">
-                <Button onClick={() => { setSaving(true); setGlobalStockEnabled(globalStock); logAction("update", "settings_inventory", undefined, { globalStock }); toast.success("Inventory settings saved"); setSaving(false); }} disabled={saving}>
+                <Button onClick={async () => { setSaving(true); try { await setGlobalStockEnabled(globalStock); logAction("update", "settings_inventory", undefined, { globalStock }); toast.success("Inventory settings saved"); } catch { toast.error("Inventory settings could not be saved"); } finally { setSaving(false); } }} disabled={saving}>
                   {saving ? "Saving…" : "Save Changes"}
                 </Button>
               </div>

@@ -24,14 +24,15 @@ const writeLocal = (ids: string[]) => {
 
 export const setPreOrderCategoryIds = async (ids: string[]) => {
   const unique = Array.from(new Set(ids));
-  writeLocal(unique);
   try {
     const { error } = await supabase
       .from("app_settings" as any)
       .upsert({ key: DB_KEY, value: { ids: unique } }, { onConflict: "key" });
-    if (error) console.warn("Failed to persist pre-order categories to DB", error);
+    if (error) throw error;
+    writeLocal(unique);
   } catch (e) {
     console.warn("Failed to persist pre-order categories to DB", e);
+    throw e;
   }
 };
 
@@ -84,12 +85,24 @@ export const usePreOrderCategoryIds = (): Set<string> => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === KEY) setIds(new Set(getPreOrderCategoryIds()));
     };
+    const refresh = () => {
+      fetchPreOrderCategoriesFromDB().then((dbIds) => {
+        if (!cancelled && dbIds !== null) setIds(new Set(dbIds));
+      });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
     window.addEventListener(EVENT, onChange);
     window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
       window.removeEventListener(EVENT, onChange);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
   return ids;

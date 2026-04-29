@@ -18,6 +18,8 @@ export interface Variation {
   sku: string | null;
   price: number;
   stock_quantity: number;
+  manage_stock?: boolean;
+  stock_status?: string;
   attributes: Record<string, string>[] | string;
 }
 
