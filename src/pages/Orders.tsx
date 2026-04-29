@@ -1259,7 +1259,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
   const configs: Record<TabKey, { icon: any; text: string }> = {
     all: { icon: ShoppingCart, text: "No orders found" },
     new: { icon: Package, text: "No new orders to process" },
-    payment_pending: { icon: CreditCard, text: "No orders awaiting payment confirmation" },
+    
     ready: { icon: PackageCheck, text: "No orders ready to ship — mark orders as Ready from the New Orders tab" },
     pre_order: { icon: Hourglass, text: "No pre-orders — orders containing products from configured Pre-Order categories will appear here" },
     pickup_pending: { icon: Clock, text: "No orders waiting for pickup" },
