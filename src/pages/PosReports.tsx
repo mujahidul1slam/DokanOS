@@ -631,4 +631,15 @@ const PosReports = () => {
   );
 };
 
+      </div>
+
+      <OrderDetailSheet
+        orderId={detailOrderId}
+        open={!!detailOrderId}
+        onOpenChange={(open) => { if (!open) setDetailOrderId(null); }}
+      />
+    </div>
+  );
+};
+
 export default PosReports;
