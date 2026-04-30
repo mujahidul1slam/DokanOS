@@ -958,23 +958,20 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               <Input value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Search by name, SKU, or variation..." className="pl-9" />
             </div>
             {productSearch && (
-              <ScrollArea className="mt-2 max-h-48 rounded-md border border-border">
-                {searchResults.length === 0 ? (
+              <ScrollArea className="mt-2 max-h-72 rounded-md border border-border">
+                {productSearchResults.length === 0 ? (
                   <div className="p-3 text-sm text-muted-foreground text-center">No products found</div>
                 ) : (
-                  searchResults.map(r => (
-                    <button
-                      key={r.id}
-                      onClick={() => { addItem(r); setProductSearch(""); }}
-                      className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-accent text-left"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{r.name}</span>
-                        {r.variationLabel && <Badge variant="secondary" className="text-xs">{r.variationLabel}</Badge>}
-                        {r.sku && <span className="text-xs text-muted-foreground">{r.sku}</span>}
-                      </div>
-                      <span className="text-muted-foreground">৳{r.price.toLocaleString()}</span>
-                    </button>
+                  productSearchResults.map((r) => (
+                    <ProductSearchResultRow
+                      key={r.productId}
+                      product={r}
+                      variations={variations}
+                      onAdd={(result) => {
+                        addItem(result);
+                        // Keep the search query so users can quickly add more variations
+                      }}
+                    />
                   ))
                 )}
               </ScrollArea>
