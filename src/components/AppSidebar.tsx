@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import dokanosIcon from "@/assets/dokanos-icon.png";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/", roles: ["admin", "staff", "viewer"] },
