@@ -1,6 +1,7 @@
 import { Component, ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isChunkLoadError, recoverFromChunkLoadError } from "@/lib/chunkRecovery";
 
 interface Props {
   children: ReactNode;
@@ -19,6 +20,12 @@ class ErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error) {
+    if (isChunkLoadError(error)) {
+      void recoverFromChunkLoadError();
+    }
   }
 
   render() {
