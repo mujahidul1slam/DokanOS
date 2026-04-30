@@ -389,33 +389,133 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     }
   };
 
+  /* ---------- Payment recompute helper ---------- */
+
+  const recomputePaymentStatus = async (orderRow: OrderDetail | null) => {
+    if (!orderRow) return;
+    const { data: rows } = await supabase
+      .from("order_payments")
+      .select("amount")
+      .eq("order_id", orderRow.id);
+    const totalPaid = (rows || []).reduce((s, r: any) => s + Number(r.amount || 0), 0);
+    const orderTotal = Number(orderRow.total || 0);
+    const remaining = Math.max(orderTotal - totalPaid, 0);
+    const newStatus =
+      totalPaid <= 0.0001
+        ? "unpaid"
+        : remaining <= 0.0001
+        ? "paid"
+        : "partial";
+    await supabase
+      .from("orders")
+      .update({
+        payment_status: newStatus,
+        amount_to_collect: remaining,
+      })
+      .eq("id", orderRow.id);
+    return { totalPaid, remaining, newStatus };
+  };
+
   /* ---------- Add payment ---------- */
 
   const addPayment = async () => {
     if (!order || !payAmount) return;
+    const amt = parseFloat(payAmount);
     await supabase.from("order_payments").insert({
       order_id: order.id,
       method: payMethod,
-      amount: parseFloat(payAmount),
+      amount: amt,
       trx_id: payTrxId || null,
       notes: payNotes || null,
     });
+    const recomputed = await recomputePaymentStatus(order);
     await addOrderTimeline({
       order_id: order.id,
       event: "payment_logged",
-      description: `Payment of ৳${parseFloat(payAmount).toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}`,
-      metadata: { method: payMethod, amount: parseFloat(payAmount), trx_id: payTrxId || null },
+      description: `Payment of ৳${amt.toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}${recomputed ? ` — ${recomputed.newStatus}, ৳${recomputed.remaining.toLocaleString()} due` : ""}`,
+      metadata: { method: payMethod, amount: amt, trx_id: payTrxId || null, ...(recomputed || {}) },
     });
     await logAction("create", "order_payment", order.id, {
-      order_number: order.order_number, method: payMethod, amount: parseFloat(payAmount), trx_id: payTrxId || null,
+      order_number: order.order_number, method: payMethod, amount: amt, trx_id: payTrxId || null,
     });
-    // Woo order note is auto-posted via addOrderTimeline above.
     setPayAmount("");
     setPayTrxId("");
     setPayNotes("");
     toast.success("Payment logged");
+    onSaved?.();
     load();
   };
+
+  /* ---------- Edit / delete existing payment ---------- */
+
+  const startEditPayment = (p: PaymentEntry) => {
+    setEditingPaymentId(p.id);
+    setEditPayMethod(p.method);
+    setEditPayAmount(String(p.amount));
+    setEditPayTrxId(p.trx_id || "");
+    setEditPayNotes(p.notes || "");
+  };
+
+  const cancelEditPayment = () => {
+    setEditingPaymentId(null);
+    setEditPayAmount("");
+    setEditPayTrxId("");
+    setEditPayNotes("");
+  };
+
+  const saveEditedPayment = async (p: PaymentEntry) => {
+    if (!order) return;
+    const amt = parseFloat(editPayAmount);
+    if (!Number.isFinite(amt) || amt < 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    const before = { method: p.method, amount: Number(p.amount), trx_id: p.trx_id, notes: p.notes };
+    const after = { method: editPayMethod, amount: amt, trx_id: editPayTrxId || null, notes: editPayNotes || null };
+    await supabase
+      .from("order_payments")
+      .update(after)
+      .eq("id", p.id);
+    const recomputed = await recomputePaymentStatus(order);
+    const changes: string[] = [];
+    if (before.method !== after.method) changes.push(`method ${before.method} → ${after.method}`);
+    if (before.amount !== after.amount) changes.push(`amount ৳${before.amount.toLocaleString()} → ৳${after.amount.toLocaleString()}`);
+    if ((before.trx_id || "") !== (after.trx_id || "")) changes.push(`trx ${before.trx_id || "—"} → ${after.trx_id || "—"}`);
+    if ((before.notes || "") !== (after.notes || "")) changes.push(`notes updated`);
+    await addOrderTimeline({
+      order_id: order.id,
+      event: "payment_updated",
+      description: `Payment edited — ${changes.join(", ") || "no changes"}${recomputed ? ` (${recomputed.newStatus}, ৳${recomputed.remaining.toLocaleString()} due)` : ""}`,
+      metadata: { before, after, ...(recomputed || {}) },
+    });
+    await logAction("update", "order_payment", order.id, {
+      order_number: order.order_number, payment_id: p.id, before, after,
+    });
+    cancelEditPayment();
+    toast.success("Payment updated");
+    onSaved?.();
+    load();
+  };
+
+  const deletePayment = async (p: PaymentEntry) => {
+    if (!order) return;
+    if (!confirm(`Delete this ৳${Number(p.amount).toLocaleString()} ${p.method} payment?`)) return;
+    await supabase.from("order_payments").delete().eq("id", p.id);
+    const recomputed = await recomputePaymentStatus(order);
+    await addOrderTimeline({
+      order_id: order.id,
+      event: "payment_deleted",
+      description: `Payment of ৳${Number(p.amount).toLocaleString()} via ${p.method} removed${recomputed ? ` — ${recomputed.newStatus}, ৳${recomputed.remaining.toLocaleString()} due` : ""}`,
+      metadata: { method: p.method, amount: Number(p.amount), trx_id: p.trx_id, ...(recomputed || {}) },
+    });
+    await logAction("delete", "order_payment", order.id, {
+      order_number: order.order_number, payment_id: p.id, method: p.method, amount: Number(p.amount),
+    });
+    toast.success("Payment removed");
+    onSaved?.();
+    load();
+  };
+
 
   /* ---------- Confirm pending payment ---------- */
 
