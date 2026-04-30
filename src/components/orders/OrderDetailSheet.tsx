@@ -131,6 +131,13 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [payTrxId, setPayTrxId] = useState("");
   const [payNotes, setPayNotes] = useState("");
 
+  // Inline-edit payment row state
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editPayMethod, setEditPayMethod] = useState("bkash");
+  const [editPayAmount, setEditPayAmount] = useState("");
+  const [editPayTrxId, setEditPayTrxId] = useState("");
+  const [editPayNotes, setEditPayNotes] = useState("");
+
   // Confirm pending payment
   const [confirmPayMethod, setConfirmPayMethod] = useState("bkash");
   const [confirmPayAmount, setConfirmPayAmount] = useState("");
