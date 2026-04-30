@@ -249,6 +249,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           total: computedTotal,
           notes,
           fulfillment_type: fulfillmentType,
+          payment_method: paymentMethod || null,
         })
         .eq("id", order.id);
 
