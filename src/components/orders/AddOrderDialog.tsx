@@ -86,7 +86,142 @@ interface Props {
   onCreated: () => void;
 }
 
-export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props) {
+interface ParsedAttr { key: string; value: string; }
+function parseVariationAttributes(attrs: any): ParsedAttr[] {
+  if (typeof attrs === "string") return [];
+  if (!Array.isArray(attrs)) return [];
+  return attrs.map((a: any) => {
+    if (a && typeof a === "object") {
+      if (a.key && a.value) return { key: String(a.key), value: String(a.value) };
+      const k = Object.keys(a).find((k) => k !== "key" && k !== "value");
+      if (k) return { key: k, value: String(a[k]) };
+    }
+    return null;
+  }).filter(Boolean) as ParsedAttr[];
+}
+
+interface ProductSearchResultRowProps {
+  product: { productId: string; name: string; sku: string | null; price: number; hasVariations: boolean };
+  variations: VariationRow[];
+  onAdd: (result: SearchResult) => void;
+}
+
+function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchResultRowProps) {
+  const productVars = useMemo(
+    () => variations.filter((v) => v.product_id === product.productId),
+    [variations, product.productId],
+  );
+
+  // Group attribute values per attribute key (e.g. Color → [Red, Blue], Size → [S, M, L])
+  const attrGroups = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const v of productVars) {
+      for (const a of parseVariationAttributes(v.attributes)) {
+        if (!map[a.key]) map[a.key] = [];
+        if (!map[a.key].includes(a.value)) map[a.key].push(a.value);
+      }
+    }
+    return map;
+  }, [productVars]);
+
+  const attrKeys = Object.keys(attrGroups);
+  const [selected, setSelected] = useState<Record<string, string>>({});
+
+  const matchedVariation = useMemo(() => {
+    if (attrKeys.length === 0) return null;
+    if (!attrKeys.every((k) => selected[k])) return null;
+    return productVars.find((v) => {
+      const parsed = parseVariationAttributes(v.attributes);
+      return attrKeys.every((k) => parsed.some((p) => p.key === k && p.value === selected[k]));
+    }) || null;
+  }, [productVars, attrKeys, selected]);
+
+  const effectivePrice = matchedVariation ? Number(matchedVariation.price) : product.price;
+  const canAdd = !product.hasVariations || (matchedVariation !== null);
+
+  const handleAdd = () => {
+    if (!product.hasVariations) {
+      onAdd({
+        id: product.productId,
+        productId: product.productId,
+        name: product.name,
+        sku: product.sku,
+        price: product.price,
+      });
+      return;
+    }
+    if (!matchedVariation) return;
+    const varLabel = parseVariationAttributes(matchedVariation.attributes)
+      .map((a) => a.value)
+      .join(" / ") || matchedVariation.name;
+    onAdd({
+      id: matchedVariation.id,
+      productId: product.productId,
+      variationId: matchedVariation.id,
+      name: product.name,
+      variationLabel: varLabel,
+      sku: matchedVariation.sku || product.sku,
+      price: Number(matchedVariation.price),
+    });
+    setSelected({});
+  };
+
+  return (
+    <div className="px-3 py-2.5 border-b border-border last:border-b-0 hover:bg-accent/40 transition-colors">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium">{product.name}</span>
+            {product.sku && <span className="text-[11px] text-muted-foreground">{product.sku}</span>}
+            {product.hasVariations && (
+              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">
+                {productVars.length} variations
+              </Badge>
+            )}
+          </div>
+          {product.hasVariations && attrKeys.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {attrKeys.map((key) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{key}</span>
+                  <Select
+                    value={selected[key] || ""}
+                    onValueChange={(v) => setSelected((s) => ({ ...s, [key]: v }))}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-auto min-w-[80px] gap-1">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {attrGroups[key].map((opt) => (
+                        <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm text-muted-foreground whitespace-nowrap">৳{effectivePrice.toLocaleString()}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant={canAdd ? "default" : "outline"}
+            disabled={!canAdd}
+            onClick={handleAdd}
+            className="h-7 px-2 gap-1"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [variations, setVariations] = useState<VariationRow[]>([]);
   const [productSearch, setProductSearch] = useState("");
