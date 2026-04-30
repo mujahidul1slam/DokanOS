@@ -187,6 +187,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setShippingCost(o.shipping_cost || 0);
       setNotes(o.notes || "");
       setFulfillmentType(o.fulfillment_type || "delivery");
+      setPaymentMethod(o.payment_method || "");
     }
     const liRaw = (itemsRes.data || []) as any[];
     const li: LineItem[] = liRaw.map((r) => ({
