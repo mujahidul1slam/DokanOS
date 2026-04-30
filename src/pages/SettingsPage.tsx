@@ -25,7 +25,7 @@ import InstallAppButton from "@/components/InstallAppButton";
 import { setGlobalStockEnabled, useGlobalStockEnabled } from "@/lib/stockSettings";
 
 type TabId =
-  | "general" | "business" | "inventory" | "pos" | "orders"
+  | "general" | "inventory" | "pos" | "orders"
   | "preorders" | "measurements" | "invoice" | "sources" | "audit";
 
 type TabDef = {
@@ -48,8 +48,7 @@ const groups: GroupDef[] = [
     id: "business",
     label: "Business",
     tabs: [
-      { id: "general", label: "General", icon: Settings, description: "Name, currency, timezone, theme", keywords: "appearance dark light mode currency timezone install" },
-      { id: "business", label: "Business Profile", icon: Building2, description: "Logo, contact info, branding" },
+      { id: "general", label: "General & Business Profile", icon: Settings, description: "Name, branding, logo, currency, timezone, theme", keywords: "appearance dark light mode currency timezone install business profile logo contact branding tagline address phone email" },
     ],
   },
   {
@@ -137,41 +136,42 @@ const SettingsPage = () => {
     switch (id) {
       case "general":
         return (
-          <SettingsSection
-            title="General Settings"
-            description="Basic system preferences and defaults."
-            footer={<SaveButton onClick={handleSaveGeneral} />}
-          >
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label>Business Name</Label>
-                <Input value={businessName} onChange={(e) => setBusinessName(e.target.value)} />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-4">
+            <SettingsSection
+              title="General Settings"
+              description="Basic system preferences and defaults."
+              footer={<SaveButton onClick={handleSaveGeneral} />}
+            >
+              <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label>Currency Symbol</Label>
-                  <Input value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-24" />
+                  <Label>Business Name</Label>
+                  <Input value={businessName} onChange={(e) => setBusinessName(e.target.value)} />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Timezone</Label>
-                  <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Currency Symbol</Label>
+                    <Input value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-24" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Timezone</Label>
+                    <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} />
+                  </div>
                 </div>
+                <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">Theme</Label>
+                    <p className="text-xs text-muted-foreground">Switch between dark and light mode</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={toggleTheme} className="gap-2">
+                    {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
+                  </Button>
+                </div>
+                <InstallAppButton />
               </div>
-              <div className="flex items-center justify-between rounded-lg border border-border p-4">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Theme</Label>
-                  <p className="text-xs text-muted-foreground">Switch between dark and light mode</p>
-                </div>
-                <Button variant="outline" size="sm" onClick={toggleTheme} className="gap-2">
-                  {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
-                </Button>
-              </div>
-              <InstallAppButton />
-            </div>
-          </SettingsSection>
+            </SettingsSection>
+            <BusinessProfileTab />
+          </div>
         );
-      case "business":
-        return <BusinessProfileTab />;
       case "inventory":
         return (
           <SettingsSection
