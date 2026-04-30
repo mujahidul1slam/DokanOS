@@ -546,7 +546,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
         // 2. Fuzzy match: require a strong score AND a shared meaningful token
         // between the hint and the matched product name. Fuse score: 0 = perfect, 1 = no match.
-        const top = fuse.search(q)[0];
+        const top = flatFuse.search(q)[0];
         if (!top || (top.score ?? 1) > 0.25) { productsSkipped += 1; continue; }
 
         const candidateText = `${top.item.name} ${top.item.variationLabel || ""} ${top.item.sku || ""}`.toLowerCase();
