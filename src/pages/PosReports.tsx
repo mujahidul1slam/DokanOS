@@ -639,5 +639,3 @@ const PosReports = () => {
 
 export default PosReports;
 
-
-export default PosReports;
