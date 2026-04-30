@@ -15,6 +15,7 @@ import DashboardLayout from "./components/DashboardLayout";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import { Loader2 } from "lucide-react";
+import { markAppLoaded } from "@/lib/chunkRecovery";
 
 // Lazy-load all authenticated pages so initial bundle stays small.
 // Each page becomes its own JS chunk loaded on-demand.
@@ -62,6 +63,8 @@ const PageFallback = () => (
 
 const AppRoutes = () => {
   const { user, loading } = useAuth();
+
+  markAppLoaded();
 
   if (loading) return <FullScreenLoader label="Loading DokanOS..." />;
 
