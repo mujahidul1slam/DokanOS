@@ -77,6 +77,7 @@ const PosReports = () => {
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const [storeFilter, setStoreFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
