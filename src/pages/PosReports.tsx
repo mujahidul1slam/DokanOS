@@ -21,6 +21,7 @@ import StatCardDelta from "@/components/dashboard/StatCardDelta";
 import DatePresetPicker, { DatePreset, resolveRange } from "@/components/DatePresetPicker";
 import { downloadCsv } from "@/lib/exportCsv";
 import StatusBadge from "@/components/StatusBadge";
+import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
 
 interface PosOrder {
   id: string;
@@ -76,6 +77,7 @@ const PosReports = () => {
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const [storeFilter, setStoreFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -586,7 +588,11 @@ const PosReports = () => {
                 const paid = paidByOrder.get(o.id) || 0;
                 const due = Math.max(0, Number(o.total) - paid);
                 return (
-                  <TableRow key={o.id} className="text-xs">
+                  <TableRow
+                    key={o.id}
+                    className="text-xs cursor-pointer"
+                    onClick={() => setDetailOrderId(o.id)}
+                  >
                     <TableCell className="font-medium text-foreground">{o.order_number}</TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">{format(new Date(o.created_at), "MMM d, HH:mm")}</TableCell>
                     <TableCell className="max-w-[160px] truncate">{o.customer_name || "Walk-in"}</TableCell>
@@ -621,8 +627,15 @@ const PosReports = () => {
           </Table>
         </div>
       </div>
+
+      <OrderDetailSheet
+        orderId={detailOrderId}
+        open={!!detailOrderId}
+        onOpenChange={(open) => { if (!open) setDetailOrderId(null); }}
+      />
     </div>
   );
 };
 
 export default PosReports;
+
