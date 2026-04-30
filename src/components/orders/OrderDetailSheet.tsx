@@ -806,7 +806,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Method</Label>
-                      <p className="text-sm font-medium">{order?.payment_method || "N/A"}</p>
+                      <Select value={paymentMethod || "none"} onValueChange={(v) => setPaymentMethod(v === "none" ? "" : v)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="N/A" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">N/A</SelectItem>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="bkash">bKash</SelectItem>
+                          <SelectItem value="nagad">Nagad</SelectItem>
+                          <SelectItem value="rocket">Rocket</SelectItem>
+                          <SelectItem value="card">Card</SelectItem>
+                          <SelectItem value="bank">Bank Transfer</SelectItem>
+                          <SelectItem value="cod">COD</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Status</Label>
