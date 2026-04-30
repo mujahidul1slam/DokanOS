@@ -124,6 +124,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [shippingCost, setShippingCost] = useState(0);
   const [notes, setNotes] = useState("");
   const [fulfillmentType, setFulfillmentType] = useState<string>("delivery");
+  const [paymentMethod, setPaymentMethod] = useState<string>("");
 
   // Payment form
   const [payMethod, setPayMethod] = useState("bkash");
