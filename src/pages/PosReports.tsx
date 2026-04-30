@@ -21,6 +21,7 @@ import StatCardDelta from "@/components/dashboard/StatCardDelta";
 import DatePresetPicker, { DatePreset, resolveRange } from "@/components/DatePresetPicker";
 import { downloadCsv } from "@/lib/exportCsv";
 import StatusBadge from "@/components/StatusBadge";
+import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
 
 interface PosOrder {
   id: string;
