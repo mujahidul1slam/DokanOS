@@ -350,6 +350,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           discount: Number(order.discount || 0),
           shipping_cost: Number(order.shipping_cost || 0),
           fulfillment_type: order.fulfillment_type || "delivery",
+          payment_method: order.payment_method || "",
           notes: order.notes || "",
           total: Number(order.total || 0),
         };
@@ -361,6 +362,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           discount,
           shipping_cost: shippingCost,
           fulfillment_type: fulfillmentType,
+          payment_method: paymentMethod,
           notes,
           total: computedTotal,
         };
