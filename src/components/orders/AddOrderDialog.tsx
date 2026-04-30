@@ -221,7 +221,7 @@ function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchRes
   );
 }
 
-
+export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props) {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [variations, setVariations] = useState<VariationRow[]>([]);
   const [productSearch, setProductSearch] = useState("");
