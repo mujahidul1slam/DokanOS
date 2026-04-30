@@ -124,12 +124,20 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [shippingCost, setShippingCost] = useState(0);
   const [notes, setNotes] = useState("");
   const [fulfillmentType, setFulfillmentType] = useState<string>("delivery");
+  const [paymentMethod, setPaymentMethod] = useState<string>("");
 
   // Payment form
   const [payMethod, setPayMethod] = useState("bkash");
   const [payAmount, setPayAmount] = useState("");
   const [payTrxId, setPayTrxId] = useState("");
   const [payNotes, setPayNotes] = useState("");
+
+  // Inline-edit payment row state
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editPayMethod, setEditPayMethod] = useState("bkash");
+  const [editPayAmount, setEditPayAmount] = useState("");
+  const [editPayTrxId, setEditPayTrxId] = useState("");
+  const [editPayNotes, setEditPayNotes] = useState("");
 
   // Confirm pending payment
   const [confirmPayMethod, setConfirmPayMethod] = useState("bkash");
@@ -179,6 +187,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setShippingCost(o.shipping_cost || 0);
       setNotes(o.notes || "");
       setFulfillmentType(o.fulfillment_type || "delivery");
+      setPaymentMethod(o.payment_method || "");
     }
     const liRaw = (itemsRes.data || []) as any[];
     const li: LineItem[] = liRaw.map((r) => ({
@@ -240,6 +249,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           total: computedTotal,
           notes,
           fulfillment_type: fulfillmentType,
+          payment_method: paymentMethod || null,
         })
         .eq("id", order.id);
 
@@ -340,6 +350,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           discount: Number(order.discount || 0),
           shipping_cost: Number(order.shipping_cost || 0),
           fulfillment_type: order.fulfillment_type || "delivery",
+          payment_method: order.payment_method || "",
           notes: order.notes || "",
           total: Number(order.total || 0),
         };
@@ -351,6 +362,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           discount,
           shipping_cost: shippingCost,
           fulfillment_type: fulfillmentType,
+          payment_method: paymentMethod,
           notes,
           total: computedTotal,
         };
@@ -382,33 +394,133 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     }
   };
 
+  /* ---------- Payment recompute helper ---------- */
+
+  const recomputePaymentStatus = async (orderRow: OrderDetail | null) => {
+    if (!orderRow) return;
+    const { data: rows } = await supabase
+      .from("order_payments")
+      .select("amount")
+      .eq("order_id", orderRow.id);
+    const totalPaid = (rows || []).reduce((s, r: any) => s + Number(r.amount || 0), 0);
+    const orderTotal = Number(orderRow.total || 0);
+    const remaining = Math.max(orderTotal - totalPaid, 0);
+    const newStatus =
+      totalPaid <= 0.0001
+        ? "unpaid"
+        : remaining <= 0.0001
+        ? "paid"
+        : "partial";
+    await supabase
+      .from("orders")
+      .update({
+        payment_status: newStatus,
+        amount_to_collect: remaining,
+      })
+      .eq("id", orderRow.id);
+    return { totalPaid, remaining, newStatus };
+  };
+
   /* ---------- Add payment ---------- */
 
   const addPayment = async () => {
     if (!order || !payAmount) return;
+    const amt = parseFloat(payAmount);
     await supabase.from("order_payments").insert({
       order_id: order.id,
       method: payMethod,
-      amount: parseFloat(payAmount),
+      amount: amt,
       trx_id: payTrxId || null,
       notes: payNotes || null,
     });
+    const recomputed = await recomputePaymentStatus(order);
     await addOrderTimeline({
       order_id: order.id,
       event: "payment_logged",
-      description: `Payment of ৳${parseFloat(payAmount).toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}`,
-      metadata: { method: payMethod, amount: parseFloat(payAmount), trx_id: payTrxId || null },
+      description: `Payment of ৳${amt.toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}${recomputed ? ` — ${recomputed.newStatus}, ৳${recomputed.remaining.toLocaleString()} due` : ""}`,
+      metadata: { method: payMethod, amount: amt, trx_id: payTrxId || null, ...(recomputed || {}) },
     });
     await logAction("create", "order_payment", order.id, {
-      order_number: order.order_number, method: payMethod, amount: parseFloat(payAmount), trx_id: payTrxId || null,
+      order_number: order.order_number, method: payMethod, amount: amt, trx_id: payTrxId || null,
     });
-    // Woo order note is auto-posted via addOrderTimeline above.
     setPayAmount("");
     setPayTrxId("");
     setPayNotes("");
     toast.success("Payment logged");
+    onSaved?.();
     load();
   };
+
+  /* ---------- Edit / delete existing payment ---------- */
+
+  const startEditPayment = (p: PaymentEntry) => {
+    setEditingPaymentId(p.id);
+    setEditPayMethod(p.method);
+    setEditPayAmount(String(p.amount));
+    setEditPayTrxId(p.trx_id || "");
+    setEditPayNotes(p.notes || "");
+  };
+
+  const cancelEditPayment = () => {
+    setEditingPaymentId(null);
+    setEditPayAmount("");
+    setEditPayTrxId("");
+    setEditPayNotes("");
+  };
+
+  const saveEditedPayment = async (p: PaymentEntry) => {
+    if (!order) return;
+    const amt = parseFloat(editPayAmount);
+    if (!Number.isFinite(amt) || amt < 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    const before = { method: p.method, amount: Number(p.amount), trx_id: p.trx_id, notes: p.notes };
+    const after = { method: editPayMethod, amount: amt, trx_id: editPayTrxId || null, notes: editPayNotes || null };
+    await supabase
+      .from("order_payments")
+      .update(after)
+      .eq("id", p.id);
+    const recomputed = await recomputePaymentStatus(order);
+    const changes: string[] = [];
+    if (before.method !== after.method) changes.push(`method ${before.method} → ${after.method}`);
+    if (before.amount !== after.amount) changes.push(`amount ৳${before.amount.toLocaleString()} → ৳${after.amount.toLocaleString()}`);
+    if ((before.trx_id || "") !== (after.trx_id || "")) changes.push(`trx ${before.trx_id || "—"} → ${after.trx_id || "—"}`);
+    if ((before.notes || "") !== (after.notes || "")) changes.push(`notes updated`);
+    await addOrderTimeline({
+      order_id: order.id,
+      event: "payment_updated",
+      description: `Payment edited — ${changes.join(", ") || "no changes"}${recomputed ? ` (${recomputed.newStatus}, ৳${recomputed.remaining.toLocaleString()} due)` : ""}`,
+      metadata: { before, after, ...(recomputed || {}) },
+    });
+    await logAction("update", "order_payment", order.id, {
+      order_number: order.order_number, payment_id: p.id, before, after,
+    });
+    cancelEditPayment();
+    toast.success("Payment updated");
+    onSaved?.();
+    load();
+  };
+
+  const deletePayment = async (p: PaymentEntry) => {
+    if (!order) return;
+    if (!confirm(`Delete this ৳${Number(p.amount).toLocaleString()} ${p.method} payment?`)) return;
+    await supabase.from("order_payments").delete().eq("id", p.id);
+    const recomputed = await recomputePaymentStatus(order);
+    await addOrderTimeline({
+      order_id: order.id,
+      event: "payment_deleted",
+      description: `Payment of ৳${Number(p.amount).toLocaleString()} via ${p.method} removed${recomputed ? ` — ${recomputed.newStatus}, ৳${recomputed.remaining.toLocaleString()} due` : ""}`,
+      metadata: { method: p.method, amount: Number(p.amount), trx_id: p.trx_id, ...(recomputed || {}) },
+    });
+    await logAction("delete", "order_payment", order.id, {
+      order_number: order.order_number, payment_id: p.id, method: p.method, amount: Number(p.amount),
+    });
+    toast.success("Payment removed");
+    onSaved?.();
+    load();
+  };
+
 
   /* ---------- Confirm pending payment ---------- */
 
@@ -694,7 +806,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Method</Label>
-                      <p className="text-sm font-medium">{order?.payment_method || "N/A"}</p>
+                      <Select value={paymentMethod || "none"} onValueChange={(v) => setPaymentMethod(v === "none" ? "" : v)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="N/A" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">N/A</SelectItem>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="bkash">bKash</SelectItem>
+                          <SelectItem value="nagad">Nagad</SelectItem>
+                          <SelectItem value="rocket">Rocket</SelectItem>
+                          <SelectItem value="card">Card</SelectItem>
+                          <SelectItem value="bank">Bank Transfer</SelectItem>
+                          <SelectItem value="cod">COD</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Status</Label>
@@ -989,16 +1115,67 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
                   ) : (
                     <div className="space-y-2">
-                      {payments.map((p) => (
-                        <div key={p.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                          <div>
-                            <div className="text-sm font-medium">৳{Number(p.amount).toLocaleString()} via {p.method}</div>
-                            {p.trx_id && <div className="text-xs text-muted-foreground">TrxID: {p.trx_id}</div>}
-                            {p.notes && <div className="text-xs text-muted-foreground">{p.notes}</div>}
+                      {payments.map((p) => {
+                        const isEditing = editingPaymentId === p.id;
+                        if (isEditing) {
+                          return (
+                            <div key={p.id} className="rounded-lg border border-primary/40 bg-primary/5 p-3 space-y-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Method</Label>
+                                  <Select value={editPayMethod} onValueChange={setEditPayMethod}>
+                                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="bkash">bKash</SelectItem>
+                                      <SelectItem value="nagad">Nagad</SelectItem>
+                                      <SelectItem value="rocket">Rocket</SelectItem>
+                                      <SelectItem value="cash">Cash</SelectItem>
+                                      <SelectItem value="card">Card</SelectItem>
+                                      <SelectItem value="bank">Bank Transfer</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Amount (৳)</Label>
+                                  <Input type="number" min={0} value={editPayAmount} onChange={(e) => setEditPayAmount(e.target.value)} className="h-9" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">TrxID</Label>
+                                  <Input value={editPayTrxId} onChange={(e) => setEditPayTrxId(e.target.value)} className="h-9" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Notes</Label>
+                                  <Input value={editPayNotes} onChange={(e) => setEditPayNotes(e.target.value)} className="h-9" />
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-end gap-2">
+                                <Button size="sm" variant="ghost" onClick={cancelEditPayment}>Cancel</Button>
+                                <Button size="sm" onClick={() => saveEditedPayment(p)} disabled={!canLogPayment}>Save</Button>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={p.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium">৳{Number(p.amount).toLocaleString()} via {p.method}</div>
+                              {p.trx_id && <div className="text-xs text-muted-foreground">TrxID: {p.trx_id}</div>}
+                              {p.notes && <div className="text-xs text-muted-foreground">{p.notes}</div>}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-xs text-muted-foreground">{format(new Date(p.created_at), "MMM d, h:mm a")}</span>
+                              {canLogPayment && (
+                                <>
+                                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => startEditPayment(p)}>Edit</Button>
+                                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => deletePayment(p)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <span className="text-xs text-muted-foreground">{format(new Date(p.created_at), "MMM d, h:mm a")}</span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </section>

@@ -86,6 +86,141 @@ interface Props {
   onCreated: () => void;
 }
 
+interface ParsedAttr { key: string; value: string; }
+function parseVariationAttributes(attrs: any): ParsedAttr[] {
+  if (typeof attrs === "string") return [];
+  if (!Array.isArray(attrs)) return [];
+  return attrs.map((a: any) => {
+    if (a && typeof a === "object") {
+      if (a.key && a.value) return { key: String(a.key), value: String(a.value) };
+      const k = Object.keys(a).find((k) => k !== "key" && k !== "value");
+      if (k) return { key: k, value: String(a[k]) };
+    }
+    return null;
+  }).filter(Boolean) as ParsedAttr[];
+}
+
+interface ProductSearchResultRowProps {
+  product: { productId: string; name: string; sku: string | null; price: number; hasVariations: boolean };
+  variations: VariationRow[];
+  onAdd: (result: SearchResult) => void;
+}
+
+function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchResultRowProps) {
+  const productVars = useMemo(
+    () => variations.filter((v) => v.product_id === product.productId),
+    [variations, product.productId],
+  );
+
+  // Group attribute values per attribute key (e.g. Color → [Red, Blue], Size → [S, M, L])
+  const attrGroups = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const v of productVars) {
+      for (const a of parseVariationAttributes(v.attributes)) {
+        if (!map[a.key]) map[a.key] = [];
+        if (!map[a.key].includes(a.value)) map[a.key].push(a.value);
+      }
+    }
+    return map;
+  }, [productVars]);
+
+  const attrKeys = Object.keys(attrGroups);
+  const [selected, setSelected] = useState<Record<string, string>>({});
+
+  const matchedVariation = useMemo(() => {
+    if (attrKeys.length === 0) return null;
+    if (!attrKeys.every((k) => selected[k])) return null;
+    return productVars.find((v) => {
+      const parsed = parseVariationAttributes(v.attributes);
+      return attrKeys.every((k) => parsed.some((p) => p.key === k && p.value === selected[k]));
+    }) || null;
+  }, [productVars, attrKeys, selected]);
+
+  const effectivePrice = matchedVariation ? Number(matchedVariation.price) : product.price;
+  const canAdd = !product.hasVariations || (matchedVariation !== null);
+
+  const handleAdd = () => {
+    if (!product.hasVariations) {
+      onAdd({
+        id: product.productId,
+        productId: product.productId,
+        name: product.name,
+        sku: product.sku,
+        price: product.price,
+      });
+      return;
+    }
+    if (!matchedVariation) return;
+    const varLabel = parseVariationAttributes(matchedVariation.attributes)
+      .map((a) => a.value)
+      .join(" / ") || matchedVariation.name;
+    onAdd({
+      id: matchedVariation.id,
+      productId: product.productId,
+      variationId: matchedVariation.id,
+      name: product.name,
+      variationLabel: varLabel,
+      sku: matchedVariation.sku || product.sku,
+      price: Number(matchedVariation.price),
+    });
+    setSelected({});
+  };
+
+  return (
+    <div className="px-3 py-2.5 border-b border-border last:border-b-0 hover:bg-accent/40 transition-colors">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium">{product.name}</span>
+            {product.sku && <span className="text-[11px] text-muted-foreground">{product.sku}</span>}
+            {product.hasVariations && (
+              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">
+                {productVars.length} variations
+              </Badge>
+            )}
+          </div>
+          {product.hasVariations && attrKeys.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {attrKeys.map((key) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{key}</span>
+                  <Select
+                    value={selected[key] || ""}
+                    onValueChange={(v) => setSelected((s) => ({ ...s, [key]: v }))}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-auto min-w-[80px] gap-1">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {attrGroups[key].map((opt) => (
+                        <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm text-muted-foreground whitespace-nowrap">৳{effectivePrice.toLocaleString()}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant={canAdd ? "default" : "outline"}
+            disabled={!canAdd}
+            onClick={handleAdd}
+            className="h-7 px-2 gap-1"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props) {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [variations, setVariations] = useState<VariationRow[]>([]);
@@ -247,7 +382,76 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     return () => { mounted = false; };
   }, [customerAddress, cities, allZones, allAreas]);
 
-  // Flat searchable index of products + variations
+  // Per-product search index (one row per product, even if it has variations).
+  // Variations contribute to searchText so users can still find a product by
+  // typing a variation attribute (e.g. "blue", "L").
+  interface ProductSearchRow {
+    productId: string;
+    name: string;
+    sku: string | null;
+    price: number;
+    hasVariations: boolean;
+    searchText: string;
+  }
+
+  const productIndex = useMemo((): ProductSearchRow[] => {
+    return products.map((p) => {
+      const productVariations = variations.filter((v) => v.product_id === p.id);
+      const variationText = productVariations
+        .map((v) => {
+          const label =
+            typeof v.attributes === "string"
+              ? v.attributes
+              : Array.isArray(v.attributes)
+              ? v.attributes.map((a: any) => Object.values(a).join(": ")).join(", ")
+              : v.name;
+          return `${label} ${v.sku || ""}`;
+        })
+        .join(" ");
+      return {
+        productId: p.id,
+        name: p.name,
+        sku: p.sku,
+        price: p.price,
+        hasVariations: productVariations.length > 0,
+        searchText: `${p.name} ${p.sku || ""} ${variationText}`,
+      };
+    });
+  }, [products, variations]);
+
+  const fuse = useMemo(
+    () =>
+      new Fuse(productIndex, {
+        keys: [
+          { name: "name", weight: 0.55 },
+          { name: "sku", weight: 0.2 },
+          { name: "searchText", weight: 0.25 },
+        ],
+        threshold: 0.4,
+        ignoreLocation: true,
+        minMatchCharLength: 2,
+        includeScore: true,
+      }),
+    [productIndex],
+  );
+
+  const productSearchResults = useMemo((): ProductSearchRow[] => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return [];
+    // Exact SKU match (product or any variation) wins
+    const exactProduct = productIndex.filter((r) => (r.sku || "").toLowerCase() === q);
+    if (exactProduct.length > 0) return exactProduct.slice(0, 20);
+    const exactVarProductIds = new Set(
+      variations.filter((v) => (v.sku || "").toLowerCase() === q).map((v) => v.product_id),
+    );
+    if (exactVarProductIds.size > 0) {
+      return productIndex.filter((r) => exactVarProductIds.has(r.productId)).slice(0, 20);
+    }
+    return fuse.search(q).slice(0, 20).map((r) => r.item);
+  }, [productIndex, fuse, productSearch, variations]);
+
+  // Backwards-compatible flat index used by the AI-parse hint matcher: every
+  // product (and every variation) is searchable as an addable result.
   const searchIndex = useMemo((): (SearchResult & { searchText: string })[] => {
     const flat: (SearchResult & { searchText: string })[] = [];
     for (const p of products) {
@@ -285,7 +489,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     return flat;
   }, [products, variations]);
 
-  const fuse = useMemo(
+  // Fuse over the flat index, used by the AI parser's product hint matcher.
+  const flatFuse = useMemo(
     () =>
       new Fuse(searchIndex, {
         keys: [
@@ -301,15 +506,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       }),
     [searchIndex],
   );
-
-  const searchResults = useMemo((): SearchResult[] => {
-    const q = productSearch.trim().toLowerCase();
-    if (!q) return [];
-    // Exact SKU match wins
-    const exact = searchIndex.filter((r) => (r.sku || "").toLowerCase() === q);
-    if (exact.length > 0) return exact.slice(0, 20);
-    return fuse.search(q).slice(0, 20).map((r) => r.item);
-  }, [searchIndex, fuse, productSearch]);
 
   const addItem = (result: SearchResult) => {
     const uid = result.variationId ? `${result.productId}_${result.variationId}` : result.productId;
@@ -485,7 +681,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
         // 2. Fuzzy match: require a strong score AND a shared meaningful token
         // between the hint and the matched product name. Fuse score: 0 = perfect, 1 = no match.
-        const top = fuse.search(q)[0];
+        const top = flatFuse.search(q)[0];
         if (!top || (top.score ?? 1) > 0.25) { productsSkipped += 1; continue; }
 
         const candidateText = `${top.item.name} ${top.item.variationLabel || ""} ${top.item.sku || ""}`.toLowerCase();
@@ -762,23 +958,20 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               <Input value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Search by name, SKU, or variation..." className="pl-9" />
             </div>
             {productSearch && (
-              <ScrollArea className="mt-2 max-h-48 rounded-md border border-border">
-                {searchResults.length === 0 ? (
+              <ScrollArea className="mt-2 max-h-72 rounded-md border border-border">
+                {productSearchResults.length === 0 ? (
                   <div className="p-3 text-sm text-muted-foreground text-center">No products found</div>
                 ) : (
-                  searchResults.map(r => (
-                    <button
-                      key={r.id}
-                      onClick={() => { addItem(r); setProductSearch(""); }}
-                      className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-accent text-left"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{r.name}</span>
-                        {r.variationLabel && <Badge variant="secondary" className="text-xs">{r.variationLabel}</Badge>}
-                        {r.sku && <span className="text-xs text-muted-foreground">{r.sku}</span>}
-                      </div>
-                      <span className="text-muted-foreground">৳{r.price.toLocaleString()}</span>
-                    </button>
+                  productSearchResults.map((r) => (
+                    <ProductSearchResultRow
+                      key={r.productId}
+                      product={r}
+                      variations={variations}
+                      onAdd={(result) => {
+                        addItem(result);
+                        // Keep the search query so users can quickly add more variations
+                      }}
+                    />
                   ))
                 )}
               </ScrollArea>
