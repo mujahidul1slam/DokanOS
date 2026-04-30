@@ -627,11 +627,6 @@ const PosReports = () => {
           </Table>
         </div>
       </div>
-    </div>
-  );
-};
-
-      </div>
 
       <OrderDetailSheet
         orderId={detailOrderId}
@@ -641,5 +636,8 @@ const PosReports = () => {
     </div>
   );
 };
+
+export default PosReports;
+
 
 export default PosReports;
