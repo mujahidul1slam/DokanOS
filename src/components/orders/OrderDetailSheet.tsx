@@ -1115,16 +1115,67 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
                   ) : (
                     <div className="space-y-2">
-                      {payments.map((p) => (
-                        <div key={p.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                          <div>
-                            <div className="text-sm font-medium">৳{Number(p.amount).toLocaleString()} via {p.method}</div>
-                            {p.trx_id && <div className="text-xs text-muted-foreground">TrxID: {p.trx_id}</div>}
-                            {p.notes && <div className="text-xs text-muted-foreground">{p.notes}</div>}
+                      {payments.map((p) => {
+                        const isEditing = editingPaymentId === p.id;
+                        if (isEditing) {
+                          return (
+                            <div key={p.id} className="rounded-lg border border-primary/40 bg-primary/5 p-3 space-y-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Method</Label>
+                                  <Select value={editPayMethod} onValueChange={setEditPayMethod}>
+                                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="bkash">bKash</SelectItem>
+                                      <SelectItem value="nagad">Nagad</SelectItem>
+                                      <SelectItem value="rocket">Rocket</SelectItem>
+                                      <SelectItem value="cash">Cash</SelectItem>
+                                      <SelectItem value="card">Card</SelectItem>
+                                      <SelectItem value="bank">Bank Transfer</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Amount (৳)</Label>
+                                  <Input type="number" min={0} value={editPayAmount} onChange={(e) => setEditPayAmount(e.target.value)} className="h-9" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">TrxID</Label>
+                                  <Input value={editPayTrxId} onChange={(e) => setEditPayTrxId(e.target.value)} className="h-9" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Notes</Label>
+                                  <Input value={editPayNotes} onChange={(e) => setEditPayNotes(e.target.value)} className="h-9" />
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-end gap-2">
+                                <Button size="sm" variant="ghost" onClick={cancelEditPayment}>Cancel</Button>
+                                <Button size="sm" onClick={() => saveEditedPayment(p)} disabled={!canLogPayment}>Save</Button>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={p.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium">৳{Number(p.amount).toLocaleString()} via {p.method}</div>
+                              {p.trx_id && <div className="text-xs text-muted-foreground">TrxID: {p.trx_id}</div>}
+                              {p.notes && <div className="text-xs text-muted-foreground">{p.notes}</div>}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-xs text-muted-foreground">{format(new Date(p.created_at), "MMM d, h:mm a")}</span>
+                              {canLogPayment && (
+                                <>
+                                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => startEditPayment(p)}>Edit</Button>
+                                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => deletePayment(p)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <span className="text-xs text-muted-foreground">{format(new Date(p.created_at), "MMM d, h:mm a")}</span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </section>
