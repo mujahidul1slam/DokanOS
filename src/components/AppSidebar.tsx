@@ -57,14 +57,13 @@ const AppSidebar = ({ mobileOpen: mobileOpenProp, onMobileOpenChange }: AppSideb
   const businessInitial = businessName.charAt(0).toUpperCase();
   const hasMultiple = profiles.length > 1;
 
+  const isDefaultBrand = !active?.logo_url;
   const BrandBlock = (
     <div className="flex items-center gap-2 min-w-0">
       {businessLogo ? (
         <img src={businessLogo} alt={businessName} className="h-7 w-7 rounded-md object-contain bg-white p-0.5 border border-border shrink-0" />
       ) : (
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary shrink-0">
-          <span className="font-heading text-xs font-bold text-primary-foreground">{businessInitial}</span>
-        </div>
+        <img src={dokanosIcon} alt={businessName} className="h-7 w-7 rounded-md object-contain shrink-0" />
       )}
       <span className="font-heading text-sm font-semibold text-foreground truncate">{businessName}</span>
       {hasMultiple && <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
