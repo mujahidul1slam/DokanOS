@@ -404,8 +404,20 @@ export default function ExchangeDialog({
           ? "New Exchange Parcel"
           : `Exchange Parcel — for #${parent?.order_number || "…"}`
       }
+      desktopMaxWidth="max-w-2xl"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={submitting || !canSubmit} className="gap-2">
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            Create Exchange Parcel
+          </Button>
+        </>
+      }
     >
-      <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+      <div className="space-y-4">
         <p className="text-xs text-muted-foreground -mt-2">
           Pathao picks up the original item and delivers a replacement in one trip.
         </p>
