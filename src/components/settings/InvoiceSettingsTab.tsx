@@ -10,7 +10,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Upload, X, FileText, Plus, Trash2 } from "lucide-react";
 import { logChange } from "@/lib/auditLog";
-import type { InvoiceTemplateConfig, PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
+import { Slider } from "@/components/ui/slider";
+import PickupSlipPreview from "./PickupSlipPreview";
+import { defaultPickupSlipSizing, type InvoiceTemplateConfig, type PickupSlipTemplateConfig, type PickupSlipSizing } from "@/hooks/useInvoiceSettings";
 
 interface InvoiceSettings {
   id: string;
@@ -47,6 +49,7 @@ const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
   show_customer_address: true, show_items: true, show_item_qty: true,
   show_total: true, show_due: true, show_notes: false, title: "PICKUP SLIP",
   custom_fields: [],
+  sizing: defaultPickupSlipSizing,
 };
 
 const InvoiceSettingsTab = () => {
@@ -68,7 +71,11 @@ const InvoiceSettingsTab = () => {
             ...data,
             pickup_slip_print_format: data.pickup_slip_print_format || "thermal",
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
-            pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
+            pickup_slip_template: {
+              ...defaultPickupSlipTemplate,
+              ...(data.pickup_slip_template || {}),
+              sizing: { ...defaultPickupSlipSizing, ...((data.pickup_slip_template || {}).sizing || {}) },
+            },
             shipping_presets: data.shipping_presets || [80, 150],
             shipping_inside_dhaka: data.shipping_inside_dhaka ?? 80,
             shipping_outside_dhaka: data.shipping_outside_dhaka ?? 150,
@@ -92,6 +99,17 @@ const InvoiceSettingsTab = () => {
   const updatePickupTemplate = (field: keyof PickupSlipTemplateConfig, value: any) => {
     if (!settings) return;
     setSettings({ ...settings, pickup_slip_template: { ...settings.pickup_slip_template, [field]: value } });
+  };
+
+  const updatePickupSizing = (field: keyof PickupSlipSizing, value: number) => {
+    if (!settings) return;
+    setSettings({
+      ...settings,
+      pickup_slip_template: {
+        ...settings.pickup_slip_template,
+        sizing: { ...settings.pickup_slip_template.sizing, [field]: value },
+      },
+    });
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -368,6 +386,93 @@ const InvoiceSettingsTab = () => {
           <Button variant="outline" size="sm" onClick={() => updatePickupTemplate("custom_fields", [...pickupTpl.custom_fields, { label: "", value: "" }])} className="gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Add Field
           </Button>
+        </div>
+
+        {/* Slip Dimensions */}
+        <div className="space-y-3 rounded-md border border-border p-4">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Slip Dimensions (mm)</Label>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => updatePickupTemplate("sizing", { ...pickupTpl.sizing, ...defaultPickupSlipSizing })}
+            >
+              Reset all sizes
+            </Button>
+          </div>
+          {settings.pickup_slip_print_format === "a4" ? (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Slip Width (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.a4_slip_width_mm} onChange={(e) => updatePickupSizing("a4_slip_width_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Slip Height (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.a4_slip_height_mm} onChange={(e) => updatePickupSizing("a4_slip_height_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Padding (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.a4_slip_padding_mm} onChange={(e) => updatePickupSizing("a4_slip_padding_mm", Number(e.target.value) || 0)} />
+              </div>
+              <p className="col-span-3 text-xs text-muted-foreground">A4 prints 8 slips per landscape page; width/height drive the preview only — actual size fits the page grid.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Roll Width (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.thermal_width_mm} onChange={(e) => updatePickupSizing("thermal_width_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Padding (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.thermal_padding_mm} onChange={(e) => updatePickupSizing("thermal_padding_mm", Number(e.target.value) || 0)} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Element Sizes */}
+        <div className="space-y-3 rounded-md border border-border p-4">
+          <Label className="text-sm font-medium">Element Sizes (px)</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            {([
+              ["title_size", "Slip Title", 10, 40],
+              ["order_number_size", "Order Number", 10, 40],
+              ["section_title_size", "Section Heading", 8, 24],
+              ["customer_name_size", "Customer Name", 10, 32],
+              ["customer_detail_size", "Customer Details", 8, 28],
+              ["item_size", "Item Rows", 8, 28],
+              ["total_size", "Total Amount", 10, 32],
+              ["due_size", "Due Amount", 10, 32],
+              ["custom_field_size", "Custom Fields", 8, 24],
+              ["barcode_height", "Barcode Height", 20, 120],
+              ["barcode_font_size", "Barcode Number", 8, 28],
+              ["barcode_bar_width", "Barcode Bar Width", 1, 4],
+            ] as [keyof PickupSlipSizing, string, number, number][]).map(([key, label, min, max]) => (
+              <div key={key} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span>{label}</span>
+                  <span className="tabular-nums text-muted-foreground">{pickupTpl.sizing[key]}</span>
+                </div>
+                <Slider
+                  min={min}
+                  max={max}
+                  step={key === "barcode_bar_width" ? 0.1 : 1}
+                  value={[Number(pickupTpl.sizing[key])]}
+                  onValueChange={(v) => updatePickupSizing(key, v[0])}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Live Preview */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Live Preview ({settings.pickup_slip_print_format === "a4" ? "A4 slip" : "Thermal"})</Label>
+          <PickupSlipPreview
+            tpl={pickupTpl}
+            format={(settings.pickup_slip_print_format || "thermal") as "thermal" | "a4"}
+          />
+          <p className="text-xs text-muted-foreground">Preview uses sample order data and reflects all sizing changes instantly.</p>
         </div>
       </div>
 
