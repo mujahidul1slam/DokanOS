@@ -614,16 +614,7 @@ export default function ExchangeDialog({
           </>
         )}
       </div>
-
-      <DialogFooter className="mt-4">
-        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button onClick={handleSubmit} disabled={submitting || !canSubmit} className="gap-2">
-          {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-          Create Exchange Parcel
-        </Button>
-      </DialogFooter>
     </ResponsiveDialog>
   );
 }
+
