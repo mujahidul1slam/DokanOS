@@ -502,7 +502,7 @@ export default function ExchangeDialog({
                 <Label>City</Label>
                 <SearchableSelect
                   value={cityId}
-                  onValueChange={(v) => { setCityId(v); setZoneId(""); setAreaId(""); }}
+                  onChange={(v) => { setCityId(v); setZoneId(""); setAreaId(""); }}
                   options={cityOptions}
                   placeholder="Select city"
                 />
@@ -511,7 +511,7 @@ export default function ExchangeDialog({
                 <Label>Zone</Label>
                 <SearchableSelect
                   value={zoneId}
-                  onValueChange={(v) => { setZoneId(v); setAreaId(""); }}
+                  onChange={(v) => { setZoneId(v); setAreaId(""); }}
                   options={zoneOptions}
                   placeholder="Select zone"
                   disabled={!cityId}
@@ -521,7 +521,7 @@ export default function ExchangeDialog({
                 <Label>Area</Label>
                 <SearchableSelect
                   value={areaId}
-                  onValueChange={setAreaId}
+                  onChange={setAreaId}
                   options={areaOptions}
                   placeholder="Optional"
                   disabled={!zoneId}
