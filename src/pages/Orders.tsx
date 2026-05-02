@@ -782,6 +782,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
               <Plus className="h-4 w-4 mr-1" /> Add Order
             </Button>
           )}
+          {canWrite && !preOrderMode && (
+            <Button size="sm" variant="outline" onClick={() => setExchangeOpen(true)} className="hidden sm:inline-flex gap-1.5">
+              <RefreshCw className="h-4 w-4" /> New Exchange
+            </Button>
+          )}
           {!preOrderMode && ["pickup_pending", "in_transit", "on_hold", "returned"].includes(tab) && (
             <Button variant="outline" size="sm" onClick={handleTrackAll} disabled={trackingLoading}>
               {trackingLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
