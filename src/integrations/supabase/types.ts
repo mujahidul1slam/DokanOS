@@ -804,11 +804,13 @@ export type Database = {
           discount: number | null
           fulfillment_type: string
           id: string
+          is_exchange: boolean
           item_qty: number | null
           item_type: number | null
           item_weight: number | null
           notes: string | null
           order_number: string
+          parent_order_id: string | null
           pathao_integration_id: string | null
           pathao_recipient_area: number | null
           pathao_recipient_city: number | null
@@ -846,11 +848,13 @@ export type Database = {
           discount?: number | null
           fulfillment_type?: string
           id?: string
+          is_exchange?: boolean
           item_qty?: number | null
           item_type?: number | null
           item_weight?: number | null
           notes?: string | null
           order_number: string
+          parent_order_id?: string | null
           pathao_integration_id?: string | null
           pathao_recipient_area?: number | null
           pathao_recipient_city?: number | null
@@ -888,11 +892,13 @@ export type Database = {
           discount?: number | null
           fulfillment_type?: string
           id?: string
+          is_exchange?: boolean
           item_qty?: number | null
           item_type?: number | null
           item_weight?: number | null
           notes?: string | null
           order_number?: string
+          parent_order_id?: string | null
           pathao_integration_id?: string | null
           pathao_recipient_area?: number | null
           pathao_recipient_city?: number | null
