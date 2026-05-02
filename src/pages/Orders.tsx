@@ -95,7 +95,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 200;
 
-type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "trash";
+type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "cancelled" | "trash";
 
 interface OrdersProps { preOrderMode?: boolean }
 
@@ -290,6 +290,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     // All non-trash tabs exclude trashed orders
     const active = orders.filter((o) => !o.deleted_at);
     return active.filter((o) => {
+      // Cancelled orders are surfaced ONLY in the cancelled tab (and "all").
+      const isCancelled =
+        o.status === "cancelled" ||
+        (!!o.consignment_id && ["Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || ""));
+      if (tabKey !== "cancelled" && tabKey !== "all" && isCancelled) return false;
       switch (tabKey) {
         case "new":
           // New = processing or payment_pending orders not yet dispatched and not pre-order
@@ -303,7 +308,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             (preOrderOrderIds.has(o.id) && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
           );
         case "pickup_pending":
-          return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up","Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up"].includes(o.tracking_status || "");
         case "in_transit":
           return !!o.consignment_id && ["At Sorting Hub","In Transit","On the Way To Delivery Hub","At Delivery Hub","Out for Delivery"].includes(o.tracking_status || "");
         case "delivered":
@@ -317,6 +322,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           return !!o.consignment_id && ["On Hold","Hold","Exchange"].includes(o.tracking_status || "");
         case "returned":
           return o.status === "returned" || (!!o.consignment_id && ["Return","Returned","Paid Return","Return Requested","Return In Transit","Returned to Merchant","Merchant Return","Return Delivered","Delivery Failed","Customer Refused"].includes(o.tracking_status || ""));
+        case "cancelled":
+          return isCancelled;
         default:
           return true;
       }
@@ -423,6 +430,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     delivered: getTabOrders("delivered").length,
     on_hold: getTabOrders("on_hold").length,
     returned: getTabOrders("returned").length,
+    cancelled: getTabOrders("cancelled").length,
     trash: getTabOrders("trash").length,
   }), [orders, getTabOrders]);
 
@@ -868,6 +876,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             { key: "delivered", label: "Delivered", icon: CheckCircle2, count: counts.delivered },
             { key: "on_hold", label: "On Hold", icon: AlertTriangle, count: counts.on_hold },
             { key: "returned", label: "Returned", icon: Undo2, count: counts.returned },
+            { key: "cancelled", label: "Cancelled", icon: XCircle, count: counts.cancelled },
             ...(counts.trash > 0 ? [{ key: "trash" as TabKey, label: "Trash", icon: Trash2, count: counts.trash }] : []),
           ];
           return (
@@ -1310,6 +1319,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
     delivered: { icon: CheckCircle2, text: "No delivered orders" },
     on_hold: { icon: AlertTriangle, text: "No orders on hold" },
     returned: { icon: Undo2, text: "No returned orders" },
+    cancelled: { icon: XCircle, text: "No cancelled orders — WooCommerce cancellations and Pathao pickup-cancel parcels appear here" },
     trash: { icon: Trash2, text: "Trash is empty — deleted orders appear here for 15 days" },
   };
   const config = configs[tab];
