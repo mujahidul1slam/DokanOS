@@ -594,11 +594,20 @@ Deno.serve(async (req) => {
       const wooIds = wooOrders.map((o: any) => o.id);
       const { data: preExisting } = await supabase
         .from("orders")
-        .select("woo_order_id")
+        .select("woo_order_id, status")
         .eq("store_id", store_id)
         .in("woo_order_id", wooIds);
       const preExistingIds = new Set((preExisting || []).map((r: any) => r.woo_order_id));
+      const prevStatusMap = new Map<number, string>(
+        (preExisting || []).map((r: any) => [r.woo_order_id, r.status])
+      );
       const newWooOrders = wooOrders.filter((o: any) => !preExistingIds.has(o.id));
+      const cancelledTransitions = wooOrders.filter((o: any) => {
+        if (!preExistingIds.has(o.id)) return false;
+        const prev = prevStatusMap.get(o.id);
+        const next = mapWooStatus(o.status, o.payment_method || o.payment_method_title || "");
+        return prev !== "cancelled" && next === "cancelled";
+      });
 
       // Upsert orders + return ids in a single round-trip per chunk
       const orderMap = new Map<number, string>();
