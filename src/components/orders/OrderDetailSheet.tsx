@@ -127,6 +127,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [fulfillmentType, setFulfillmentType] = useState<string>("delivery");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
 
+  // Exchange dialog
+  const [exchangeOpen, setExchangeOpen] = useState(false);
+  const [exchangeParent, setExchangeParent] = useState<any>(null);
+
+  const openExchange = useCallback(async () => {
+    if (!order) return;
+    const { data } = await supabase
+      .from("orders")
+      .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
+      .eq("id", order.id)
+      .maybeSingle();
+    if (!data) {
+      toast.error("Could not load order details for exchange");
+      return;
+    }
+    setExchangeParent(data);
+    setExchangeOpen(true);
+  }, [order]);
+
   // Payment form
   const [payMethod, setPayMethod] = useState("bkash");
   const [payAmount, setPayAmount] = useState("");
