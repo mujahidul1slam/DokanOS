@@ -1301,6 +1301,13 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         onCreated={loadOrders}
       />
 
+      <ExchangeDialog
+        open={exchangeOpen}
+        onOpenChange={setExchangeOpen}
+        pickerMode
+        onCreated={() => loadOrders()}
+      />
+
       <ConfirmDialog
         open={trashConfirmOpen}
         onOpenChange={setTrashConfirmOpen}
