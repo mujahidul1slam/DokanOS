@@ -94,7 +94,8 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
   const isA4 = format === "a4";
   return `
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; font-weight: 700; }
+    .slip, .slip * { font-weight: 700 !important; }
     .slip {
       ${isA4
         ? `border: 1px dashed #aaa; padding: ${s.a4_slip_padding_mm}mm; overflow: hidden; page-break-inside: avoid; display: flex; flex-direction: column;`
