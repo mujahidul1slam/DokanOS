@@ -387,6 +387,93 @@ const InvoiceSettingsTab = () => {
             <Plus className="h-3.5 w-3.5" /> Add Field
           </Button>
         </div>
+
+        {/* Slip Dimensions */}
+        <div className="space-y-3 rounded-md border border-border p-4">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Slip Dimensions (mm)</Label>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => updatePickupTemplate("sizing", { ...pickupTpl.sizing, ...defaultPickupSlipSizing })}
+            >
+              Reset all sizes
+            </Button>
+          </div>
+          {settings.pickup_slip_print_format === "a4" ? (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Slip Width (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.a4_slip_width_mm} onChange={(e) => updatePickupSizing("a4_slip_width_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Slip Height (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.a4_slip_height_mm} onChange={(e) => updatePickupSizing("a4_slip_height_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Padding (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.a4_slip_padding_mm} onChange={(e) => updatePickupSizing("a4_slip_padding_mm", Number(e.target.value) || 0)} />
+              </div>
+              <p className="col-span-3 text-xs text-muted-foreground">A4 prints 8 slips per landscape page; width/height drive the preview only — actual size fits the page grid.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Roll Width (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.thermal_width_mm} onChange={(e) => updatePickupSizing("thermal_width_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Padding (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.thermal_padding_mm} onChange={(e) => updatePickupSizing("thermal_padding_mm", Number(e.target.value) || 0)} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Element Sizes */}
+        <div className="space-y-3 rounded-md border border-border p-4">
+          <Label className="text-sm font-medium">Element Sizes (px)</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            {([
+              ["title_size", "Slip Title", 10, 40],
+              ["order_number_size", "Order Number", 10, 40],
+              ["section_title_size", "Section Heading", 8, 24],
+              ["customer_name_size", "Customer Name", 10, 32],
+              ["customer_detail_size", "Customer Details", 8, 28],
+              ["item_size", "Item Rows", 8, 28],
+              ["total_size", "Total Amount", 10, 32],
+              ["due_size", "Due Amount", 10, 32],
+              ["custom_field_size", "Custom Fields", 8, 24],
+              ["barcode_height", "Barcode Height", 20, 120],
+              ["barcode_font_size", "Barcode Number", 8, 28],
+              ["barcode_bar_width", "Barcode Bar Width", 1, 4],
+            ] as [keyof PickupSlipSizing, string, number, number][]).map(([key, label, min, max]) => (
+              <div key={key} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span>{label}</span>
+                  <span className="tabular-nums text-muted-foreground">{pickupTpl.sizing[key]}</span>
+                </div>
+                <Slider
+                  min={min}
+                  max={max}
+                  step={key === "barcode_bar_width" ? 0.1 : 1}
+                  value={[Number(pickupTpl.sizing[key])]}
+                  onValueChange={(v) => updatePickupSizing(key, v[0])}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Live Preview */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Live Preview ({settings.pickup_slip_print_format === "a4" ? "A4 slip" : "Thermal"})</Label>
+          <PickupSlipPreview
+            tpl={pickupTpl}
+            format={(settings.pickup_slip_print_format || "thermal") as "thermal" | "a4"}
+          />
+          <p className="text-xs text-muted-foreground">Preview uses sample order data and reflects all sizing changes instantly.</p>
+        </div>
       </div>
 
       {/* Shipping Cost Defaults */}
