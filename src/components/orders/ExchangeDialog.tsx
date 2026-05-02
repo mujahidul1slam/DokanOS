@@ -404,9 +404,11 @@ export default function ExchangeDialog({
           ? "New Exchange Parcel"
           : `Exchange Parcel — for #${parent?.order_number || "…"}`
       }
-      description="Pathao picks up the original item and delivers a replacement in one trip."
     >
       <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+        <p className="text-xs text-muted-foreground -mt-2">
+          Pathao picks up the original item and delivers a replacement in one trip.
+        </p>
         {showPicker && (
           <div className="space-y-2">
             <Label>Find original delivered order</Label>
