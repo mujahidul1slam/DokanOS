@@ -417,15 +417,20 @@ const InvoiceSettingsTab = () => {
               <p className="col-span-3 text-xs text-muted-foreground">A4 prints 8 slips per landscape page; width/height drive the preview only — actual size fits the page grid.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Roll Width (mm)</Label>
                 <Input type="number" value={pickupTpl.sizing.thermal_width_mm} onChange={(e) => updatePickupSizing("thermal_width_mm", Number(e.target.value) || 0)} />
               </div>
               <div className="space-y-1.5">
+                <Label className="text-xs">Slip Height (mm)</Label>
+                <Input type="number" value={pickupTpl.sizing.thermal_height_mm} onChange={(e) => updatePickupSizing("thermal_height_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs">Padding (mm)</Label>
                 <Input type="number" value={pickupTpl.sizing.thermal_padding_mm} onChange={(e) => updatePickupSizing("thermal_padding_mm", Number(e.target.value) || 0)} />
               </div>
+              <p className="col-span-3 text-xs text-muted-foreground">Set Slip Height to 0 for auto height (recommended for continuous rolls). Use a fixed height for pre-cut labels.</p>
             </div>
           )}
         </div>
