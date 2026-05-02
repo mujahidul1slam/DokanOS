@@ -430,6 +430,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     delivered: getTabOrders("delivered").length,
     on_hold: getTabOrders("on_hold").length,
     returned: getTabOrders("returned").length,
+    cancelled: getTabOrders("cancelled").length,
     trash: getTabOrders("trash").length,
   }), [orders, getTabOrders]);
 
