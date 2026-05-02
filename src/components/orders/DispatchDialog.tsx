@@ -339,6 +339,12 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   // Auto-fill: match customer city/zone/area text to Pathao IDs
   useEffect(() => {
     if (!open || orders.length === 0 || cities.length === 0) return;
+    // Only auto-fill once per (open + orders set). Without this guard, fetchZones/fetchAreas
+    // updating zonesMap/areasMap re-creates these callbacks, re-running this effect and
+    // wiping the user's manually-picked city/zone/area selections.
+    const key = orders.map((o) => o.id).join(",");
+    if (autoFilledKeyRef.current === key) return;
+    autoFilledKeyRef.current = key;
 
     const autoFill = async () => {
       const overrides: typeof orderOverrides = {};
