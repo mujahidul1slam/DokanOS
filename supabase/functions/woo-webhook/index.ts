@@ -253,6 +253,32 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
         user_email: null,
       },
     });
+  } else if (cancelledTransition) {
+    await supabase.from("order_timeline").insert({
+      order_id: orderId,
+      event: "cancelled",
+      description: `Order cancelled in WooCommerce (status: ${o.status})`,
+      metadata: {
+        source: "woo_webhook",
+        woo_order_id: o.id,
+        woo_status: o.status,
+        previous_status: existingOrder?.status || null,
+        user_name: "WooCommerce",
+        user_email: null,
+      },
+    });
+    await supabase.from("audit_log").insert({
+      action: "order_cancelled",
+      entity_type: "order",
+      entity_id: orderId,
+      user_email: "woocommerce@system",
+      details: {
+        source: "woo_webhook",
+        woo_order_id: o.id,
+        woo_status: o.status,
+        previous_status: existingOrder?.status || null,
+      },
+    });
   }
 
   await supabase.from("order_items").delete().eq("order_id", orderId);
