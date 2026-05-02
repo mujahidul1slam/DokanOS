@@ -76,7 +76,12 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     amount_to_collect: string; item_weight: string; special_instruction: string;
     recipient_name: string; recipient_phone: string; recipient_address: string;
   }>>({});
+  const autoFilledKeyRef = useRef<string>("");
   const { toast } = useToast();
+
+  // Reset auto-fill guard whenever the dialog closes so reopening triggers it again.
+  useEffect(() => { if (!open) autoFilledKeyRef.current = ""; }, [open]);
+
 
   useEffect(() => {
     if (!open) return;
