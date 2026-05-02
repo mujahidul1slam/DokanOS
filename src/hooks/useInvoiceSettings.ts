@@ -153,7 +153,11 @@ export function useInvoiceSettings() {
             ...data,
             pickup_slip_print_format: data.pickup_slip_print_format || "thermal",
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
-            pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
+            pickup_slip_template: {
+              ...defaultPickupSlipTemplate,
+              ...(data.pickup_slip_template || {}),
+              sizing: { ...defaultPickupSlipSizing, ...((data.pickup_slip_template || {}).sizing || {}) },
+            },
             shipping_presets: data.shipping_presets || [80, 150],
           });
         }
