@@ -133,6 +133,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [dispatchOrderIds, setDispatchOrderIds] = useState<string[]>([]);
   // Add Order
   const [addOrderOpen, setAddOrderOpen] = useState(false);
+  // Exchange parcel
+  const [exchangeOpen, setExchangeOpen] = useState(false);
 
   // Tracking
   const [trackingLoading, setTrackingLoading] = useState(false);
