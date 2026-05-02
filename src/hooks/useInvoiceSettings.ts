@@ -30,6 +30,7 @@ export interface InvoiceTemplateConfig {
 export interface PickupSlipSizing {
   // Page dimensions (mm)
   thermal_width_mm: number;
+  thermal_height_mm: number; // 0 = auto
   thermal_padding_mm: number;
   a4_slip_width_mm: number;   // approximate, used for preview only
   a4_slip_height_mm: number;  // approximate, used for preview only
@@ -94,6 +95,7 @@ const defaultInvoiceTemplate: InvoiceTemplateConfig = {
 
 export const defaultPickupSlipSizing: PickupSlipSizing = {
   thermal_width_mm: 80,
+  thermal_height_mm: 0,
   thermal_padding_mm: 5,
   a4_slip_width_mm: 138,
   a4_slip_height_mm: 70,

@@ -105,7 +105,8 @@ export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTempl
     </style></head><body><div class="grid">${slipsHtml}</div></body></html>`;
   }
   return `<html><head><title>Pickup Slips</title><style>
-    @page { size: ${s.thermal_width_mm}mm auto; margin: 0; }
+    @page { size: ${s.thermal_width_mm}mm ${s.thermal_height_mm > 0 ? `${s.thermal_height_mm}mm` : "auto"}; margin: 0; }
+    .slip { ${s.thermal_height_mm > 0 ? `height: ${s.thermal_height_mm}mm;` : ""} }
     ${css}
     @media print { body { margin: 0; } .slip { border: none; } }
   </style></head><body>${slipsHtml}
