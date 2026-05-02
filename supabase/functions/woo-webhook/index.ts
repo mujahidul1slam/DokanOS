@@ -218,15 +218,19 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   };
 
   const { data: existingOrder } = await supabase
-    .from("orders").select("id")
+    .from("orders").select("id, status")
     .eq("woo_order_id", o.id).eq("store_id", store_id).maybeSingle();
 
   let orderId: string;
   let isNewOrder = false;
+  let cancelledTransition = false;
   if (existingOrder) {
     const { error } = await supabase.from("orders").update(orderData).eq("id", existingOrder.id);
     if (error) return jsonResp({ error: "Failed to update order" }, 500);
     orderId = existingOrder.id;
+    if (existingOrder.status !== "cancelled" && orderData.status === "cancelled") {
+      cancelledTransition = true;
+    }
   } else {
     const orderInsert = { ...orderData, created_at: o.date_created_gmt ? o.date_created_gmt + "Z" : undefined };
     const { data: inserted, error } = await supabase.from("orders").insert(orderInsert).select("id").single();
