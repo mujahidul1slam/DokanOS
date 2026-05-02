@@ -27,6 +27,29 @@ export interface InvoiceTemplateConfig {
   custom_fields: { label: string; value: string }[];
 }
 
+export interface PickupSlipSizing {
+  // Page dimensions (mm)
+  thermal_width_mm: number;
+  thermal_padding_mm: number;
+  a4_slip_width_mm: number;   // approximate, used for preview only
+  a4_slip_height_mm: number;  // approximate, used for preview only
+  a4_slip_padding_mm: number;
+  // Font sizes (px)
+  title_size: number;
+  order_number_size: number;
+  section_title_size: number;
+  customer_name_size: number;
+  customer_detail_size: number;
+  item_size: number;
+  total_size: number;
+  due_size: number;
+  custom_field_size: number;
+  // Barcode
+  barcode_height: number;
+  barcode_font_size: number;
+  barcode_bar_width: number;
+}
+
 export interface PickupSlipTemplateConfig {
   show_order_number: boolean;
   show_customer_name: boolean;
@@ -39,6 +62,7 @@ export interface PickupSlipTemplateConfig {
   show_notes: boolean;
   title: string;
   custom_fields: { label: string; value: string }[];
+  sizing: PickupSlipSizing;
 }
 
 export interface InvoiceSettings {
@@ -68,11 +92,32 @@ const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   custom_fields: [],
 };
 
+export const defaultPickupSlipSizing: PickupSlipSizing = {
+  thermal_width_mm: 80,
+  thermal_padding_mm: 5,
+  a4_slip_width_mm: 138,
+  a4_slip_height_mm: 70,
+  a4_slip_padding_mm: 4,
+  title_size: 20,
+  order_number_size: 22,
+  section_title_size: 13,
+  customer_name_size: 18,
+  customer_detail_size: 16,
+  item_size: 16,
+  total_size: 19,
+  due_size: 17,
+  custom_field_size: 14,
+  barcode_height: 60,
+  barcode_font_size: 18,
+  barcode_bar_width: 2,
+};
+
 const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
   show_order_number: true, show_customer_name: true, show_customer_phone: true,
   show_customer_address: true, show_items: true, show_item_qty: true,
   show_total: true, show_due: true, show_notes: false, title: "PICKUP SLIP",
   custom_fields: [],
+  sizing: defaultPickupSlipSizing,
 };
 
 const defaults: InvoiceSettings = {
