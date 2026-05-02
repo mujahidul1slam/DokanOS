@@ -1319,6 +1319,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
     delivered: { icon: CheckCircle2, text: "No delivered orders" },
     on_hold: { icon: AlertTriangle, text: "No orders on hold" },
     returned: { icon: Undo2, text: "No returned orders" },
+    cancelled: { icon: XCircle, text: "No cancelled orders — WooCommerce cancellations and Pathao pickup-cancel parcels appear here" },
     trash: { icon: Trash2, text: "Trash is empty — deleted orders appear here for 15 days" },
   };
   const config = configs[tab];
