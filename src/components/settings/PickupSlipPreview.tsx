@@ -75,7 +75,7 @@ export default function PickupSlipPreview({ tpl, format }: Props) {
     const heightStyle = heightMm && heightMm > 0 ? `height: ${heightMm}mm;` : "";
 
     const slipsHtml = sampleOrders
-      .map((o) => `<div class="slip-wrap"><div class="slip">${buildSlipInnerHtml(o, tpl)}</div></div>`)
+      .flatMap((o) => buildSlipPagesHtml(o, tpl).map(html => `<div class="slip-wrap"><div class="slip">${html}</div></div>`))
       .join("");
 
     const html = `<html><head><style>
