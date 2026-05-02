@@ -39,6 +39,7 @@ import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
 import AddOrderDialog from "@/components/orders/AddOrderDialog";
 import OrderCard from "@/components/orders/OrderCard";
 import DispatchDialog from "@/components/orders/DispatchDialog";
+import ExchangeDialog from "@/components/orders/ExchangeDialog";
 import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
@@ -132,6 +133,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [dispatchOrderIds, setDispatchOrderIds] = useState<string[]>([]);
   // Add Order
   const [addOrderOpen, setAddOrderOpen] = useState(false);
+  // Exchange parcel
+  const [exchangeOpen, setExchangeOpen] = useState(false);
 
   // Tracking
   const [trackingLoading, setTrackingLoading] = useState(false);
@@ -777,6 +780,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           {canWrite && !preOrderMode && (
             <Button size="sm" onClick={() => setAddOrderOpen(true)} className="hidden sm:inline-flex">
               <Plus className="h-4 w-4 mr-1" /> Add Order
+            </Button>
+          )}
+          {canWrite && !preOrderMode && (
+            <Button size="sm" variant="outline" onClick={() => setExchangeOpen(true)} className="hidden sm:inline-flex gap-1.5">
+              <RefreshCw className="h-4 w-4" /> New Exchange
             </Button>
           )}
           {!preOrderMode && ["pickup_pending", "in_transit", "on_hold", "returned"].includes(tab) && (
