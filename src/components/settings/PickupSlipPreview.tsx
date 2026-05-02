@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
-import { buildSlipCss, buildSlipInnerHtml, type SlipOrderData } from "@/lib/pickupSlipHtml";
+import { buildSlipCss, buildSlipPagesHtml, type SlipOrderData } from "@/lib/pickupSlipHtml";
 
 const sampleOrders: SlipOrderData[] = [
   {
