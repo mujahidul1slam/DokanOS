@@ -218,15 +218,19 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   };
 
   const { data: existingOrder } = await supabase
-    .from("orders").select("id")
+    .from("orders").select("id, status")
     .eq("woo_order_id", o.id).eq("store_id", store_id).maybeSingle();
 
   let orderId: string;
   let isNewOrder = false;
+  let cancelledTransition = false;
   if (existingOrder) {
     const { error } = await supabase.from("orders").update(orderData).eq("id", existingOrder.id);
     if (error) return jsonResp({ error: "Failed to update order" }, 500);
     orderId = existingOrder.id;
+    if (existingOrder.status !== "cancelled" && orderData.status === "cancelled") {
+      cancelledTransition = true;
+    }
   } else {
     const orderInsert = { ...orderData, created_at: o.date_created_gmt ? o.date_created_gmt + "Z" : undefined };
     const { data: inserted, error } = await supabase.from("orders").insert(orderInsert).select("id").single();
@@ -247,6 +251,32 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
         total: parseFloat(o.total) || 0,
         user_name: "WooCommerce",
         user_email: null,
+      },
+    });
+  } else if (cancelledTransition) {
+    await supabase.from("order_timeline").insert({
+      order_id: orderId,
+      event: "cancelled",
+      description: `Order cancelled in WooCommerce (status: ${o.status})`,
+      metadata: {
+        source: "woo_webhook",
+        woo_order_id: o.id,
+        woo_status: o.status,
+        previous_status: existingOrder?.status || null,
+        user_name: "WooCommerce",
+        user_email: null,
+      },
+    });
+    await supabase.from("audit_log").insert({
+      action: "order_cancelled",
+      entity_type: "order",
+      entity_id: orderId,
+      user_email: "woocommerce@system",
+      details: {
+        source: "woo_webhook",
+        woo_order_id: o.id,
+        woo_status: o.status,
+        previous_status: existingOrder?.status || null,
       },
     });
   }

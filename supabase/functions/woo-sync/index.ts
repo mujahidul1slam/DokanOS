@@ -594,11 +594,20 @@ Deno.serve(async (req) => {
       const wooIds = wooOrders.map((o: any) => o.id);
       const { data: preExisting } = await supabase
         .from("orders")
-        .select("woo_order_id")
+        .select("woo_order_id, status")
         .eq("store_id", store_id)
         .in("woo_order_id", wooIds);
       const preExistingIds = new Set((preExisting || []).map((r: any) => r.woo_order_id));
+      const prevStatusMap = new Map<number, string>(
+        (preExisting || []).map((r: any) => [r.woo_order_id, r.status])
+      );
       const newWooOrders = wooOrders.filter((o: any) => !preExistingIds.has(o.id));
+      const cancelledTransitions = wooOrders.filter((o: any) => {
+        if (!preExistingIds.has(o.id)) return false;
+        const prev = prevStatusMap.get(o.id);
+        const next = mapWooStatus(o.status, o.payment_method || o.payment_method_title || "");
+        return prev !== "cancelled" && next === "cancelled";
+      });
 
       // Upsert orders + return ids in a single round-trip per chunk
       const orderMap = new Map<number, string>();
@@ -636,6 +645,41 @@ Deno.serve(async (req) => {
           await pMap(tlChunks, 3, (c) => supabase.from("order_timeline").insert(c).then(({ error }) => {
             if (error) console.warn("Timeline insert warn:", error.message);
           }));
+        }
+      }
+
+      // Insert "cancelled" timeline + audit entries for orders newly transitioned to cancelled
+      if (cancelledTransitions.length > 0) {
+        const tlRows: any[] = [];
+        const auditRows: any[] = [];
+        for (const o of cancelledTransitions) {
+          const orderId = orderMap.get(o.id);
+          if (!orderId) continue;
+          const prev = prevStatusMap.get(o.id) || null;
+          tlRows.push({
+            order_id: orderId,
+            event: "cancelled",
+            description: `Order cancelled in WooCommerce (status: ${o.status})`,
+            metadata: {
+              source: "woo_sync", woo_order_id: o.id, woo_status: o.status,
+              previous_status: prev, user_name: "WooCommerce", user_email: null,
+            },
+          });
+          auditRows.push({
+            action: "order_cancelled",
+            entity_type: "order",
+            entity_id: orderId,
+            user_email: "woocommerce@system",
+            details: { source: "woo_sync", woo_order_id: o.id, woo_status: o.status, previous_status: prev },
+          });
+        }
+        if (tlRows.length > 0) {
+          await supabase.from("order_timeline").insert(tlRows).then(({ error }: any) => {
+            if (error) console.warn("Cancel timeline insert warn:", error.message);
+          });
+          await supabase.from("audit_log").insert(auditRows).then(({ error }: any) => {
+            if (error) console.warn("Cancel audit insert warn:", error.message);
+          });
         }
       }
 

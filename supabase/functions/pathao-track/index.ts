@@ -163,6 +163,38 @@ Deno.serve(async (req) => {
             },
           });
 
+          // Explicit cancelled entry on Pathao pickup-cancel/failure transitions
+          const PICKUP_CANCEL_STATUSES = ["Pickup Cancel", "Pickup Cancelled", "Pickup Failed", "Cancelled"];
+          const wasPickupCancel = PICKUP_CANCEL_STATUSES.includes(order.tracking_status || "");
+          const isPickupCancel = PICKUP_CANCEL_STATUSES.includes(pathaoStatus);
+          if (isPickupCancel && !wasPickupCancel) {
+            await sb.from("order_timeline").insert({
+              order_id: order.id,
+              event: "cancelled",
+              description: `Order cancelled by Pathao courier (${pathaoStatus})`,
+              metadata: {
+                source: "pathao_track",
+                tracking_status: pathaoStatus,
+                previous_status: order.tracking_status,
+                user_name: "Pathao Tracking",
+                user_email: null,
+              },
+            });
+            await sb.from("audit_log").insert({
+              action: "order_cancelled",
+              entity_type: "order",
+              entity_id: order.id,
+              user_email: "pathao@system",
+              details: {
+                source: "pathao_track",
+                tracking_status: pathaoStatus,
+                previous_status: order.tracking_status,
+                consignment_id: order.consignment_id,
+              },
+            });
+            await postWooNote(order.id, `[DokanOS] Order cancelled by Pathao courier (${pathaoStatus}) — by Pathao Tracking`);
+          }
+
           // Mirror status update into WooCommerce notes timeline (no-op for non-Woo orders)
           await postWooNote(order.id, `[DokanOS] Pathao courier status: ${pathaoStatus} — by Pathao Tracking`);
 
