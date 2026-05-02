@@ -156,14 +156,30 @@ export async function printMeasurementSlip(orderId: string) {
       const dashIdx = (i.product_name || "").lastIndexOf(" - ");
       if (dashIdx > 0) variationName = (i.product_name || "").slice(dashIdx + 3);
 
-      // Try to find a matching product_variations row (authoritative attributes)
+      // Try to find a matching product_variations row (authoritative attributes).
+      // Match either by exact variation name OR by detecting the variation whose
+      // attribute values are all present in the order item's product_name.
       try {
         const { data: vars } = await supabase
           .from("product_variations")
           .select("name, attributes")
           .eq("product_id", i.product_id);
-        if (vars && vars.length > 0 && variationName) {
-          const match = vars.find((v: any) => String(v.name || "").trim().toLowerCase() === variationName!.trim().toLowerCase());
+        if (vars && vars.length > 0) {
+          const haystack = (i.product_name || "").toLowerCase();
+          let match = variationName
+            ? vars.find((v: any) => String(v.name || "").trim().toLowerCase() === variationName!.trim().toLowerCase())
+            : null;
+          if (!match) {
+            // Fuzzy: variation row whose every attribute value appears in product_name
+            match = vars.find((v: any) => {
+              const attrs = Array.isArray(v.attributes) ? v.attributes : [];
+              if (attrs.length === 0) return false;
+              return attrs.every((a: any) => {
+                const val = String(a?.value || a?.option || "").trim().toLowerCase();
+                return val && haystack.includes(val);
+              });
+            });
+          }
           if (match) variationAttrs = match.attributes;
         }
       } catch { /* ignore */ }
