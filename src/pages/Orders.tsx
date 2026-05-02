@@ -876,6 +876,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             { key: "delivered", label: "Delivered", icon: CheckCircle2, count: counts.delivered },
             { key: "on_hold", label: "On Hold", icon: AlertTriangle, count: counts.on_hold },
             { key: "returned", label: "Returned", icon: Undo2, count: counts.returned },
+            { key: "cancelled", label: "Cancelled", icon: XCircle, count: counts.cancelled },
             ...(counts.trash > 0 ? [{ key: "trash" as TabKey, label: "Trash", icon: Trash2, count: counts.trash }] : []),
           ];
           return (
