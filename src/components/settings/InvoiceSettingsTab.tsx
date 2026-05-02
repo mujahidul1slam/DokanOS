@@ -10,7 +10,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Upload, X, FileText, Plus, Trash2 } from "lucide-react";
 import { logChange } from "@/lib/auditLog";
-import type { InvoiceTemplateConfig, PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
+import { Slider } from "@/components/ui/slider";
+import PickupSlipPreview from "./PickupSlipPreview";
+import { defaultPickupSlipSizing, type InvoiceTemplateConfig, type PickupSlipTemplateConfig, type PickupSlipSizing } from "@/hooks/useInvoiceSettings";
 
 interface InvoiceSettings {
   id: string;
@@ -47,6 +49,7 @@ const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
   show_customer_address: true, show_items: true, show_item_qty: true,
   show_total: true, show_due: true, show_notes: false, title: "PICKUP SLIP",
   custom_fields: [],
+  sizing: defaultPickupSlipSizing,
 };
 
 const InvoiceSettingsTab = () => {
@@ -68,7 +71,11 @@ const InvoiceSettingsTab = () => {
             ...data,
             pickup_slip_print_format: data.pickup_slip_print_format || "thermal",
             invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
-            pickup_slip_template: { ...defaultPickupSlipTemplate, ...(data.pickup_slip_template || {}) },
+            pickup_slip_template: {
+              ...defaultPickupSlipTemplate,
+              ...(data.pickup_slip_template || {}),
+              sizing: { ...defaultPickupSlipSizing, ...((data.pickup_slip_template || {}).sizing || {}) },
+            },
             shipping_presets: data.shipping_presets || [80, 150],
             shipping_inside_dhaka: data.shipping_inside_dhaka ?? 80,
             shipping_outside_dhaka: data.shipping_outside_dhaka ?? 150,
