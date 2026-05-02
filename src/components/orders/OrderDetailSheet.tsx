@@ -1297,6 +1297,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
             </Select>
           </div>
           <div className="flex items-center gap-2">
+            {order && (order.status === "delivered" || order.status === "completed") && canEdit && (
+              <Button variant="outline" onClick={openExchange} disabled={saving} className="gap-1.5">
+                <RefreshCw className="h-4 w-4" /> Create Exchange
+              </Button>
+            )}
             {order && (order.status === "delivered" || order.status === "completed") && canRefund && (
               <Button variant="outline" onClick={handleReturn} disabled={saving} className="gap-1.5 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
                 <Undo2 className="h-4 w-4" /> Return
@@ -1308,6 +1313,13 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           </div>
         </SheetFooter>
       </SheetContent>
+
+      <ExchangeDialog
+        open={exchangeOpen}
+        onOpenChange={setExchangeOpen}
+        parentOrder={exchangeParent}
+        onCreated={() => { setExchangeOpen(false); onSaved?.(); }}
+      />
     </Sheet>
   );
 }
