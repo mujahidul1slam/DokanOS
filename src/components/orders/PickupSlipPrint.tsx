@@ -1,7 +1,29 @@
 import { useRef } from "react";
 import { Printer } from "lucide-react";
+import JsBarcode from "jsbarcode";
 import { Button } from "@/components/ui/button";
 import { useInvoiceSettings, type PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
+
+function makeBarcodeSvg(value: string, opts: { height: number; fontSize: number; width: number }): string {
+  try {
+    if (!value) return "";
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    JsBarcode(el, String(value), {
+      format: "CODE128",
+      displayValue: true,
+      height: opts.height,
+      fontSize: opts.fontSize,
+      width: opts.width,
+      margin: 0,
+      textMargin: 2,
+      background: "#ffffff",
+      lineColor: "#000000",
+    });
+    return new XMLSerializer().serializeToString(el);
+  } catch {
+    return "";
+  }
+}
 
 interface SlipOrder {
   order_number: string;
