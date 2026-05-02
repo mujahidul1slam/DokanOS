@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2 } from "lucide-react";
+import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
@@ -9,6 +9,7 @@ import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { postWooOrderNote } from "@/lib/wooNotes";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
+import ExchangeDialog from "./ExchangeDialog";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -125,6 +126,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [notes, setNotes] = useState("");
   const [fulfillmentType, setFulfillmentType] = useState<string>("delivery");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
+
+  // Exchange dialog
+  const [exchangeOpen, setExchangeOpen] = useState(false);
+  const [exchangeParent, setExchangeParent] = useState<any>(null);
+
+  const openExchange = useCallback(async () => {
+    if (!order) return;
+    const { data } = await supabase
+      .from("orders")
+      .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
+      .eq("id", order.id)
+      .maybeSingle();
+    if (!data) {
+      toast.error("Could not load order details for exchange");
+      return;
+    }
+    setExchangeParent(data);
+    setExchangeOpen(true);
+  }, [order]);
 
   // Payment form
   const [payMethod, setPayMethod] = useState("bkash");
@@ -1277,6 +1297,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
             </Select>
           </div>
           <div className="flex items-center gap-2">
+            {order && (order.status === "delivered" || order.status === "completed") && canEdit && (
+              <Button variant="outline" onClick={openExchange} disabled={saving} className="gap-1.5">
+                <RefreshCw className="h-4 w-4" /> Create Exchange
+              </Button>
+            )}
             {order && (order.status === "delivered" || order.status === "completed") && canRefund && (
               <Button variant="outline" onClick={handleReturn} disabled={saving} className="gap-1.5 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
                 <Undo2 className="h-4 w-4" /> Return
@@ -1288,6 +1313,13 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           </div>
         </SheetFooter>
       </SheetContent>
+
+      <ExchangeDialog
+        open={exchangeOpen}
+        onOpenChange={setExchangeOpen}
+        parentOrder={exchangeParent}
+        onCreated={() => { setExchangeOpen(false); onSaved?.(); }}
+      />
     </Sheet>
   );
 }
