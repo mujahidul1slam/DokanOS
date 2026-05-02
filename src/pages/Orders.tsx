@@ -311,9 +311,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             (preOrderOrderIds.has(o.id) && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
           );
         case "pickup_pending":
-          return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["Pending","Pickup Pending","Waiting for Pickup","Pickup Requested","Assigned for Pickup","Assigned For Pickup","Picked","Picked Up"].includes(o.tracking_status || "");
         case "in_transit":
-          return !!o.consignment_id && ["At Sorting Hub","In Transit","On the Way To Delivery Hub","At Delivery Hub","Out for Delivery"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["At Sorting Hub","In Transit","On the Way To Delivery Hub","At Delivery Hub","Out for Delivery","Assigned for Delivery","Assigned For Delivery"].includes(o.tracking_status || "");
         case "delivered":
           // Delivered: any order whose internal status is delivered/completed,
           // OR a dispatched parcel whose Pathao tracking reports a delivered state.
