@@ -290,6 +290,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     // All non-trash tabs exclude trashed orders
     const active = orders.filter((o) => !o.deleted_at);
     return active.filter((o) => {
+      // Cancelled orders are surfaced ONLY in the cancelled tab (and "all").
+      const isCancelled =
+        o.status === "cancelled" ||
+        (!!o.consignment_id && ["Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || ""));
+      if (tabKey !== "cancelled" && tabKey !== "all" && isCancelled) return false;
       switch (tabKey) {
         case "new":
           // New = processing or payment_pending orders not yet dispatched and not pre-order
@@ -303,7 +308,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             (preOrderOrderIds.has(o.id) && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
           );
         case "pickup_pending":
-          return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up","Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || "");
+          return !!o.consignment_id && ["Pending","Pickup Pending","Pickup Requested","Assigned for Pickup","Picked","Picked Up"].includes(o.tracking_status || "");
         case "in_transit":
           return !!o.consignment_id && ["At Sorting Hub","In Transit","On the Way To Delivery Hub","At Delivery Hub","Out for Delivery"].includes(o.tracking_status || "");
         case "delivered":
@@ -317,6 +322,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           return !!o.consignment_id && ["On Hold","Hold","Exchange"].includes(o.tracking_status || "");
         case "returned":
           return o.status === "returned" || (!!o.consignment_id && ["Return","Returned","Paid Return","Return Requested","Return In Transit","Returned to Merchant","Merchant Return","Return Delivered","Delivery Failed","Customer Refused"].includes(o.tracking_status || ""));
+        case "cancelled":
+          return isCancelled;
         default:
           return true;
       }
