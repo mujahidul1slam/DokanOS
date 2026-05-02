@@ -101,6 +101,17 @@ const InvoiceSettingsTab = () => {
     setSettings({ ...settings, pickup_slip_template: { ...settings.pickup_slip_template, [field]: value } });
   };
 
+  const updatePickupSizing = (field: keyof PickupSlipSizing, value: number) => {
+    if (!settings) return;
+    setSettings({
+      ...settings,
+      pickup_slip_template: {
+        ...settings.pickup_slip_template,
+        sizing: { ...settings.pickup_slip_template.sizing, [field]: value },
+      },
+    });
+  };
+
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !settings) return;
