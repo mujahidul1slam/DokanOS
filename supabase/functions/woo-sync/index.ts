@@ -648,6 +648,41 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Insert "cancelled" timeline + audit entries for orders newly transitioned to cancelled
+      if (cancelledTransitions.length > 0) {
+        const tlRows: any[] = [];
+        const auditRows: any[] = [];
+        for (const o of cancelledTransitions) {
+          const orderId = orderMap.get(o.id);
+          if (!orderId) continue;
+          const prev = prevStatusMap.get(o.id) || null;
+          tlRows.push({
+            order_id: orderId,
+            event: "cancelled",
+            description: `Order cancelled in WooCommerce (status: ${o.status})`,
+            metadata: {
+              source: "woo_sync", woo_order_id: o.id, woo_status: o.status,
+              previous_status: prev, user_name: "WooCommerce", user_email: null,
+            },
+          });
+          auditRows.push({
+            action: "order_cancelled",
+            entity_type: "order",
+            entity_id: orderId,
+            user_email: "woocommerce@system",
+            details: { source: "woo_sync", woo_order_id: o.id, woo_status: o.status, previous_status: prev },
+          });
+        }
+        if (tlRows.length > 0) {
+          await supabase.from("order_timeline").insert(tlRows).then(({ error }: any) => {
+            if (error) console.warn("Cancel timeline insert warn:", error.message);
+          });
+          await supabase.from("audit_log").insert(auditRows).then(({ error }: any) => {
+            if (error) console.warn("Cancel audit insert warn:", error.message);
+          });
+        }
+      }
+
       // Measurement field map
       const { data: mFields } = await supabase
         .from("measurement_fields")
