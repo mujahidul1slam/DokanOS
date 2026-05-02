@@ -94,15 +94,25 @@ export function detectSizeFromItem(item: {
   variation_name?: string | null;
   product_name?: string | null;
 }): string | null {
-  const SIZE_KEYS = ["size", "pa_size", "attribute_pa_size", "attribute_size"];
+  // Treat any attribute whose normalized key contains "size" as the size attribute.
+  // This handles "size", "pa_size", "attribute_pa_size", "Size--", "Size:", "Shirt Size", etc.
+  const isSizeKey = (rawKey: string): boolean => {
+    const k = rawKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!k) return false;
+    // Exact / suffix matches first to avoid catching unrelated words
+    if (k === "size" || k.endsWith("size") || k.startsWith("size")) return true;
+    return false;
+  };
+
+  const cleanValue = (v: string): string => v.replace(/^[:\-\s]+|[:\-\s]+$/g, "").trim();
 
   // 1. WooCommerce meta_data
   const meta = item.meta_data;
   if (Array.isArray(meta)) {
     for (const m of meta) {
-      const key = String(m?.key || m?.display_key || "").toLowerCase().trim();
-      if (SIZE_KEYS.some((k) => key === k || key.endsWith(k))) {
-        const val = String(m?.value || m?.display_value || "").trim();
+      const key = String(m?.key || m?.display_key || "").trim();
+      if (isSizeKey(key)) {
+        const val = cleanValue(String(m?.value || m?.display_value || ""));
         if (val) return val;
       }
     }
@@ -112,20 +122,36 @@ export function detectSizeFromItem(item: {
   const attrs = item.variation_attributes;
   if (Array.isArray(attrs)) {
     for (const a of attrs) {
-      const key = String(a?.key || a?.name || "").toLowerCase().trim();
-      if (SIZE_KEYS.some((k) => key === k || key.endsWith(k)) || key === "size") {
-        const val = String(a?.value || a?.option || "").trim();
+      const key = String(a?.key || a?.name || "").trim();
+      if (isSizeKey(key)) {
+        const val = cleanValue(String(a?.value || a?.option || ""));
         if (val) return val;
       }
     }
   }
 
-  // 3. Parse the variation/product name — last segment after `-`, `/`, or space.
-  const name = (item.variation_name || item.product_name || "").trim();
-  if (name) {
-    const tokens = name.split(/[\s\-\/|]+/).filter(Boolean);
-    const last = tokens[tokens.length - 1];
-    if (last && last.length <= 4) return last;
+  // 3. Parse the variation/product name. WooCommerce formats it as either:
+  //    "Product Name - Size--: L / Pant Design: Gurkha"  (order_items.product_name)
+  //    "L / Gurkha Cutting Belt"                          (product_variations.name)
+  // Strategy: look for a "size...: VALUE" segment first, then fall back to
+  // splitting on " / " and treating the FIRST short token as the size.
+  const fullName = (item.product_name || item.variation_name || "").trim();
+  if (fullName) {
+    // a) "Size--: L" or "Size: L" style
+    const labeled = fullName.match(/size[^a-z0-9]*[:\-]+\s*([^\/|,]+?)(?:\s*[\/|,]|$)/i);
+    if (labeled && labeled[1]) {
+      const val = cleanValue(labeled[1]);
+      if (val) return val;
+    }
+  }
+
+  const variationOnly = (item.variation_name || "").trim();
+  if (variationOnly) {
+    // b) Split on " / " — take the first segment (Woo lists size attribute first
+    //    when it's the primary attribute, e.g. "L / Gurkha Cutting Belt").
+    const parts = variationOnly.split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean);
+    const first = parts[0];
+    if (first && first.length <= 12 && !/\s/.test(first)) return first;
   }
   return null;
 }
