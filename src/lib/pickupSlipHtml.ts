@@ -70,7 +70,7 @@ export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplate
       ${tpl.show_order_number ? `<div class="order-num">#${order.order_number}</div>${barcodeSvg ? `<div class="barcode">${barcodeSvg}</div>` : ""}` : ""}
     </div>`;
 
-    const customer = (isFirst && (tpl.show_customer_name || tpl.show_customer_phone || tpl.show_customer_address)) ? `<div class="section customer-section">
+    const customer = (tpl.show_customer_name || tpl.show_customer_phone || tpl.show_customer_address) ? `<div class="section customer-section">
       ${tpl.show_customer_name ? `<div class="customer-name">${order.customer_name || "Walk-in"}</div>` : ""}
       ${tpl.show_customer_phone && order.customer_phone ? `<div class="customer-detail">📞 ${order.customer_phone}</div>` : ""}
       ${tpl.show_customer_address && order.customer_address ? `<div class="customer-detail">📍 ${order.customer_address}</div>` : ""}
