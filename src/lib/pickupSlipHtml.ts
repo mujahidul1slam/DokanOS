@@ -98,7 +98,7 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
     .slip, .slip * { font-weight: 700 !important; }
     .slip {
       ${isA4
-        ? `border: 1px dashed #aaa; padding: ${s.a4_slip_padding_mm}mm; overflow: hidden; page-break-inside: avoid; display: flex; flex-direction: column;`
+        ? `border: 1px dashed #aaa; padding: ${s.a4_slip_padding_mm}mm; page-break-inside: avoid; break-inside: avoid; display: flex; flex-direction: column; background: #fff;`
         : `padding: ${s.thermal_padding_mm}mm; border: 1px dashed #ccc; margin-bottom: 8px; page-break-after: always;`}
     }
     .slip:last-child { page-break-after: auto; }
@@ -112,21 +112,21 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
     .customer-section { margin-bottom: ${isA4 ? 4 : 6}px; }
     .section-title { font-size: ${s.section_title_size}px; font-weight: 600; text-transform: uppercase; color: #666; margin-bottom: ${isA4 ? 1 : 2}px; letter-spacing: 0.4px; line-height: 1.1; }
     .customer-name { font-weight: 600; font-size: ${s.customer_name_size}px; line-height: 1.15; }
-    .customer-detail { color: #444; font-size: ${s.customer_detail_size}px; margin-top: 1px; line-height: 1.2; }
-    table { width: 100%; border-collapse: collapse; }
+    .customer-detail { color: #444; font-size: ${s.customer_detail_size}px; margin-top: 1px; line-height: 1.2; word-break: break-word; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     th { text-align: left; font-size: ${s.section_title_size}px; text-transform: uppercase; color: #666; border-bottom: 1px solid #ddd; padding: ${isA4 ? 1 : 2}px 0; line-height: 1.1; }
-    td { padding: ${isA4 ? 1 : 2}px 0; font-size: ${s.item_size}px; border-bottom: 1px solid #f0f0f0; line-height: 1.2; }
+    td { padding: ${isA4 ? 1 : 2}px 0; font-size: ${s.item_size}px; border-bottom: 1px solid #f0f0f0; line-height: 1.2; word-break: break-word; }
+    th:first-child, td:first-child { padding-right: 6px; }
     .qty { text-align: center; width: 44px; }
     .custom-field { font-size: ${s.custom_field_size}px; margin-top: 2px; line-height: 1.2; }
-    .total-row { ${isA4 ? "margin-top: auto;" : "margin-top: 4px;"} text-align: right; font-weight: 700; font-size: ${s.total_size}px; border-top: 1px solid #333; padding-top: ${isA4 ? 2 : 3}px; line-height: 1.15; }
+    .total-row { ${isA4 ? "margin-top: 4px;" : "margin-top: 4px;"} text-align: right; font-weight: 700; font-size: ${s.total_size}px; border-top: 1px solid #333; padding-top: ${isA4 ? 2 : 3}px; line-height: 1.15; }
     .due-row { text-align: right; font-weight: 700; font-size: ${s.due_size}px; color: #dc2626; margin-top: 2px; line-height: 1.15; }
-    .continued-row { ${isA4 ? "margin-top: auto;" : "margin-top: 4px;"} text-align: right; font-style: italic; font-size: ${s.section_title_size}px; color: #666; border-top: 1px dashed #999; padding-top: ${isA4 ? 2 : 3}px; }
+    .continued-row { ${isA4 ? "margin-top: 4px;" : "margin-top: 4px;"} text-align: right; font-style: italic; font-size: ${s.section_title_size}px; color: #666; border-top: 1px dashed #999; padding-top: ${isA4 ? 2 : 3}px; }
   `;
 }
 
 export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTemplateConfig, format: "thermal" | "a4"): string {
   const css = buildSlipCss(tpl, format);
-  // Expand each order into one or more physical slips (overflow paging).
   const allSlips = orders.flatMap(o => buildSlipPagesHtml(o, tpl).map(html => `<div class="slip">${html}</div>`));
   const slipsHtml = allSlips.join("");
   const s = tpl.sizing;
@@ -134,7 +134,12 @@ export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTempl
     return `<html><head><title>Pickup Slips</title><style>
       @page { size: A4 landscape; margin: 8mm; }
       ${css}
-      .grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(4, 1fr); gap: 6px; width: 100%; height: 100vh; }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6mm;
+        align-items: start;
+      }
       @media print { body { margin: 0; } }
     </style></head><body><div class="grid">${slipsHtml}</div></body></html>`;
   }
