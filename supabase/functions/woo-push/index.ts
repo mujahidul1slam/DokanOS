@@ -269,8 +269,8 @@ async function pushStock(supabase: any, productId: string) {
 async function pushOrder(supabase: any, orderId: string) {
   const ctx = await getStoreForOrder(supabase, orderId);
   if (!ctx) {
-    return new Response(JSON.stringify({ error: "Order not linked to a WooCommerce store" }), {
-      status: 400,
+    return new Response(JSON.stringify({ success: false, skipped: true, reason: "Order not linked to a WooCommerce store" }), {
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -337,8 +337,8 @@ function reverseMapStatus(status: string): string {
 async function trashOrder(supabase: any, orderId: string) {
   const ctx = await getStoreForOrder(supabase, orderId);
   if (!ctx) {
-    return new Response(JSON.stringify({ error: "Order not linked to a WooCommerce store" }), {
-      status: 400,
+    return new Response(JSON.stringify({ success: false, skipped: true, reason: "Order not linked to a WooCommerce store" }), {
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
