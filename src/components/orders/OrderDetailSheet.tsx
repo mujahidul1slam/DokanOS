@@ -7,6 +7,7 @@ import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { postWooOrderNote } from "@/lib/wooNotes";
+import { SourceBadge } from "./OrderBadges";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import ExchangeDialog from "./ExchangeDialog";
