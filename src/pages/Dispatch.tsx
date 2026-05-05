@@ -685,7 +685,7 @@ const Dispatch = () => {
                         <StatusBadge status={order.status} />
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        ৳{Number(order.amount_to_collect || order.total).toLocaleString()}
+                        ৳{Number(order.amount_to_collect ?? order.total).toLocaleString()}
                       </TableCell>
                       <TableCell>
                         <Button
