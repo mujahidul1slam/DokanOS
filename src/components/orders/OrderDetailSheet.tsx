@@ -57,7 +57,7 @@ interface OrderDetail {
   fulfillment_type: string;
   woo_order_id: number | null;
   store_id: string | null;
-  stores: { url: string | null } | null;
+  stores: { url: string | null; name?: string | null } | null;
 }
 
 interface LineItem {
