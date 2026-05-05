@@ -354,7 +354,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           city_id: order.pathao_recipient_city ? String(order.pathao_recipient_city) : "",
           zone_id: order.pathao_recipient_zone ? String(order.pathao_recipient_zone) : "",
           area_id: order.pathao_recipient_area ? String(order.pathao_recipient_area) : "",
-          amount_to_collect: String(order.amount_to_collect || order.total || 0),
+          amount_to_collect: String(order.amount_to_collect ?? order.total ?? 0),
           item_weight: String(order.item_weight || 0.5),
           special_instruction: order.special_instruction || "",
           recipient_name: order.customer_name || "",
