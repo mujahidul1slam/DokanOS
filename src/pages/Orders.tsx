@@ -529,7 +529,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     setBulkUpdating(true);
     try {
       const ids = Array.from(selected);
-      await supabase.from("orders").update({ payment_status: "paid" }).in("id", ids);
+      await supabase.from("orders").update({ payment_status: "paid", amount_to_collect: 0 }).in("id", ids);
       const timelineEntries = ids.map((id) => ({
         order_id: id, event: "payment_updated", description: "Marked as Paid",
       }));
