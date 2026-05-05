@@ -7,6 +7,7 @@ import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { postWooOrderNote } from "@/lib/wooNotes";
+import { SourceBadge } from "./OrderBadges";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import ExchangeDialog from "./ExchangeDialog";
@@ -57,7 +58,7 @@ interface OrderDetail {
   fulfillment_type: string;
   woo_order_id: number | null;
   store_id: string | null;
-  stores: { url: string | null } | null;
+  stores: { url: string | null; name?: string | null } | null;
 }
 
 interface LineItem {
@@ -171,7 +172,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes, measRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, stores(url)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, stores(url, name)")
         .eq("id", orderId)
         .single(),
       supabase
@@ -697,6 +698,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 #{order?.order_number || "..."}
               </SheetTitle>
               {order && <FulfillmentBadge status={order.status} />}
+              {order && <SourceBadge source={order.source} storeName={order.stores?.name} />}
             </div>
             {order?.woo_order_id && order.stores?.url && (
               <Button
