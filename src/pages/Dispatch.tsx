@@ -315,7 +315,7 @@ const Dispatch = () => {
         city_id: o.pathao_recipient_city ? String(o.pathao_recipient_city) : "",
         zone_id: o.pathao_recipient_zone ? String(o.pathao_recipient_zone) : "",
         area_id: o.pathao_recipient_area ? String(o.pathao_recipient_area) : "",
-        amount_to_collect: String(o.amount_to_collect || o.total || 0),
+        amount_to_collect: String(o.amount_to_collect ?? o.total ?? 0),
         item_weight: String(o.item_weight || 0.5),
         special_instruction: o.special_instruction || "",
         recipient_name: o.customer_name || "",
