@@ -698,6 +698,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 #{order?.order_number || "..."}
               </SheetTitle>
               {order && <FulfillmentBadge status={order.status} />}
+              {order && <SourceBadge source={order.source} storeName={order.stores?.name} />}
             </div>
             {order?.woo_order_id && order.stores?.url && (
               <Button
