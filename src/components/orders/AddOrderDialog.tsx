@@ -795,6 +795,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           discount,
           shipping_cost: shippingCost,
           total,
+          amount_to_collect: Math.max(0, total - paidAmount),
           notes: notes || null,
           pathao_recipient_city: selectedCity,
           pathao_recipient_zone: selectedZone,
