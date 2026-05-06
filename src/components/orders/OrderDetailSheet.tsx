@@ -751,7 +751,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               {/* ====== Order Info ====== */}
               <TabsContent value="info" className="px-6 py-4 space-y-6 mt-0">
                 {/* Pending payment confirmation panel */}
-                {order?.status === "payment_pending" && canLogPayment && (
+                {order?.status === "payment_pending" && order?.payment_status !== "paid" && canLogPayment && (
                   <section className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
                     <div className="flex items-start gap-2">
                       <CircleDot className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
