@@ -172,7 +172,11 @@ Deno.serve(async (req) => {
         }
 
         if (pathaoStatus !== order.tracking_status) {
-          const mappedStatus = statusMap[pathaoStatus] || order.status;
+          const normalized = normalizeStatus(pathaoStatus);
+          const mappedStatus = statusMap[normalized] || order.status;
+          if (!statusMap[normalized]) {
+            console.warn(`[pathao-track] Unmapped Pathao status: "${pathaoStatus}" (normalized: "${normalized}") for order ${order.id}`);
+          }
           await sb
             .from("orders")
             .update({
@@ -195,9 +199,9 @@ Deno.serve(async (req) => {
           });
 
           // Explicit cancelled entry on Pathao pickup-cancel/failure transitions
-          const PICKUP_CANCEL_STATUSES = ["Pickup Cancel", "Pickup Cancelled", "Pickup Failed", "Cancelled"];
-          const wasPickupCancel = PICKUP_CANCEL_STATUSES.includes(order.tracking_status || "");
-          const isPickupCancel = PICKUP_CANCEL_STATUSES.includes(pathaoStatus);
+          const PICKUP_CANCEL_NORMALIZED = ["pickup cancel", "pickup cancelled", "pickup failed", "cancelled"];
+          const wasPickupCancel = PICKUP_CANCEL_NORMALIZED.includes(normalizeStatus(order.tracking_status || ""));
+          const isPickupCancel = PICKUP_CANCEL_NORMALIZED.includes(normalized);
           if (isPickupCancel && !wasPickupCancel) {
             await sb.from("order_timeline").insert({
               order_id: order.id,
