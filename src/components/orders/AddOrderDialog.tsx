@@ -356,22 +356,33 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       let nextZone = selectedZone;
       let nextArea = selectedArea;
 
-      const areaMatch = strictMatch(allAreas, (a) => a.area_name, candidates);
-      if (areaMatch) {
-        nextArea = areaMatch.area_id;
-        nextZone = areaMatch.zone_id;
-        const parent = allZones.find((z) => z.zone_id === areaMatch.zone_id);
-        if (parent) nextCity = parent.city_id;
-      } else {
+      // Priority: city first, then zone within city, then area within zone.
+      // Area is least prioritized since it's optional and area names often
+      // collide across cities/zones.
+      const cityMatch = strictMatch(cities, (c) => c.city_name, candidates);
+      if (cityMatch) {
+        nextCity = cityMatch.city_id;
+        const cityZones = allZones.filter((z) => z.city_id === cityMatch.city_id);
         const zoneMatch =
-          strictMatch(allZones, (z) => z.zone_name, candidates) ||
-          fuzzyMatch(allZones, (z) => z.zone_name, candidates);
+          strictMatch(cityZones, (z) => z.zone_name, candidates) ||
+          fuzzyMatch(cityZones, (z) => z.zone_name, candidates);
+        if (zoneMatch) {
+          nextZone = zoneMatch.zone_id;
+          const zoneAreas = allAreas.filter((a) => a.zone_id === zoneMatch.zone_id);
+          const areaMatch = strictMatch(zoneAreas, (a) => a.area_name, candidates);
+          if (areaMatch) nextArea = areaMatch.area_id;
+        }
+      } else {
+        // City not found in address — fall back to a strict global zone match
+        // (back-fills the city). Avoid fuzzy global zone matching since it
+        // frequently picks the wrong city.
+        const zoneMatch = strictMatch(allZones, (z) => z.zone_name, candidates);
         if (zoneMatch) {
           nextZone = zoneMatch.zone_id;
           nextCity = zoneMatch.city_id;
-        } else {
-          const cityMatch = strictMatch(cities, (c) => c.city_name, candidates);
-          if (cityMatch) nextCity = cityMatch.city_id;
+          const zoneAreas = allAreas.filter((a) => a.zone_id === zoneMatch.zone_id);
+          const areaMatch = strictMatch(zoneAreas, (a) => a.area_name, candidates);
+          if (areaMatch) nextArea = areaMatch.area_id;
         }
       }
 
