@@ -1437,6 +1437,7 @@ export type Database = {
           description: string | null
           id: string
           image_url: string | null
+          image_urls: Json
           is_active: boolean
           is_featured: boolean
           manage_stock: boolean
@@ -1459,6 +1460,7 @@ export type Database = {
           description?: string | null
           id?: string
           image_url?: string | null
+          image_urls?: Json
           is_active?: boolean
           is_featured?: boolean
           manage_stock?: boolean
@@ -1481,6 +1483,7 @@ export type Database = {
           description?: string | null
           id?: string
           image_url?: string | null
+          image_urls?: Json
           is_active?: boolean
           is_featured?: boolean
           manage_stock?: boolean
