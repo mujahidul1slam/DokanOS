@@ -82,28 +82,44 @@ Deno.serve(async (req) => {
       .not("consignment_id", "is", null)
       .not("status", "in", '("delivered","completed","cancelled","returned")');
 
-    const statusMap: Record<string, string> = {
+    // Pathao returns statuses in various forms — slugs ("Pickup_Requested"),
+    // title case ("Pickup Requested"), or with extra whitespace. Normalize the
+    // raw value to "lowercase + single space" before lookup so we don't miss
+    // mappings due to formatting differences.
+    const normalizeStatus = (s: string) =>
+      s.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+
+    const rawStatusMap: Record<string, string> = {
+      // Pickup lifecycle
       "Pending": "shipped",
       "Pickup Pending": "shipped",
       "Waiting for Pickup": "shipped",
       "Pickup Requested": "shipped",
       "Assigned for Pickup": "shipped",
-      "Assigned For Pickup": "shipped",
       "Picked": "shipped",
       "Picked Up": "shipped",
       "Pickup Cancel": "shipped",
       "Pickup Cancelled": "shipped",
       "Pickup Failed": "shipped",
+      // Hub / transit lifecycle
       "At Sorting Hub": "shipped",
+      "Received at Sorting Hub": "shipped",
+      "Sent to Sub Sorting Hub": "shipped",
+      "Received at Sub Sorting Hub": "shipped",
+      "Sent to Last Mile Hub": "shipped",
       "In Transit": "shipped",
-      "On the Way To Delivery Hub": "shipped",
+      "On the Way to Delivery Hub": "shipped",
       "At Delivery Hub": "shipped",
+      // Delivery lifecycle
       "Assigned for Delivery": "shipped",
-      "Assigned For Delivery": "shipped",
+      "Sent for Delivery": "shipped",
       "Out for Delivery": "shipped",
+      "Delivery Confirmed": "shipped",
       "Delivered": "delivered",
+      "Partial Delivery": "delivered",
       "Partial Delivered": "delivered",
       "Payment Invoice": "delivered",
+      // Return lifecycle
       "Return": "returned",
       "Returned": "returned",
       "Paid Return": "returned",
@@ -114,11 +130,22 @@ Deno.serve(async (req) => {
       "Return Delivered": "returned",
       "Delivery Failed": "returned",
       "Customer Refused": "returned",
+      "DRT Requested": "returned",
+      "DRT Pick Requested": "returned",
+      "DRT Pick Failed": "returned",
+      "DRT Cancelled": "returned",
+      "Lost": "returned",
+      "Damaged": "returned",
+      // Cancel / hold
       "Cancelled": "cancelled",
       "On Hold": "processing",
+      "On Hold by Customer Request": "processing",
       "Hold": "processing",
       "Exchange": "processing",
     };
+    const statusMap: Record<string, string> = Object.fromEntries(
+      Object.entries(rawStatusMap).map(([k, v]) => [normalizeStatus(k), v]),
+    );
 
     let updated = 0;
     const errors: string[] = [];
@@ -145,7 +172,11 @@ Deno.serve(async (req) => {
         }
 
         if (pathaoStatus !== order.tracking_status) {
-          const mappedStatus = statusMap[pathaoStatus] || order.status;
+          const normalized = normalizeStatus(pathaoStatus);
+          const mappedStatus = statusMap[normalized] || order.status;
+          if (!statusMap[normalized]) {
+            console.warn(`[pathao-track] Unmapped Pathao status: "${pathaoStatus}" (normalized: "${normalized}") for order ${order.id}`);
+          }
           await sb
             .from("orders")
             .update({
@@ -168,9 +199,9 @@ Deno.serve(async (req) => {
           });
 
           // Explicit cancelled entry on Pathao pickup-cancel/failure transitions
-          const PICKUP_CANCEL_STATUSES = ["Pickup Cancel", "Pickup Cancelled", "Pickup Failed", "Cancelled"];
-          const wasPickupCancel = PICKUP_CANCEL_STATUSES.includes(order.tracking_status || "");
-          const isPickupCancel = PICKUP_CANCEL_STATUSES.includes(pathaoStatus);
+          const PICKUP_CANCEL_NORMALIZED = ["pickup cancel", "pickup cancelled", "pickup failed", "cancelled"];
+          const wasPickupCancel = PICKUP_CANCEL_NORMALIZED.includes(normalizeStatus(order.tracking_status || ""));
+          const isPickupCancel = PICKUP_CANCEL_NORMALIZED.includes(normalized);
           if (isPickupCancel && !wasPickupCancel) {
             await sb.from("order_timeline").insert({
               order_id: order.id,
