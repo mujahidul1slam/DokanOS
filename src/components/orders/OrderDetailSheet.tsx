@@ -841,13 +841,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       size="sm"
                       onClick={confirmPendingPayment}
                       disabled={confirmingPayment || !confirmPayAmount}
-                      className="gap-1.5 bg-amber-500 hover:bg-amber-500/90 text-amber-950"
+                      className={`gap-1.5 ${tone.btn}`}
                     >
                       <CheckCircle2 className="h-3.5 w-3.5" />
-                      {confirmingPayment ? "Confirming…" : "Confirm Payment Received"}
+                      {confirmingPayment ? "Confirming…" : isPartial ? "Log Additional Payment" : isFailed ? "Log New Payment Attempt" : "Confirm Payment Received"}
                     </Button>
                   </section>
-                )}
+                  );
+                })()}
 
                 {/* Payment & Source Info */}
                 <section>
