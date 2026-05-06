@@ -365,19 +365,21 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         const cityCandidates = buildLocationCandidates([order.customer_city, base.recipient_address]);
         const zoneCandidates = buildLocationCandidates([base.recipient_address]);
 
-        if (!base.zone_id && allZones.length > 0) {
+        // Priority: city first, then zone within city, then area within zone.
+        if (!base.city_id) {
+          const cityMatch = getStrictLocationMatch(cities, (city) => city.city_name, cityCandidates);
+          if (cityMatch) {
+            base.city_id = String(cityMatch.city_id);
+          }
+        }
+
+        // Only fall back to a global zone match if we still have no city —
+        // a strict global zone match also tells us its city.
+        if (!base.city_id && !base.zone_id && allZones.length > 0) {
           const globalZoneMatch = getStrictLocationMatch(allZones, (zone) => zone.zone_name, zoneCandidates);
           if (globalZoneMatch) {
             base.zone_id = String(globalZoneMatch.zone_id);
             base.city_id = String(globalZoneMatch.city_id);
-          }
-        }
-
-        if (!base.city_id) {
-          // For city, only accept exact/alias matches from address words (no fuzzy on short tokens)
-          const cityMatch = getStrictLocationMatch(cities, (city) => city.city_name, cityCandidates);
-          if (cityMatch) {
-            base.city_id = String(cityMatch.city_id);
           }
         }
 
