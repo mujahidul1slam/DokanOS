@@ -403,19 +403,33 @@ Deno.serve(async (req) => {
     let prodByWooId = new Map<number, string>();
 
     if (parentProducts.length > 0) {
-      const rows = parentProducts.map((p: any) => ({
-        store_id, woo_product_id: p.id, name: p.name, sku: p.sku || null,
-        description: p.short_description || p.description || null,
-        price: parseFloat(p.price) || 0,
-        cost_price: parseFloat(p.meta_data?.find((m: any) => m.key === "_cost")?.value) || 0,
-        stock_quantity: p.stock_quantity ?? 0, manage_stock: p.manage_stock ?? false,
-        stock_status: fromWooStockStatus(p.stock_status || "instock"),
-        backorders: p.backorders || "no",
-        category: p.categories?.map((c: any) => c.name).join(", ") || null,
-        image_url: p.images?.[0]?.src || null,
-        is_active: p.status === "publish",
-        barcode: p.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
-      }));
+      const rows = parentProducts.map((p: any) => {
+        // Collect all gallery image URLs (deduped, non-empty)
+        const allImages: string[] = Array.from(
+          new Set(
+            (p.images || [])
+              .map((img: any) => img?.src)
+              .filter((s: any): s is string => typeof s === "string" && s.length > 0)
+          )
+        );
+        // Prefer Woo's "featured" image when flagged; fall back to first gallery image
+        const featured = (p.images || []).find((img: any) => img?.position === 0 || img?.featured) || p.images?.[0];
+        const primary = featured?.src || allImages[0] || null;
+        return {
+          store_id, woo_product_id: p.id, name: p.name, sku: p.sku || null,
+          description: p.short_description || p.description || null,
+          price: parseFloat(p.price) || 0,
+          cost_price: parseFloat(p.meta_data?.find((m: any) => m.key === "_cost")?.value) || 0,
+          stock_quantity: p.stock_quantity ?? 0, manage_stock: p.manage_stock ?? false,
+          stock_status: fromWooStockStatus(p.stock_status || "instock"),
+          backorders: p.backorders || "no",
+          category: p.categories?.map((c: any) => c.name).join(", ") || null,
+          image_url: primary,
+          image_urls: allImages,
+          is_active: p.status === "publish",
+          barcode: p.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
+        };
+      });
 
       // Single round-trip: upsert + return ids
       const { data: upserted, error } = await supabase
