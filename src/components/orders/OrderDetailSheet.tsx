@@ -751,15 +751,42 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               {/* ====== Order Info ====== */}
               <TabsContent value="info" className="px-6 py-4 space-y-6 mt-0">
                 {/* Pending payment confirmation panel */}
-                {order?.status === "payment_pending" && order?.payment_status !== "paid" && canLogPayment && (
-                  <section className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                {order?.status === "payment_pending" && order?.payment_status !== "paid" && order?.payment_status !== "refunded" && canLogPayment && (() => {
+                  const ps = order.payment_status;
+                  const totalPaidSoFar = payments.reduce((s, p) => s + Number(p.amount), 0);
+                  const orderTotal = Number(order.total) || 0;
+                  const dueSoFar = Math.max(orderTotal - totalPaidSoFar, 0);
+                  const isPartial = ps === "partial" || (totalPaidSoFar > 0 && totalPaidSoFar < orderTotal);
+                  const isFailed = ps === "failed" || ps === "cancelled";
+                  const tone = isFailed
+                    ? { border: "border-red-500/30", bg: "bg-red-500/5", text: "text-red-400", btn: "bg-red-500 hover:bg-red-500/90 text-red-50" }
+                    : isPartial
+                      ? { border: "border-orange-500/30", bg: "bg-orange-500/5", text: "text-orange-400", btn: "bg-orange-500 hover:bg-orange-500/90 text-orange-950" }
+                      : { border: "border-amber-500/30", bg: "bg-amber-500/5", text: "text-amber-400", btn: "bg-amber-500 hover:bg-amber-500/90 text-amber-950" };
+                  const heading = isFailed
+                    ? "Online Payment Failed"
+                    : isPartial
+                      ? "Partial Payment Received"
+                      : "Payment Awaiting Confirmation";
+                  const subtext = isFailed
+                    ? `The online payment via ${order.payment_method || "the gateway"} did not complete. Log a new payment attempt or collect the full ৳${orderTotal.toLocaleString()} on delivery.`
+                    : isPartial
+                      ? `৳${totalPaidSoFar.toLocaleString()} received so far. Log any additional payment — the remaining ৳${dueSoFar.toLocaleString()} will be set as the COD amount for dispatch.`
+                      : `This order is on hold pending payment via ${order.payment_method || "non-COD method"}. Confirm the amount received — any remaining balance will be set as the COD amount for Pathao dispatch.`;
+                  return (
+                  <section className={`rounded-lg border ${tone.border} ${tone.bg} p-4 space-y-3`}>
                     <div className="flex items-start gap-2">
-                      <CircleDot className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+                      <CircleDot className={`h-4 w-4 ${tone.text} mt-0.5 shrink-0`} />
                       <div className="flex-1">
-                        <h3 className="text-sm font-semibold text-amber-400">Payment Awaiting Confirmation</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          This order is on hold pending payment via {order.payment_method || "non-COD method"}. Confirm the amount received — any remaining balance will be set as the COD amount for Pathao dispatch.
-                        </p>
+                        <h3 className={`text-sm font-semibold ${tone.text}`}>{heading}</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">{subtext}</p>
+                        {isPartial && (
+                          <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                            <span className="text-muted-foreground">Paid: <strong className="text-foreground">৳{totalPaidSoFar.toLocaleString()}</strong></span>
+                            <span className="text-muted-foreground">Due: <strong className="text-foreground">৳{dueSoFar.toLocaleString()}</strong></span>
+                            <span className="text-muted-foreground">Total: <strong className="text-foreground">৳{orderTotal.toLocaleString()}</strong></span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
@@ -814,13 +841,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       size="sm"
                       onClick={confirmPendingPayment}
                       disabled={confirmingPayment || !confirmPayAmount}
-                      className="gap-1.5 bg-amber-500 hover:bg-amber-500/90 text-amber-950"
+                      className={`gap-1.5 ${tone.btn}`}
                     >
                       <CheckCircle2 className="h-3.5 w-3.5" />
-                      {confirmingPayment ? "Confirming…" : "Confirm Payment Received"}
+                      {confirmingPayment ? "Confirming…" : isPartial ? "Log Additional Payment" : isFailed ? "Log New Payment Attempt" : "Confirm Payment Received"}
                     </Button>
                   </section>
-                )}
+                  );
+                })()}
 
                 {/* Payment & Source Info */}
                 <section>
