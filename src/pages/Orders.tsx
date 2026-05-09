@@ -1255,49 +1255,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                         </div>
                       ) : <span className="text-xs text-muted-foreground italic">—</span>}
                     </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100"><MoreHorizontal className="h-4 w-4" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setDetailOrderId(order.id)}>View Details</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleReprintOrder(order.id)}>
-                            <Printer className="h-4 w-4 mr-2" /> Print Invoice
-                          </DropdownMenuItem>
-                          {order.status === "processing" && !order.consignment_id && canWrite && (
-                            <DropdownMenuItem onClick={() => {
-                              supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
-                                addOrderTimeline({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
-                                toast({ title: "Marked Ready to Ship" });
-                                loadOrders();
-                              });
-                            }}>
-                              <PackageCheck className="h-4 w-4 mr-2" /> Mark Ready to Ship
-                            </DropdownMenuItem>
-                          )}
-                          {order.status === "ready_to_ship" && !order.consignment_id && canWrite && (
-                            <DropdownMenuItem onClick={() => openDispatch([order.id])}>
-                              <Send className="h-4 w-4 mr-2" /> Dispatch to Pathao
-                            </DropdownMenuItem>
-                          )}
-                          {order.consignment_id && (
-                            <DropdownMenuItem onClick={() => handleTrackOne(order.consignment_id!)}>
-                              <RefreshCw className="h-4 w-4 mr-2" /> Refresh Tracking
-                            </DropdownMenuItem>
-                          )}
-                          {canWrite && tab === "trash" && (
-                            <DropdownMenuItem onClick={() => handleRestoreOrders([order.id])}>
-                              <RotateCcw className="h-4 w-4 mr-2" /> Restore
-                            </DropdownMenuItem>
-                          )}
-                          {canWrite && tab !== "trash" && (
-                            <DropdownMenuItem onClick={() => { setPendingTrashIds([order.id]); setTrashConfirmOpen(true); }} className="text-destructive focus:text-destructive">
-                              <Trash2 className="h-4 w-4 mr-2" /> Move to Trash
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    <TableCell className="text-right">
+                      {renderActionButtons(order, 3)}
                     </TableCell>
                   </TableRow>
                 ))}
