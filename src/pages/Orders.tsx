@@ -6,8 +6,9 @@ import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
-  Trash2, RotateCcw, Hourglass, Tags, Ruler, Sparkles, Wrench, SlidersHorizontal, ChevronDown, X,
+  Trash2, RotateCcw, Hourglass, Tags, Ruler, Sparkles, Wrench, SlidersHorizontal, ChevronDown, X, Pencil,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
