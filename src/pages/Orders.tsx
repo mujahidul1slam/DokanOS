@@ -1202,7 +1202,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                   <TableHead>Delivery</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Courier</TableHead>
-                  <TableHead className="w-10"></TableHead>
+                  <TableHead className="text-right w-[140px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
