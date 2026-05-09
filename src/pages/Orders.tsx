@@ -6,8 +6,9 @@ import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
-  Trash2, RotateCcw, Hourglass, Tags, Ruler, Sparkles, Wrench, SlidersHorizontal, ChevronDown, X,
+  Trash2, RotateCcw, Hourglass, Tags, Ruler, Sparkles, Wrench, SlidersHorizontal, ChevronDown, X, Pencil,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
@@ -756,6 +757,94 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   /* ─── Determine which action buttons to show ─── */
   const hasSelection = selected.size > 0;
 
+  /* ─── Per-row quick actions (tab-aware) ─── */
+  type QuickAction = { key: string; label: string; icon: any; onClick: () => void; destructive?: boolean };
+  const getQuickActions = (order: OrderRow): QuickAction[] => {
+    const actions: QuickAction[] = [
+      { key: "edit", label: "Edit", icon: Pencil, onClick: () => setDetailOrderId(order.id) },
+    ];
+    if (tab === "trash") {
+      if (canWrite) actions.push({ key: "restore", label: "Restore", icon: RotateCcw, onClick: () => handleRestoreOrders([order.id]) });
+      return actions;
+    }
+    if ((tab === "new" || tab === "all") && order.status === "processing" && !order.consignment_id && canWrite) {
+      actions.push({
+        key: "ready", label: "Mark Ready to Ship", icon: PackageCheck,
+        onClick: () => {
+          supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
+            addOrderTimeline({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
+            toast({ title: "Marked Ready to Ship" });
+            loadOrders();
+          });
+        },
+      });
+    }
+    if ((tab === "ready" || tab === "all" || tab === "pre_order") && order.status === "ready_to_ship" && !order.consignment_id && canWrite) {
+      actions.push({ key: "dispatch", label: "Dispatch to Pathao", icon: Send, onClick: () => openDispatch([order.id]) });
+    }
+    if (["pickup_pending", "in_transit", "on_hold", "returned", "delivered", "cancelled"].includes(tab) && order.consignment_id) {
+      actions.push({ key: "track", label: "Refresh Tracking", icon: RefreshCw, onClick: () => handleTrackOne(order.consignment_id!) });
+    }
+    if (["delivered", "in_transit", "pickup_pending", "ready", "all"].includes(tab)) {
+      actions.push({ key: "print", label: "Print Invoice", icon: Printer, onClick: () => handleReprintOrder(order.id) });
+    }
+    if (canWrite) {
+      actions.push({
+        key: "trash", label: "Move to Trash", icon: Trash2, destructive: true,
+        onClick: () => { setPendingTrashIds([order.id]); setTrashConfirmOpen(true); },
+      });
+    }
+    return actions;
+  };
+
+  const renderActionButtons = (order: OrderRow, max: number) => {
+    const all = getQuickActions(order);
+    const inline = all.slice(0, max);
+    const overflow = all.slice(max);
+    return (
+      <div className="flex items-center justify-end gap-0.5">
+        <TooltipProvider delayDuration={200}>
+          {inline.map((a) => (
+            <Tooltip key={a.key}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn("h-8 w-8", a.destructive && "text-destructive hover:text-destructive")}
+                  onClick={(e) => { e.stopPropagation(); a.onClick(); }}
+                  aria-label={a.label}
+                >
+                  <a.icon className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{a.label}</TooltipContent>
+            </Tooltip>
+          ))}
+        </TooltipProvider>
+        {overflow.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More actions" onClick={(e) => e.stopPropagation()}>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {overflow.map((a) => (
+                <DropdownMenuItem
+                  key={a.key}
+                  onClick={a.onClick}
+                  className={cn(a.destructive && "text-destructive focus:text-destructive")}
+                >
+                  <a.icon className="h-4 w-4 mr-2" /> {a.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -1086,62 +1175,16 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           <>
           {/* Mobile cards */}
           <div className="md:hidden mt-4 space-y-2">
-            {paginated.map((order) => {
-              const menu = (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-9 w-9"><MoreHorizontal className="h-5 w-5" /></Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setDetailOrderId(order.id)}>View Details</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleReprintOrder(order.id)}>
-                      <Printer className="h-4 w-4 mr-2" /> Print Invoice
-                    </DropdownMenuItem>
-                    {order.status === "processing" && !order.consignment_id && canWrite && (
-                      <DropdownMenuItem onClick={() => {
-                        supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
-                          addOrderTimeline({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
-                          toast({ title: "Marked Ready to Ship" });
-                          loadOrders();
-                        });
-                      }}>
-                        <PackageCheck className="h-4 w-4 mr-2" /> Mark Ready to Ship
-                      </DropdownMenuItem>
-                    )}
-                    {order.status === "ready_to_ship" && !order.consignment_id && canWrite && (
-                      <DropdownMenuItem onClick={() => openDispatch([order.id])}>
-                        <Send className="h-4 w-4 mr-2" /> Dispatch to Pathao
-                      </DropdownMenuItem>
-                    )}
-                    {order.consignment_id && (
-                      <DropdownMenuItem onClick={() => handleTrackOne(order.consignment_id!)}>
-                        <RefreshCw className="h-4 w-4 mr-2" /> Refresh Tracking
-                      </DropdownMenuItem>
-                    )}
-                    {canWrite && tab === "trash" && (
-                      <DropdownMenuItem onClick={() => handleRestoreOrders([order.id])}>
-                        <RotateCcw className="h-4 w-4 mr-2" /> Restore
-                      </DropdownMenuItem>
-                    )}
-                    {canWrite && tab !== "trash" && (
-                      <DropdownMenuItem onClick={() => { setPendingTrashIds([order.id]); setTrashConfirmOpen(true); }} className="text-destructive focus:text-destructive">
-                        <Trash2 className="h-4 w-4 mr-2" /> Move to Trash
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              );
-              return (
-                <OrderCard
-                  key={order.id}
-                  order={order}
-                  selected={selected.has(order.id)}
-                  onSelect={() => toggleSelect(order.id)}
-                  onOpen={() => setDetailOrderId(order.id)}
-                  actions={menu}
-                />
-              );
-            })}
+            {paginated.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                selected={selected.has(order.id)}
+                onSelect={() => toggleSelect(order.id)}
+                onOpen={() => setDetailOrderId(order.id)}
+                actions={renderActionButtons(order, 2)}
+              />
+            ))}
           </div>
 
           {/* Desktop table */}
@@ -1159,7 +1202,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                   <TableHead>Delivery</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Courier</TableHead>
-                  <TableHead className="w-10"></TableHead>
+                  <TableHead className="text-right w-[140px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1212,49 +1255,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                         </div>
                       ) : <span className="text-xs text-muted-foreground italic">—</span>}
                     </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100"><MoreHorizontal className="h-4 w-4" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setDetailOrderId(order.id)}>View Details</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleReprintOrder(order.id)}>
-                            <Printer className="h-4 w-4 mr-2" /> Print Invoice
-                          </DropdownMenuItem>
-                          {order.status === "processing" && !order.consignment_id && canWrite && (
-                            <DropdownMenuItem onClick={() => {
-                              supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
-                                addOrderTimeline({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
-                                toast({ title: "Marked Ready to Ship" });
-                                loadOrders();
-                              });
-                            }}>
-                              <PackageCheck className="h-4 w-4 mr-2" /> Mark Ready to Ship
-                            </DropdownMenuItem>
-                          )}
-                          {order.status === "ready_to_ship" && !order.consignment_id && canWrite && (
-                            <DropdownMenuItem onClick={() => openDispatch([order.id])}>
-                              <Send className="h-4 w-4 mr-2" /> Dispatch to Pathao
-                            </DropdownMenuItem>
-                          )}
-                          {order.consignment_id && (
-                            <DropdownMenuItem onClick={() => handleTrackOne(order.consignment_id!)}>
-                              <RefreshCw className="h-4 w-4 mr-2" /> Refresh Tracking
-                            </DropdownMenuItem>
-                          )}
-                          {canWrite && tab === "trash" && (
-                            <DropdownMenuItem onClick={() => handleRestoreOrders([order.id])}>
-                              <RotateCcw className="h-4 w-4 mr-2" /> Restore
-                            </DropdownMenuItem>
-                          )}
-                          {canWrite && tab !== "trash" && (
-                            <DropdownMenuItem onClick={() => { setPendingTrashIds([order.id]); setTrashConfirmOpen(true); }} className="text-destructive focus:text-destructive">
-                              <Trash2 className="h-4 w-4 mr-2" /> Move to Trash
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    <TableCell className="text-right">
+                      {renderActionButtons(order, 3)}
                     </TableCell>
                   </TableRow>
                 ))}
