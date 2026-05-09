@@ -757,6 +757,94 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   /* ─── Determine which action buttons to show ─── */
   const hasSelection = selected.size > 0;
 
+  /* ─── Per-row quick actions (tab-aware) ─── */
+  type QuickAction = { key: string; label: string; icon: any; onClick: () => void; destructive?: boolean };
+  const getQuickActions = (order: OrderRow): QuickAction[] => {
+    const actions: QuickAction[] = [
+      { key: "edit", label: "Edit", icon: Pencil, onClick: () => setDetailOrderId(order.id) },
+    ];
+    if (tab === "trash") {
+      if (canWrite) actions.push({ key: "restore", label: "Restore", icon: RotateCcw, onClick: () => handleRestoreOrders([order.id]) });
+      return actions;
+    }
+    if ((tab === "new" || tab === "all") && order.status === "processing" && !order.consignment_id && canWrite) {
+      actions.push({
+        key: "ready", label: "Mark Ready to Ship", icon: PackageCheck,
+        onClick: () => {
+          supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
+            addOrderTimeline({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
+            toast({ title: "Marked Ready to Ship" });
+            loadOrders();
+          });
+        },
+      });
+    }
+    if ((tab === "ready" || tab === "all" || tab === "pre_order") && order.status === "ready_to_ship" && !order.consignment_id && canWrite) {
+      actions.push({ key: "dispatch", label: "Dispatch to Pathao", icon: Send, onClick: () => openDispatch([order.id]) });
+    }
+    if (["pickup_pending", "in_transit", "on_hold", "returned", "delivered", "cancelled"].includes(tab) && order.consignment_id) {
+      actions.push({ key: "track", label: "Refresh Tracking", icon: RefreshCw, onClick: () => handleTrackOne(order.consignment_id!) });
+    }
+    if (["delivered", "in_transit", "pickup_pending", "ready", "all"].includes(tab)) {
+      actions.push({ key: "print", label: "Print Invoice", icon: Printer, onClick: () => handleReprintOrder(order.id) });
+    }
+    if (canWrite) {
+      actions.push({
+        key: "trash", label: "Move to Trash", icon: Trash2, destructive: true,
+        onClick: () => { setPendingTrashIds([order.id]); setTrashConfirmOpen(true); },
+      });
+    }
+    return actions;
+  };
+
+  const renderActionButtons = (order: OrderRow, max: number) => {
+    const all = getQuickActions(order);
+    const inline = all.slice(0, max);
+    const overflow = all.slice(max);
+    return (
+      <div className="flex items-center justify-end gap-0.5">
+        <TooltipProvider delayDuration={200}>
+          {inline.map((a) => (
+            <Tooltip key={a.key}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn("h-8 w-8", a.destructive && "text-destructive hover:text-destructive")}
+                  onClick={(e) => { e.stopPropagation(); a.onClick(); }}
+                  aria-label={a.label}
+                >
+                  <a.icon className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{a.label}</TooltipContent>
+            </Tooltip>
+          ))}
+        </TooltipProvider>
+        {overflow.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More actions" onClick={(e) => e.stopPropagation()}>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {overflow.map((a) => (
+                <DropdownMenuItem
+                  key={a.key}
+                  onClick={a.onClick}
+                  className={cn(a.destructive && "text-destructive focus:text-destructive")}
+                >
+                  <a.icon className="h-4 w-4 mr-2" /> {a.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
