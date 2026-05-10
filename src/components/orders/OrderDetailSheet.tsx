@@ -244,10 +244,38 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     if (open && orderId) load();
   }, [open, orderId, load]);
 
+  // Fetch product list for adding new items
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("id, name, sku, price")
+        .eq("is_active", true)
+        .order("name")
+        .limit(1000);
+      setProductOptions((data || []) as ProductOption[]);
+    })();
+  }, [open]);
+
   /* ---------- helpers ---------- */
 
   const activeItems = editedItems.filter((i) => !deletedItemIds.includes(i.id));
   const computedSubtotal = activeItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+  const computedTotal = computedSubtotal - discount + shippingCost;
+
+  const updateItemQty = (id: string, qty: number) => {
+    setEditedItems((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, quantity: Math.max(1, qty), line_total: Math.max(1, qty) * i.unit_price } : i))
+    );
+  };
+
+  const updateItemPrice = (id: string, price: number) => {
+    const p = Math.max(0, price);
+    setEditedItems((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, unit_price: p, line_total: i.quantity * p } : i))
+    );
+  };
   const computedTotal = computedSubtotal - discount + shippingCost;
 
   const updateItemQty = (id: string, qty: number) => {
