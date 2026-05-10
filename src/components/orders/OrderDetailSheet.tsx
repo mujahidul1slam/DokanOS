@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
+import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset } from "@/lib/measurements";
 import { postWooOrderNote } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
 import { usePermissions } from "@/hooks/usePermissions";
