@@ -145,10 +145,18 @@ export function detectSizeFromItem(item: {
     }
   }
 
-  const variationOnly = (item.variation_name || "").trim();
+  // b) Try variation_name, or — if absent — derive a variation segment from
+  //    product_name (Woo formats as "Product Name - L / Gurkha Cutting Belt"
+  //    where the part after the last " - " is the variation attributes block).
+  let variationOnly = (item.variation_name || "").trim();
+  if (!variationOnly && item.product_name) {
+    const pn = item.product_name.trim();
+    const idx = pn.lastIndexOf(" - ");
+    if (idx > -1) variationOnly = pn.slice(idx + 3).trim();
+  }
   if (variationOnly) {
-    // b) Split on " / " — take the first segment (Woo lists size attribute first
-    //    when it's the primary attribute, e.g. "L / Gurkha Cutting Belt").
+    // Split on " / " — take the FIRST short token as the size (Woo lists the
+    // size attribute first when it's the primary attribute).
     const parts = variationOnly.split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean);
     const first = parts[0];
     if (first && first.length <= 12 && !/\s/.test(first)) return first;
