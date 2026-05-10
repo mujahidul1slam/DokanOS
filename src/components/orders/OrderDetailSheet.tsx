@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
+import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset } from "@/lib/measurements";
 import { postWooOrderNote } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -97,6 +98,20 @@ interface PaymentEntry {
   created_at: string;
 }
 
+interface EditableMeas {
+  id: string; // db id or temp id starting with "new-"
+  order_item_id: string | null;
+  group_name: string;
+  display_format: "label_value" | "dash_separated";
+  unit: string;
+  values: { name: string; value: string }[];
+  notes: string | null;
+  source: string; // "pos" | "woo" | "preset"
+  _isNew?: boolean;
+  _dirty?: boolean;
+  _sizeLabel?: string | null;
+}
+
 interface Props {
   orderId: string | null;
   open: boolean;
@@ -118,7 +133,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
-  const [measurements, setMeasurements] = useState<any[]>([]);
+  const [measurements, setMeasurements] = useState<EditableMeas[]>([]);
+  const [deletedMeasIds, setDeletedMeasIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -236,7 +252,22 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     setDeletedItemIds([]);
     setTimeline((timelineRes.data || []) as unknown as TimelineEntry[]);
     setPayments((paymentsRes.data || []) as unknown as PaymentEntry[]);
-    setMeasurements(((measRes as any).data || []) as any[]);
+    const measRows = ((measRes as any).data || []) as any[];
+    setMeasurements(
+      measRows.map((m): EditableMeas => ({
+        id: m.id,
+        order_item_id: m.order_item_id ?? null,
+        group_name: m.group_name,
+        display_format: (m.display_format === "dash_separated" ? "dash_separated" : "label_value") as any,
+        unit: m.unit || "",
+        values: Array.isArray(m.values)
+          ? m.values
+          : Object.entries(m.values || {}).map(([name, value]) => ({ name, value: String(value) })),
+        notes: m.notes ?? null,
+        source: m.source || "pos",
+      }))
+    );
+    setDeletedMeasIds([]);
     setLoading(false);
   }, [orderId]);
 
@@ -257,6 +288,79 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setProductOptions((data || []) as ProductOption[]);
     })();
   }, [open]);
+
+  // Resolve preset measurements (e.g. S/M/L size charts) for items that have no
+  // measurement rows yet, so they show up — and stay editable — in the sheet.
+  useEffect(() => {
+    if (!open || !orderId || items.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const additions: EditableMeas[] = [];
+      for (const item of items) {
+        if (!item.product_id) continue;
+        // Skip items that already have any measurement entries
+        const has = measurements.some((m) => m.order_item_id === item.id);
+        if (has) continue;
+        const sizeLabel = detectSizeFromItem({ product_name: item.product_name });
+        if (!sizeLabel) continue;
+        try {
+          const groups = await getGroupsForProduct(item.product_id);
+          for (const g of groups) {
+            const preset = await resolveSizePreset(g.id, item.product_id, sizeLabel);
+            if (!preset || preset.values.length === 0) continue;
+            additions.push({
+              id: `new-${item.id}-${g.id}`,
+              order_item_id: item.id,
+              group_name: `${g.name} (Size ${sizeLabel})`,
+              display_format: g.display_format,
+              unit: g.unit,
+              values: preset.values.map((v) => ({ name: v.name, value: v.value })),
+              notes: null,
+              source: "preset",
+              _isNew: true,
+              _sizeLabel: sizeLabel,
+            });
+          }
+        } catch { /* ignore */ }
+      }
+      if (cancelled || additions.length === 0) return;
+      setMeasurements((prev) => {
+        // Avoid duplicates if the effect reruns
+        const existingIds = new Set(prev.map((m) => m.id));
+        const fresh = additions.filter((a) => !existingIds.has(a.id));
+        return fresh.length ? [...prev, ...fresh] : prev;
+      });
+    })();
+    return () => { cancelled = true; };
+    // We intentionally depend on items only; re-run when items reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, orderId, items]);
+
+  // ---------- measurement editors ----------
+  const updateMeasValue = (measId: string, fieldIdx: number, value: string) => {
+    setMeasurements((prev) =>
+      prev.map((m) =>
+        m.id === measId
+          ? {
+              ...m,
+              values: m.values.map((v, idx) => (idx === fieldIdx ? { ...v, value } : v)),
+              _dirty: true,
+            }
+          : m
+      )
+    );
+  };
+  const updateMeasNotes = (measId: string, notes: string) => {
+    setMeasurements((prev) =>
+      prev.map((m) => (m.id === measId ? { ...m, notes, _dirty: true } : m))
+    );
+  };
+  const removeMeas = (measId: string) => {
+    setMeasurements((prev) => prev.filter((m) => m.id !== measId));
+    if (!measId.startsWith("new-")) {
+      setDeletedMeasIds((prev) => [...prev, measId]);
+    }
+  };
 
   /* ---------- helpers ---------- */
 
@@ -479,6 +583,52 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         };
         const { logChange } = await import("@/lib/auditLog");
         await logChange("order", order.id, beforeOrder, afterOrder, { order_number: order.order_number });
+      }
+
+      // Persist measurement edits
+      try {
+        if (deletedMeasIds.length > 0) {
+          await supabase.from("order_item_measurements" as any).delete().in("id", deletedMeasIds);
+        }
+        // Inserts (new resolved presets or new entries with any value filled)
+        const newMeas = measurements.filter(
+          (m) => m._isNew && m.values.some((v) => v.value && String(v.value).trim() !== "")
+        );
+        if (newMeas.length > 0) {
+          await supabase.from("order_item_measurements" as any).insert(
+            newMeas.map((m) => ({
+              order_id: order.id,
+              order_item_id: m.order_item_id,
+              group_name: m.group_name,
+              display_format: m.display_format,
+              unit: m.unit,
+              values: m.values,
+              source: m.source || "pos",
+              notes: m.notes || null,
+            })) as any
+          );
+        }
+        // Updates (dirty existing rows)
+        const dirtyMeas = measurements.filter((m) => !m._isNew && m._dirty);
+        for (const m of dirtyMeas) {
+          await supabase
+            .from("order_item_measurements" as any)
+            .update({
+              values: m.values,
+              notes: m.notes || null,
+            } as any)
+            .eq("id", m.id);
+        }
+        if (newMeas.length > 0 || dirtyMeas.length > 0 || deletedMeasIds.length > 0) {
+          await addOrderTimeline({
+            order_id: order.id,
+            event: "measurements_updated",
+            description: `Measurements updated — ${newMeas.length} added, ${dirtyMeas.length} edited, ${deletedMeasIds.length} removed`,
+            metadata: { added: newMeas.length, edited: dirtyMeas.length, removed: deletedMeasIds.length },
+          });
+        }
+      } catch (e) {
+        console.warn("Measurement save failed:", e);
       }
 
       // Push status/notes change to WooCommerce if linked
@@ -1171,7 +1321,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   </div>
                 </section>
 
-                {/* Measurements */}
+                {/* Measurements (editable) */}
                 {measurements.length > 0 && (
                   <section>
                     <div className="flex items-center justify-between mb-3">
@@ -1187,85 +1337,72 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         <Printer className="h-3.5 w-3.5" /> Print Slip
                       </Button>
                     </div>
+                    <p className="text-[11px] text-muted-foreground mb-2">
+                      Edits here are saved when you press <span className="font-medium">Save Changes</span>. Preset values from S/M/L size charts are pre-filled and editable.
+                    </p>
                     <div className="space-y-3">
-                      {activeItems.map((item) => {
-                        const itemMeas = measurements.filter((m) => m.order_item_id === item.id);
-                        if (itemMeas.length === 0) return null;
-                        return (
-                          <div key={`m-${item.id}`} className="rounded-lg border border-border p-3 bg-secondary/30">
-                            <div className="text-xs font-semibold text-foreground mb-2">{item.product_name}</div>
-                            {itemMeas.map((m) => {
-                              const vals = Array.isArray(m.values)
-                                ? m.values
-                                : Object.entries(m.values || {}).map(([name, value]) => ({ name, value: String(value) }));
-                              const filled = vals.filter((v: any) => v.value && String(v.value).trim() !== "");
-                              return (
-                                <div key={m.id} className="mb-2 last:mb-0">
+                      {[
+                        ...activeItems.map((it) => ({ key: it.id, label: it.product_name, items: measurements.filter((m) => m.order_item_id === it.id) })),
+                        { key: "__general__", label: "General", items: measurements.filter((m) => !m.order_item_id || !activeItems.some((it) => it.id === m.order_item_id)) },
+                      ]
+                        .filter((b) => b.items.length > 0)
+                        .map((bucket) => (
+                          <div key={`m-${bucket.key}`} className="rounded-lg border border-border p-3 bg-secondary/30">
+                            <div className="text-xs font-semibold text-foreground mb-2">{bucket.label}</div>
+                            {bucket.items.map((m) => (
+                              <div key={m.id} className="mb-3 last:mb-0">
+                                <div className="flex items-center justify-between gap-2 mb-1.5">
                                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold flex items-center gap-2">
                                     {m.group_name}
                                     {m.source === "woo" && (
                                       <Badge className="bg-primary/10 text-primary border-primary/20 text-[9px] px-1.5 py-0">Woo</Badge>
                                     )}
+                                    {m.source === "preset" && (
+                                      <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[9px] px-1.5 py-0">
+                                        Preset{m._sizeLabel ? ` ${m._sizeLabel}` : ""}
+                                      </Badge>
+                                    )}
+                                    {m.unit && <span className="normal-case text-[9px] text-muted-foreground">({m.unit})</span>}
                                   </div>
-                                  {m.display_format === "dash_separated" ? (
-                                    <div className="text-sm font-semibold tracking-wider mt-1">
-                                      {filled.map((v: any) => v.value).join(" - ")} {m.unit}
-                                    </div>
-                                  ) : (
-                                    <div className="grid grid-cols-2 gap-x-4 mt-1">
-                                      {filled.map((v: any, idx: number) => (
-                                        <div key={idx} className="flex justify-between text-xs border-b border-dashed border-border py-0.5">
-                                          <span className="text-muted-foreground">{v.name}</span>
-                                          <span className="font-medium">{v.value} {m.unit}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {m.notes && (
-                                    <div className="text-[11px] italic text-muted-foreground mt-1">{m.notes}</div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                      {/* Orphan measurements (no order_item_id) */}
-                      {measurements.filter((m) => !m.order_item_id).length > 0 && (
-                        <div className="rounded-lg border border-border p-3 bg-secondary/30">
-                          <div className="text-xs font-semibold text-foreground mb-2">General</div>
-                          {measurements.filter((m) => !m.order_item_id).map((m) => {
-                            const vals = Array.isArray(m.values)
-                              ? m.values
-                              : Object.entries(m.values || {}).map(([name, value]) => ({ name, value: String(value) }));
-                            const filled = vals.filter((v: any) => v.value && String(v.value).trim() !== "");
-                            return (
-                              <div key={m.id} className="mb-2 last:mb-0">
-                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold flex items-center gap-2">
-                                  {m.group_name}
-                                  {m.source === "woo" && (
-                                    <Badge className="bg-primary/10 text-primary border-primary/20 text-[9px] px-1.5 py-0">Woo</Badge>
+                                  {canEdit && (
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                      onClick={() => removeMeas(m.id)}
+                                      title="Remove this measurement set"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
                                   )}
                                 </div>
-                                {m.display_format === "dash_separated" ? (
-                                  <div className="text-sm font-semibold tracking-wider mt-1">
-                                    {filled.map((v: any) => v.value).join(" - ")} {m.unit}
-                                  </div>
-                                ) : (
-                                  <div className="grid grid-cols-2 gap-x-4 mt-1">
-                                    {filled.map((v: any, idx: number) => (
-                                      <div key={idx} className="flex justify-between text-xs border-b border-dashed border-border py-0.5">
-                                        <span className="text-muted-foreground">{v.name}</span>
-                                        <span className="font-medium">{v.value} {m.unit}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                                <div className="grid grid-cols-2 gap-2">
+                                  {m.values.map((v, idx) => (
+                                    <div key={`${m.id}-${idx}`} className="flex items-center gap-2">
+                                      <Label className="text-xs text-muted-foreground flex-1 truncate" title={v.name}>{v.name}</Label>
+                                      <Input
+                                        value={v.value}
+                                        disabled={!canEdit}
+                                        onChange={(e) => updateMeasValue(m.id, idx, e.target.value)}
+                                        className="h-8 w-24 text-sm"
+                                        placeholder="—"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                                <Textarea
+                                  value={m.notes || ""}
+                                  disabled={!canEdit}
+                                  onChange={(e) => updateMeasNotes(m.id, e.target.value)}
+                                  rows={1}
+                                  placeholder="Notes…"
+                                  className="mt-2 text-xs min-h-[32px]"
+                                />
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        ))}
                     </div>
                   </section>
                 )}
