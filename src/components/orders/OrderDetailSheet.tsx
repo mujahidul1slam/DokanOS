@@ -585,6 +585,52 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         await logChange("order", order.id, beforeOrder, afterOrder, { order_number: order.order_number });
       }
 
+      // Persist measurement edits
+      try {
+        if (deletedMeasIds.length > 0) {
+          await supabase.from("order_item_measurements" as any).delete().in("id", deletedMeasIds);
+        }
+        // Inserts (new resolved presets or new entries with any value filled)
+        const newMeas = measurements.filter(
+          (m) => m._isNew && m.values.some((v) => v.value && String(v.value).trim() !== "")
+        );
+        if (newMeas.length > 0) {
+          await supabase.from("order_item_measurements" as any).insert(
+            newMeas.map((m) => ({
+              order_id: order.id,
+              order_item_id: m.order_item_id,
+              group_name: m.group_name,
+              display_format: m.display_format,
+              unit: m.unit,
+              values: m.values,
+              source: m.source || "pos",
+              notes: m.notes || null,
+            })) as any
+          );
+        }
+        // Updates (dirty existing rows)
+        const dirtyMeas = measurements.filter((m) => !m._isNew && m._dirty);
+        for (const m of dirtyMeas) {
+          await supabase
+            .from("order_item_measurements" as any)
+            .update({
+              values: m.values,
+              notes: m.notes || null,
+            } as any)
+            .eq("id", m.id);
+        }
+        if (newMeas.length > 0 || dirtyMeas.length > 0 || deletedMeasIds.length > 0) {
+          await addOrderTimeline({
+            order_id: order.id,
+            event: "measurements_updated",
+            description: `Measurements updated — ${newMeas.length} added, ${dirtyMeas.length} edited, ${deletedMeasIds.length} removed`,
+            metadata: { added: newMeas.length, edited: dirtyMeas.length, removed: deletedMeasIds.length },
+          });
+        }
+      } catch (e) {
+        console.warn("Measurement save failed:", e);
+      }
+
       // Push status/notes change to WooCommerce if linked
       if (order.id) {
         try {
