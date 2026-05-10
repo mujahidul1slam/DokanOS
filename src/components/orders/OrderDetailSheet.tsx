@@ -1029,7 +1029,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       <TableHeader>
                         <TableRow className="bg-secondary hover:bg-secondary">
                           <TableHead className="text-xs">Product</TableHead>
-                          <TableHead className="text-xs text-right w-20">Price</TableHead>
+                          <TableHead className="text-xs text-right w-28">Price</TableHead>
                           <TableHead className="text-xs text-center w-24">Qty</TableHead>
                           <TableHead className="text-xs text-right w-24">Total</TableHead>
                           <TableHead className="w-10"></TableHead>
@@ -1061,12 +1061,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                             return (
                             <TableRow key={item.id}>
                               <TableCell className="text-sm font-medium">
-                                <div>{baseName}</div>
+                                <div className="flex items-center gap-2">
+                                  <span>{baseName}</span>
+                                  {item._isNew && <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] px-1.5 py-0">New</Badge>}
+                                </div>
                                 {variation && (
                                   <div className="text-xs font-normal text-muted-foreground mt-0.5">{variation}</div>
                                 )}
                               </TableCell>
-                              <TableCell className="text-sm text-right">৳{Number(item.unit_price).toLocaleString()}</TableCell>
+                              <TableCell className="text-right">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={item.unit_price}
+                                  onChange={(e) => updateItemPrice(item.id, parseFloat(e.target.value) || 0)}
+                                  className="w-24 h-8 text-right ml-auto text-sm"
+                                  disabled={!canEdit}
+                                />
+                              </TableCell>
                               <TableCell className="text-center">
                                 <Input
                                   type="number"
@@ -1074,13 +1087,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                   value={item.quantity}
                                   onChange={(e) => updateItemQty(item.id, parseInt(e.target.value) || 1)}
                                   className="w-16 h-8 text-center mx-auto text-sm"
+                                  disabled={!canEdit}
                                 />
                               </TableCell>
                               <TableCell className="text-sm text-right font-medium">
                                 ৳{(item.quantity * item.unit_price).toLocaleString()}
                               </TableCell>
                               <TableCell>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeItem(item.id)}>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeItem(item.id)} disabled={!canEdit}>
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               </TableCell>
@@ -1091,6 +1105,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       </TableBody>
                     </Table>
                   </div>
+
+                  {/* Add product picker */}
+                  {canEdit && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <SearchableSelect
+                          options={productOptions.map((p) => ({
+                            value: p.id,
+                            label: `${p.name}${p.sku ? ` (${p.sku})` : ""} — ৳${Number(p.price).toLocaleString()}`,
+                          }))}
+                          value={addProductId}
+                          onChange={(v) => addProductToOrder(v)}
+                          placeholder="+ Add product to order…"
+                          searchPlaceholder="Search products by name or SKU…"
+                          emptyText="No products found."
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Summary */}
                   <div className="mt-4 space-y-2 text-sm">
