@@ -276,16 +276,36 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       prev.map((i) => (i.id === id ? { ...i, unit_price: p, line_total: i.quantity * p } : i))
     );
   };
-  const computedTotal = computedSubtotal - discount + shippingCost;
-
-  const updateItemQty = (id: string, qty: number) => {
-    setEditedItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, quantity: Math.max(1, qty), line_total: Math.max(1, qty) * i.unit_price } : i))
-    );
-  };
-
   const removeItem = (id: string) => {
     setDeletedItemIds((prev) => [...prev, id]);
+  };
+
+  const addProductToOrder = (productId: string) => {
+    const p = productOptions.find((o) => o.id === productId);
+    if (!p) return;
+    // If same product (non-new) already exists, bump its qty instead
+    const existing = editedItems.find(
+      (i) => !i._isNew && i.product_id === productId && !deletedItemIds.includes(i.id)
+    );
+    if (existing) {
+      updateItemQty(existing.id, existing.quantity + 1);
+    } else {
+      const tempId = `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setEditedItems((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          product_name: p.name,
+          quantity: 1,
+          unit_price: Number(p.price) || 0,
+          line_total: Number(p.price) || 0,
+          product_id: p.id,
+          base_product_name: p.name,
+          _isNew: true,
+        },
+      ]);
+    }
+    setAddProductId("");
   };
 
   /* ---------- Save ---------- */
