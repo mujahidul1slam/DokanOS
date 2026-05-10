@@ -289,6 +289,79 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     })();
   }, [open]);
 
+  // Resolve preset measurements (e.g. S/M/L size charts) for items that have no
+  // measurement rows yet, so they show up — and stay editable — in the sheet.
+  useEffect(() => {
+    if (!open || !orderId || items.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const additions: EditableMeas[] = [];
+      for (const item of items) {
+        if (!item.product_id) continue;
+        // Skip items that already have any measurement entries
+        const has = measurements.some((m) => m.order_item_id === item.id);
+        if (has) continue;
+        const sizeLabel = detectSizeFromItem({ product_name: item.product_name });
+        if (!sizeLabel) continue;
+        try {
+          const groups = await getGroupsForProduct(item.product_id);
+          for (const g of groups) {
+            const preset = await resolveSizePreset(g.id, item.product_id, sizeLabel);
+            if (!preset || preset.values.length === 0) continue;
+            additions.push({
+              id: `new-${item.id}-${g.id}`,
+              order_item_id: item.id,
+              group_name: `${g.name} (Size ${sizeLabel})`,
+              display_format: g.display_format,
+              unit: g.unit,
+              values: preset.values.map((v) => ({ name: v.name, value: v.value })),
+              notes: null,
+              source: "preset",
+              _isNew: true,
+              _sizeLabel: sizeLabel,
+            });
+          }
+        } catch { /* ignore */ }
+      }
+      if (cancelled || additions.length === 0) return;
+      setMeasurements((prev) => {
+        // Avoid duplicates if the effect reruns
+        const existingIds = new Set(prev.map((m) => m.id));
+        const fresh = additions.filter((a) => !existingIds.has(a.id));
+        return fresh.length ? [...prev, ...fresh] : prev;
+      });
+    })();
+    return () => { cancelled = true; };
+    // We intentionally depend on items only; re-run when items reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, orderId, items]);
+
+  // ---------- measurement editors ----------
+  const updateMeasValue = (measId: string, fieldIdx: number, value: string) => {
+    setMeasurements((prev) =>
+      prev.map((m) =>
+        m.id === measId
+          ? {
+              ...m,
+              values: m.values.map((v, idx) => (idx === fieldIdx ? { ...v, value } : v)),
+              _dirty: true,
+            }
+          : m
+      )
+    );
+  };
+  const updateMeasNotes = (measId: string, notes: string) => {
+    setMeasurements((prev) =>
+      prev.map((m) => (m.id === measId ? { ...m, notes, _dirty: true } : m))
+    );
+  };
+  const removeMeas = (measId: string) => {
+    setMeasurements((prev) => prev.filter((m) => m.id !== measId));
+    if (!measId.startsWith("new-")) {
+      setDeletedMeasIds((prev) => [...prev, measId]);
+    }
+  };
+
   /* ---------- helpers ---------- */
 
   const activeItems = editedItems.filter((i) => !deletedItemIds.includes(i.id));
