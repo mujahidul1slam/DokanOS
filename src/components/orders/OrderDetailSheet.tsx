@@ -28,6 +28,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -69,6 +70,14 @@ interface LineItem {
   line_total: number;
   product_id: string | null;
   base_product_name?: string | null;
+  _isNew?: boolean;
+}
+
+interface ProductOption {
+  id: string;
+  name: string;
+  sku: string | null;
+  price: number;
 }
 
 interface TimelineEntry {
@@ -127,6 +136,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [notes, setNotes] = useState("");
   const [fulfillmentType, setFulfillmentType] = useState<string>("delivery");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [addProductId, setAddProductId] = useState<string>("");
 
   // Exchange dialog
   const [exchangeOpen, setExchangeOpen] = useState(false);
@@ -233,6 +244,20 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     if (open && orderId) load();
   }, [open, orderId, load]);
 
+  // Fetch product list for adding new items
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("id, name, sku, price")
+        .eq("is_active", true)
+        .order("name")
+        .limit(1000);
+      setProductOptions((data || []) as ProductOption[]);
+    })();
+  }, [open]);
+
   /* ---------- helpers ---------- */
 
   const activeItems = editedItems.filter((i) => !deletedItemIds.includes(i.id));
@@ -245,8 +270,42 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     );
   };
 
+  const updateItemPrice = (id: string, price: number) => {
+    const p = Math.max(0, price);
+    setEditedItems((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, unit_price: p, line_total: i.quantity * p } : i))
+    );
+  };
   const removeItem = (id: string) => {
     setDeletedItemIds((prev) => [...prev, id]);
+  };
+
+  const addProductToOrder = (productId: string) => {
+    const p = productOptions.find((o) => o.id === productId);
+    if (!p) return;
+    // If same product (non-new) already exists, bump its qty instead
+    const existing = editedItems.find(
+      (i) => !i._isNew && i.product_id === productId && !deletedItemIds.includes(i.id)
+    );
+    if (existing) {
+      updateItemQty(existing.id, existing.quantity + 1);
+    } else {
+      const tempId = `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setEditedItems((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          product_name: p.name,
+          quantity: 1,
+          unit_price: Number(p.price) || 0,
+          line_total: Number(p.price) || 0,
+          product_id: p.id,
+          base_product_name: p.name,
+          _isNew: true,
+        },
+      ]);
+    }
+    setAddProductId("");
   };
 
   /* ---------- Save ---------- */
@@ -274,20 +333,41 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         })
         .eq("id", order.id);
 
-      // Delete removed items
-      if (deletedItemIds.length > 0) {
-        await supabase.from("order_items").delete().in("id", deletedItemIds);
+      // Delete removed items (only existing DB rows)
+      const dbDeletedIds = deletedItemIds.filter((id) => !id.startsWith("new-"));
+      if (dbDeletedIds.length > 0) {
+        await supabase.from("order_items").delete().in("id", dbDeletedIds);
       }
 
-      // Update quantities
+      // Update existing items (qty or price)
       for (const item of activeItems) {
+        if (item._isNew) continue;
         const orig = items.find((i) => i.id === item.id);
-        if (orig && (orig.quantity !== item.quantity)) {
+        if (orig && (orig.quantity !== item.quantity || Number(orig.unit_price) !== Number(item.unit_price))) {
           await supabase
             .from("order_items")
-            .update({ quantity: item.quantity, line_total: item.quantity * item.unit_price })
+            .update({
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              line_total: item.quantity * item.unit_price,
+            })
             .eq("id", item.id);
         }
+      }
+
+      // Insert new items
+      const newItems = activeItems.filter((i) => i._isNew);
+      if (newItems.length > 0) {
+        await supabase.from("order_items").insert(
+          newItems.map((i) => ({
+            order_id: order.id,
+            product_id: i.product_id,
+            product_name: i.product_name,
+            quantity: i.quantity,
+            unit_price: i.unit_price,
+            line_total: i.quantity * i.unit_price,
+          }))
+        );
       }
 
       // Add timeline entry for status change
@@ -328,24 +408,34 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
       // Item changes
       const itemChangeNotes: string[] = [];
-      if (deletedItemIds.length > 0) {
-        const removed = items.filter((i) => deletedItemIds.includes(i.id)).map((i) => `${i.product_name} ×${i.quantity}`);
+      if (dbDeletedIds.length > 0) {
+        const removed = items.filter((i) => dbDeletedIds.includes(i.id)).map((i) => `${i.product_name} ×${i.quantity}`);
         itemChangeNotes.push(`removed: ${removed.join(", ")}`);
       }
       for (const item of activeItems) {
+        if (item._isNew) continue;
         const orig = items.find((i) => i.id === item.id);
         if (orig && orig.quantity !== item.quantity) {
           itemChangeNotes.push(`${item.product_name}: qty ${orig.quantity} → ${item.quantity}`);
         }
+        if (orig && Number(orig.unit_price) !== Number(item.unit_price)) {
+          itemChangeNotes.push(`${item.product_name}: price ৳${orig.unit_price} → ৳${item.unit_price}`);
+        }
+      }
+      if (newItems.length > 0) {
+        itemChangeNotes.push(`added: ${newItems.map((i) => `${i.product_name} ×${i.quantity} @ ৳${i.unit_price}`).join(", ")}`);
       }
       if (itemChangeNotes.length > 0) {
         await addOrderTimeline({
           order_id: order.id,
           event: "items_updated",
           description: `Items updated — ${itemChangeNotes.join("; ")}`,
-          metadata: { changes: itemChangeNotes },
+          metadata: { changes: itemChangeNotes, new_total: computedTotal },
         });
       }
+
+      // Recompute payment_status & amount_to_collect against the new total
+      await recomputePaymentStatus({ ...order, total: computedTotal });
 
       // Totals / fulfillment changes
       const totalsChanges: string[] = [];
@@ -939,7 +1029,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       <TableHeader>
                         <TableRow className="bg-secondary hover:bg-secondary">
                           <TableHead className="text-xs">Product</TableHead>
-                          <TableHead className="text-xs text-right w-20">Price</TableHead>
+                          <TableHead className="text-xs text-right w-28">Price</TableHead>
                           <TableHead className="text-xs text-center w-24">Qty</TableHead>
                           <TableHead className="text-xs text-right w-24">Total</TableHead>
                           <TableHead className="w-10"></TableHead>
@@ -971,12 +1061,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                             return (
                             <TableRow key={item.id}>
                               <TableCell className="text-sm font-medium">
-                                <div>{baseName}</div>
+                                <div className="flex items-center gap-2">
+                                  <span>{baseName}</span>
+                                  {item._isNew && <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] px-1.5 py-0">New</Badge>}
+                                </div>
                                 {variation && (
                                   <div className="text-xs font-normal text-muted-foreground mt-0.5">{variation}</div>
                                 )}
                               </TableCell>
-                              <TableCell className="text-sm text-right">৳{Number(item.unit_price).toLocaleString()}</TableCell>
+                              <TableCell className="text-right">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={item.unit_price}
+                                  onChange={(e) => updateItemPrice(item.id, parseFloat(e.target.value) || 0)}
+                                  className="w-24 h-8 text-right ml-auto text-sm"
+                                  disabled={!canEdit}
+                                />
+                              </TableCell>
                               <TableCell className="text-center">
                                 <Input
                                   type="number"
@@ -984,13 +1087,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                   value={item.quantity}
                                   onChange={(e) => updateItemQty(item.id, parseInt(e.target.value) || 1)}
                                   className="w-16 h-8 text-center mx-auto text-sm"
+                                  disabled={!canEdit}
                                 />
                               </TableCell>
                               <TableCell className="text-sm text-right font-medium">
                                 ৳{(item.quantity * item.unit_price).toLocaleString()}
                               </TableCell>
                               <TableCell>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeItem(item.id)}>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeItem(item.id)} disabled={!canEdit}>
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               </TableCell>
@@ -1001,6 +1105,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       </TableBody>
                     </Table>
                   </div>
+
+                  {/* Add product picker */}
+                  {canEdit && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <SearchableSelect
+                          options={productOptions.map((p) => ({
+                            value: p.id,
+                            label: `${p.name}${p.sku ? ` (${p.sku})` : ""} — ৳${Number(p.price).toLocaleString()}`,
+                          }))}
+                          value={addProductId}
+                          onChange={(v) => addProductToOrder(v)}
+                          placeholder="+ Add product to order…"
+                          searchPlaceholder="Search products by name or SKU…"
+                          emptyText="No products found."
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Summary */}
                   <div className="mt-4 space-y-2 text-sm">
