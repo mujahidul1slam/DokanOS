@@ -292,7 +292,7 @@ const CartPanel = ({
 
   const addExactCash = () => {
     if (balance <= 0) return;
-    const p: Payment = { id: crypto.randomUUID(), method: "cash", amount: Math.ceil(balance) };
+    const p: Payment = { id: crypto.randomUUID(), method: payMethod, amount: Math.ceil(balance) };
     onUpdateCart(cart.id, { payments: [...cart.payments, p] });
   };
 
