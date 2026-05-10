@@ -252,7 +252,22 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     setDeletedItemIds([]);
     setTimeline((timelineRes.data || []) as unknown as TimelineEntry[]);
     setPayments((paymentsRes.data || []) as unknown as PaymentEntry[]);
-    setMeasurements(((measRes as any).data || []) as any[]);
+    const measRows = ((measRes as any).data || []) as any[];
+    setMeasurements(
+      measRows.map((m): EditableMeas => ({
+        id: m.id,
+        order_item_id: m.order_item_id ?? null,
+        group_name: m.group_name,
+        display_format: (m.display_format === "dash_separated" ? "dash_separated" : "label_value") as any,
+        unit: m.unit || "",
+        values: Array.isArray(m.values)
+          ? m.values
+          : Object.entries(m.values || {}).map(([name, value]) => ({ name, value: String(value) })),
+        notes: m.notes ?? null,
+        source: m.source || "pos",
+      }))
+    );
+    setDeletedMeasIds([]);
     setLoading(false);
   }, [orderId]);
 
