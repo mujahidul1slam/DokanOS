@@ -111,6 +111,8 @@ interface EditableMeas {
   _dirty?: boolean;
   _sizeLabel?: string | null;
 }
+
+interface Props {
   orderId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
