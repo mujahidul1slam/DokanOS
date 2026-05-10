@@ -119,7 +119,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
-  const [measurements, setMeasurements] = useState<any[]>([]);
+  const [measurements, setMeasurements] = useState<EditableMeas[]>([]);
+  const [deletedMeasIds, setDeletedMeasIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
