@@ -98,7 +98,19 @@ interface PaymentEntry {
   created_at: string;
 }
 
-interface Props {
+interface EditableMeas {
+  id: string; // db id or temp id starting with "new-"
+  order_item_id: string | null;
+  group_name: string;
+  display_format: "label_value" | "dash_separated";
+  unit: string;
+  values: { name: string; value: string }[];
+  notes: string | null;
+  source: string; // "pos" | "woo" | "preset"
+  _isNew?: boolean;
+  _dirty?: boolean;
+  _sizeLabel?: string | null;
+}
   orderId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
