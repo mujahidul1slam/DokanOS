@@ -333,20 +333,41 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         })
         .eq("id", order.id);
 
-      // Delete removed items
-      if (deletedItemIds.length > 0) {
-        await supabase.from("order_items").delete().in("id", deletedItemIds);
+      // Delete removed items (only existing DB rows)
+      const dbDeletedIds = deletedItemIds.filter((id) => !id.startsWith("new-"));
+      if (dbDeletedIds.length > 0) {
+        await supabase.from("order_items").delete().in("id", dbDeletedIds);
       }
 
-      // Update quantities
+      // Update existing items (qty or price)
       for (const item of activeItems) {
+        if (item._isNew) continue;
         const orig = items.find((i) => i.id === item.id);
-        if (orig && (orig.quantity !== item.quantity)) {
+        if (orig && (orig.quantity !== item.quantity || Number(orig.unit_price) !== Number(item.unit_price))) {
           await supabase
             .from("order_items")
-            .update({ quantity: item.quantity, line_total: item.quantity * item.unit_price })
+            .update({
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              line_total: item.quantity * item.unit_price,
+            })
             .eq("id", item.id);
         }
+      }
+
+      // Insert new items
+      const newItems = activeItems.filter((i) => i._isNew);
+      if (newItems.length > 0) {
+        await supabase.from("order_items").insert(
+          newItems.map((i) => ({
+            order_id: order.id,
+            product_id: i.product_id,
+            product_name: i.product_name,
+            quantity: i.quantity,
+            unit_price: i.unit_price,
+            line_total: i.quantity * i.unit_price,
+          }))
+        );
       }
 
       // Add timeline entry for status change
@@ -387,24 +408,34 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
       // Item changes
       const itemChangeNotes: string[] = [];
-      if (deletedItemIds.length > 0) {
-        const removed = items.filter((i) => deletedItemIds.includes(i.id)).map((i) => `${i.product_name} ×${i.quantity}`);
+      if (dbDeletedIds.length > 0) {
+        const removed = items.filter((i) => dbDeletedIds.includes(i.id)).map((i) => `${i.product_name} ×${i.quantity}`);
         itemChangeNotes.push(`removed: ${removed.join(", ")}`);
       }
       for (const item of activeItems) {
+        if (item._isNew) continue;
         const orig = items.find((i) => i.id === item.id);
         if (orig && orig.quantity !== item.quantity) {
           itemChangeNotes.push(`${item.product_name}: qty ${orig.quantity} → ${item.quantity}`);
         }
+        if (orig && Number(orig.unit_price) !== Number(item.unit_price)) {
+          itemChangeNotes.push(`${item.product_name}: price ৳${orig.unit_price} → ৳${item.unit_price}`);
+        }
+      }
+      if (newItems.length > 0) {
+        itemChangeNotes.push(`added: ${newItems.map((i) => `${i.product_name} ×${i.quantity} @ ৳${i.unit_price}`).join(", ")}`);
       }
       if (itemChangeNotes.length > 0) {
         await addOrderTimeline({
           order_id: order.id,
           event: "items_updated",
           description: `Items updated — ${itemChangeNotes.join("; ")}`,
-          metadata: { changes: itemChangeNotes },
+          metadata: { changes: itemChangeNotes, new_total: computedTotal },
         });
       }
+
+      // Recompute payment_status & amount_to_collect against the new total
+      await recomputePaymentStatus({ ...order, total: computedTotal });
 
       // Totals / fulfillment changes
       const totalsChanges: string[] = [];
