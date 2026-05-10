@@ -136,6 +136,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [notes, setNotes] = useState("");
   const [fulfillmentType, setFulfillmentType] = useState<string>("delivery");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [addProductId, setAddProductId] = useState<string>("");
 
   // Exchange dialog
   const [exchangeOpen, setExchangeOpen] = useState(false);
