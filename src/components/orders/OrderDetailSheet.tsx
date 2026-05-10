@@ -69,6 +69,14 @@ interface LineItem {
   line_total: number;
   product_id: string | null;
   base_product_name?: string | null;
+  _isNew?: boolean;
+}
+
+interface ProductOption {
+  id: string;
+  name: string;
+  sku: string | null;
+  price: number;
 }
 
 interface TimelineEntry {
