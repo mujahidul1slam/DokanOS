@@ -564,11 +564,78 @@ const PosReports = () => {
               placeholder="Search order #, customer, cashier"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-64 text-xs"
+              className="h-8 w-full sm:w-64 text-xs"
             />
           </div>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Mobile cards */}
+        <div className="md:hidden p-3 space-y-2">
+          {filteredOrders.length === 0 ? (
+            <div className="text-center text-sm text-muted-foreground py-10">No POS orders in this period</div>
+          ) : filteredOrders.map((o) => {
+            const paid = paidByOrder.get(o.id) || 0;
+            const due = Math.max(0, Number(o.total) - paid);
+            const ms = methodsByOrder.get(o.id) || (o.payment_method ? [o.payment_method] : []);
+            const addr = [o.customer_address, o.customer_city].filter(Boolean).join(", ");
+            return (
+              <div
+                key={o.id}
+                role="button"
+                onClick={() => setDetailOrderId(o.id)}
+                className="rounded-lg border border-border bg-card p-3 active:bg-accent/50 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-foreground truncate">#{o.order_number}</div>
+                  <div className="font-semibold text-foreground whitespace-nowrap">৳{Number(o.total).toLocaleString()}</div>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {format(new Date(o.created_at), "MMM d, h:mm a")}
+                  {o.salesperson_name ? ` · ${o.salesperson_name}` : ""}
+                </div>
+                <div className="mt-2 text-sm text-foreground truncate">{o.customer_name || "Walk-in"}</div>
+                {o.customer_phone && (
+                  <div className="text-xs text-muted-foreground truncate">{o.customer_phone}</div>
+                )}
+                {addr && (
+                  <div className="text-xs text-muted-foreground truncate">{addr}</div>
+                )}
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <StatusBadge status={o.status} />
+                  {ms.map((m) => (
+                    <Badge key={m} variant="outline" className="text-[10px] capitalize">{m}</Badge>
+                  ))}
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+                  <div>
+                    <div className="text-muted-foreground">Items</div>
+                    <div className="font-medium text-foreground">{itemsByOrder.get(o.id) || 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Paid</div>
+                    <div className="font-medium text-success">৳{paid.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Due</div>
+                    <div className={`font-medium ${due > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                      {due > 0 ? `৳${due.toLocaleString()}` : "—"}
+                    </div>
+                  </div>
+                </div>
+                {(o.discount || o.shipping_cost) ? (
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {o.discount ? `Discount -৳${Number(o.discount).toLocaleString()}` : ""}
+                    {o.discount && o.shipping_cost ? " · " : ""}
+                    {o.shipping_cost ? `Delivery ৳${Number(o.shipping_cost).toLocaleString()}` : ""}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
