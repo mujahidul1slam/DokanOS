@@ -26,6 +26,8 @@ interface OrderCardProps {
     customer_name: string | null;
     customer_phone: string | null;
     customer_address: string | null;
+    pickup_slip_printed_at?: string | null;
+    measurement_slip_printed_at?: string | null;
     stores: { name: string } | null;
     productItems: { name: string; qty: number }[];
   };
