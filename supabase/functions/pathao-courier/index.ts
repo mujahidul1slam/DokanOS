@@ -175,6 +175,10 @@ Deno.serve(async (req) => {
     // a user JWT so it can be triggered by pg_cron / scheduled jobs.
     const isSystemTrackAll = action === "track_all";
 
+    let callerId: string | null = null;
+    let callerEmail: string | null = null;
+    let callerName: string | null = null;
+
     if (!isSystemTrackAll) {
       const authHeader = req.headers.get("Authorization");
       if (!authHeader?.startsWith("Bearer ")) {
@@ -191,6 +195,14 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      callerId = caller.id;
+      callerEmail = caller.email ?? null;
+      const { data: prof } = await sb
+        .from("profiles")
+        .select("full_name")
+        .eq("user_id", caller.id)
+        .maybeSingle();
+      callerName = (prof?.full_name as string | undefined) || callerEmail;
     }
 
     const creds = await loadIntegration(sb, integration_id);
@@ -323,10 +335,25 @@ Deno.serve(async (req) => {
             order_id,
             event: "dispatched",
             description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
-            metadata: { consignment_id, integration_id: creds.id },
+            metadata: {
+              consignment_id,
+              integration_id: creds.id,
+              user_id: callerId,
+              user_email: callerEmail,
+              user_name: callerName,
+            },
           });
 
-          await postWooOrderNote(order_id, `[DokanOS] Dispatched to Pathao. Consignment: ${consignment_id}`);
+          await sb.from("audit_log").insert({
+            user_id: callerId,
+            user_email: callerEmail,
+            action: "dispatch",
+            entity_type: "order",
+            entity_id: order_id,
+            details: { consignment_id, integration_id: creds.id, courier: "pathao" },
+          });
+
+          await postWooOrderNote(order_id, `[DokanOS] Dispatched to Pathao by ${callerName || callerEmail || "system"}. Consignment: ${consignment_id}`);
         }
 
         result = { consignment_id, raw: data };
@@ -358,10 +385,25 @@ Deno.serve(async (req) => {
                     order_id: entry.order_id,
                     event: "dispatched",
                     description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
-                    metadata: { consignment_id, integration_id: creds.id },
+                    metadata: {
+                      consignment_id,
+                      integration_id: creds.id,
+                      user_id: callerId,
+                      user_email: callerEmail,
+                      user_name: callerName,
+                    },
                   });
 
-                  await postWooOrderNote(entry.order_id, `[DokanOS] Dispatched to Pathao. Consignment: ${consignment_id}`);
+                  await sb.from("audit_log").insert({
+                    user_id: callerId,
+                    user_email: callerEmail,
+                    action: "dispatch",
+                    entity_type: "order",
+                    entity_id: entry.order_id,
+                    details: { consignment_id, integration_id: creds.id, courier: "pathao" },
+                  });
+
+                  await postWooOrderNote(entry.order_id, `[DokanOS] Dispatched to Pathao by ${callerName || callerEmail || "system"}. Consignment: ${consignment_id}`);
                 }
 
                 return { order_id: entry.order_id, success: true, consignment_id };
