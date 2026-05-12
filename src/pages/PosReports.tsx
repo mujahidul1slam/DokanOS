@@ -605,7 +605,20 @@ const PosReports = () => {
                   >
                     <TableCell className="font-medium text-foreground">{o.order_number}</TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">{format(new Date(o.created_at), "MMM d, HH:mm")}</TableCell>
-                    <TableCell className="max-w-[160px] truncate">{o.customer_name || "Walk-in"}</TableCell>
+                    <TableCell className="max-w-[200px] align-top">
+                      <div className="font-medium text-foreground truncate">{o.customer_name || "Walk-in"}</div>
+                      {o.customer_phone && (
+                        <div className="text-[11px] text-muted-foreground truncate">{o.customer_phone}</div>
+                      )}
+                      {(o.customer_address || o.customer_city) && (
+                        <div className="text-[11px] text-muted-foreground truncate" title={[o.customer_address, o.customer_city].filter(Boolean).join(", ")}>
+                          {[o.customer_address, o.customer_city].filter(Boolean).join(", ")}
+                        </div>
+                      )}
+                      {o.customer_email && (
+                        <div className="text-[11px] text-muted-foreground truncate">{o.customer_email}</div>
+                      )}
+                    </TableCell>
                     <TableCell className="max-w-[140px] truncate text-muted-foreground">{o.salesperson_name || "—"}</TableCell>
                     <TableCell className="text-right">{itemsByOrder.get(o.id) || 0}</TableCell>
                     <TableCell className="text-right">৳{Number(o.subtotal || 0).toLocaleString()}</TableCell>
