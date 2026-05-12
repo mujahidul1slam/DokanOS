@@ -87,6 +87,8 @@ interface OrderRow {
   customer_address: string | null;
   customer_city: string | null;
   customer_email: string | null;
+  pickup_slip_printed_at: string | null;
+  measurement_slip_printed_at: string | null;
   stores: { name: string } | null;
   itemCount: number;
   productItems: { name: string; qty: number }[];
