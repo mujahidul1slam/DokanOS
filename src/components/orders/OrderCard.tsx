@@ -1,7 +1,8 @@
 import { format } from "date-fns";
-import { ExternalLink, MoreHorizontal } from "lucide-react";
+import { ExternalLink, MoreHorizontal, Printer } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
