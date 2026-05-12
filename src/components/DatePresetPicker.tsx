@@ -32,6 +32,10 @@ export const resolveRange = (preset: DatePreset, custom?: DateRange): ResolvedRa
   const now = new Date();
   switch (preset) {
     case "today": return { from: startOfDay(now), to: now, days: 1 };
+    case "yesterday": {
+      const y = subDays(now, 1);
+      return { from: startOfDay(y), to: new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999), days: 1 };
+    }
     case "7d": return { from: subDays(now, 7), to: now, days: 7 };
     case "30d": return { from: subDays(now, 30), to: now, days: 30 };
     case "90d": return { from: subDays(now, 90), to: now, days: 90 };
