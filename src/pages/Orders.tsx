@@ -1245,7 +1245,23 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                       <DeliveryBadge type={order.fulfillment_type} />
                     </TableCell>
                     <TableCell>
-                      <FulfillmentBadge status={order.status} />
+                      <div className="flex flex-col items-start gap-1">
+                        <FulfillmentBadge status={order.status} />
+                        {(order.pickup_slip_printed_at || order.measurement_slip_printed_at) && (
+                          <div className="flex flex-wrap gap-1">
+                            {order.pickup_slip_printed_at && (
+                              <Badge variant="outline" className="gap-1 px-1.5 py-0 h-4 text-[9px] font-normal border-cyan-500/40 text-cyan-400" title={`Pickup slip printed ${new Date(order.pickup_slip_printed_at).toLocaleString()}`}>
+                                <Printer className="h-2.5 w-2.5" /> Pickup
+                              </Badge>
+                            )}
+                            {order.measurement_slip_printed_at && (
+                              <Badge variant="outline" className="gap-1 px-1.5 py-0 h-4 text-[9px] font-normal border-violet-500/40 text-violet-400" title={`Measurement slip printed ${new Date(order.measurement_slip_printed_at).toLocaleString()}`}>
+                                <Printer className="h-2.5 w-2.5" /> Meas.
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {order.consignment_id ? (
