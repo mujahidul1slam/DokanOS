@@ -286,6 +286,16 @@ export async function printMeasurementSlip(orderId: string) {
     setTimeout(() => w.print(), 300);
   }
 
+  // Stamp printed-at so the Orders list can show an indicator.
+  try {
+    await supabase
+      .from("orders")
+      .update({ measurement_slip_printed_at: new Date().toISOString() } as any)
+      .eq("id", orderId);
+  } catch (e) {
+    console.warn("Failed to stamp measurement_slip_printed_at:", e);
+  }
+
   // Auto-promote pre-order to "making" once the slip is printed.
   await promotePreOrderOnSlipPrint(orderId);
 }
