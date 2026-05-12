@@ -175,6 +175,10 @@ Deno.serve(async (req) => {
     // a user JWT so it can be triggered by pg_cron / scheduled jobs.
     const isSystemTrackAll = action === "track_all";
 
+    let callerId: string | null = null;
+    let callerEmail: string | null = null;
+    let callerName: string | null = null;
+
     if (!isSystemTrackAll) {
       const authHeader = req.headers.get("Authorization");
       if (!authHeader?.startsWith("Bearer ")) {
@@ -191,6 +195,14 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      callerId = caller.id;
+      callerEmail = caller.email ?? null;
+      const { data: prof } = await sb
+        .from("profiles")
+        .select("full_name")
+        .eq("user_id", caller.id)
+        .maybeSingle();
+      callerName = (prof?.full_name as string | undefined) || callerEmail;
     }
 
     const creds = await loadIntegration(sb, integration_id);
