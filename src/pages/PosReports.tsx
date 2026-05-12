@@ -36,6 +36,10 @@ interface PosOrder {
   payment_method: string | null;
   created_at: string;
   customer_name: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  customer_city: string | null;
+  customer_email: string | null;
   salesperson_name: string | null;
   store_id: string | null;
   fulfillment_type: string | null;
@@ -85,7 +89,7 @@ const PosReports = () => {
       const { from, to, days } = resolveRange(datePreset, customRange);
       const prevFrom = from && days ? subDays(from, days) : null;
 
-      const baseSelect = "id, order_number, total, subtotal, discount, shipping_cost, tax_amount, status, payment_status, payment_method, created_at, customer_name, salesperson_name, store_id, fulfillment_type";
+      const baseSelect = "id, order_number, total, subtotal, discount, shipping_cost, tax_amount, status, payment_status, payment_method, created_at, customer_name, customer_phone, customer_address, customer_city, customer_email, salesperson_name, store_id, fulfillment_type";
 
       let curQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).order("created_at", { ascending: false });
       let prevQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null);
@@ -278,19 +282,25 @@ const PosReports = () => {
     return orders.filter((o) =>
       o.order_number.toLowerCase().includes(q) ||
       (o.customer_name || "").toLowerCase().includes(q) ||
+      (o.customer_phone || "").toLowerCase().includes(q) ||
+      (o.customer_address || "").toLowerCase().includes(q) ||
+      (o.customer_city || "").toLowerCase().includes(q) ||
       (o.salesperson_name || "").toLowerCase().includes(q),
     );
   }, [orders, search]);
 
   const exportOrdersCsv = () => {
-    const headers = ["Order #", "Date", "Customer", "Cashier", "Items", "Subtotal", "Discount", "Delivery", "Total", "Paid", "Due", "Payment", "Status"];
+    const headers = ["Order #", "Date", "Customer", "Phone", "Address", "Cashier", "Items", "Subtotal", "Discount", "Delivery", "Total", "Paid", "Due", "Payment", "Status"];
     const rows = filteredOrders.map((o) => {
       const paid = paidByOrder.get(o.id) || 0;
       const due = Math.max(0, Number(o.total) - paid);
+      const fullAddr = [o.customer_address, o.customer_city].filter(Boolean).join(", ");
       return [
         o.order_number,
         format(new Date(o.created_at), "yyyy-MM-dd HH:mm"),
         o.customer_name || "Walk-in",
+        o.customer_phone || "",
+        fullAddr,
         o.salesperson_name || "—",
         String(itemsByOrder.get(o.id) || 0),
         String(o.subtotal || 0),
@@ -595,7 +605,20 @@ const PosReports = () => {
                   >
                     <TableCell className="font-medium text-foreground">{o.order_number}</TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">{format(new Date(o.created_at), "MMM d, HH:mm")}</TableCell>
-                    <TableCell className="max-w-[160px] truncate">{o.customer_name || "Walk-in"}</TableCell>
+                    <TableCell className="max-w-[200px] align-top">
+                      <div className="font-medium text-foreground truncate">{o.customer_name || "Walk-in"}</div>
+                      {o.customer_phone && (
+                        <div className="text-[11px] text-muted-foreground truncate">{o.customer_phone}</div>
+                      )}
+                      {(o.customer_address || o.customer_city) && (
+                        <div className="text-[11px] text-muted-foreground truncate" title={[o.customer_address, o.customer_city].filter(Boolean).join(", ")}>
+                          {[o.customer_address, o.customer_city].filter(Boolean).join(", ")}
+                        </div>
+                      )}
+                      {o.customer_email && (
+                        <div className="text-[11px] text-muted-foreground truncate">{o.customer_email}</div>
+                      )}
+                    </TableCell>
                     <TableCell className="max-w-[140px] truncate text-muted-foreground">{o.salesperson_name || "—"}</TableCell>
                     <TableCell className="text-right">{itemsByOrder.get(o.id) || 0}</TableCell>
                     <TableCell className="text-right">৳{Number(o.subtotal || 0).toLocaleString()}</TableCell>
