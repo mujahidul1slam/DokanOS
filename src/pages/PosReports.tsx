@@ -36,6 +36,10 @@ interface PosOrder {
   payment_method: string | null;
   created_at: string;
   customer_name: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  customer_city: string | null;
+  customer_email: string | null;
   salesperson_name: string | null;
   store_id: string | null;
   fulfillment_type: string | null;
