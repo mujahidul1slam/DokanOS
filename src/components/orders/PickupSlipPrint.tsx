@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import { buildPrintDocument, type SlipOrderData } from "@/lib/pickupSlipHtml";
 import { supabase } from "@/integrations/supabase/client";
+import { addOrderTimeline } from "@/lib/orderTimeline";
+import { logAction } from "@/lib/auditLog";
 
 interface Props {
   orders: SlipOrderData[];
@@ -24,8 +26,9 @@ export default function PickupSlipPrint({ orders, onPrinted }: Props) {
       setTimeout(() => printWindow.print(), 300);
     }
 
-    // Stamp printed-at on each order so the Orders list can show an indicator.
-    const ids = orders.map((o: any) => o.id).filter(Boolean);
+    // Stamp printed-at on each order and log timeline + audit entries.
+    const printedOrders = orders.filter((o: any) => o.id);
+    const ids = printedOrders.map((o: any) => o.id);
     if (ids.length > 0) {
       try {
         await supabase
@@ -33,8 +36,26 @@ export default function PickupSlipPrint({ orders, onPrinted }: Props) {
           .update({ pickup_slip_printed_at: new Date().toISOString() } as any)
           .in("id", ids);
         onPrinted?.(ids);
+
+        // Order timeline entry per order (also mirrors to Woo notes).
+        await addOrderTimeline(
+          printedOrders.map((o: any) => ({
+            order_id: o.id,
+            event: "pickup_slip_printed",
+            description: `Pickup slip printed (${format.toUpperCase()})`,
+            metadata: { format, batch_size: ids.length },
+          })),
+        );
+
+        // Audit log: single entry summarising the batch.
+        await logAction("print", "pickup_slip", ids.length === 1 ? ids[0] : undefined, {
+          order_ids: ids,
+          order_numbers: printedOrders.map((o: any) => o.order_number).filter(Boolean),
+          count: ids.length,
+          format,
+        });
       } catch (e) {
-        console.warn("Failed to stamp pickup_slip_printed_at:", e);
+        console.warn("Failed to stamp/log pickup slip print:", e);
       }
     }
   };
