@@ -282,6 +282,9 @@ const PosReports = () => {
     return orders.filter((o) =>
       o.order_number.toLowerCase().includes(q) ||
       (o.customer_name || "").toLowerCase().includes(q) ||
+      (o.customer_phone || "").toLowerCase().includes(q) ||
+      (o.customer_address || "").toLowerCase().includes(q) ||
+      (o.customer_city || "").toLowerCase().includes(q) ||
       (o.salesperson_name || "").toLowerCase().includes(q),
     );
   }, [orders, search]);
