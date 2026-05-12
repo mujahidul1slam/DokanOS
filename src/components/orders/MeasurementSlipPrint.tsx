@@ -287,14 +287,27 @@ export async function printMeasurementSlip(orderId: string) {
     setTimeout(() => w.print(), 300);
   }
 
-  // Stamp printed-at so the Orders list can show an indicator.
+  // Stamp printed-at so the Orders list can show an indicator + log it.
   try {
     await supabase
       .from("orders")
       .update({ measurement_slip_printed_at: new Date().toISOString() } as any)
       .eq("id", orderId);
+
+    await addOrderTimeline({
+      order_id: orderId,
+      event: "measurement_slip_printed",
+      description: `Measurement slip printed (${(fmt || "thermal").toUpperCase()})`,
+      metadata: { format: fmt, products: productLines.length },
+    });
+
+    await logAction("print", "measurement_slip", orderId, {
+      order_number: order.order_number,
+      format: fmt,
+      products: productLines.length,
+    });
   } catch (e) {
-    console.warn("Failed to stamp measurement_slip_printed_at:", e);
+    console.warn("Failed to stamp/log measurement slip print:", e);
   }
 
   // Auto-promote pre-order to "making" once the slip is printed.
