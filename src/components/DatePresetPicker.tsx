@@ -8,10 +8,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-export type DatePreset = "today" | "7d" | "30d" | "90d" | "year" | "all" | "custom";
+export type DatePreset = "today" | "yesterday" | "7d" | "30d" | "90d" | "year" | "all" | "custom";
 
 export const presetLabel: Record<DatePreset, string> = {
   today: "Today",
+  yesterday: "Yesterday",
   "7d": "Last 7 Days",
   "30d": "Last 30 Days",
   "90d": "Last 90 Days",
