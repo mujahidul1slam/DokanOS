@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import { buildPrintDocument, type SlipOrderData } from "@/lib/pickupSlipHtml";
 import { supabase } from "@/integrations/supabase/client";
+import { addOrderTimeline } from "@/lib/orderTimeline";
+import { logAction } from "@/lib/auditLog";
 
 interface Props {
   orders: SlipOrderData[];
