@@ -290,14 +290,17 @@ const PosReports = () => {
   }, [orders, search]);
 
   const exportOrdersCsv = () => {
-    const headers = ["Order #", "Date", "Customer", "Cashier", "Items", "Subtotal", "Discount", "Delivery", "Total", "Paid", "Due", "Payment", "Status"];
+    const headers = ["Order #", "Date", "Customer", "Phone", "Address", "Cashier", "Items", "Subtotal", "Discount", "Delivery", "Total", "Paid", "Due", "Payment", "Status"];
     const rows = filteredOrders.map((o) => {
       const paid = paidByOrder.get(o.id) || 0;
       const due = Math.max(0, Number(o.total) - paid);
+      const fullAddr = [o.customer_address, o.customer_city].filter(Boolean).join(", ");
       return [
         o.order_number,
         format(new Date(o.created_at), "yyyy-MM-dd HH:mm"),
         o.customer_name || "Walk-in",
+        o.customer_phone || "",
+        fullAddr,
         o.salesperson_name || "—",
         String(itemsByOrder.get(o.id) || 0),
         String(o.subtotal || 0),
