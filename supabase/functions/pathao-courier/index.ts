@@ -385,10 +385,25 @@ Deno.serve(async (req) => {
                     order_id: entry.order_id,
                     event: "dispatched",
                     description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
-                    metadata: { consignment_id, integration_id: creds.id },
+                    metadata: {
+                      consignment_id,
+                      integration_id: creds.id,
+                      user_id: callerId,
+                      user_email: callerEmail,
+                      user_name: callerName,
+                    },
                   });
 
-                  await postWooOrderNote(entry.order_id, `[DokanOS] Dispatched to Pathao. Consignment: ${consignment_id}`);
+                  await sb.from("audit_log").insert({
+                    user_id: callerId,
+                    user_email: callerEmail,
+                    action: "dispatch",
+                    entity_type: "order",
+                    entity_id: entry.order_id,
+                    details: { consignment_id, integration_id: creds.id, courier: "pathao" },
+                  });
+
+                  await postWooOrderNote(entry.order_id, `[DokanOS] Dispatched to Pathao by ${callerName || callerEmail || "system"}. Consignment: ${consignment_id}`);
                 }
 
                 return { order_id: entry.order_id, success: true, consignment_id };
