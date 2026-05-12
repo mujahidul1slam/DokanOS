@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type CapturedMeasurement } from "@/lib/measurements";
 import { addOrderTimeline } from "@/lib/orderTimeline";
+import { logAction } from "@/lib/auditLog";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 
 /**
