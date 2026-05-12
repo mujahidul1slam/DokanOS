@@ -87,6 +87,8 @@ interface OrderRow {
   customer_address: string | null;
   customer_city: string | null;
   customer_email: string | null;
+  pickup_slip_printed_at: string | null;
+  measurement_slip_printed_at: string | null;
   stores: { name: string } | null;
   itemCount: number;
   productItems: { name: string; qty: number }[];
@@ -175,7 +177,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const loadOrders = useCallback(async () => {
     const { data } = await supabase
         .from("orders")
-        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, stores(name), order_items(id, product_id, product_name, quantity, products(stock_status))")
+        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), order_items(id, product_id, product_name, quantity, products(stock_status))")
         .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
@@ -1243,7 +1245,23 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                       <DeliveryBadge type={order.fulfillment_type} />
                     </TableCell>
                     <TableCell>
-                      <FulfillmentBadge status={order.status} />
+                      <div className="flex flex-col items-start gap-1">
+                        <FulfillmentBadge status={order.status} />
+                        {(order.pickup_slip_printed_at || order.measurement_slip_printed_at) && (
+                          <div className="flex flex-wrap gap-1">
+                            {order.pickup_slip_printed_at && (
+                              <Badge variant="outline" className="gap-1 px-1.5 py-0 h-4 text-[9px] font-normal border-cyan-500/40 text-cyan-400" title={`Pickup slip printed ${new Date(order.pickup_slip_printed_at).toLocaleString()}`}>
+                                <Printer className="h-2.5 w-2.5" /> Pickup
+                              </Badge>
+                            )}
+                            {order.measurement_slip_printed_at && (
+                              <Badge variant="outline" className="gap-1 px-1.5 py-0 h-4 text-[9px] font-normal border-violet-500/40 text-violet-400" title={`Measurement slip printed ${new Date(order.measurement_slip_printed_at).toLocaleString()}`}>
+                                <Printer className="h-2.5 w-2.5" /> Meas.
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {order.consignment_id ? (

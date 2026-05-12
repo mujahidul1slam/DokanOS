@@ -1,7 +1,8 @@
 import { format } from "date-fns";
-import { ExternalLink, MoreHorizontal } from "lucide-react";
+import { ExternalLink, MoreHorizontal, Printer } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
@@ -25,6 +26,8 @@ interface OrderCardProps {
     customer_name: string | null;
     customer_phone: string | null;
     customer_address: string | null;
+    pickup_slip_printed_at?: string | null;
+    measurement_slip_printed_at?: string | null;
     stores: { name: string } | null;
     productItems: { name: string; qty: number }[];
   };
@@ -79,6 +82,16 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
               <span className="text-[11px] text-muted-foreground">{order.payment_method}</span>
             )}
             {order.consignment_id && <TrackingBadge status={order.tracking_status} />}
+            {order.pickup_slip_printed_at && (
+              <Badge variant="outline" className="gap-1 px-1.5 py-0 h-4 text-[9px] font-normal border-cyan-500/40 text-cyan-400">
+                <Printer className="h-2.5 w-2.5" /> Pickup
+              </Badge>
+            )}
+            {order.measurement_slip_printed_at && (
+              <Badge variant="outline" className="gap-1 px-1.5 py-0 h-4 text-[9px] font-normal border-violet-500/40 text-violet-400">
+                <Printer className="h-2.5 w-2.5" /> Meas.
+              </Badge>
+            )}
           </div>
 
           {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (

@@ -808,6 +808,7 @@ export type Database = {
           item_qty: number | null
           item_type: number | null
           item_weight: number | null
+          measurement_slip_printed_at: string | null
           notes: string | null
           order_number: string
           parent_order_id: string | null
@@ -819,6 +820,7 @@ export type Database = {
           payment_meta: Json | null
           payment_method: string | null
           payment_status: string
+          pickup_slip_printed_at: string | null
           salesperson_id: string | null
           salesperson_name: string | null
           shipping_cost: number | null
@@ -852,6 +854,7 @@ export type Database = {
           item_qty?: number | null
           item_type?: number | null
           item_weight?: number | null
+          measurement_slip_printed_at?: string | null
           notes?: string | null
           order_number: string
           parent_order_id?: string | null
@@ -863,6 +866,7 @@ export type Database = {
           payment_meta?: Json | null
           payment_method?: string | null
           payment_status?: string
+          pickup_slip_printed_at?: string | null
           salesperson_id?: string | null
           salesperson_name?: string | null
           shipping_cost?: number | null
@@ -896,6 +900,7 @@ export type Database = {
           item_qty?: number | null
           item_type?: number | null
           item_weight?: number | null
+          measurement_slip_printed_at?: string | null
           notes?: string | null
           order_number?: string
           parent_order_id?: string | null
@@ -907,6 +912,7 @@ export type Database = {
           payment_meta?: Json | null
           payment_method?: string | null
           payment_status?: string
+          pickup_slip_printed_at?: string | null
           salesperson_id?: string | null
           salesperson_name?: string | null
           shipping_cost?: number | null
