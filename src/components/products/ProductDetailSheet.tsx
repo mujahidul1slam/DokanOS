@@ -738,6 +738,13 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
         <SheetFooter className="mt-6 pt-4 border-t border-border">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          {wooUrl && (
+            <Button variant="outline" asChild className="gap-1.5">
+              <a href={wooUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-3.5 w-3.5" /> View on WooCommerce
+              </a>
+            </Button>
+          )}
           <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save Product"}</Button>
         </SheetFooter>
       </SheetContent>
