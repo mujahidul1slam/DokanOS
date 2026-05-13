@@ -11,6 +11,7 @@ import { postWooOrderNote } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
+import { getGlobalStockEnabled } from "@/lib/stockSettings";
 import ExchangeDialog from "./ExchangeDialog";
 
 import {
