@@ -113,6 +113,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   useEffect(() => {
     if (!open) return;
     loadCategories();
+    setWooUrl(null);
     if (productId) {
       loadProduct(productId);
     } else {
