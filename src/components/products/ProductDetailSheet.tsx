@@ -12,7 +12,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
+import { Plus, Trash2, RefreshCw, X, Sparkles, ExternalLink } from "lucide-react";
 import { logAction } from "@/lib/auditLog";
 import { usePermissions } from "@/hooks/usePermissions";
 import SizePresetsEditor from "@/components/measurements/SizePresetsEditor";
