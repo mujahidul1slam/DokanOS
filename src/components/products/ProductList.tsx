@@ -106,6 +106,7 @@ const ProductList = () => {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [stockFilter, setStockFilter] = useState("all");
+  const [manageStockFilter, setManageStockFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
   const [featuredFilter, setFeaturedFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
