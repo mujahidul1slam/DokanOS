@@ -11,6 +11,7 @@ import { postWooOrderNote } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
+import { getGlobalStockEnabled } from "@/lib/stockSettings";
 import ExchangeDialog from "./ExchangeDialog";
 
 import {
@@ -883,17 +884,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         payment_status: "refunded",
       }).eq("id", order.id);
 
-      // Restock inventory
+      // Restock inventory — respect manage_stock + global stock toggle
+      const globalStockEnabled = getGlobalStockEnabled();
       for (const item of items) {
         if (!item.product_id) continue;
         const { data: prod } = await supabase
           .from("products")
-          .select("stock_quantity, woo_product_id")
+          .select("stock_quantity, woo_product_id, manage_stock")
           .eq("id", item.product_id)
           .single();
-        if (prod) {
+        if (prod && (globalStockEnabled || prod.manage_stock === true)) {
           await supabase.from("products").update({
-            stock_quantity: prod.stock_quantity + item.quantity,
+            stock_quantity: (prod.stock_quantity || 0) + item.quantity,
           }).eq("id", item.product_id);
 
           // Push stock to WooCommerce if linked
