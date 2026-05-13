@@ -199,7 +199,7 @@ const ProductList = () => {
     [filtered, currentPage]
   );
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, categoryFilter, stockFilter, storeFilter, featuredFilter]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, categoryFilter, stockFilter, manageStockFilter, storeFilter, featuredFilter]);
 
   const allSelected = paginated.length > 0 && paginated.every(p => selected.has(p.id));
   const toggleAll = () => {
