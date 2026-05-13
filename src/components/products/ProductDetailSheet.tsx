@@ -150,6 +150,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
   const loadProduct = async (id: string) => {
     setLoading(true);
+    setWooUrl(null);
     const { data: p } = await supabase.from("products").select("*").eq("id", id).single();
     if (p) {
       setForm({
@@ -159,6 +160,15 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         manage_stock: p.manage_stock ?? true, stock_quantity: p.stock_quantity,
         stock_status: normalizeStockStatus(p.stock_status || "in_stock"), is_active: p.is_active,
       });
+
+      // Build WooCommerce product URL if linked
+      if (p.woo_product_id && p.store_id) {
+        const { data: store } = await supabase.from("stores").select("url").eq("id", p.store_id).single();
+        if (store?.url) {
+          const base = store.url.replace(/\/$/, "");
+          setWooUrl(`${base}/?p=${p.woo_product_id}`);
+        }
+      }
     }
 
     // Load product categories
