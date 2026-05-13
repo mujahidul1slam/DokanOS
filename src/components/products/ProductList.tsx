@@ -183,12 +183,14 @@ const ProductList = () => {
       }
       if (categoryFilter !== "all" && !(productCatIdMap.get(p.id)?.has(categoryFilter) ?? false)) return false;
       if (stockFilter !== "all" && p.stock_status !== stockFilter) return false;
+      if (manageStockFilter === "tracked" && !p.manage_stock) return false;
+      if (manageStockFilter === "untracked" && p.manage_stock) return false;
       if (storeFilter !== "all" && p.store_id !== storeFilter) return false;
       if (featuredFilter === "featured" && !p.is_featured) return false;
       if (featuredFilter === "not_featured" && p.is_featured) return false;
       return true;
     });
-  }, [products, debouncedSearch, categoryFilter, stockFilter, storeFilter, featuredFilter, productCatIdMap]);
+  }, [products, debouncedSearch, categoryFilter, stockFilter, manageStockFilter, storeFilter, featuredFilter, productCatIdMap]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
