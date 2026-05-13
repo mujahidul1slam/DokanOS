@@ -66,6 +66,12 @@ const STOCK_FILTER_OPTIONS = [
   { value: "on_backorder", label: "On Backorder" },
 ];
 
+const MANAGE_STOCK_FILTER_OPTIONS = [
+  { value: "all", label: "All Stock Tracking" },
+  { value: "tracked", label: "Stock Added" },
+  { value: "untracked", label: "No Stock Added" },
+];
+
 const PAGE_SIZE = 200;
 
 function buildCategoryTree(categories: { id: string; name: string; parent_id: string | null }[]): CategoryNode[] {
