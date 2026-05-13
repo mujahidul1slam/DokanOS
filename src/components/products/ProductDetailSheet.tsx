@@ -94,6 +94,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pushingStock, setPushingStock] = useState(false);
+  const [wooUrl, setWooUrl] = useState<string | null>(null);
 
   // category tree from DB
   const [catTree, setCatTree] = useState<CatNode[]>([]);
