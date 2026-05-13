@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download, Star } from "lucide-react";
+import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download, Star, Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -66,6 +66,12 @@ const STOCK_FILTER_OPTIONS = [
   { value: "on_backorder", label: "On Backorder" },
 ];
 
+const MANAGE_STOCK_FILTER_OPTIONS = [
+  { value: "all", label: "All Stock Tracking" },
+  { value: "tracked", label: "Stock Added" },
+  { value: "untracked", label: "No Stock Added" },
+];
+
 const PAGE_SIZE = 200;
 
 function buildCategoryTree(categories: { id: string; name: string; parent_id: string | null }[]): CategoryNode[] {
@@ -100,6 +106,7 @@ const ProductList = () => {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [stockFilter, setStockFilter] = useState("all");
+  const [manageStockFilter, setManageStockFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
   const [featuredFilter, setFeaturedFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -176,12 +183,14 @@ const ProductList = () => {
       }
       if (categoryFilter !== "all" && !(productCatIdMap.get(p.id)?.has(categoryFilter) ?? false)) return false;
       if (stockFilter !== "all" && p.stock_status !== stockFilter) return false;
+      if (manageStockFilter === "tracked" && !p.manage_stock) return false;
+      if (manageStockFilter === "untracked" && p.manage_stock) return false;
       if (storeFilter !== "all" && p.store_id !== storeFilter) return false;
       if (featuredFilter === "featured" && !p.is_featured) return false;
       if (featuredFilter === "not_featured" && p.is_featured) return false;
       return true;
     });
-  }, [products, debouncedSearch, categoryFilter, stockFilter, storeFilter, featuredFilter, productCatIdMap]);
+  }, [products, debouncedSearch, categoryFilter, stockFilter, manageStockFilter, storeFilter, featuredFilter, productCatIdMap]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -190,7 +199,7 @@ const ProductList = () => {
     [filtered, currentPage]
   );
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, categoryFilter, stockFilter, storeFilter, featuredFilter]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, categoryFilter, stockFilter, manageStockFilter, storeFilter, featuredFilter]);
 
   const allSelected = paginated.length > 0 && paginated.every(p => selected.has(p.id));
   const toggleAll = () => {
@@ -444,6 +453,12 @@ const ProductList = () => {
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Stock Status" /></SelectTrigger>
           <SelectContent>
             {STOCK_FILTER_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={manageStockFilter} onValueChange={setManageStockFilter}>
+          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Stock Tracking" /></SelectTrigger>
+          <SelectContent>
+            {MANAGE_STOCK_FILTER_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={storeFilter} onValueChange={setStoreFilter}>

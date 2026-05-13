@@ -12,7 +12,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Trash2, RefreshCw, X, Sparkles } from "lucide-react";
+import { Plus, Trash2, RefreshCw, X, Sparkles, ExternalLink } from "lucide-react";
 import { logAction } from "@/lib/auditLog";
 import { usePermissions } from "@/hooks/usePermissions";
 import SizePresetsEditor from "@/components/measurements/SizePresetsEditor";
@@ -94,6 +94,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pushingStock, setPushingStock] = useState(false);
+  const [wooUrl, setWooUrl] = useState<string | null>(null);
 
   // category tree from DB
   const [catTree, setCatTree] = useState<CatNode[]>([]);
@@ -112,6 +113,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   useEffect(() => {
     if (!open) return;
     loadCategories();
+    setWooUrl(null);
     if (productId) {
       loadProduct(productId);
     } else {
@@ -149,6 +151,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
   const loadProduct = async (id: string) => {
     setLoading(true);
+    setWooUrl(null);
     const { data: p } = await supabase.from("products").select("*").eq("id", id).single();
     if (p) {
       setForm({
@@ -158,6 +161,15 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
         manage_stock: p.manage_stock ?? true, stock_quantity: p.stock_quantity,
         stock_status: normalizeStockStatus(p.stock_status || "in_stock"), is_active: p.is_active,
       });
+
+      // Build WooCommerce product URL if linked
+      if (p.woo_product_id && p.store_id) {
+        const { data: store } = await supabase.from("stores").select("url").eq("id", p.store_id).single();
+        if (store?.url) {
+          const base = store.url.replace(/\/$/, "");
+          setWooUrl(`${base}/?p=${p.woo_product_id}`);
+        }
+      }
     }
 
     // Load product categories
@@ -726,6 +738,13 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
         <SheetFooter className="mt-6 pt-4 border-t border-border">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          {wooUrl && (
+            <Button variant="outline" asChild className="gap-1.5">
+              <a href={wooUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-3.5 w-3.5" /> View on WooCommerce
+              </a>
+            </Button>
+          )}
           <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save Product"}</Button>
         </SheetFooter>
       </SheetContent>
