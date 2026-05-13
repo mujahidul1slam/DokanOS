@@ -455,6 +455,12 @@ const ProductList = () => {
             {STOCK_FILTER_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={manageStockFilter} onValueChange={setManageStockFilter}>
+          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Stock Tracking" /></SelectTrigger>
+          <SelectContent>
+            {MANAGE_STOCK_FILTER_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Select value={storeFilter} onValueChange={setStoreFilter}>
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Store" /></SelectTrigger>
           <SelectContent>
