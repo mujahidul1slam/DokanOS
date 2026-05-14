@@ -483,7 +483,12 @@ Deno.serve(async (req) => {
         const tokenByIntegration = new Map<string, string>();
         tokenByIntegration.set(creds.id, token);
 
-        for (const order of activeOrders || []) {
+        for (let i = 0; i < (activeOrders || []).length; i++) {
+          const order = activeOrders![i];
+          // Pace requests to stay under Pathao's per-minute rate limit.
+          // 350ms ≈ ~170 req/min headroom; combined with retry-on-429 backoff
+          // inside pathaoGet this keeps the loop reliable for large batches.
+          if (i > 0) await sleep(350);
           try {
             let useToken = token;
             const intId = (order as any).pathao_integration_id as string | null;
