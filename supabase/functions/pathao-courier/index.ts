@@ -131,15 +131,32 @@ async function getAccessToken(creds: PathaoCreds): Promise<string> {
   return data.access_token;
 }
 
-async function pathaoGet(token: string, path: string) {
-  const res = await fetch(`${PATHAO_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// GET with retry on 429 (rate-limit) and 5xx using exponential backoff +
+// honoring the Retry-After header when Pathao provides one.
+async function pathaoGet(token: string, path: string, maxRetries = 4) {
+  let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const res = await fetch(`${PATHAO_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) return res.json();
+
     const txt = await res.text();
-    throw new Error(`Pathao GET ${path} failed [${res.status}]: ${txt}`);
+    const retriable = res.status === 429 || res.status >= 500;
+    if (!retriable || attempt >= maxRetries) {
+      throw new Error(`Pathao GET ${path} failed [${res.status}]: ${txt}`);
+    }
+    const retryAfterHeader = Number(res.headers.get("retry-after"));
+    const backoffMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+      ? retryAfterHeader * 1000
+      : Math.min(30_000, 1000 * 2 ** attempt) + Math.floor(Math.random() * 250);
+    console.warn(`pathaoGet ${path} ${res.status}; retrying in ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+    await sleep(backoffMs);
+    attempt++;
   }
-  return res.json();
 }
 
 async function pathaoPost(token: string, path: string, body: unknown) {
