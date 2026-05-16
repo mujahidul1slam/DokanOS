@@ -25,13 +25,54 @@ function slugify(s: string, id: string): string {
   return base ? `${base}-${id.slice(0, 6)}` : id.slice(0, 8);
 }
 
+function mapProduct(
+  p: any,
+  opts: { is_featured?: boolean; badge?: string; position?: number } = {},
+): StorefrontProduct {
+  return {
+    id: p.id,
+    name: p.name,
+    slug: slugify(p.name, p.id),
+    price: Number(p.price),
+    image_url: p.image_url,
+    image_urls: (p.image_urls as string[]) || [],
+    description: p.description,
+    stock_quantity: p.stock_quantity,
+    manage_stock: p.manage_stock,
+    stock_status: p.stock_status,
+    is_featured: !!(opts.is_featured ?? p.is_featured),
+    badge: opts.badge || "",
+    position: opts.position ?? 0,
+  };
+}
+
 export async function listStorefrontProducts(storefront_id: string): Promise<StorefrontProduct[]> {
-  const { data: links, error } = await supabase
+  // Check if storefront is linked to a store — if so, show all active products from that store
+  const { data: sf } = await supabase
+    .from("storefronts")
+    .select("store_id")
+    .eq("id", storefront_id)
+    .maybeSingle();
+
+  if (sf?.store_id) {
+    const { data: products } = await supabase
+      .from("products")
+      .select("id,name,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_featured")
+      .eq("store_id", sf.store_id)
+      .eq("is_active", true)
+      .order("is_featured", { ascending: false })
+      .order("sales_count", { ascending: false })
+      .limit(500);
+    return (products || []).map((p, i) => mapProduct(p, { position: i }));
+  }
+
+  // Fallback: manual curation
+  const { data: links } = await supabase
     .from("storefront_products")
     .select("product_id, position, is_featured, badge")
     .eq("storefront_id", storefront_id)
     .order("position", { ascending: true });
-  if (error || !links?.length) return [];
+  if (!links?.length) return [];
   const ids = links.map((l) => l.product_id);
   const { data: products } = await supabase
     .from("products")
@@ -44,21 +85,7 @@ export async function listStorefrontProducts(storefront_id: string): Promise<Sto
     .map((l) => {
       const p = map.get(l.product_id);
       if (!p) return null;
-      return {
-        id: p.id,
-        name: p.name,
-        slug: slugify(p.name, p.id),
-        price: Number(p.price),
-        image_url: p.image_url,
-        image_urls: (p.image_urls as string[]) || [],
-        description: p.description,
-        stock_quantity: p.stock_quantity,
-        manage_stock: p.manage_stock,
-        stock_status: p.stock_status,
-        is_featured: l.is_featured,
-        badge: l.badge || "",
-        position: l.position,
-      } as StorefrontProduct;
+      return mapProduct(p, { is_featured: l.is_featured, badge: l.badge || "", position: l.position });
     })
     .filter(Boolean) as StorefrontProduct[];
 }
