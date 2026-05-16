@@ -1547,6 +1547,230 @@ export type Database = {
         }
         Relationships: []
       }
+      storefront_collection_products: {
+        Row: {
+          collection_id: string
+          id: string
+          position: number
+          product_id: string
+        }
+        Insert: {
+          collection_id: string
+          id?: string
+          position?: number
+          product_id: string
+        }
+        Update: {
+          collection_id?: string
+          id?: string
+          position?: number
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_collection_products_collection_id_fkey"
+            columns: ["collection_id"]
+            isOneToOne: false
+            referencedRelation: "storefront_collections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      storefront_collections: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          position: number
+          slug: string
+          storefront_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          position?: number
+          slug: string
+          storefront_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          position?: number
+          slug?: string
+          storefront_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_collections_storefront_id_fkey"
+            columns: ["storefront_id"]
+            isOneToOne: false
+            referencedRelation: "storefronts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      storefront_pages: {
+        Row: {
+          body_md: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          slug: string
+          storefront_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body_md?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          slug: string
+          storefront_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body_md?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          slug?: string
+          storefront_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_pages_storefront_id_fkey"
+            columns: ["storefront_id"]
+            isOneToOne: false
+            referencedRelation: "storefronts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      storefront_products: {
+        Row: {
+          added_at: string
+          badge: string | null
+          id: string
+          is_featured: boolean
+          position: number
+          product_id: string
+          storefront_id: string
+        }
+        Insert: {
+          added_at?: string
+          badge?: string | null
+          id?: string
+          is_featured?: boolean
+          position?: number
+          product_id: string
+          storefront_id: string
+        }
+        Update: {
+          added_at?: string
+          badge?: string | null
+          id?: string
+          is_featured?: boolean
+          position?: number
+          product_id?: string
+          storefront_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_products_storefront_id_fkey"
+            columns: ["storefront_id"]
+            isOneToOne: false
+            referencedRelation: "storefronts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      storefronts: {
+        Row: {
+          about_md: string | null
+          accent_hex: string
+          contact_email: string | null
+          contact_phone: string | null
+          created_at: string
+          currency: string
+          favicon_url: string | null
+          hero_image_url: string | null
+          hero_subtitle: string | null
+          hero_title: string | null
+          id: string
+          is_active: boolean
+          logo_url: string | null
+          name: string
+          policies: Json
+          slug: string
+          social: Json
+          store_id: string | null
+          theme: string
+          updated_at: string
+        }
+        Insert: {
+          about_md?: string | null
+          accent_hex?: string
+          contact_email?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          currency?: string
+          favicon_url?: string | null
+          hero_image_url?: string | null
+          hero_subtitle?: string | null
+          hero_title?: string | null
+          id?: string
+          is_active?: boolean
+          logo_url?: string | null
+          name: string
+          policies?: Json
+          slug: string
+          social?: Json
+          store_id?: string | null
+          theme?: string
+          updated_at?: string
+        }
+        Update: {
+          about_md?: string | null
+          accent_hex?: string
+          contact_email?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          currency?: string
+          favicon_url?: string | null
+          hero_image_url?: string | null
+          hero_subtitle?: string | null
+          hero_title?: string | null
+          id?: string
+          is_active?: boolean
+          logo_url?: string | null
+          name?: string
+          policies?: Json
+          slug?: string
+          social?: Json
+          store_id?: string | null
+          theme?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       stores: {
         Row: {
           consumer_key: string | null

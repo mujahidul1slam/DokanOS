@@ -1,58 +1,86 @@
+# Native Storefronts: Enveil & Vincent
 
+Two brand storefronts served from this app via host/path routing, fully wired into the existing dashboard (products, categories, orders, Pathao).
 
-# WooCommerce Multi-Store Sync
+## 1. Routing & host model
 
-## Overview
+- New `src/storefront/BrandRouter.tsx` runs before `AppRoutes`. Detects brand from `window.location.hostname` (`enveil.*`, `vincent.*`) or `?brand=enveil|vincent`, otherwise serves dashboard.
+- Brand routes (per brand, under `/storefront/:brand/*` and the brand root):
+  - `/` home
+  - `/shop`, `/shop/:categorySlug`
+  - `/product/:slug`
+  - `/cart`, `/checkout`, `/checkout/success/:orderNumber`
+  - `/track`, `/about`, `/contact`, `/policy/:slug`
+- `BrandContext` exposes brand config, theme tokens, currency.
+- `StorefrontLayout` wraps every storefront page with brand nav + footer + theme via `data-brand` attr.
 
-Build an edge function that connects to WooCommerce stores via their REST API, fetches products/orders/customers, and syncs them into the database. Add a "Sync Now" button on the Stores page and a webhook endpoint for live order capture.
+## 2. Design system
 
-## What You Need
+- Tokens layered in `index.css` via `[data-brand="enveil"]` and `[data-brand="vincent"]` blocks. All HSL.
+- **Enveil — Editorial Magazine**: warm `#814037` accent, ivory/cream surfaces, Cormorant Garamond display + Inter body, frosted-glass cards, large serif hero left + featured product right, editorial grid.
+- **Vincent — Dark Cinematic**: pure black/white, kinetic display type (Archivo Black + Inter), liquid-glass capsules, full-screen black hero, scroll-reveal product films.
+- Shared components in `src/storefront/components/`: `GlassPanel`, `LiquidBackdrop`, `BrandButton`, `ProductCard`, `PriceTag`, `QuantityStepper`, `SizeSelector`, `MiniCart`, `Marquee`, `RevealOnScroll`. All consume tokens — no hard-coded colors.
+- Framer Motion for hero animation + scroll reveals.
 
-Each WooCommerce store requires a **Consumer Key** and **Consumer Secret** (generated in WooCommerce > Settings > REST API). These are already columns on the `stores` table (`consumer_key`, `consumer_secret`).
+## 3. Catalog (manual curation)
 
-## Plan
+New tables (migration):
+- `storefronts` — slug, name, store_id, accent_hex, hero_title/subtitle/image, logo, favicon, about_md, contact, social jsonb, policies jsonb, currency (BDT), is_active.
+- `storefront_products` — storefront_id, product_id, position, is_featured, badge, hero_collection, added_at.
+- `storefront_collections` + `storefront_collection_products`.
+- `storefront_pages` — slug, title, body_md.
 
-### 1. Add Store Management UI
-- Add an "Add Store" dialog on the Stores page with fields: Name, URL, Consumer Key, Consumer Secret
-- Add a "Sync Now" button on each store card
-- Add a "Delete Store" option
-- Show sync status and last synced timestamp
+RLS: public `SELECT` for active storefronts/products/collections/pages; admin+staff write. Indexes on (storefront_id, position) and (storefront_id, product_id).
 
-### 2. Create `woo-sync` Edge Function
-- Accepts a `store_id` parameter
-- Reads the store's URL, consumer key, and consumer secret from the `stores` table
-- Calls WooCommerce REST API v3 endpoints:
-  - `GET /wp-json/wc/v3/products` — upserts into `products` table (matched by `woo_product_id`)
-  - `GET /wp-json/wc/v3/orders` — upserts into `orders` + `order_items` tables (matched by `woo_order_id`)
-  - `GET /wp-json/wc/v3/customers` — upserts into `customers` table (matched by `woo_customer_id`)
-- Handles pagination (WooCommerce returns 10 per page by default, we request 100)
-- Updates `stores.last_synced_at` and sets `status = 'connected'` on success
-- Returns sync summary (counts of created/updated records)
+Seed Enveil + Vincent rows pointing at their respective stores.
 
-### 3. Create `woo-webhook` Edge Function
-- Endpoint for WooCommerce webhook (Topic: "Order created")
-- Receives order payload, maps it to our schema, inserts into `orders` + `order_items` + `customers`
-- Validates the webhook signature using the store's consumer secret
-- No JWT verification needed (external webhook)
+## 4. Cart & checkout
 
-### 4. Wire Up Frontend
-- Stores page: "Sync Now" button calls `supabase.functions.invoke('woo-sync', { body: { store_id } })`
-- Show loading spinner during sync, toast on success/failure
-- After sync completes, refresh store data
+- Cart in `localStorage`, namespaced per brand (`cart:enveil`, `cart:vincent`).
+- Single-page glass checkout: name, phone, address, Pathao city/zone/area cascading dropdowns (reuses `pathao_cities/zones/areas`).
+- Payment: **Cash on Delivery** (default) or **bKash / Nagad — manual** (optional TrxID + sender number).
+- New edge function `storefront-checkout` (verify_jwt=false, CORS, zod validation):
+  1. Validates payload + verifies product IDs are active/in-stock from `products`/`product_variations`.
+  2. Recomputes subtotal/shipping/total server-side (shipping from `invoice_settings`).
+  3. Upserts `customers` row (`source='online'`, store_id from storefront).
+  4. Inserts `orders` row: `source='online'`, `fulfillment_type='delivery'`, `status='pending'`, `payment_status='unpaid'` (COD) or `'pending_verification'` (manual bKash), Pathao IDs, `amount_to_collect`, snapshot customer fields, `payment_meta` with TrxID/sender if provided.
+  5. Inserts `order_items` + `order_timeline` entry.
+  6. Returns `order_number` for success page.
+- Orders appear in existing dashboard immediately (already RLS-readable to authenticated).
 
-### Technical Details
+## 5. Dashboard additions
 
-- Edge functions use `Deno.serve` with CORS headers
-- WooCommerce API auth: Basic Auth with consumer key/secret
-- Pagination: loop with `?page=N&per_page=100` until response has fewer than 100 items
-- Upsert strategy: use Supabase's `.upsert()` with `onConflict` on the woo ID columns (requires unique constraints on `woo_product_id`, `woo_order_id`, `woo_customer_id`)
+- New sidebar group "Storefronts" with Enveil/Vincent sub-pages.
+- `StorefrontEditor` page per brand: brand profile fields, hero, about, contact, policies, social, logo upload.
+- Curation tab: search existing products → add to storefront, reorder (drag), toggle featured, set badge.
+- Collections tab: create collections, assign products.
+- Pages tab: edit `storefront_pages` (about, shipping, returns, terms).
+- "View live" button opens `/storefront/<brand>/` in new tab.
+- Orders page gets a `source='online'` + storefront filter chip.
 
-### 5. Database Migration
-- Add unique indexes on `products.woo_product_id`, `orders.woo_order_id`, `customers.woo_customer_id` (filtered where not null) to support upserts
+## 6. SEO / PWA / hosting
 
-### Files Changed/Created
-- `supabase/functions/woo-sync/index.ts` — new
-- `supabase/functions/woo-webhook/index.ts` — new
-- `src/pages/Stores.tsx` — add Store dialog, Sync button
-- Migration for unique indexes
+- Per-brand `<title>`, meta description, OG image, canonical, JSON-LD `Product` + `Organization`.
+- Lazy-load entire storefront bundle (`React.lazy`) so dashboard isn't bloated.
+- Sitemap + robots via edge functions `storefront-sitemap`, `storefront-robots` (verify_jwt=false).
+- Custom domains added later in Lovable hosting; `BrandRouter` already detects by hostname.
 
+## 7. Out of scope (v1)
+
+Online payment gateway (SSLCommerz/bKash API), customer accounts, email/SMS confirmations, multi-currency, i18n.
+
+## Files / edge functions / migrations
+
+```text
+src/storefront/
+  BrandRouter.tsx, BrandContext.tsx, StorefrontLayout.tsx
+  themes/enveil.css, themes/vincent.css
+  pages/{Home,Shop,Product,Cart,Checkout,Success,Track,About,Contact,Policy}.tsx
+  components/{GlassPanel,LiquidBackdrop,BrandButton,ProductCard,...}.tsx
+  lib/{cart.ts, catalog.ts, checkout.ts, brand.ts, seo.ts}
+src/pages/admin/storefronts/{StorefrontList,StorefrontEditor}.tsx
+supabase/functions/{storefront-checkout,storefront-sitemap,storefront-robots}/index.ts
+Migration: 5 tables + RLS + indexes + seed
+```
+
+Approve to start building.
