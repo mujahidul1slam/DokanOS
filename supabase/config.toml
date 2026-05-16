@@ -1,1 +1,4 @@
 project_id = "kjmvbqlemdfddjrjtiik"
+
+[functions.storefront-checkout]
+verify_jwt = false
