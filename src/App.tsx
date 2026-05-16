@@ -108,6 +108,27 @@ const AppRoutes = () => {
   );
 };
 
+const Root = () => {
+  const brand = detectBrand();
+  if (brand) {
+    const basePath = `/storefront/${brand}`;
+    return (
+      <Suspense fallback={<FullScreenLoader label="Loading…" />}>
+        <StorefrontApp brand={brand} basePath={basePath} />
+      </Suspense>
+    );
+  }
+  return (
+    <AuthProvider>
+      <PermissionsProvider>
+        <BusinessProfileProvider>
+          <AppRoutes />
+        </BusinessProfileProvider>
+      </PermissionsProvider>
+    </AuthProvider>
+  );
+};
+
 const App = () => (
   <ErrorBoundary>
     <ThemeProvider>
@@ -116,13 +137,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <AuthProvider>
-              <PermissionsProvider>
-                <BusinessProfileProvider>
-                  <AppRoutes />
-                </BusinessProfileProvider>
-              </PermissionsProvider>
-            </AuthProvider>
+            <Root />
           </BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>
