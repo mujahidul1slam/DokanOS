@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-import { ExternalLink, Loader2, Plus, Trash2, Star, ChevronUp, ChevronDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ExternalLink, Loader2, Plus, Trash2, Star, ChevronUp, ChevronDown, Store as StoreIcon } from "lucide-react";
 
 interface Storefront {
   id: string; slug: string; name: string; accent_hex: string; theme: string;
