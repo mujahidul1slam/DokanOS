@@ -16,6 +16,9 @@ import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import { Loader2 } from "lucide-react";
 import { markAppLoaded } from "@/lib/chunkRecovery";
+import { detectBrand } from "@/storefront/lib/brand";
+
+const StorefrontApp = lazy(() => import("@/storefront/StorefrontApp"));
 
 // Lazy-load all authenticated pages so initial bundle stays small.
 // Each page becomes its own JS chunk loaded on-demand.
@@ -30,6 +33,7 @@ const Analytics = lazy(() => import("./pages/Analytics"));
 const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TeamManagement = lazy(() => import("./pages/TeamManagement"));
+const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -94,6 +98,7 @@ const AppRoutes = () => {
           <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
           <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
           <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
+          <Route path="/storefronts" element={<StorefrontsPage />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFound />} />
