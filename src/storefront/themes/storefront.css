@@ -1,4 +1,8 @@
 /* Storefront theme tokens. Layered on top of the dashboard tokens via [data-brand]. */
+@import url('@fontsource/cormorant-garamond/400.css');
+@import url('@fontsource/cormorant-garamond/500.css');
+@import url('@fontsource/cormorant-garamond/600.css');
+@import url('@fontsource/archivo-black/400.css');
 
 [data-brand] {
   /* Common base — overridden by per-brand blocks below */
