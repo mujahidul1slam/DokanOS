@@ -129,8 +129,9 @@ function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Stor
               Save changes
             </Button>
           </TabsContent>
-          <TabsContent value="products" className="pt-4">
-            <ProductCuration storefrontId={sf.id} />
+          <TabsContent value="products" className="pt-4 space-y-6">
+            <StoreLink sf={sf} onChange={(store_id) => onUpdate({ ...sf, store_id })} />
+            {!sf.store_id && <ProductCuration storefrontId={sf.id} />}
           </TabsContent>
         </Tabs>
       </CardContent>
