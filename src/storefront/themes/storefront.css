@@ -1,0 +1,131 @@
+/* Storefront theme tokens. Layered on top of the dashboard tokens via [data-brand]. */
+
+[data-brand] {
+  /* Common base — overridden by per-brand blocks below */
+  --sf-radius: 1rem;
+  --sf-radius-lg: 1.5rem;
+  --sf-shadow-soft: 0 10px 40px -10px hsl(0 0% 0% / 0.15);
+  --sf-shadow-glow: 0 20px 80px -20px hsl(var(--sf-accent) / 0.4);
+}
+
+/* ============ ENVEIL — Editorial Magazine ============ */
+[data-brand="enveil"] {
+  --background: 35 30% 96%;
+  --foreground: 18 25% 12%;
+  --card: 35 25% 99%;
+  --card-foreground: 18 25% 12%;
+  --popover: 35 25% 99%;
+  --popover-foreground: 18 25% 12%;
+  --primary: 13 35% 36%;        /* #814037 */
+  --primary-foreground: 35 30% 96%;
+  --secondary: 30 20% 90%;
+  --secondary-foreground: 18 25% 18%;
+  --muted: 32 18% 92%;
+  --muted-foreground: 20 10% 38%;
+  --accent: 13 35% 36%;
+  --accent-foreground: 35 30% 96%;
+  --border: 30 18% 84%;
+  --input: 30 18% 84%;
+  --ring: 13 35% 36%;
+  --destructive: 0 70% 45%;
+  --destructive-foreground: 0 0% 100%;
+
+  --sf-accent: 13 35% 36%;
+  --sf-accent-soft: 13 30% 88%;
+  --sf-ink: 18 25% 12%;
+  --sf-cream: 35 30% 96%;
+  --sf-glass: 35 25% 99% / 0.65;
+  --sf-glass-border: 13 25% 70% / 0.25;
+  --font-heading: 'Cormorant Garamond', 'Times New Roman', serif;
+  --font-display: 'Cormorant Garamond', serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+/* ============ VINCENT — Dark Cinematic ============ */
+[data-brand="vincent"] {
+  --background: 0 0% 4%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 7%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 7%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 4%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 92%;
+  --muted: 0 0% 10%;
+  --muted-foreground: 0 0% 55%;
+  --accent: 0 0% 98%;
+  --accent-foreground: 0 0% 4%;
+  --border: 0 0% 18%;
+  --input: 0 0% 14%;
+  --ring: 0 0% 98%;
+  --destructive: 0 70% 50%;
+  --destructive-foreground: 0 0% 100%;
+
+  --sf-accent: 0 0% 98%;
+  --sf-accent-soft: 0 0% 18%;
+  --sf-ink: 0 0% 98%;
+  --sf-cream: 0 0% 4%;
+  --sf-glass: 0 0% 8% / 0.6;
+  --sf-glass-border: 0 0% 100% / 0.12;
+  --font-heading: 'Archivo Black', 'Inter', sans-serif;
+  --font-display: 'Archivo Black', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+/* ============ Shared utilities ============ */
+.sf-glass {
+  background: hsl(var(--sf-glass));
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid hsl(var(--sf-glass-border));
+  border-radius: var(--sf-radius-lg);
+}
+
+.sf-liquid-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.sf-liquid-bg::before,
+.sf-liquid-bg::after {
+  content: "";
+  position: absolute;
+  width: 60vmax;
+  height: 60vmax;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.55;
+  animation: sf-float 18s ease-in-out infinite alternate;
+}
+.sf-liquid-bg::before {
+  background: radial-gradient(circle, hsl(var(--sf-accent) / 0.45), transparent 70%);
+  top: -20%;
+  left: -10%;
+}
+.sf-liquid-bg::after {
+  background: radial-gradient(circle, hsl(var(--sf-accent) / 0.3), transparent 70%);
+  bottom: -25%;
+  right: -15%;
+  animation-delay: -9s;
+}
+@keyframes sf-float {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(40px, -30px) scale(1.1); }
+}
+
+.sf-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 0.95;
+}
+.sf-body {
+  font-family: var(--font-body);
+}
+
+[data-brand="enveil"] .sf-display { font-weight: 500; letter-spacing: -0.01em; }
+[data-brand="vincent"] .sf-display { text-transform: uppercase; letter-spacing: -0.01em; }
