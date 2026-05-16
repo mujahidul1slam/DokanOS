@@ -271,3 +271,53 @@ function ProductCuration({ storefrontId }: { storefrontId: string }) {
     </div>
   );
 }
+
+function StoreLink({ sf, onChange }: { sf: Storefront; onChange: (store_id: string | null) => void }) {
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.from("stores").select("id,name").order("name").then(({ data }) => setStores(data || []));
+  }, []);
+
+  async function update(store_id: string | null) {
+    setSaving(true);
+    const { error } = await supabase.from("storefronts").update({ store_id }).eq("id", sf.id);
+    setSaving(false);
+    if (error) { toast({ title: "Failed", description: error.message, variant: "destructive" }); return; }
+    onChange(store_id);
+    toast({ title: store_id ? "Store linked" : "Store unlinked" });
+  }
+
+  const current = stores.find((s) => s.id === sf.store_id);
+
+  return (
+    <Card className="border-dashed">
+      <CardContent className="pt-6 space-y-3">
+        <div className="flex items-start gap-3">
+          <StoreIcon className="h-5 w-5 mt-1 text-muted-foreground" />
+          <div className="flex-1">
+            <h3 className="text-sm font-medium">Link to a store</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              When linked, this storefront automatically shows all active products from the selected store.
+              Leave unlinked to curate products manually below.
+            </p>
+            <div className="flex gap-2 items-center">
+              <Select value={sf.store_id ?? "none"} onValueChange={(v) => update(v === "none" ? null : v)} disabled={saving}>
+                <SelectTrigger className="max-w-sm"><SelectValue placeholder="Select a store…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— None (manual curation) —</SelectItem>
+                  {stores.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {current && <Badge variant="secondary">Linked: {current.name}</Badge>}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
