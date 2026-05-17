@@ -546,7 +546,7 @@ const POS = () => {
         setCurrentShift(updated);
       }
 
-      // Stock reduction
+      // Stock reduction — variations track their own stock independently of the parent product
       for (const item of cart.items) {
         if (item.isCustomItem || !item.productId) continue;
         if (item.variationId) {
@@ -554,14 +554,22 @@ const POS = () => {
           if (v && (globalStockEnabled || v.manage_stock === true)) {
             await supabase.from("product_variations").update({ stock_quantity: Math.max(0, v.stock_quantity - item.qty) }).eq("id", item.variationId);
           }
-        }
-        const { data: prod } = await supabase.from("products").select("stock_quantity, woo_product_id, store_id, manage_stock").eq("id", item.productId).single();
-        if (prod && (globalStockEnabled || prod.manage_stock === true)) {
-          await supabase.from("products").update({ stock_quantity: Math.max(0, prod.stock_quantity - item.qty) }).eq("id", item.productId);
-          if (prod.woo_product_id) {
+          // Still push parent product stock to Woo so the linked store reflects the change
+          const { data: prod } = await supabase.from("products").select("woo_product_id").eq("id", item.productId).single();
+          if (prod?.woo_product_id) {
             supabase.functions.invoke("woo-push", {
               body: { action: "push_stock", product_id: item.productId },
             }).catch(() => {});
+          }
+        } else {
+          const { data: prod } = await supabase.from("products").select("stock_quantity, woo_product_id, store_id, manage_stock").eq("id", item.productId).single();
+          if (prod && (globalStockEnabled || prod.manage_stock === true)) {
+            await supabase.from("products").update({ stock_quantity: Math.max(0, prod.stock_quantity - item.qty) }).eq("id", item.productId);
+            if (prod.woo_product_id) {
+              supabase.functions.invoke("woo-push", {
+                body: { action: "push_stock", product_id: item.productId },
+              }).catch(() => {});
+            }
           }
         }
       }
