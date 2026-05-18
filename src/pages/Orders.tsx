@@ -99,7 +99,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 200;
 
-type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "cancelled" | "trash";
+type TabKey = "all" | "new" | "ready" | "pre_order" | "pre_order_pending" | "pre_order_making" | "pre_order_ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "cancelled" | "trash";
 
 interface OrdersProps { preOrderMode?: boolean }
 
