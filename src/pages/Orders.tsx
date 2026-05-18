@@ -422,6 +422,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     });
   }, [storeFilter, scopedCategories]);
   useEffect(() => { setSelected(new Set()); }, [tab]);
+  useEffect(() => {
+    if (preOrderMode && ["pre_order_pending", "pre_order_making", "pre_order_ready"].includes(tab)) {
+      setPreOrderStatusFilter("all");
+    }
+  }, [tab, preOrderMode]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
