@@ -313,6 +313,12 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
             (preOrderOrderIds.has(o.id) && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
           );
+        case "pre_order_pending":
+          return o.status === "pre_order_pending";
+        case "pre_order_making":
+          return o.status === "pre_order_making";
+        case "pre_order_ready":
+          return o.status === "pre_order_ready";
         case "pickup_pending":
           return !!o.consignment_id && ["Pending","Pickup Pending","Waiting for Pickup","Pickup Requested","Assigned for Pickup","Assigned For Pickup","Picked","Picked Up"].includes(o.tracking_status || "");
         case "in_transit":
