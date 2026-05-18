@@ -99,7 +99,7 @@ interface StoreOption { id: string; name: string }
 
 const PAGE_SIZE = 200;
 
-type TabKey = "all" | "new" | "ready" | "pre_order" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "cancelled" | "trash";
+type TabKey = "all" | "new" | "ready" | "pre_order" | "pre_order_pending" | "pre_order_making" | "pre_order_ready" | "pickup_pending" | "in_transit" | "delivered" | "on_hold" | "returned" | "cancelled" | "trash";
 
 interface OrdersProps { preOrderMode?: boolean }
 
@@ -313,6 +313,12 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
             (preOrderOrderIds.has(o.id) && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
           );
+        case "pre_order_pending":
+          return o.status === "pre_order_pending";
+        case "pre_order_making":
+          return o.status === "pre_order_making";
+        case "pre_order_ready":
+          return o.status === "pre_order_ready";
         case "pickup_pending":
           return !!o.consignment_id && ["Pending","Pickup Pending","Waiting for Pickup","Pickup Requested","Assigned for Pickup","Assigned For Pickup","Picked","Picked Up"].includes(o.tracking_status || "");
         case "in_transit":
@@ -416,6 +422,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     });
   }, [storeFilter, scopedCategories]);
   useEffect(() => { setSelected(new Set()); }, [tab]);
+  useEffect(() => {
+    if (preOrderMode && ["pre_order_pending", "pre_order_making", "pre_order_ready"].includes(tab)) {
+      setPreOrderStatusFilter("all");
+    }
+  }, [tab, preOrderMode]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
@@ -431,6 +442,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     new: getTabOrders("new").length,
     ready: getTabOrders("ready").length,
     pre_order: getTabOrders("pre_order").length,
+    pre_order_pending: getTabOrders("pre_order_pending").length,
+    pre_order_making: getTabOrders("pre_order_making").length,
+    pre_order_ready: getTabOrders("pre_order_ready").length,
     pickup_pending: getTabOrders("pickup_pending").length,
     in_transit: getTabOrders("in_transit").length,
     delivered: getTabOrders("delivered").length,
@@ -1020,6 +1034,55 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             </>
           );
         })()}
+        {preOrderMode && (() => {
+          const tabItems: { key: TabKey; label: string; icon: any; count: number }[] = [
+            { key: "pre_order", label: "All", icon: Hourglass, count: counts.pre_order },
+            { key: "pre_order_pending", label: "Pending", icon: Clock, count: counts.pre_order_pending },
+            { key: "pre_order_making", label: "Making", icon: Wrench, count: counts.pre_order_making },
+            { key: "pre_order_ready", label: "Ready", icon: Sparkles, count: counts.pre_order_ready },
+          ];
+          return (
+            <>
+              {/* Desktop: standard tabs */}
+              <div className="hidden md:block overflow-x-auto">
+                <TabsList className="inline-flex w-auto min-w-full">
+                  {tabItems.map((t) => (
+                    <TabsTrigger key={t.key} value={t.key} className="gap-1.5 text-xs">
+                      <t.icon className="h-3.5 w-3.5" />{t.label} ({t.count})
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+              {/* Mobile: scrollable pill bar */}
+              <div className="md:hidden -mx-4 px-4 overflow-x-auto scrollbar-none">
+                <div className="flex gap-2 w-max pb-1">
+                  {tabItems.map((t) => {
+                    const active = tab === t.key;
+                    return (
+                      <button
+                        key={t.key}
+                        onClick={() => setTab(t.key)}
+                        className={cn(
+                          "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                          active
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-foreground border-border hover:bg-accent"
+                        )}
+                      >
+                        <t.icon className="h-3.5 w-3.5" />
+                        {t.label}
+                        <span className={cn(
+                          "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none",
+                          active ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground"
+                        )}>{t.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          );
+        })()}
         {/* Search bar + filter toggle (always visible) */}
         <div className="flex items-center gap-2 mt-4">
           <div className="relative flex-1 min-w-0">
@@ -1346,9 +1409,11 @@ function EmptyState({ tab }: { tab: TabKey }) {
   const configs: Record<TabKey, { icon: any; text: string }> = {
     all: { icon: ShoppingCart, text: "No orders found" },
     new: { icon: Package, text: "No new orders to process" },
-    
     ready: { icon: PackageCheck, text: "No orders ready to ship — mark orders as Ready from the New Orders tab" },
     pre_order: { icon: Hourglass, text: "No pre-orders — orders containing products from configured Pre-Order categories will appear here" },
+    pre_order_pending: { icon: Clock, text: "No pending pre-orders" },
+    pre_order_making: { icon: Wrench, text: "No pre-orders currently being made" },
+    pre_order_ready: { icon: Sparkles, text: "No pre-orders ready for delivery" },
     pickup_pending: { icon: Clock, text: "No orders waiting for pickup" },
     in_transit: { icon: Truck, text: "No orders in transit" },
     delivered: { icon: CheckCircle2, text: "No delivered orders" },
