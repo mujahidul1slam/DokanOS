@@ -105,6 +105,7 @@ const PosReports = () => {
   const [paymentsInPeriod, setPaymentsInPeriod] = useState<PaymentRow[]>([]); // by payment date
   const [paymentsByOrderId, setPaymentsByOrderId] = useState<Map<string, PaymentRow[]>>(new Map()); // all pmts on the in-period orders (any date)
   const [parentOrderMap, setParentOrderMap] = useState<Map<string, { created_at: string; order_number: string }>>(new Map());
+  const [orderAllocMap, setOrderAllocMap] = useState<Map<string, { shipping: number; total: number }>>(new Map());
   const [returnsInPeriod, setReturnsInPeriod] = useState<ReturnRow[]>([]);
   const [arOrders, setArOrders] = useState<PosOrder[]>([]); // outstanding-balance orders (last 12 mo)
   const [arPaidMap, setArPaidMap] = useState<Map<string, number>>(new Map());
