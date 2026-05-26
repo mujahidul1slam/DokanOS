@@ -105,6 +105,7 @@ const PosReports = () => {
   const [paymentsInPeriod, setPaymentsInPeriod] = useState<PaymentRow[]>([]); // by payment date
   const [paymentsByOrderId, setPaymentsByOrderId] = useState<Map<string, PaymentRow[]>>(new Map()); // all pmts on the in-period orders (any date)
   const [parentOrderMap, setParentOrderMap] = useState<Map<string, { created_at: string; order_number: string }>>(new Map());
+  const [orderAllocMap, setOrderAllocMap] = useState<Map<string, { shipping: number; total: number }>>(new Map());
   const [returnsInPeriod, setReturnsInPeriod] = useState<ReturnRow[]>([]);
   const [arOrders, setArOrders] = useState<PosOrder[]>([]); // outstanding-balance orders (last 12 mo)
   const [arPaidMap, setArPaidMap] = useState<Map<string, number>>(new Map());
@@ -204,16 +205,25 @@ const PosReports = () => {
       // Parent order info for payments-in-period (for "collections on prior orders")
       const payOrderIds = Array.from(new Set(payInPeriod.map((p) => p.order_id))).filter((id) => !curIds.includes(id));
       const parentMap = new Map<string, { created_at: string; order_number: string }>();
+      const allocM = new Map<string, { shipping: number; total: number }>();
       if (payOrderIds.length > 0) {
         const { data: parents } = await supabase.from("orders")
-          .select("id, created_at, order_number").in("id", payOrderIds).limit(10000);
+          .select("id, created_at, order_number, shipping_cost, total, fulfillment_type").in("id", payOrderIds).limit(10000);
         for (const o of (parents || []) as any[]) {
           parentMap.set(o.id, { created_at: o.created_at, order_number: o.order_number });
+          allocM.set(o.id, { shipping: Number(o.shipping_cost || 0), total: Number(o.total || 0) });
         }
       }
       // Also add in-period orders to parent map so cash section can reference them
-      for (const o of curData) parentMap.set(o.id, { created_at: o.created_at, order_number: o.order_number });
+      for (const o of curData) {
+        parentMap.set(o.id, { created_at: o.created_at, order_number: o.order_number });
+        allocM.set(o.id, { shipping: Number(o.shipping_cost || 0), total: Number(o.total || 0) });
+      }
+      for (const o of arData) {
+        if (!allocM.has(o.id)) allocM.set(o.id, { shipping: Number(o.shipping_cost || 0), total: Number(o.total || 0) });
+      }
       setParentOrderMap(parentMap);
+      setOrderAllocMap(allocM);
 
       // AR paid totals (all payments against AR orders)
       const arPaidM = new Map<string, number>();
@@ -270,6 +280,9 @@ const PosReports = () => {
     const discounts = activeOrders.reduce((s, o) => s + Number(o.discount || 0), 0);
     const returnsTotal = returnsInPeriod.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
     const net = gross - discounts - returnsTotal;
+    const shipping = activeOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
+    const tax = activeOrders.reduce((s, o) => s + Number(o.tax_amount || 0), 0);
+    const totalInvoiced = activeOrders.reduce((s, o) => s + Number(o.total || 0), 0) - returnsTotal;
 
     const prevGross = activePrevOrders.reduce((s, o) => s + Number(o.subtotal || 0), 0);
     const prevDiscounts = activePrevOrders.reduce((s, o) => s + Number(o.discount || 0), 0);
@@ -279,8 +292,7 @@ const PosReports = () => {
       gross, discounts, returnsTotal, net,
       orderCount: activeOrders.length,
       prevNet, prevOrderCount: activePrevOrders.length,
-      shipping: activeOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0),
-      tax: activeOrders.reduce((s, o) => s + Number(o.tax_amount || 0), 0),
+      shipping, tax, totalInvoiced,
     };
   }, [activeOrders, activePrevOrders, returnsInPeriod]);
 
@@ -289,18 +301,42 @@ const PosReports = () => {
     const inPeriodOrderIds = new Set(orders.map((o) => o.id));
     let collectedTotal = 0;
     let onPriorOrders = 0;
+    let shippingCollected = 0;
+    let productCollected = 0;
+    let unallocated = 0;
     const byMethod: Record<string, number> = {};
+    const byMethodProduct: Record<string, number> = {};
+    const byMethodShipping: Record<string, number> = {};
     for (const p of paymentsInPeriod) {
       const amt = Number(p.amount);
       collectedTotal += amt;
       const m = (p.method || "other").toLowerCase();
       byMethod[m] = (byMethod[m] || 0) + amt;
       if (!inPeriodOrderIds.has(p.order_id)) onPriorOrders += amt;
+
+      const alloc = orderAllocMap.get(p.order_id);
+      if (alloc && alloc.total > 0) {
+        const shipShare = (alloc.shipping || 0) / alloc.total;
+        const shipPart = amt * shipShare;
+        const prodPart = amt - shipPart;
+        shippingCollected += shipPart;
+        productCollected += prodPart;
+        byMethodShipping[m] = (byMethodShipping[m] || 0) + shipPart;
+        byMethodProduct[m] = (byMethodProduct[m] || 0) + prodPart;
+      } else {
+        unallocated += amt;
+        productCollected += amt;
+        byMethodProduct[m] = (byMethodProduct[m] || 0) + amt;
+      }
     }
     const refundsTotal = returnsInPeriod.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
     const netCash = collectedTotal - refundsTotal;
-    return { collectedTotal, onPriorOrders, byMethod, refundsTotal, netCash };
-  }, [paymentsInPeriod, orders, returnsInPeriod]);
+    return {
+      collectedTotal, onPriorOrders, byMethod, refundsTotal, netCash,
+      shippingCollected, productCollected, unallocated,
+      byMethodProduct, byMethodShipping,
+    };
+  }, [paymentsInPeriod, orders, returnsInPeriod, orderAllocMap]);
 
   const cashByMethod = useMemo(() => {
     return Object.entries(cashStats.byMethod)
@@ -319,6 +355,8 @@ const PosReports = () => {
       cancelled: 0,
       returned: 0,
     };
+    let deliveryShippingBilled = 0;
+    let deliveryShippingOutstanding = 0;
     for (const o of orders) {
       const ft = (o.fulfillment_type || "walkin").toLowerCase();
       const st = (o.status || "").toLowerCase();
@@ -333,12 +371,19 @@ const PosReports = () => {
       } else if (ft === "delivery") {
         if (done) buckets.deliveryCompleted++;
         else buckets.deliveryPending++;
+        const ship = Number(o.shipping_cost || 0);
+        deliveryShippingBilled += ship;
+        const paid = paidByOrder.get(o.id) || 0;
+        const outstanding = Math.max(0, Number(o.total) - paid);
+        const total = Number(o.total) || 0;
+        // shipping portion still outstanding (proportional)
+        if (total > 0) deliveryShippingOutstanding += outstanding * (ship / total);
       } else {
         if (done) buckets.walkinDelivered++;
       }
     }
-    return buckets;
-  }, [orders]);
+    return { ...buckets, deliveryShippingBilled, deliveryShippingOutstanding };
+  }, [orders, paidByOrder]);
 
   // ============ ACCOUNTS RECEIVABLE ============
   const arStats = useMemo(() => {
@@ -557,9 +602,29 @@ const PosReports = () => {
             icon={TrendingUp} title="Net Sales"
             value={`৳${salesStats.net.toLocaleString()}`}
             currentValue={salesStats.net} prevValue={salesStats.prevNet}
-            subtitle="Gross − Discounts − Returns"
+            subtitle="Gross − Discounts − Returns (products only)"
           />
         </div>
+
+        {/* Secondary line: shipping + tax + total invoiced */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCardDelta
+            icon={Truck} title="Shipping Charged"
+            value={`৳${salesStats.shipping.toLocaleString()}`}
+            subtitle="Delivery fees billed to customers"
+          />
+          <StatCardDelta
+            icon={Receipt} title="Tax"
+            value={`৳${salesStats.tax.toLocaleString()}`}
+            subtitle="Tax applied on orders"
+          />
+          <StatCardDelta
+            icon={DollarSign} title="Total Invoiced"
+            value={`৳${salesStats.totalInvoiced.toLocaleString()}`}
+            subtitle="Net Sales + Shipping + Tax (− Returns)"
+          />
+        </div>
+
 
         {/* Trend + top products + sales by store */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -701,6 +766,26 @@ const PosReports = () => {
           />
         </div>
 
+        {/* Product vs Shipping split */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCardDelta
+            icon={Package} title="Product Revenue Collected"
+            value={`৳${cashStats.productCollected.toLocaleString()}`}
+            subtitle="Allocated share of collections"
+          />
+          <StatCardDelta
+            icon={Truck} title="Shipping Collected"
+            value={`৳${cashStats.shippingCollected.toLocaleString()}`}
+            subtitle="Delivery fees received (incl. COD remittance)"
+          />
+          <StatCardDelta
+            icon={AlertTriangle} title="Unallocated"
+            value={`৳${cashStats.unallocated.toLocaleString()}`}
+            subtitle="Payments on orders outside the 12-mo window"
+          />
+        </div>
+
+
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="rounded-lg border border-border bg-card p-5">
             <h3 className="font-heading text-sm font-medium text-card-foreground mb-3">Method Mix</h3>
@@ -730,6 +815,8 @@ const PosReports = () => {
                   const Icon = METHOD_ICON[p.key] || Coins;
                   const total = cashStats.collectedTotal || 1;
                   const pct = (p.value / total) * 100;
+                  const prod = cashStats.byMethodProduct[p.key] || 0;
+                  const ship = cashStats.byMethodShipping[p.key] || 0;
                   return (
                     <div key={p.key} className="flex items-center gap-3">
                       <div className="h-8 w-8 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] + "22" }}>
@@ -743,6 +830,9 @@ const PosReports = () => {
                         <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                           <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: COLORS[i % COLORS.length] }} />
                         </div>
+                        <div className="text-[10px] text-muted-foreground mt-1 tabular-nums">
+                          Product ৳{Math.round(prod).toLocaleString()} · Shipping ৳{Math.round(ship).toLocaleString()}
+                        </div>
                       </div>
                       <span className="text-[11px] text-muted-foreground tabular-nums w-12 text-right">{pct.toFixed(1)}%</span>
                     </div>
@@ -751,6 +841,7 @@ const PosReports = () => {
               </div>
             )}
           </div>
+
         </div>
       </section>
 
@@ -769,6 +860,33 @@ const PosReports = () => {
           <FulfillCard icon={Truck} label="Delivery Pending" value={fulfillStats.deliveryPending} tone="warning" />
           <FulfillCard icon={CheckCircle2} label="Delivered" value={fulfillStats.deliveryCompleted} tone="success" />
           <FulfillCard icon={AlertTriangle} label="Cancelled / Returned" value={fulfillStats.cancelled + fulfillStats.returned} tone="destructive" />
+        </div>
+
+        {/* Delivery shipping reconciliation */}
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-heading text-sm font-medium text-card-foreground flex items-center gap-2">
+              <Truck className="h-4 w-4 text-muted-foreground" /> Delivery Charges (home delivery orders)
+            </h3>
+            <span className="text-[11px] text-muted-foreground">Reconcile against courier remittance</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="rounded-md bg-secondary/40 px-3 py-2">
+              <div className="text-muted-foreground text-[11px]">Shipping Billed</div>
+              <div className="font-semibold tabular-nums text-foreground">৳{fulfillStats.deliveryShippingBilled.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground">on delivery orders in period</div>
+            </div>
+            <div className="rounded-md bg-secondary/40 px-3 py-2">
+              <div className="text-muted-foreground text-[11px]">Shipping Collected (period)</div>
+              <div className="font-semibold tabular-nums text-foreground">৳{Math.round(cashStats.shippingCollected).toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground">allocated from all cash received</div>
+            </div>
+            <div className="rounded-md bg-secondary/40 px-3 py-2">
+              <div className="text-muted-foreground text-[11px]">Shipping Outstanding</div>
+              <div className="font-semibold tabular-nums text-foreground">৳{Math.round(fulfillStats.deliveryShippingOutstanding).toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground">unpaid portion attributable to shipping</div>
+            </div>
+          </div>
         </div>
       </section>
 
