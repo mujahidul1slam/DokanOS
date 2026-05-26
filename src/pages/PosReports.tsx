@@ -766,6 +766,26 @@ const PosReports = () => {
           />
         </div>
 
+        {/* Product vs Shipping split */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCardDelta
+            icon={Package} title="Product Revenue Collected"
+            value={`৳${cashStats.productCollected.toLocaleString()}`}
+            subtitle="Allocated share of collections"
+          />
+          <StatCardDelta
+            icon={Truck} title="Shipping Collected"
+            value={`৳${cashStats.shippingCollected.toLocaleString()}`}
+            subtitle="Delivery fees received (incl. COD remittance)"
+          />
+          <StatCardDelta
+            icon={AlertTriangle} title="Unallocated"
+            value={`৳${cashStats.unallocated.toLocaleString()}`}
+            subtitle="Payments on orders outside the 12-mo window"
+          />
+        </div>
+
+
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="rounded-lg border border-border bg-card p-5">
             <h3 className="font-heading text-sm font-medium text-card-foreground mb-3">Method Mix</h3>
