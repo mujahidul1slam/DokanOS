@@ -204,16 +204,25 @@ const PosReports = () => {
       // Parent order info for payments-in-period (for "collections on prior orders")
       const payOrderIds = Array.from(new Set(payInPeriod.map((p) => p.order_id))).filter((id) => !curIds.includes(id));
       const parentMap = new Map<string, { created_at: string; order_number: string }>();
+      const allocM = new Map<string, { shipping: number; total: number }>();
       if (payOrderIds.length > 0) {
         const { data: parents } = await supabase.from("orders")
-          .select("id, created_at, order_number").in("id", payOrderIds).limit(10000);
+          .select("id, created_at, order_number, shipping_cost, total, fulfillment_type").in("id", payOrderIds).limit(10000);
         for (const o of (parents || []) as any[]) {
           parentMap.set(o.id, { created_at: o.created_at, order_number: o.order_number });
+          allocM.set(o.id, { shipping: Number(o.shipping_cost || 0), total: Number(o.total || 0) });
         }
       }
       // Also add in-period orders to parent map so cash section can reference them
-      for (const o of curData) parentMap.set(o.id, { created_at: o.created_at, order_number: o.order_number });
+      for (const o of curData) {
+        parentMap.set(o.id, { created_at: o.created_at, order_number: o.order_number });
+        allocM.set(o.id, { shipping: Number(o.shipping_cost || 0), total: Number(o.total || 0) });
+      }
+      for (const o of arData) {
+        if (!allocM.has(o.id)) allocM.set(o.id, { shipping: Number(o.shipping_cost || 0), total: Number(o.total || 0) });
+      }
       setParentOrderMap(parentMap);
+      setOrderAllocMap(allocM);
 
       // AR paid totals (all payments against AR orders)
       const arPaidM = new Map<string, number>();
