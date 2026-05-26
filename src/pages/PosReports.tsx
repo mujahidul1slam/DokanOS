@@ -91,8 +91,8 @@ const PosReports = () => {
 
       const baseSelect = "id, order_number, total, subtotal, discount, shipping_cost, tax_amount, status, payment_status, payment_method, created_at, customer_name, customer_phone, customer_address, customer_city, customer_email, salesperson_name, store_id, fulfillment_type";
 
-      let curQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).order("created_at", { ascending: false });
-      let prevQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null);
+      let curQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).order("created_at", { ascending: false }).limit(10000);
+      let prevQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).limit(10000);
 
       if (storeFilter !== "all") {
         curQ = curQ.eq("store_id", storeFilter);
@@ -121,8 +121,8 @@ const PosReports = () => {
       const ids = curData.map((o) => o.id);
       if (ids.length > 0) {
         const [paymentsRes, itemsRes] = await Promise.all([
-          supabase.from("order_payments").select("method, amount, order_id").in("order_id", ids),
-          supabase.from("order_items").select("quantity, order_id, product_name, line_total, product_id").in("order_id", ids),
+          supabase.from("order_payments").select("method, amount, order_id").in("order_id", ids).limit(50000),
+          supabase.from("order_items").select("quantity, order_id, product_name, line_total, product_id").in("order_id", ids).limit(50000),
         ]);
         setPayments((paymentsRes.data || []) as PaymentRow[]);
         const itemRows = (itemsRes.data || []) as ItemRow[];
@@ -178,12 +178,19 @@ const PosReports = () => {
     return m;
   }, [items]);
 
+  // Exclude cancelled orders from all sales/revenue rollups so KPIs, trend,
+  // payment mix, top products and store mix stay consistent with each other.
+  const activeOrders = useMemo(() => orders.filter((o) => o.status !== "cancelled"), [orders]);
+  const activePrevOrders = useMemo(() => prevOrders.filter((o) => o.status !== "cancelled"), [prevOrders]);
+  const activeOrderIds = useMemo(() => new Set(activeOrders.map((o) => o.id)), [activeOrders]);
+  const activeItems = useMemo(() => items.filter((i) => activeOrderIds.has(i.order_id)), [items, activeOrderIds]);
+  const activePayments = useMemo(() => payments.filter((p) => activeOrderIds.has(p.order_id)), [payments, activeOrderIds]);
+
   const stats = useMemo(() => {
-    const totalSales = orders.reduce((s, o) => s + Number(o.total), 0);
-    const deliveryCharge = orders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
-    const totalTax = orders.reduce((s, o) => s + Number(o.tax_amount || 0), 0);
-    // Net sales = sales without delivery, tax, or other charges (use subtotal - discount as the "pure" merchandise revenue)
-    const netSales = orders.reduce((s, o) => {
+    const totalSales = activeOrders.reduce((s, o) => s + Number(o.total), 0);
+    const deliveryCharge = activeOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
+    const totalTax = activeOrders.reduce((s, o) => s + Number(o.tax_amount || 0), 0);
+    const netSales = activeOrders.reduce((s, o) => {
       const sub = Number(o.subtotal || 0);
       const disc = Number(o.discount || 0);
       return s + (sub - disc);
@@ -191,30 +198,29 @@ const PosReports = () => {
 
     let dues = 0;
     let changeGiven = 0;
-    for (const o of orders) {
-      if (o.status === "cancelled") continue;
+    for (const o of activeOrders) {
       const paid = paidByOrder.get(o.id) || 0;
       const diff = paid - Number(o.total);
       if (diff > 0) changeGiven += diff;
       else if (diff < 0) dues += -diff;
     }
 
-    const prevTotal = prevOrders.reduce((s, o) => s + Number(o.total), 0);
-    const prevNet = prevOrders.reduce((s, o) => s + (Number(o.subtotal || 0) - Number(o.discount || 0)), 0);
-    const prevDelivery = prevOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
-    const prevOrderCount = prevOrders.length;
+    const prevTotal = activePrevOrders.reduce((s, o) => s + Number(o.total), 0);
+    const prevNet = activePrevOrders.reduce((s, o) => s + (Number(o.subtotal || 0) - Number(o.discount || 0)), 0);
+    const prevDelivery = activePrevOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
+    const prevOrderCount = activePrevOrders.length;
 
     return {
       totalSales, netSales, deliveryCharge, totalTax, dues, changeGiven,
-      orderCount: orders.length,
+      orderCount: activeOrders.length,
       prevTotal, prevNet, prevDelivery, prevOrderCount,
     };
-  }, [orders, prevOrders, paidByOrder]);
+  }, [activeOrders, activePrevOrders, paidByOrder]);
 
   // Top POS products by quantity & revenue
   const topProducts = useMemo(() => {
     const map = new Map<string, { name: string; qty: number; revenue: number }>();
-    for (const it of items) {
+    for (const it of activeItems) {
       const key = it.product_name || "Unknown";
       const cur = map.get(key) || { name: key, qty: 0, revenue: 0 };
       cur.qty += Number(it.quantity || 0);
@@ -222,7 +228,7 @@ const PosReports = () => {
       map.set(key, cur);
     }
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
-  }, [items]);
+  }, [activeItems]);
 
   // Sales by store — attributed by each line item's product origin (which WooCommerce store it belongs to).
   // Items whose product has no woo_product_id (or no store link) are bucketed as "POS Only".
@@ -231,7 +237,7 @@ const PosReports = () => {
     const productMap = new Map(products.map((p) => [p.id, p]));
     const map = new Map<string, { name: string; sales: number; qty: number; orderIds: Set<string> }>();
 
-    for (const it of items) {
+    for (const it of activeItems) {
       const prod = it.product_id ? productMap.get(it.product_id) : null;
       let key: string;
       let name: string;
@@ -251,30 +257,36 @@ const PosReports = () => {
     return Array.from(map.values())
       .map((v) => ({ name: v.name, sales: v.sales, qty: v.qty, orders: v.orderIds.size }))
       .sort((a, b) => b.sales - a.sales);
-  }, [items, products, stores]);
+  }, [activeItems, products, stores]);
 
-  // Trend
+  // Trend — sort by real date, not by insertion order (orders arrive desc).
   const trendData = useMemo(() => {
-    const grouped: Record<string, { date: string; sales: number; orders: number }> = {};
-    for (const o of orders) {
-      const day = format(new Date(o.created_at), "MMM d");
-      if (!grouped[day]) grouped[day] = { date: day, sales: 0, orders: 0 };
-      grouped[day].sales += Number(o.total);
-      grouped[day].orders++;
+    const grouped: Record<string, { date: string; sortKey: number; sales: number; orders: number }> = {};
+    for (const o of activeOrders) {
+      const d = new Date(o.created_at);
+      const key = format(d, "yyyy-MM-dd");
+      if (!grouped[key]) {
+        grouped[key] = { date: format(d, "MMM d"), sortKey: d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(), sales: 0, orders: 0 };
+      }
+      grouped[key].sales += Number(o.total);
+      grouped[key].orders++;
     }
-    return Object.values(grouped).reverse();
-  }, [orders]);
+    return Object.values(grouped)
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .map(({ date, sales, orders }) => ({ date, sales, orders }));
+  }, [activeOrders]);
 
   const paymentBreakdown = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const p of payments) {
+    for (const p of activePayments) {
       const m = (p.method || "other").toLowerCase();
       map[m] = (map[m] || 0) + Number(p.amount);
     }
     return Object.entries(map)
       .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }))
       .sort((a, b) => b.value - a.value);
-  }, [payments]);
+  }, [activePayments]);
+
 
   const filteredOrders = useMemo(() => {
     if (!search.trim()) return orders;
