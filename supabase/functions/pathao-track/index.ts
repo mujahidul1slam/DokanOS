@@ -280,6 +280,68 @@ Deno.serve(async (req) => {
             }
           }
 
+          // Reverse auto-COD payment if order later returns/cancels after a delivery
+          if (mappedStatus === "returned" || mappedStatus === "cancelled") {
+            try {
+              const { data: autoPays } = await sb
+                .from("order_payments")
+                .select("id, amount, method, notes")
+                .eq("order_id", order.id)
+                .eq("method", "cod")
+                .ilike("notes", "Auto-collected on Pathao delivery%");
+              const toReverse = (autoPays || []) as any[];
+              if (toReverse.length > 0) {
+                const reversedAmt = toReverse.reduce((s, p) => s + Number(p.amount || 0), 0);
+                await sb.from("order_payments")
+                  .delete()
+                  .in("id", toReverse.map((p) => p.id));
+
+                // Recompute payment status
+                const { data: ord2 } = await sb.from("orders").select("total").eq("id", order.id).single();
+                const { data: remainingPays } = await sb.from("order_payments").select("amount").eq("order_id", order.id);
+                const totalPaid = (remainingPays || []).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+                const total = Number(ord2?.total || 0);
+                const remaining = Math.max(0, total - totalPaid);
+                const newPayStatus = totalPaid <= 0.0001 ? "unpaid" : remaining <= 0.0001 ? "paid" : "partial";
+
+                await sb.from("orders").update({
+                  payment_status: newPayStatus,
+                  amount_to_collect: remaining,
+                }).eq("id", order.id);
+
+                await sb.from("order_timeline").insert({
+                  order_id: order.id,
+                  event: "payment_reversed",
+                  description: `⚠ Auto-COD payment of ৳${reversedAmt.toLocaleString()} reversed — Pathao reported ${pathaoStatus}. Order is now ${newPayStatus} (৳${remaining.toLocaleString()} outstanding). Please review.`,
+                  metadata: {
+                    source: "pathao_track",
+                    reversed_amount: reversedAmt,
+                    reversed_payment_ids: toReverse.map((p) => p.id),
+                    tracking_status: pathaoStatus,
+                    new_payment_status: newPayStatus,
+                    requires_review: true,
+                    user_name: "Pathao Tracking",
+                  },
+                });
+                await sb.from("audit_log").insert({
+                  action: "payment_reversed",
+                  entity_type: "order",
+                  entity_id: order.id,
+                  user_email: "pathao@system",
+                  details: {
+                    source: "pathao_track",
+                    reversed_amount: reversedAmt,
+                    tracking_status: pathaoStatus,
+                    consignment_id: order.consignment_id,
+                  },
+                });
+                await postWooNote(order.id, `[DokanOS] ⚠ Auto-COD ৳${reversedAmt.toLocaleString()} reversed — courier reported ${pathaoStatus}. Please review.`);
+              }
+            } catch (e) {
+              console.warn(`COD auto-reverse failed for ${order.id}:`, e);
+            }
+          }
+
           // Once the Pathao cycle has terminated (delivered/returned), close out the
           // linked WooCommerce order — woo-push maps both to "completed".
           if (mappedStatus === "delivered" || mappedStatus === "returned") {
