@@ -149,6 +149,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   // Trash confirm
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
   const [pendingTrashIds, setPendingTrashIds] = useState<string[]>([]);
+  // Due payment dialog (bulk Mark Paid)
+  const [duePayOpen, setDuePayOpen] = useState(false);
+  const [duePayContext, setDuePayContext] = useState<{ ids: string[]; totalDue: number }>({ ids: [], totalDue: 0 });
 
   const { toast } = useToast();
 
