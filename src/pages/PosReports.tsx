@@ -815,6 +815,8 @@ const PosReports = () => {
                   const Icon = METHOD_ICON[p.key] || Coins;
                   const total = cashStats.collectedTotal || 1;
                   const pct = (p.value / total) * 100;
+                  const prod = cashStats.byMethodProduct[p.key] || 0;
+                  const ship = cashStats.byMethodShipping[p.key] || 0;
                   return (
                     <div key={p.key} className="flex items-center gap-3">
                       <div className="h-8 w-8 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] + "22" }}>
@@ -828,6 +830,9 @@ const PosReports = () => {
                         <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                           <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: COLORS[i % COLORS.length] }} />
                         </div>
+                        <div className="text-[10px] text-muted-foreground mt-1 tabular-nums">
+                          Product ৳{Math.round(prod).toLocaleString()} · Shipping ৳{Math.round(ship).toLocaleString()}
+                        </div>
                       </div>
                       <span className="text-[11px] text-muted-foreground tabular-nums w-12 text-right">{pct.toFixed(1)}%</span>
                     </div>
@@ -836,6 +841,7 @@ const PosReports = () => {
               </div>
             )}
           </div>
+
         </div>
       </section>
 
