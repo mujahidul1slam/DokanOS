@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  DollarSign, ShoppingCart, Truck, Wallet, Download, Receipt, Store, Package, Coins,
+  DollarSign, ShoppingCart, Truck, Wallet, Download, Receipt, Store, Package, Coins, CheckCircle2, Clock,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -210,10 +210,38 @@ const PosReports = () => {
     const prevDelivery = activePrevOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
     const prevOrderCount = activePrevOrders.length;
 
+    const deliveredOrders = activeOrders.filter(o => o.status === "delivered" || o.status === "completed");
+    const deliveredCount = deliveredOrders.length;
+    const deliveredSales = deliveredOrders.reduce((s, o) => s + Number(o.total), 0);
+
+    const pendingOrders = activeOrders.filter(o => {
+      const isPreOrder = o.status.startsWith("pre_order");
+      const isDeliveryOrPickup = o.fulfillment_type === "delivery" || o.fulfillment_type === "pickup";
+      const isNotFinal = o.status !== "delivered" && o.status !== "completed" && o.status !== "cancelled" && o.status !== "returned";
+      return (isPreOrder || isDeliveryOrPickup) && isNotFinal;
+    });
+    const pendingCount = pendingOrders.length;
+    const pendingSales = pendingOrders.reduce((s, o) => s + Number(o.total), 0);
+
+    const prevDeliveredOrders = activePrevOrders.filter(o => o.status === "delivered" || o.status === "completed");
+    const prevDeliveredCount = prevDeliveredOrders.length;
+    const prevDeliveredSales = prevDeliveredOrders.reduce((s, o) => s + Number(o.total), 0);
+
+    const prevPendingOrders = activePrevOrders.filter(o => {
+      const isPreOrder = o.status.startsWith("pre_order");
+      const isDeliveryOrPickup = o.fulfillment_type === "delivery" || o.fulfillment_type === "pickup";
+      const isNotFinal = o.status !== "delivered" && o.status !== "completed" && o.status !== "cancelled" && o.status !== "returned";
+      return (isPreOrder || isDeliveryOrPickup) && isNotFinal;
+    });
+    const prevPendingCount = prevPendingOrders.length;
+    const prevPendingSales = prevPendingOrders.reduce((s, o) => s + Number(o.total), 0);
+
     return {
       totalSales, netSales, deliveryCharge, totalTax, dues, changeGiven,
       orderCount: activeOrders.length,
       prevTotal, prevNet, prevDelivery, prevOrderCount,
+      deliveredCount, deliveredSales, pendingCount, pendingSales,
+      prevDeliveredCount, prevDeliveredSales, prevPendingCount, prevPendingSales,
     };
   }, [activeOrders, activePrevOrders, paidByOrder]);
 
@@ -386,7 +414,7 @@ const PosReports = () => {
       </div>
 
       {/* Primary KPIs requested */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCardDelta
           icon={DollarSign}
           title="Total Sales"
@@ -437,6 +465,22 @@ const PosReports = () => {
           title="Change Given"
           value={`৳${stats.changeGiven.toLocaleString()}`}
           subtitle="Cash returned to customers"
+        />
+        <StatCardDelta
+          icon={CheckCircle2}
+          title="Delivered Orders"
+          value={`৳${stats.deliveredSales.toLocaleString()}`}
+          currentValue={stats.deliveredSales}
+          prevValue={stats.prevDeliveredSales}
+          subtitle={`${stats.deliveredCount} orders delivered`}
+        />
+        <StatCardDelta
+          icon={Clock}
+          title="Pending Delivery/Pickup"
+          value={`৳${stats.pendingSales.toLocaleString()}`}
+          currentValue={stats.pendingSales}
+          prevValue={stats.prevPendingSales}
+          subtitle={`${stats.pendingCount} orders in progress`}
         />
       </div>
 
