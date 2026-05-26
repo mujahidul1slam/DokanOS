@@ -1,86 +1,78 @@
-# Native Storefronts: Enveil & Vincent
 
-Two brand storefronts served from this app via host/path routing, fully wired into the existing dashboard (products, categories, orders, Pathao).
+## Confirmed decisions
 
-## 1. Routing & host model
+1. **Accrual** model for Net Sales (does not change when a due is paid later).
+2. Returns reduce Net Sales on the **return date**.
+3. AR aging buckets: **0–7 / 8–30 / 31–60 / 60+ days**.
+4. Keep the **date-basis toggle** (Order date vs Payment date).
 
-- New `src/storefront/BrandRouter.tsx` runs before `AppRoutes`. Detects brand from `window.location.hostname` (`enveil.*`, `vincent.*`) or `?brand=enveil|vincent`, otherwise serves dashboard.
-- Brand routes (per brand, under `/storefront/:brand/*` and the brand root):
-  - `/` home
-  - `/shop`, `/shop/:categorySlug`
-  - `/product/:slug`
-  - `/cart`, `/checkout`, `/checkout/success/:orderNumber`
-  - `/track`, `/about`, `/contact`, `/policy/:slug`
-- `BrandContext` exposes brand config, theme tokens, currency.
-- `StorefrontLayout` wraps every storefront page with brand nav + footer + theme via `data-brand` attr.
+## Revamp summary (unchanged from previous plan)
 
-## 2. Design system
+Restructure `src/pages/PosReports.tsx` into 4 clearly-labelled sections:
 
-- Tokens layered in `index.css` via `[data-brand="enveil"]` and `[data-brand="vincent"]` blocks. All HSL.
-- **Enveil — Editorial Magazine**: warm `#814037` accent, ivory/cream surfaces, Cormorant Garamond display + Inter body, frosted-glass cards, large serif hero left + featured product right, editorial grid.
-- **Vincent — Dark Cinematic**: pure black/white, kinetic display type (Archivo Black + Inter), liquid-glass capsules, full-screen black hero, scroll-reveal product films.
-- Shared components in `src/storefront/components/`: `GlassPanel`, `LiquidBackdrop`, `BrandButton`, `ProductCard`, `PriceTag`, `QuantityStepper`, `SizeSelector`, `MiniCart`, `Marquee`, `RevealOnScroll`. All consume tokens — no hard-coded colors.
-- Framer Motion for hero animation + scroll reveals.
+1. **Sales (accrual, by order date)** — Gross, Discounts, Returns (by return date), Net Sales, Orders, AOV
+2. **Cash Collected (by payment date)** — totals per method, with callout "Collected today against older orders: ৳X / N orders"
+3. **Fulfillment** — count-only funnel: Walk-in done, Pickup pending, Delivery pending, Delivered, Cancelled, Returned
+4. **Accounts Receivable** — Opening AR, + New credit, − Collections, Closing AR; aging 0–7 / 8–30 / 31–60 / 60+; list of outstanding orders with "Record payment"
 
-## 3. Catalog (manual curation)
+Date-basis toggle controls labels + chart axis; each section internally uses its correct basis so numbers never lie.
 
-New tables (migration):
-- `storefronts` — slug, name, store_id, accent_hex, hero_title/subtitle/image, logo, favicon, about_md, contact, social jsonb, policies jsonb, currency (BDT), is_active.
-- `storefront_products` — storefront_id, product_id, position, is_featured, badge, hero_collection, added_at.
-- `storefront_collections` + `storefront_collection_products`.
-- `storefront_pages` — slug, title, body_md.
+Split into section components under `src/components/pos-reports/`. New queries: payments-in-range joined with parent orders (catches late collections on old orders); outstanding-balance orders across last 12 months for AR aging. No DB schema changes.
 
-RLS: public `SELECT` for active storefronts/products/collections/pages; admin+staff write. Indexes on (storefront_id, position) and (storefront_id, product_id).
+## New requirements (this round)
 
-Seed Enveil + Vincent rows pointing at their respective stores.
+### A. Pickup-from-store orders: prompt for POS payment method when marking dues paid
 
-## 4. Cart & checkout
+**Where:** wherever an order's payment status flips to "paid" — primarily `OrderDetailSheet.tsx` and `DispatchDialog.tsx` mark-as-paid actions. Trigger condition: order has outstanding dues AND `fulfillment_type = 'pickup'` (also apply to `walkin` for symmetry when re-collecting later) AND payment is being collected now.
 
-- Cart in `localStorage`, namespaced per brand (`cart:enveil`, `cart:vincent`).
-- Single-page glass checkout: name, phone, address, Pathao city/zone/area cascading dropdowns (reuses `pathao_cities/zones/areas`).
-- Payment: **Cash on Delivery** (default) or **bKash / Nagad — manual** (optional TrxID + sender number).
-- New edge function `storefront-checkout` (verify_jwt=false, CORS, zod validation):
-  1. Validates payload + verifies product IDs are active/in-stock from `products`/`product_variations`.
-  2. Recomputes subtotal/shipping/total server-side (shipping from `invoice_settings`).
-  3. Upserts `customers` row (`source='online'`, store_id from storefront).
-  4. Inserts `orders` row: `source='online'`, `fulfillment_type='delivery'`, `status='pending'`, `payment_status='unpaid'` (COD) or `'pending_verification'` (manual bKash), Pathao IDs, `amount_to_collect`, snapshot customer fields, `payment_meta` with TrxID/sender if provided.
-  5. Inserts `order_items` + `order_timeline` entry.
-  6. Returns `order_number` for success page.
-- Orders appear in existing dashboard immediately (already RLS-readable to authenticated).
+**Behavior:**
+1. User clicks "Mark as paid" (or "Mark picked up & paid").
+2. A `PayDuePaymentMethodDialog` opens, showing:
+   - Outstanding amount (pre-filled, editable for partial)
+   - Radio/select for payment method: Cash / bKash / Card / Bank (from same list POS uses)
+   - Optional TRX ID (shown only for non-cash)
+   - Optional notes
+3. On confirm:
+   - Insert a row in `order_payments` with `method`, `amount`, `trx_id`, `notes`.
+   - If total paid ≥ order total, update `orders.payment_status = 'paid'`.
+   - Insert `order_timeline` entry: "Due collected via {method} — ৳X by {user}".
+   - The payment correctly attributes to the right method in Cash Collected reporting.
 
-## 5. Dashboard additions
+**Why this matters for reports:** today, dues paid later get attributed to the order's *original* `payment_method` via a heuristic. Forcing an explicit method makes the Cash Collected section exact.
 
-- New sidebar group "Storefronts" with Enveil/Vincent sub-pages.
-- `StorefrontEditor` page per brand: brand profile fields, hero, about, contact, policies, social, logo upload.
-- Curation tab: search existing products → add to storefront, reorder (drag), toggle featured, set badge.
-- Collections tab: create collections, assign products.
-- Pages tab: edit `storefront_pages` (about, shipping, returns, terms).
-- "View live" button opens `/storefront/<brand>/` in new tab.
-- Orders page gets a `source='online'` + storefront filter chip.
+### B. Home-delivery orders: auto-mark dues paid when Pathao delivers
 
-## 6. SEO / PWA / hosting
+**Where:** `supabase/functions/pathao-track/index.ts`, inside the block where Pathao status maps to `delivered`.
 
-- Per-brand `<title>`, meta description, OG image, canonical, JSON-LD `Product` + `Organization`.
-- Lazy-load entire storefront bundle (`React.lazy`) so dashboard isn't bloated.
-- Sitemap + robots via edge functions `storefront-sitemap`, `storefront-robots` (verify_jwt=false).
-- Custom domains added later in Lovable hosting; `BrandRouter` already detects by hostname.
+**Behavior:** when an order transitions to `delivered` via Pathao tracking AND has outstanding balance:
+1. Compute outstanding = `total − Σ order_payments.amount`.
+2. Insert an `order_payments` row:
+   - `method = 'cod'` (Cash on Delivery — Pathao COD remittance)
+   - `amount = outstanding`
+   - `notes = 'Auto-collected on Pathao delivery (consignment {id})'`
+3. Set `orders.payment_status = 'paid'`.
+4. Insert `order_timeline` event: "Due cleared by Pathao COD delivery".
+5. Skip step 2–4 if the order's `payment_method` already indicates fully prepaid online (i.e. no outstanding balance).
 
-## 7. Out of scope (v1)
+This means in reports:
+- Sales section already counted the order on its original date (accrual — unchanged).
+- Cash Collected section now shows that money on the delivery date under "COD" method.
+- AR section correctly decreases.
 
-Online payment gateway (SSLCommerz/bKash API), customer accounts, email/SMS confirmations, multi-currency, i18n.
+**Edge case:** if user later disputes / Pathao returns the order, the existing `returned` mapping should reverse — add a `pos_returns`-style refund entry or back out the auto-payment. For v1, simply log a warning in the timeline; manual reversal by staff. (Confirm if you want auto-reversal too.)
 
-## Files / edge functions / migrations
+### C. Add "COD" as a recognized payment method
 
-```text
-src/storefront/
-  BrandRouter.tsx, BrandContext.tsx, StorefrontLayout.tsx
-  themes/enveil.css, themes/vincent.css
-  pages/{Home,Shop,Product,Cart,Checkout,Success,Track,About,Contact,Policy}.tsx
-  components/{GlassPanel,LiquidBackdrop,BrandButton,ProductCard,...}.tsx
-  lib/{cart.ts, catalog.ts, checkout.ts, brand.ts, seo.ts}
-src/pages/admin/storefronts/{StorefrontList,StorefrontEditor}.tsx
-supabase/functions/{storefront-checkout,storefront-sitemap,storefront-robots}/index.ts
-Migration: 5 tables + RLS + indexes + seed
-```
+Add `cod` to the methods list shown in the Cash Collected section and in the manual due-collection dialog. Display label: "Cash on Delivery (Pathao)". This is distinct from in-store "Cash" so reports show courier remittance separately from drawer cash.
 
-Approve to start building.
+## Technical notes for build phase
+
+- New component: `src/components/orders/PayDuePaymentMethodDialog.tsx`
+- Helper: `src/lib/dueCollection.ts` exporting `recordDuePayment({orderId, method, amount, trxId, notes})` — used by both the dialog and the Pathao auto-flow path (via edge function, which calls the same insert pattern directly in SQL since it can't import client helpers).
+- Edge function update: `pathao-track/index.ts` adds a `recordCodPayment(orderId, amount, consignmentId)` helper using the service-role client.
+- Reports page: `paymentBreakdown` now includes `cod` as a first-class method; no need for the heuristic "dues attributed to first payment method" — that logic gets removed once explicit collection is in place.
+- No schema changes; everything fits existing `order_payments`, `orders.payment_status`, `order_timeline`.
+
+## One thing to confirm
+
+For Pathao `returned` / `delivery failed` after auto-COD-payment: do you want the system to **auto-reverse** the COD payment row, or just **flag it** in the timeline for manual staff action? (Default proposal: flag only, manual reversal — safer.)
