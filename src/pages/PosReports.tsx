@@ -277,15 +277,32 @@ const PosReports = () => {
   }, [activeOrders]);
 
   const paymentBreakdown = useMemo(() => {
-    const map: Record<string, number> = {};
+    // Actual collected per method (sum of order_payments only — excludes dues).
+    const collected: Record<string, number> = {};
     for (const p of activePayments) {
       const m = (p.method || "other").toLowerCase();
-      map[m] = (map[m] || 0) + Number(p.amount);
+      collected[m] = (collected[m] || 0) + Number(p.amount);
     }
-    return Object.entries(map)
-      .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }))
+    // Outstanding due per method — attributed to each order's primary method
+    // (first recorded payment method, falling back to order.payment_method).
+    const due: Record<string, number> = {};
+    for (const o of activeOrders) {
+      const paid = paidByOrder.get(o.id) || 0;
+      const orderDue = Number(o.total) - paid;
+      if (orderDue <= 0) continue;
+      const methods = methodsByOrder.get(o.id) || [];
+      const primary = (methods[0] || o.payment_method || "other").toLowerCase();
+      due[primary] = (due[primary] || 0) + orderDue;
+    }
+    const names = new Set<string>([...Object.keys(collected), ...Object.keys(due)]);
+    return Array.from(names)
+      .map((name) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        value: collected[name] || 0,
+        due: due[name] || 0,
+      }))
       .sort((a, b) => b.value - a.value);
-  }, [activePayments]);
+  }, [activePayments, activeOrders, paidByOrder, methodsByOrder]);
 
 
   const filteredOrders = useMemo(() => {
@@ -369,7 +386,7 @@ const PosReports = () => {
       </div>
 
       {/* Primary KPIs requested */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
         <StatCardDelta
           icon={DollarSign}
           title="Total Sales"
@@ -385,6 +402,12 @@ const PosReports = () => {
           currentValue={stats.netSales}
           prevValue={stats.prevNet}
           subtitle="Excludes delivery, tax, fees"
+        />
+        <StatCardDelta
+          icon={Wallet}
+          title="Sales Collected"
+          value={`৳${Math.max(0, stats.totalSales - stats.dues).toLocaleString()}`}
+          subtitle="Total sales minus outstanding dues"
         />
         <StatCardDelta
           icon={Truck}
@@ -464,12 +487,19 @@ const PosReports = () => {
           </div>
           <div className="mt-2 space-y-1">
             {paymentBreakdown.map((p, i) => (
-              <div key={i} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                  <span className="text-foreground">{p.name}</span>
+              <div key={i} className="flex items-center justify-between text-xs gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                  <span className="text-foreground truncate">{p.name}</span>
                 </div>
-                <span className="font-medium text-foreground">৳{p.value.toLocaleString()}</span>
+                <div className="flex items-center gap-2 shrink-0 tabular-nums">
+                  <span className="font-medium text-foreground">৳{p.value.toLocaleString()}</span>
+                  {p.due > 0 && (
+                    <span className="text-amber-600 dark:text-amber-500" title="Outstanding due">
+                      (Due ৳{p.due.toLocaleString()})
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
