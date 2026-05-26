@@ -861,6 +861,33 @@ const PosReports = () => {
           <FulfillCard icon={CheckCircle2} label="Delivered" value={fulfillStats.deliveryCompleted} tone="success" />
           <FulfillCard icon={AlertTriangle} label="Cancelled / Returned" value={fulfillStats.cancelled + fulfillStats.returned} tone="destructive" />
         </div>
+
+        {/* Delivery shipping reconciliation */}
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-heading text-sm font-medium text-card-foreground flex items-center gap-2">
+              <Truck className="h-4 w-4 text-muted-foreground" /> Delivery Charges (home delivery orders)
+            </h3>
+            <span className="text-[11px] text-muted-foreground">Reconcile against courier remittance</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="rounded-md bg-secondary/40 px-3 py-2">
+              <div className="text-muted-foreground text-[11px]">Shipping Billed</div>
+              <div className="font-semibold tabular-nums text-foreground">৳{fulfillStats.deliveryShippingBilled.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground">on delivery orders in period</div>
+            </div>
+            <div className="rounded-md bg-secondary/40 px-3 py-2">
+              <div className="text-muted-foreground text-[11px]">Shipping Collected (period)</div>
+              <div className="font-semibold tabular-nums text-foreground">৳{Math.round(cashStats.shippingCollected).toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground">allocated from all cash received</div>
+            </div>
+            <div className="rounded-md bg-secondary/40 px-3 py-2">
+              <div className="text-muted-foreground text-[11px]">Shipping Outstanding</div>
+              <div className="font-semibold tabular-nums text-foreground">৳{Math.round(fulfillStats.deliveryShippingOutstanding).toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground">unpaid portion attributable to shipping</div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* =================== ACCOUNTS RECEIVABLE =================== */}
