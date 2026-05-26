@@ -277,15 +277,32 @@ const PosReports = () => {
   }, [activeOrders]);
 
   const paymentBreakdown = useMemo(() => {
-    const map: Record<string, number> = {};
+    // Actual collected per method (sum of order_payments only — excludes dues).
+    const collected: Record<string, number> = {};
     for (const p of activePayments) {
       const m = (p.method || "other").toLowerCase();
-      map[m] = (map[m] || 0) + Number(p.amount);
+      collected[m] = (collected[m] || 0) + Number(p.amount);
     }
-    return Object.entries(map)
-      .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }))
+    // Outstanding due per method — attributed to each order's primary method
+    // (first recorded payment method, falling back to order.payment_method).
+    const due: Record<string, number> = {};
+    for (const o of activeOrders) {
+      const paid = paidByOrder.get(o.id) || 0;
+      const orderDue = Number(o.total) - paid;
+      if (orderDue <= 0) continue;
+      const methods = methodsByOrder.get(o.id) || [];
+      const primary = (methods[0] || o.payment_method || "other").toLowerCase();
+      due[primary] = (due[primary] || 0) + orderDue;
+    }
+    const names = new Set<string>([...Object.keys(collected), ...Object.keys(due)]);
+    return Array.from(names)
+      .map((name) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        value: collected[name] || 0,
+        due: due[name] || 0,
+      }))
       .sort((a, b) => b.value - a.value);
-  }, [activePayments]);
+  }, [activePayments, activeOrders, paidByOrder, methodsByOrder]);
 
 
   const filteredOrders = useMemo(() => {
