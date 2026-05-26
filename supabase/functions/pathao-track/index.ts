@@ -233,6 +233,53 @@ Deno.serve(async (req) => {
           // Mirror status update into WooCommerce notes timeline (no-op for non-Woo orders)
           await postWooNote(order.id, `[DokanOS] Pathao courier status: ${pathaoStatus} — by Pathao Tracking`);
 
+          // When Pathao delivers a home-delivery order with outstanding balance,
+          // auto-record a COD payment so AR and Cash Collected reports update.
+          if (mappedStatus === "delivered") {
+            try {
+              const { data: ord } = await sb
+                .from("orders")
+                .select("total, payment_status")
+                .eq("id", order.id)
+                .single();
+              if (ord) {
+                const { data: pays } = await sb
+                  .from("order_payments")
+                  .select("amount")
+                  .eq("order_id", order.id);
+                const paid = (pays || []).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+                const outstanding = Math.max(0, Number(ord.total || 0) - paid);
+                if (outstanding > 0.0001) {
+                  await sb.from("order_payments").insert({
+                    order_id: order.id,
+                    method: "cod",
+                    amount: outstanding,
+                    notes: `Auto-collected on Pathao delivery (consignment ${order.consignment_id})`,
+                  });
+                  await sb.from("orders").update({
+                    payment_status: "paid",
+                    amount_to_collect: 0,
+                  }).eq("id", order.id);
+                  await sb.from("order_timeline").insert({
+                    order_id: order.id,
+                    event: "payment_logged",
+                    description: `Due of ৳${outstanding.toLocaleString()} auto-cleared via Pathao COD delivery`,
+                    metadata: {
+                      method: "cod",
+                      amount: outstanding,
+                      source: "pathao_track",
+                      consignment_id: order.consignment_id,
+                      user_name: "Pathao Tracking",
+                    },
+                  });
+                  await postWooNote(order.id, `[DokanOS] COD ৳${outstanding.toLocaleString()} collected on delivery — by Pathao Tracking`);
+                }
+              }
+            } catch (e) {
+              console.warn(`COD auto-clear failed for ${order.id}:`, e);
+            }
+          }
+
           // Once the Pathao cycle has terminated (delivered/returned), close out the
           // linked WooCommerce order — woo-push maps both to "completed".
           if (mappedStatus === "delivered" || mappedStatus === "returned") {
