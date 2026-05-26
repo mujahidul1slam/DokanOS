@@ -100,7 +100,7 @@ const PosReports = () => {
       }
 
       if (from) curQ = curQ.gte("created_at", from.toISOString());
-      if (to && datePreset === "custom") curQ = curQ.lte("created_at", to.toISOString());
+      if (to) curQ = curQ.lte("created_at", to.toISOString());
 
       if (prevFrom && from) {
         prevQ = prevQ.gte("created_at", prevFrom.toISOString()).lt("created_at", from.toISOString());
