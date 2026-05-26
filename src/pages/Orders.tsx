@@ -1442,6 +1442,16 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         variant="destructive"
         onConfirm={() => { handleTrashOrders(pendingTrashIds); setTrashConfirmOpen(false); }}
       />
+
+      <DuePaymentDialog
+        open={duePayOpen}
+        onOpenChange={setDuePayOpen}
+        defaultAmount={duePayContext.totalDue}
+        bulkMode={duePayContext.ids.length > 1}
+        bulkCount={duePayContext.ids.length}
+        title={duePayContext.ids.length > 1 ? "Collect Dues — Bulk Mark Paid" : "Collect Due"}
+        onConfirm={handleConfirmBulkDuePayment}
+      />
     </div>
   );
 };
