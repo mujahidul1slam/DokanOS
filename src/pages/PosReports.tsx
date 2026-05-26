@@ -414,7 +414,7 @@ const PosReports = () => {
       </div>
 
       {/* Primary KPIs requested */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCardDelta
           icon={DollarSign}
           title="Total Sales"
@@ -465,6 +465,22 @@ const PosReports = () => {
           title="Change Given"
           value={`৳${stats.changeGiven.toLocaleString()}`}
           subtitle="Cash returned to customers"
+        />
+        <StatCardDelta
+          icon={CheckCircle2}
+          title="Delivered Orders"
+          value={`৳${stats.deliveredSales.toLocaleString()}`}
+          currentValue={stats.deliveredSales}
+          prevValue={stats.prevDeliveredSales}
+          subtitle={`${stats.deliveredCount} orders delivered`}
+        />
+        <StatCardDelta
+          icon={Clock}
+          title="Pending Delivery/Pickup"
+          value={`৳${stats.pendingSales.toLocaleString()}`}
+          currentValue={stats.pendingSales}
+          prevValue={stats.prevPendingSales}
+          subtitle={`${stats.pendingCount} orders in progress`}
         />
       </div>
 
