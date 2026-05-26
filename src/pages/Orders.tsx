@@ -58,6 +58,8 @@ import {
 } from "@/lib/preOrderSettings";
 import { Settings as SettingsIcon } from "lucide-react";
 import PreOrderCategoriesDialog from "@/components/settings/PreOrderCategoriesDialog";
+import DuePaymentDialog, { type DuePaymentResult } from "@/components/orders/DuePaymentDialog";
+import { recordDuePayment } from "@/lib/dueCollection";
 
 interface OrderRow {
   id: string;
@@ -147,6 +149,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   // Trash confirm
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
   const [pendingTrashIds, setPendingTrashIds] = useState<string[]>([]);
+  // Due payment dialog (bulk Mark Paid)
+  const [duePayOpen, setDuePayOpen] = useState(false);
+  const [duePayContext, setDuePayContext] = useState<{ ids: string[]; totalDue: number }>({ ids: [], totalDue: 0 });
 
   const { toast } = useToast();
 
@@ -540,20 +545,57 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     } finally { setBulkUpdating(false); }
   };
 
-  /* ─── Bulk Mark Paid ─── */
+  /* ─── Bulk Mark Paid ─── Opens dialog to capture payment method, then inserts
+   * proper order_payments rows so reporting attributes the collection correctly. */
   const handleBulkMarkPaid = async () => {
     if (selected.size === 0) return;
+    const ids = Array.from(selected);
+    // Compute total outstanding for the selection (uses paid totals from orders)
+    const { data: pays } = await supabase
+      .from("order_payments")
+      .select("order_id, amount")
+      .in("order_id", ids);
+    const paidMap = new Map<string, number>();
+    (pays || []).forEach((p: any) => paidMap.set(p.order_id, (paidMap.get(p.order_id) || 0) + Number(p.amount)));
+    const totalDue = orders
+      .filter((o) => ids.includes(o.id))
+      .reduce((s, o) => s + Math.max(0, Number(o.total) - (paidMap.get(o.id) || 0)), 0);
+    if (totalDue <= 0) {
+      toast({ title: "Nothing due — these orders are already fully paid" });
+      return;
+    }
+    setDuePayContext({ ids, totalDue });
+    setDuePayOpen(true);
+  };
+
+  const handleConfirmBulkDuePayment = async (result: DuePaymentResult) => {
+    const { ids } = duePayContext;
     setBulkUpdating(true);
     try {
-      const ids = Array.from(selected);
-      await supabase.from("orders").update({ payment_status: "paid", amount_to_collect: 0 }).in("id", ids);
-      const timelineEntries = ids.map((id) => ({
-        order_id: id, event: "payment_updated", description: "Marked as Paid",
-      }));
-      await addOrderTimeline(timelineEntries);
-      await logAction("update", "order_payment_bulk", undefined, { ids, to: "paid" });
-      // Woo notes auto-posted via addOrderTimeline above
-      toast({ title: `${ids.length} order(s) marked Paid` });
+      // Load current paid totals once
+      const { data: pays } = await supabase
+        .from("order_payments")
+        .select("order_id, amount")
+        .in("order_id", ids);
+      const paidMap = new Map<string, number>();
+      (pays || []).forEach((p: any) => paidMap.set(p.order_id, (paidMap.get(p.order_id) || 0) + Number(p.amount)));
+
+      for (const id of ids) {
+        const ord = orders.find((o) => o.id === id);
+        if (!ord) continue;
+        const due = Math.max(0, Number(ord.total) - (paidMap.get(id) || 0));
+        if (due <= 0) continue;
+        await recordDuePayment({
+          orderId: id,
+          orderNumber: ord.order_number,
+          method: result.method,
+          amount: due,
+          trxId: result.trxId,
+          notes: result.notes || "Bulk Mark Paid",
+        });
+      }
+      await logAction("update", "order_payment_bulk", undefined, { ids, method: result.method, to: "paid" });
+      toast({ title: `${ids.length} order(s) marked Paid via ${result.method}` });
       setSelected(new Set());
       loadOrders();
     } catch {
@@ -1399,6 +1441,16 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
         confirmLabel="Move to Trash"
         variant="destructive"
         onConfirm={() => { handleTrashOrders(pendingTrashIds); setTrashConfirmOpen(false); }}
+      />
+
+      <DuePaymentDialog
+        open={duePayOpen}
+        onOpenChange={setDuePayOpen}
+        defaultAmount={duePayContext.totalDue}
+        bulkMode={duePayContext.ids.length > 1}
+        bulkCount={duePayContext.ids.length}
+        title={duePayContext.ids.length > 1 ? "Collect Dues — Bulk Mark Paid" : "Collect Due"}
+        onConfirm={handleConfirmBulkDuePayment}
       />
     </div>
   );
