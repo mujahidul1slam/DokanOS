@@ -487,12 +487,19 @@ const PosReports = () => {
           </div>
           <div className="mt-2 space-y-1">
             {paymentBreakdown.map((p, i) => (
-              <div key={i} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                  <span className="text-foreground">{p.name}</span>
+              <div key={i} className="flex items-center justify-between text-xs gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                  <span className="text-foreground truncate">{p.name}</span>
                 </div>
-                <span className="font-medium text-foreground">৳{p.value.toLocaleString()}</span>
+                <div className="flex items-center gap-2 shrink-0 tabular-nums">
+                  <span className="font-medium text-foreground">৳{p.value.toLocaleString()}</span>
+                  {p.due > 0 && (
+                    <span className="text-amber-600 dark:text-amber-500" title="Outstanding due">
+                      (Due ৳{p.due.toLocaleString()})
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
