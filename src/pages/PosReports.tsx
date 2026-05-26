@@ -280,6 +280,9 @@ const PosReports = () => {
     const discounts = activeOrders.reduce((s, o) => s + Number(o.discount || 0), 0);
     const returnsTotal = returnsInPeriod.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
     const net = gross - discounts - returnsTotal;
+    const shipping = activeOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
+    const tax = activeOrders.reduce((s, o) => s + Number(o.tax_amount || 0), 0);
+    const totalInvoiced = activeOrders.reduce((s, o) => s + Number(o.total || 0), 0) - returnsTotal;
 
     const prevGross = activePrevOrders.reduce((s, o) => s + Number(o.subtotal || 0), 0);
     const prevDiscounts = activePrevOrders.reduce((s, o) => s + Number(o.discount || 0), 0);
@@ -289,8 +292,7 @@ const PosReports = () => {
       gross, discounts, returnsTotal, net,
       orderCount: activeOrders.length,
       prevNet, prevOrderCount: activePrevOrders.length,
-      shipping: activeOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0),
-      tax: activeOrders.reduce((s, o) => s + Number(o.tax_amount || 0), 0),
+      shipping, tax, totalInvoiced,
     };
   }, [activeOrders, activePrevOrders, returnsInPeriod]);
 
@@ -299,18 +301,42 @@ const PosReports = () => {
     const inPeriodOrderIds = new Set(orders.map((o) => o.id));
     let collectedTotal = 0;
     let onPriorOrders = 0;
+    let shippingCollected = 0;
+    let productCollected = 0;
+    let unallocated = 0;
     const byMethod: Record<string, number> = {};
+    const byMethodProduct: Record<string, number> = {};
+    const byMethodShipping: Record<string, number> = {};
     for (const p of paymentsInPeriod) {
       const amt = Number(p.amount);
       collectedTotal += amt;
       const m = (p.method || "other").toLowerCase();
       byMethod[m] = (byMethod[m] || 0) + amt;
       if (!inPeriodOrderIds.has(p.order_id)) onPriorOrders += amt;
+
+      const alloc = orderAllocMap.get(p.order_id);
+      if (alloc && alloc.total > 0) {
+        const shipShare = (alloc.shipping || 0) / alloc.total;
+        const shipPart = amt * shipShare;
+        const prodPart = amt - shipPart;
+        shippingCollected += shipPart;
+        productCollected += prodPart;
+        byMethodShipping[m] = (byMethodShipping[m] || 0) + shipPart;
+        byMethodProduct[m] = (byMethodProduct[m] || 0) + prodPart;
+      } else {
+        unallocated += amt;
+        productCollected += amt;
+        byMethodProduct[m] = (byMethodProduct[m] || 0) + amt;
+      }
     }
     const refundsTotal = returnsInPeriod.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
     const netCash = collectedTotal - refundsTotal;
-    return { collectedTotal, onPriorOrders, byMethod, refundsTotal, netCash };
-  }, [paymentsInPeriod, orders, returnsInPeriod]);
+    return {
+      collectedTotal, onPriorOrders, byMethod, refundsTotal, netCash,
+      shippingCollected, productCollected, unallocated,
+      byMethodProduct, byMethodShipping,
+    };
+  }, [paymentsInPeriod, orders, returnsInPeriod, orderAllocMap]);
 
   const cashByMethod = useMemo(() => {
     return Object.entries(cashStats.byMethod)
@@ -329,6 +355,8 @@ const PosReports = () => {
       cancelled: 0,
       returned: 0,
     };
+    let deliveryShippingBilled = 0;
+    let deliveryShippingOutstanding = 0;
     for (const o of orders) {
       const ft = (o.fulfillment_type || "walkin").toLowerCase();
       const st = (o.status || "").toLowerCase();
@@ -343,12 +371,19 @@ const PosReports = () => {
       } else if (ft === "delivery") {
         if (done) buckets.deliveryCompleted++;
         else buckets.deliveryPending++;
+        const ship = Number(o.shipping_cost || 0);
+        deliveryShippingBilled += ship;
+        const paid = paidByOrder.get(o.id) || 0;
+        const outstanding = Math.max(0, Number(o.total) - paid);
+        const total = Number(o.total) || 0;
+        // shipping portion still outstanding (proportional)
+        if (total > 0) deliveryShippingOutstanding += outstanding * (ship / total);
       } else {
         if (done) buckets.walkinDelivered++;
       }
     }
-    return buckets;
-  }, [orders]);
+    return { ...buckets, deliveryShippingBilled, deliveryShippingOutstanding };
+  }, [orders, paidByOrder]);
 
   // ============ ACCOUNTS RECEIVABLE ============
   const arStats = useMemo(() => {
