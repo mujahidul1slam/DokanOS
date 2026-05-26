@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  DollarSign, ShoppingCart, Truck, Wallet, Download, Receipt, Store, Package, Coins,
+  DollarSign, ShoppingCart, Truck, Wallet, Download, Receipt, Store, Package, Coins, CheckCircle2, Clock,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
