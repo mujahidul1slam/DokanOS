@@ -404,6 +404,12 @@ const PosReports = () => {
           subtitle="Excludes delivery, tax, fees"
         />
         <StatCardDelta
+          icon={Wallet}
+          title="Sales Collected"
+          value={`৳${Math.max(0, stats.totalSales - stats.dues).toLocaleString()}`}
+          subtitle="Total sales minus outstanding dues"
+        />
+        <StatCardDelta
           icon={Truck}
           title="Delivery Collected"
           value={`৳${stats.deliveryCharge.toLocaleString()}`}
