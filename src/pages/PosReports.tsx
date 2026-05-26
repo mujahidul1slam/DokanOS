@@ -602,9 +602,29 @@ const PosReports = () => {
             icon={TrendingUp} title="Net Sales"
             value={`৳${salesStats.net.toLocaleString()}`}
             currentValue={salesStats.net} prevValue={salesStats.prevNet}
-            subtitle="Gross − Discounts − Returns"
+            subtitle="Gross − Discounts − Returns (products only)"
           />
         </div>
+
+        {/* Secondary line: shipping + tax + total invoiced */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCardDelta
+            icon={Truck} title="Shipping Charged"
+            value={`৳${salesStats.shipping.toLocaleString()}`}
+            subtitle="Delivery fees billed to customers"
+          />
+          <StatCardDelta
+            icon={Receipt} title="Tax"
+            value={`৳${salesStats.tax.toLocaleString()}`}
+            subtitle="Tax applied on orders"
+          />
+          <StatCardDelta
+            icon={DollarSign} title="Total Invoiced"
+            value={`৳${salesStats.totalInvoiced.toLocaleString()}`}
+            subtitle="Net Sales + Shipping + Tax (− Returns)"
+          />
+        </div>
+
 
         {/* Trend + top products + sales by store */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
