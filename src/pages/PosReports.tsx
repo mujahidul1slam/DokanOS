@@ -121,8 +121,8 @@ const PosReports = () => {
       const ids = curData.map((o) => o.id);
       if (ids.length > 0) {
         const [paymentsRes, itemsRes] = await Promise.all([
-          supabase.from("order_payments").select("method, amount, order_id").in("order_id", ids),
-          supabase.from("order_items").select("quantity, order_id, product_name, line_total, product_id").in("order_id", ids),
+          supabase.from("order_payments").select("method, amount, order_id").in("order_id", ids).limit(50000),
+          supabase.from("order_items").select("quantity, order_id, product_name, line_total, product_id").in("order_id", ids).limit(50000),
         ]);
         setPayments((paymentsRes.data || []) as PaymentRow[]);
         const itemRows = (itemsRes.data || []) as ItemRow[];
