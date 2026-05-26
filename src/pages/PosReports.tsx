@@ -91,8 +91,8 @@ const PosReports = () => {
 
       const baseSelect = "id, order_number, total, subtotal, discount, shipping_cost, tax_amount, status, payment_status, payment_method, created_at, customer_name, customer_phone, customer_address, customer_city, customer_email, salesperson_name, store_id, fulfillment_type";
 
-      let curQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).order("created_at", { ascending: false });
-      let prevQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null);
+      let curQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).order("created_at", { ascending: false }).limit(10000);
+      let prevQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).limit(10000);
 
       if (storeFilter !== "all") {
         curQ = curQ.eq("store_id", storeFilter);
