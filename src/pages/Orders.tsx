@@ -58,6 +58,8 @@ import {
 } from "@/lib/preOrderSettings";
 import { Settings as SettingsIcon } from "lucide-react";
 import PreOrderCategoriesDialog from "@/components/settings/PreOrderCategoriesDialog";
+import DuePaymentDialog, { type DuePaymentResult } from "@/components/orders/DuePaymentDialog";
+import { recordDuePayment } from "@/lib/dueCollection";
 
 interface OrderRow {
   id: string;
