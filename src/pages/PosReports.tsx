@@ -210,10 +210,38 @@ const PosReports = () => {
     const prevDelivery = activePrevOrders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
     const prevOrderCount = activePrevOrders.length;
 
+    const deliveredOrders = activeOrders.filter(o => o.status === "delivered" || o.status === "completed");
+    const deliveredCount = deliveredOrders.length;
+    const deliveredSales = deliveredOrders.reduce((s, o) => s + Number(o.total), 0);
+
+    const pendingOrders = activeOrders.filter(o => {
+      const isPreOrder = o.status.startsWith("pre_order");
+      const isDeliveryOrPickup = o.fulfillment_type === "delivery" || o.fulfillment_type === "pickup";
+      const isNotFinal = o.status !== "delivered" && o.status !== "completed" && o.status !== "cancelled" && o.status !== "returned";
+      return (isPreOrder || isDeliveryOrPickup) && isNotFinal;
+    });
+    const pendingCount = pendingOrders.length;
+    const pendingSales = pendingOrders.reduce((s, o) => s + Number(o.total), 0);
+
+    const prevDeliveredOrders = activePrevOrders.filter(o => o.status === "delivered" || o.status === "completed");
+    const prevDeliveredCount = prevDeliveredOrders.length;
+    const prevDeliveredSales = prevDeliveredOrders.reduce((s, o) => s + Number(o.total), 0);
+
+    const prevPendingOrders = activePrevOrders.filter(o => {
+      const isPreOrder = o.status.startsWith("pre_order");
+      const isDeliveryOrPickup = o.fulfillment_type === "delivery" || o.fulfillment_type === "pickup";
+      const isNotFinal = o.status !== "delivered" && o.status !== "completed" && o.status !== "cancelled" && o.status !== "returned";
+      return (isPreOrder || isDeliveryOrPickup) && isNotFinal;
+    });
+    const prevPendingCount = prevPendingOrders.length;
+    const prevPendingSales = prevPendingOrders.reduce((s, o) => s + Number(o.total), 0);
+
     return {
       totalSales, netSales, deliveryCharge, totalTax, dues, changeGiven,
       orderCount: activeOrders.length,
       prevTotal, prevNet, prevDelivery, prevOrderCount,
+      deliveredCount, deliveredSales, pendingCount, pendingSales,
+      prevDeliveredCount, prevDeliveredSales, prevPendingCount, prevPendingSales,
     };
   }, [activeOrders, activePrevOrders, paidByOrder]);
 
