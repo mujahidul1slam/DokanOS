@@ -128,8 +128,13 @@ const PosReports = () => {
       let arQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null)
         .neq("payment_status", "paid").neq("status", "cancelled")
         .gte("created_at", arWindowStart).order("created_at", { ascending: true }).limit(10000);
-      // payments in period (by payment created_at)
-      let payInPeriodQ = supabase.from("order_payments").select("id, method, amount, order_id, created_at, notes").limit(20000);
+      // payments in period (by payment created_at) - filtered for POS and non-cancelled orders
+      let payInPeriodQ = supabase.from("order_payments")
+        .select("id, method, amount, order_id, created_at, notes, orders!inner(source, status, store_id)")
+        .eq("orders.source", "pos")
+        .neq("orders.status", "cancelled")
+        .is("orders.deleted_at", null)
+        .limit(20000);
       // returns in period (by return created_at)
       let retInPeriodQ = supabase.from("pos_returns").select("id, order_id, refund_amount, refund_method, created_at, store_id").limit(10000);
 
@@ -149,6 +154,9 @@ const PosReports = () => {
         payInPeriodQ = payInPeriodQ.lte("created_at", to.toISOString());
         retInPeriodQ = retInPeriodQ.lte("created_at", to.toISOString());
       }
+      if (storeFilter !== "all") {
+        payInPeriodQ = payInPeriodQ.eq("orders.store_id", storeFilter);
+      }
       if (prevFrom && from) {
         prevQ = prevQ.gte("created_at", prevFrom.toISOString()).lt("created_at", from.toISOString());
       } else {
@@ -166,7 +174,15 @@ const PosReports = () => {
       setPrevOrders((prevRes.data || []) as PosOrder[]);
       setArOrders(arData);
       setStores((storesRes.data || []) as StoreRow[]);
-      const payInPeriod = (payRes.data || []) as PaymentRow[];
+      const payInPeriodRaw = (payRes.data || []) as any[];
+      const payInPeriod: PaymentRow[] = payInPeriodRaw.map(p => ({
+        id: p.id,
+        method: p.method,
+        amount: p.amount,
+        order_id: p.order_id,
+        created_at: p.created_at,
+        notes: p.notes
+      }));
       setPaymentsInPeriod(payInPeriod);
       setReturnsInPeriod((retRes.data || []) as ReturnRow[]);
 
