@@ -936,28 +936,19 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               onSelectProduct={(p) => {
                 const isVar = variations.some(v => v.product_id === p.id);
                 if (isVar) {
-                   toast.info("Opening variation selection...");
-                   // Since we want to keep it simple but functional, we could show the variations 
-                   // in a sub-dialog or just pick the first one if we don't have the variation modal yet.
-                   // For now, let's just show a toast or we can pick first variation if available.
-                   const firstVar = variations.find(v => v.product_id === p.id);
-                   if (firstVar) {
-                     addItem({
-                       id: firstVar.id,
-                       productId: p.id,
-                       variationId: firstVar.id,
-                       name: p.name,
-                       variationLabel: firstVar.name,
-                       sku: firstVar.sku || p.sku,
-                       price: firstVar.price,
-                     });
-                   }
+                   setSelectedProduct(p);
+                   setShowVariationModal(true);
                 } else {
                   addItem({
                     id: p.id,
                     productId: p.id,
                     name: p.name,
                     sku: p.sku,
+                    price: p.price,
+                  });
+                }
+              }}
+
                     price: p.price,
                   });
                 }
