@@ -912,8 +912,56 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         </>
       }
     >
-      <div className="space-y-4">
-          {/* AI parse-from-text — always visible */}
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Left Column: Product Selection */}
+        <div className="flex-1 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Package className="h-4 w-4 text-primary" />
+              Product Selection
+            </h3>
+          </div>
+
+          <div className="h-[500px] border border-border rounded-md overflow-hidden bg-background">
+            <MiniProductCatalog
+              products={products as any}
+              categories={categories}
+              productCatMap={productCatMap}
+              stores={stores}
+              onSelectProduct={(p) => {
+                const isVar = variations.some(v => v.product_id === p.id);
+                if (isVar) {
+                   toast.info("Opening variation selection...");
+                   // Since we want to keep it simple but functional, we could show the variations 
+                   // in a sub-dialog or just pick the first one if we don't have the variation modal yet.
+                   // For now, let's just show a toast or we can pick first variation if available.
+                   const firstVar = variations.find(v => v.product_id === p.id);
+                   if (firstVar) {
+                     addItem({
+                       id: firstVar.id,
+                       productId: p.id,
+                       variationId: firstVar.id,
+                       name: p.name,
+                       variationLabel: firstVar.name,
+                       sku: firstVar.sku || p.sku,
+                       price: firstVar.price,
+                     });
+                   }
+                } else {
+                  addItem({
+                    id: p.id,
+                    productId: p.id,
+                    name: p.name,
+                    sku: p.sku,
+                    price: p.price,
+                  });
+                }
+              }}
+              onAddCustomItem={() => setCustomItemOpen(true)}
+            />
+          </div>
+
+          {/* AI parse-from-text — relocated under catalog */}
           <div className="rounded-md border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -938,23 +986,21 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                   }
                 }
               }}
-              placeholder={"Paste anything — e.g.\nName: Rahim\n01712345678\nHouse 12, Road 5, Mirpur 10, Dhaka\n2pcs blue panjabi size L\nShipping 80, due 1200\n\n📋 Tip: paste a screenshot directly here (Ctrl/Cmd+V)"}
-              rows={4}
-              className="text-sm"
+              placeholder={"Paste message or screenshot (Ctrl+V)..."}
+              rows={3}
+              className="text-sm bg-background"
             />
-            <p className="text-[11px] text-muted-foreground">
-              Tip: paste a screenshot directly (Ctrl/Cmd+V) or upload one below.
-            </p>
             <div className="flex items-center justify-between gap-2">
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 disabled={aiParsing}
+                className="h-8 text-xs"
                 onClick={() => document.getElementById("ai-screenshot-input")?.click()}
               >
                 <ImageIcon className="h-3.5 w-3.5 mr-1.5" />
-                Upload screenshot
+                Screenshot
               </Button>
               <input
                 id="ai-screenshot-input"
@@ -967,148 +1013,92 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                   e.target.value = "";
                 }}
               />
-              <Button type="button" size="sm" onClick={handleAiParse} disabled={aiParsing || aiText.trim().length < 5}>
+              <Button type="button" size="sm" onClick={handleAiParse} disabled={aiParsing || aiText.trim().length < 5} className="h-8 text-xs">
                 {aiParsing ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
-                Parse with AI
+                Parse
               </Button>
             </div>
           </div>
+        </div>
 
-          {/* Product Search & Catalog */}
-          <div className="h-[400px] border border-border rounded-md overflow-hidden bg-background">
-            <MiniProductCatalog
-              products={products as any}
-              categories={categories}
-              productCatMap={productCatMap}
-              stores={stores}
-              onSelectProduct={(p) => {
-                const isVar = variations.some(v => v.product_id === p.id);
-                if (isVar) {
-                   // This simplified version skips the variation modal for now or needs to open it
-                   // Add logic to open variation modal here
-                   toast.info("Variation selection for Add Orders not yet integrated");
-                } else {
-                  addItem({
-                    id: p.id,
-                    productId: p.id,
-                    name: p.name,
-                    sku: p.sku,
-                    price: p.price,
-                  });
-                }
-              }}
-              onAddCustomItem={() => setCustomItemOpen(true)}
-            />
+        {/* Right Column: Customer & Order Details */}
+        <div className="w-full lg:w-[450px] space-y-4">
+          <div className="flex items-center gap-2">
+             <h3 className="text-sm font-semibold">Order Details</h3>
+             {items.length > 0 && <Badge variant="secondary">{items.length} items</Badge>}
           </div>
 
-
-          {/* Cart Items */}
+          {/* Cart Items List */}
           {items.length > 0 && (
-            <div className="rounded-md border border-border">
-              <div className="hidden sm:grid px-3 py-2 bg-secondary text-xs font-medium text-muted-foreground grid-cols-[1fr_80px_100px_80px_32px]">
-                <span>Product</span><span className="text-right">Price</span><span className="text-center">Qty</span><span className="text-right">Total</span><span></span>
-              </div>
+            <div className="rounded-md border border-border bg-muted/30 max-h-[300px] overflow-y-auto">
               {items.map(item => {
                 const groups = groupsByProduct[item.productId] || [];
                 const showMeasureToggle = measurementsEnabled && groups.length > 0;
                 return (
-                  <div key={item.uid} className="border-t border-border">
-                    {/* Desktop: single-row grid */}
-                    <div className="hidden sm:grid px-3 py-2 grid-cols-[1fr_80px_100px_80px_32px] items-center text-sm">
-                      <div className="truncate">
-                        <span className="font-medium">{item.name}</span>
-                        {item.variationLabel && <span className="ml-1 text-xs text-muted-foreground">({item.variationLabel})</span>}
+                  <div key={item.uid} className="border-b border-border last:border-0 p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium leading-tight truncate">{item.name}</div>
+                        {item.variationLabel && <div className="text-[11px] text-muted-foreground mt-0.5">{item.variationLabel}</div>}
+                        <div className="text-[11px] text-primary mt-1 font-semibold">৳{item.price.toLocaleString()}</div>
                       </div>
-                      <span className="text-right text-muted-foreground">৳{item.price.toLocaleString()}</span>
-                      <div className="flex items-center justify-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => updateQty(item.uid, item.qty - 1)}><Minus className="h-3.5 w-3.5" /></Button>
-                        <span className="w-6 text-center">{item.qty}</span>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => updateQty(item.uid, item.qty + 1)}><Plus className="h-3.5 w-3.5" /></Button>
-                      </div>
-                      <span className="text-right font-medium">৳{(item.price * item.qty).toLocaleString()}</span>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeItem(item.uid)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
-                    </div>
-                    {/* Mobile: stacked card */}
-                    <div className="sm:hidden px-3 py-2.5 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium leading-tight">{item.name}</div>
-                          {item.variationLabel && <div className="text-xs text-muted-foreground mt-0.5">{item.variationLabel}</div>}
-                          <div className="text-xs text-muted-foreground mt-1">৳{item.price.toLocaleString()} each</div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center border border-border rounded-md bg-background">
+                          <button onClick={() => updateQty(item.uid, item.qty - 1)} className="p-1 hover:bg-muted"><Minus className="h-3 w-3" /></button>
+                          <span className="px-2 text-xs font-medium">{item.qty}</span>
+                          <button onClick={() => updateQty(item.uid, item.qty + 1)} className="p-1 hover:bg-muted"><Plus className="h-3 w-3" /></button>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 -mr-1 shrink-0" onClick={() => removeItem(item.uid)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive" onClick={() => removeItem(item.uid)}>
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 rounded-md border border-border">
-                          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => updateQty(item.uid, item.qty - 1)}><Minus className="h-4 w-4" /></Button>
-                          <span className="w-8 text-center text-sm font-medium">{item.qty}</span>
-                          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => updateQty(item.uid, item.qty + 1)}><Plus className="h-4 w-4" /></Button>
-                        </div>
-                        <span className="text-sm font-semibold">৳{(item.price * item.qty).toLocaleString()}</span>
                       </div>
                     </div>
 
                     {showMeasureToggle && (
-                      <div className="px-3 pb-2 space-y-2">
-                        <div className="flex items-center justify-between rounded-md bg-secondary/50 px-2.5 py-1.5">
-                          <div className="flex items-center gap-2">
-                            <Ruler className="h-3.5 w-3.5 text-primary" />
-                            <span className="text-xs font-medium">Custom Measurements</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {groups.length === 1 ? groups[0].name : `${groups.length} groups`}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {item.customMeasurements && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => updateItem(item.uid, { measurementsExpanded: !item.measurementsExpanded })}
-                              >
-                                {item.measurementsExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                              </Button>
-                            )}
-                            <Switch
-                              checked={!!item.customMeasurements}
-                              onCheckedChange={(checked) =>
-                                updateItem(item.uid, { customMeasurements: checked, measurementsExpanded: checked })
-                              }
-                            />
-                          </div>
+                      <div className="pt-1">
+                        <div className="flex items-center justify-between rounded bg-secondary/50 px-2 py-1">
+                          <span className="text-[10px] font-medium flex items-center gap-1">
+                            <Ruler className="h-3 w-3" /> Measurements
+                          </span>
+                          <Switch
+                            size="sm"
+                            checked={!!item.customMeasurements}
+                            onCheckedChange={(checked) =>
+                              updateItem(item.uid, { customMeasurements: checked, measurementsExpanded: checked })
+                            }
+                          />
                         </div>
 
+                        {item.customMeasurements && (
+                           <Button
+                             variant="ghost"
+                             size="sm"
+                             className="w-full h-6 text-[10px] mt-1"
+                             onClick={() => updateItem(item.uid, { measurementsExpanded: !item.measurementsExpanded })}
+                           >
+                             {item.measurementsExpanded ? "Hide measurement details" : "Edit measurement details"}
+                             {item.measurementsExpanded ? <ChevronUp className="ml-1 h-3 w-3" /> : <ChevronDown className="ml-1 h-3 w-3" />}
+                           </Button>
+                        )}
+
                         {item.customMeasurements && item.measurementsExpanded && (
-                          <div className="space-y-2">
+                          <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
                             {groups.map((g) => (
-                              <div key={g.id} className="rounded-md border border-border bg-card p-2.5 space-y-2">
+                              <div key={g.id} className="rounded border border-border/50 p-2 space-y-2 bg-background">
                                 <div className="flex items-center justify-between">
-                                  <h5 className="text-xs font-semibold">{g.name}</h5>
-                                  <span className="text-[10px] text-muted-foreground uppercase">{g.unit}</span>
+                                  <h5 className="text-[10px] font-semibold">{g.name} ({g.unit})</h5>
                                 </div>
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-3 gap-1.5">
                                   {g.fields.map((f) => (
                                     <div key={f.id}>
-                                      <Label className="text-[10px] text-muted-foreground">{f.name}</Label>
+                                      <Label className="text-[9px] text-muted-foreground uppercase">{f.name}</Label>
                                       <Input
                                         value={item.measurementValues?.[g.id]?.[f.id] || ""}
                                         onChange={(e) => setMeasurementValue(item.uid, g.id, f.id, e.target.value)}
-                                        placeholder="0.0"
-                                        className="h-8 mt-0.5 text-xs"
+                                        className="h-7 px-1.5 text-[11px]"
                                       />
                                     </div>
                                   ))}
-                                </div>
-                                <div>
-                                  <Label className="text-[10px] text-muted-foreground">Notes</Label>
-                                  <Textarea
-                                    value={item.measurementNotes?.[g.id] || ""}
-                                    onChange={(e) => setMeasurementNote(item.uid, g.id, e.target.value)}
-                                    placeholder="Special instructions..."
-                                    className="mt-0.5 min-h-[40px] text-xs"
-                                  />
                                 </div>
                               </div>
                             ))}
@@ -1122,87 +1112,65 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             </div>
           )}
 
-          <Separator />
-
-          {/* Store */}
-          {stores.length > 0 && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Store</Label>
-              <Select 
-                value={storeId} 
-                onValueChange={(v) => {
-                  setStoreId(v);
-                  localStorage.setItem("last_selected_store_id", v);
-                }}
-              >
-                <SelectTrigger><SelectValue placeholder="Select store" /></SelectTrigger>
-                <SelectContent>
-                  {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+          {/* Customer Section */}
+          <div className="space-y-3 bg-muted/20 p-3 rounded-md border border-border/50">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Name</Label>
+                <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Name" className="h-9" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Phone</Label>
+                <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="01XXXXXXXXX" className="h-9" />
+              </div>
             </div>
-          )}
-
-          {/* Customer & Fulfillment */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Customer Name</Label>
-              <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Phone</Label>
-              <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="01XXXXXXXXX" type="tel" inputMode="tel" autoComplete="tel" />
-            </div>
-            <div className="space-y-1.5 col-span-2">
+            <div className="space-y-1">
               <Label className="text-xs">Address</Label>
-              <Input value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Full delivery address..." />
+              <Input value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Full delivery address" className="h-9" />
+            </div>
+
+            {/* Pathao Location Dropdowns (More Compact) */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[10px]">City</Label>
+                <SearchableSelect
+                  options={cities.map((c) => ({ value: c.city_id.toString(), label: c.city_name }))}
+                  value={selectedCity?.toString() || ""}
+                  onChange={(v) => setSelectedCity(v ? Number(v) : null)}
+                  placeholder="City"
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Zone</Label>
+                <SearchableSelect
+                  options={zones.map((z) => ({ value: z.zone_id.toString(), label: z.zone_name }))}
+                  value={selectedZone?.toString() || ""}
+                  onChange={(v) => setSelectedZone(v ? Number(v) : null)}
+                  placeholder="Zone"
+                  className="h-8 text-xs"
+                  disabled={!selectedCity}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Area</Label>
+                <SearchableSelect
+                  options={areas.map((a) => ({ value: a.area_id.toString(), label: a.area_name }))}
+                  value={selectedArea?.toString() || ""}
+                  onChange={(v) => setSelectedArea(v ? Number(v) : null)}
+                  placeholder="Area"
+                  className="h-8 text-xs"
+                  disabled={!selectedZone}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Pathao Location */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">City</Label>
-              <SearchableSelect
-                options={cities.map((c) => ({ value: c.city_id.toString(), label: c.city_name }))}
-                value={selectedCity?.toString() || ""}
-                onChange={(v) => setSelectedCity(v ? Number(v) : null)}
-                placeholder="Select city"
-                searchPlaceholder="Search cities..."
-                emptyText="No city found"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Zone</Label>
-              <SearchableSelect
-                options={zones.map((z) => ({ value: z.zone_id.toString(), label: z.zone_name }))}
-                value={selectedZone?.toString() || ""}
-                onChange={(v) => setSelectedZone(v ? Number(v) : null)}
-                placeholder="Select zone"
-                searchPlaceholder="Search zones..."
-                emptyText="No zone found"
-                disabled={!selectedCity}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Area</Label>
-              <SearchableSelect
-                options={areas.map((a) => ({ value: a.area_id.toString(), label: a.area_name }))}
-                value={selectedArea?.toString() || ""}
-                onChange={(v) => setSelectedArea(v ? Number(v) : null)}
-                placeholder="Select area"
-                searchPlaceholder="Search areas..."
-                emptyText="No area found"
-                disabled={!selectedZone}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Delivery Method</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Fulfillment</Label>
               <Select value={fulfillment} onValueChange={(v: any) => setFulfillment(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="delivery">Delivery</SelectItem>
                   <SelectItem value="pickup">Pickup</SelectItem>
@@ -1210,116 +1178,56 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Source</Label>
-              <Select value={source} onValueChange={setSource}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {sources.map(s => <SelectItem key={s.id} value={s.name}>{s.name.charAt(0).toUpperCase() + s.name.slice(1)}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Shipping Cost</Label>
-              <Input
-                type="number"
-                inputMode="numeric"
-                value={shippingCost}
-                onChange={(e) => { setShippingCost(Number(e.target.value)); setShippingTouched(true); }}
-              />
-              <div className="flex gap-1 pt-0.5">
-                <Button
-                  type="button"
-                  variant={shippingCost === shippingInsideDhaka ? "secondary" : "outline"}
-                  size="sm"
-                  className="h-6 px-2 text-[10px] flex-1"
-                  onClick={() => { setShippingCost(shippingInsideDhaka); setShippingTouched(true); }}
-                  title="Inside Dhaka"
+            {stores.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs">Store</Label>
+                <Select 
+                  value={storeId} 
+                  onValueChange={(v) => { setStoreId(v); localStorage.setItem("last_selected_store_id", v); }}
                 >
-                  In ৳{shippingInsideDhaka}
-                </Button>
-                <Button
-                  type="button"
-                  variant={shippingCost === shippingOutsideDhaka ? "secondary" : "outline"}
-                  size="sm"
-                  className="h-6 px-2 text-[10px] flex-1"
-                  onClick={() => { setShippingCost(shippingOutsideDhaka); setShippingTouched(true); }}
-                  title="Outside Dhaka"
-                >
-                  Out ৳{shippingOutsideDhaka}
-                </Button>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Store" /></SelectTrigger>
+                  <SelectContent>
+                    {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Shipping</Label>
+              <Input type="number" value={shippingCost} onChange={(e) => { setShippingCost(Number(e.target.value)); setShippingTouched(true); }} className="h-9" />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <Label className="text-xs">Discount</Label>
-              <Input type="number" inputMode="numeric" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
+              <Input type="number" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} className="h-9" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Paid</Label>
+              <Input type="number" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} className="h-9" />
             </div>
           </div>
 
-          {/* Payment */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Paid Amount</Label>
-              <Input
-                type="number"
-                inputMode="numeric"
-                value={paidAmount}
-                onChange={(e) => setPaidAmount(Number(e.target.value))}
-                placeholder="0"
-              />
-              <div className="flex gap-1 pt-0.5">
-                <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[10px] flex-1"
-                  onClick={() => setPaidAmount(total)}>
-                  Full ৳{total.toLocaleString()}
-                </Button>
-                <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[10px] flex-1"
-                  onClick={() => setPaidAmount(0)}>
-                  Clear
-                </Button>
-              </div>
+          <div className="rounded-md border border-primary/20 bg-primary/5 p-3 space-y-2">
+            <div className="flex justify-between text-xs text-muted-foreground">
+               <span>Subtotal: ৳{subtotal.toLocaleString()}</span>
+               {discount > 0 && <span>Discount: -৳{discount.toLocaleString()}</span>}
+               {shippingCost > 0 && <span>Shipping: ৳{shippingCost.toLocaleString()}</span>}
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Payment Method</Label>
-              <Select value={paymentMethod} onValueChange={setPaymentMethod} disabled={paidAmount <= 0}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="bkash">bKash</SelectItem>
-                  <SelectItem value="nagad">Nagad</SelectItem>
-                  <SelectItem value="rocket">Rocket</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="bank">Bank Transfer</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Due</Label>
-              <div className="h-10 flex items-center px-3 rounded-md border border-border bg-secondary/40 text-sm font-medium">
-                ৳{Math.max(0, total - paidAmount).toLocaleString()}
-                {paidAmount > 0 && paidAmount < total && (
-                  <Badge variant="outline" className="ml-2 text-[10px]">Partial</Badge>
-                )}
-                {paidAmount >= total && total > 0 && (
-                  <Badge variant="secondary" className="ml-2 text-[10px]">Paid</Badge>
-                )}
-              </div>
+            <div className="flex justify-between items-center">
+               <span className="text-sm font-semibold">Total to Collect</span>
+               <span className="text-lg font-bold text-primary">৳{Math.max(0, total - paidAmount).toLocaleString()}</span>
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs">Notes</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground uppercase">Internal Notes</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-xs min-h-[50px]" />
           </div>
-
-          {/* Totals */}
-          <div className="rounded-md border border-border p-3 space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>৳{subtotal.toLocaleString()}</span></div>
-            {discount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span className="text-destructive">-৳{discount.toLocaleString()}</span></div>}
-            {shippingCost > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Shipping</span><span>৳{shippingCost.toLocaleString()}</span></div>}
-            <Separator />
-            <div className="flex justify-between font-semibold text-base"><span>Total</span><span>৳{total.toLocaleString()}</span></div>
-          </div>
+        </div>
       </div>
+
     </ResponsiveDialog>
 
     <ResponsiveDialog
