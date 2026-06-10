@@ -948,13 +948,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                   });
                 }
               }}
-
-                    price: p.price,
-                  });
-                }
-              }}
               onAddCustomItem={() => setCustomItemOpen(true)}
             />
+
           </div>
 
           {/* AI parse-from-text — relocated under catalog */}
