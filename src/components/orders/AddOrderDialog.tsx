@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import Fuse from "fuse.js";
-import { Search, Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon } from "lucide-react";
+import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
@@ -12,6 +11,8 @@ import {
   type MeasurementGroup,
   type CapturedMeasurement,
 } from "@/lib/measurements";
+import MiniProductCatalog from "./MiniProductCatalog";
+
 
 import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
