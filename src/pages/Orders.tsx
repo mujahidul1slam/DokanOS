@@ -1037,7 +1037,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           return (
             <>
               {/* Desktop: standard tabs */}
-              <div className="hidden md:block overflow-x-auto">
+              <div className="hidden xl:block overflow-x-auto">
                 <TabsList className="inline-flex w-auto min-w-full">
                   {tabItems.map((t) => (
                     <TabsTrigger key={t.key} value={t.key} className="gap-1.5 text-xs">
@@ -1046,8 +1046,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                   ))}
                 </TabsList>
               </div>
-              {/* Mobile: scrollable pill bar */}
-              <div className="md:hidden -mx-4 px-4 overflow-x-auto scrollbar-none">
+              {/* Mobile & Tablet: scrollable pill bar */}
+              <div className="xl:hidden -mx-4 px-4 overflow-x-auto scrollbar-none">
                 <div className="flex gap-2 w-max pb-1">
                   {tabItems.map((t) => {
                     const active = tab === t.key;
@@ -1086,7 +1086,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           return (
             <>
               {/* Desktop: standard tabs */}
-              <div className="hidden md:block overflow-x-auto">
+              <div className="hidden xl:block overflow-x-auto">
                 <TabsList className="inline-flex w-auto min-w-full">
                   {tabItems.map((t) => (
                     <TabsTrigger key={t.key} value={t.key} className="gap-1.5 text-xs">
@@ -1095,8 +1095,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
                   ))}
                 </TabsList>
               </div>
-              {/* Mobile: scrollable pill bar */}
-              <div className="md:hidden -mx-4 px-4 overflow-x-auto scrollbar-none">
+              {/* Mobile & Tablet: scrollable pill bar */}
+              <div className="xl:hidden -mx-4 px-4 overflow-x-auto scrollbar-none">
                 <div className="flex gap-2 w-max pb-1">
                   {tabItems.map((t) => {
                     const active = tab === t.key;
@@ -1280,8 +1280,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           <EmptyState tab={tab} />
         ) : (
           <>
-          {/* Mobile cards */}
-          <div className="md:hidden mt-4 space-y-2">
+          {/* Mobile & Tablet cards */}
+          <div className="xl:hidden mt-4 space-y-2">
             {paginated.map((order) => (
               <OrderCard
                 key={order.id}
@@ -1295,7 +1295,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block rounded-lg border border-border overflow-hidden mt-4">
+          <div className="hidden xl:block rounded-lg border border-border overflow-hidden mt-4">
             <Table>
               <TableHeader>
                 <TableRow className="bg-secondary hover:bg-secondary">
