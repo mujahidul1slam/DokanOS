@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Fuse from "fuse.js";
-import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search, Package, ShoppingCart, Tag } from "lucide-react";
+import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search, Package, ShoppingCart, Tag, User } from "lucide-react";
+
 
 
 
@@ -1296,4 +1297,5 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     </>
   );
 }
+
 
