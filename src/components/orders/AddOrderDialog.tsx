@@ -225,7 +225,9 @@ function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchRes
 }
 
 export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props) {
-  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [productCatMap, setProductCatMap] = useState<Map<string, Set<string>>>(new Map());
   const [variations, setVariations] = useState<VariationRow[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
@@ -252,6 +254,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+
 
   // AI parse-from-text
   const [aiText, setAiText] = useState("");
