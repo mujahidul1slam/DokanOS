@@ -278,7 +278,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   useEffect(() => {
     if (!open) return;
     Promise.all([
-      supabase.from("products").select("id, name, sku, price, stock_quantity, image_url").eq("is_active", true).order("name"),
+      supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode, is_featured, sales_count, manage_stock, stock_status").eq("is_active", true).order("name"),
       supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes"),
       supabase.from("order_sources").select("id, name, is_default").order("sort_order"),
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
@@ -286,7 +286,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
       supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled, shipping_inside_dhaka, shipping_outside_dhaka").limit(1).maybeSingle(),
       supabase.from("stores").select("id, name").order("name"),
-    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes, stRes]) => {
+      supabase.from("categories").select("id, name, parent_id, store_id").order("name"),
+      supabase.from("product_categories").select("product_id, category_id"),
+    ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes, stRes, catRes, pcRes]) => {
       setProducts(pRes.data || []);
       setVariations((vRes.data || []) as VariationRow[]);
       const srcs = (sRes.data || []) as any[];
@@ -301,6 +303,15 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       if (isData?.shipping_inside_dhaka != null) setShippingInsideDhaka(Number(isData.shipping_inside_dhaka));
       if (isData?.shipping_outside_dhaka != null) setShippingOutsideDhaka(Number(isData.shipping_outside_dhaka));
       setStores((stRes.data || []) as any[]);
+      setCategories((catRes.data || []) as any[]);
+      const map = new Map<string, Set<string>>();
+      (pcRes.data || []).forEach((pc: any) => {
+        if (!map.has(pc.product_id)) map.set(pc.product_id, new Set());
+        map.get(pc.product_id)!.add(pc.category_id);
+      });
+      setProductCatMap(map);
+    });
+
     });
   }, [open]);
 
