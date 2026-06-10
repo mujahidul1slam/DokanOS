@@ -1266,6 +1266,47 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         </p>
       </div>
     </ResponsiveDialog>
+
+    <ResponsiveDialog
+      open={showVariationModal}
+      onOpenChange={setShowVariationModal}
+      title={selectedProduct?.name || "Select Variation"}
+    >
+      <div className="space-y-4 py-4">
+        {variations.filter(v => v.product_id === selectedProduct?.id).length > 0 ? (
+          <div className="grid grid-cols-2 gap-2">
+            {variations.filter(v => v.product_id === selectedProduct?.id).map(v => (
+              <Button
+                key={v.id}
+                variant="outline"
+                className="h-auto py-3 px-4 flex flex-col items-start gap-1"
+                onClick={() => {
+                  addItem({
+                    id: v.id,
+                    productId: v.product_id,
+                    variationId: v.id,
+                    name: selectedProduct?.name || "Product",
+                    variationLabel: v.name,
+                    sku: v.sku || selectedProduct?.sku,
+                    price: v.price,
+                  });
+                  setShowVariationModal(false);
+                }}
+              >
+                <span className="text-sm font-medium">{v.name}</span>
+                <span className="text-xs text-primary font-semibold">৳{Number(v.price).toLocaleString()}</span>
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-6 text-muted-foreground">
+            <Tag className="h-8 w-8 mx-auto mb-2 opacity-20" />
+            <p className="text-sm">No variations found for this product.</p>
+          </div>
+        )}
+      </div>
+    </ResponsiveDialog>
     </>
   );
 }
+
