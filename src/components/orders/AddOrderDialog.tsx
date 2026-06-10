@@ -1062,9 +1062,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                             <Ruler className="h-3 w-3" /> Measurements
                           </span>
                           <Switch
-                            size="sm"
                             checked={!!item.customMeasurements}
                             onCheckedChange={(checked) =>
+
                               updateItem(item.uid, { customMeasurements: checked, measurementsExpanded: checked })
                             }
                           />
