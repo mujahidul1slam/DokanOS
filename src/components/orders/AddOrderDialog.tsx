@@ -233,7 +233,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [source, setSource] = useState("phone");
   const [sources, setSources] = useState<{ id: string; name: string; is_default?: boolean }[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
-  const [storeId, setStoreId] = useState<string>("");
+  const [storeId, setStoreId] = useState<string>(localStorage.getItem("last_selected_store_id") || "");
 
   // Custom item dialog
   const [customItemOpen, setCustomItemOpen] = useState(false);
@@ -618,7 +618,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
     setAiText("");
-    setStoreId("");
+    // Don't reset storeId to preserve memory
+    // setStoreId("");
   };
 
   const fileToDataUrl = (file: File) =>
@@ -1116,10 +1117,15 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           {stores.length > 0 && (
             <div className="space-y-1.5">
               <Label className="text-xs">Store</Label>
-              <Select value={storeId || "__none__"} onValueChange={(v) => setStoreId(v === "__none__" ? "" : v)}>
+              <Select 
+                value={storeId} 
+                onValueChange={(v) => {
+                  setStoreId(v);
+                  localStorage.setItem("last_selected_store_id", v);
+                }}
+              >
                 <SelectTrigger><SelectValue placeholder="Select store" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">No store</SelectItem>
                   {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
