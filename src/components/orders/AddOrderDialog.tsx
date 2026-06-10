@@ -908,7 +908,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       open={open}
       onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v); }}
       title="Add New Order"
+      desktopMaxWidth="max-w-6xl"
       footer={
+
         <>
           <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
           <Button onClick={handleCreate} disabled={saving || items.length === 0}>
