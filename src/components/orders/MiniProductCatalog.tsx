@@ -193,9 +193,12 @@ const MiniProductCatalog = ({ products, categories, productCatMap, stores, onSel
                     className="h-full w-full object-cover transition-transform group-hover:scale-105"
                     loading="lazy"
                     onError={(e) => {
-                      (e.currentTarget as any).style.display = "none";
-                      (e.currentTarget as any).nextElementSibling.style.display = "flex";
+                      const img = e.currentTarget;
+                      img.style.display = "none";
+                      const fb = img.nextElementSibling as HTMLElement | null;
+                      if (fb) fb.style.display = "flex";
                     }}
+
                   />
                 ) : null}
                 <div className={`absolute inset-0 items-center justify-center bg-secondary/30 ${p.image_url ? 'hidden' : 'flex'}`}>
