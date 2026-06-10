@@ -240,6 +240,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [sources, setSources] = useState<{ id: string; name: string; is_default?: boolean }[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [storeId, setStoreId] = useState<string>(localStorage.getItem("last_selected_store_id") || "");
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [showVariationModal, setShowVariationModal] = useState(false);
+
 
   // Custom item dialog
   const [customItemOpen, setCustomItemOpen] = useState(false);
