@@ -974,38 +974,33 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             </div>
           </div>
 
-          {/* Product Search */}
-          <div>
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium">Search Products</Label>
-              <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setCustomItemOpen(true)}>
-                <Plus className="h-3.5 w-3.5 mr-1" /> Add custom item
-              </Button>
-            </div>
-            <div className="relative mt-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Search by name, SKU, or variation..." className="pl-9" />
-            </div>
-            {productSearch && (
-              <ScrollArea className="mt-2 max-h-72 rounded-md border border-border">
-                {productSearchResults.length === 0 ? (
-                  <div className="p-3 text-sm text-muted-foreground text-center">No products found</div>
-                ) : (
-                  productSearchResults.map((r) => (
-                    <ProductSearchResultRow
-                      key={r.productId}
-                      product={r}
-                      variations={variations}
-                      onAdd={(result) => {
-                        addItem(result);
-                        // Keep the search query so users can quickly add more variations
-                      }}
-                    />
-                  ))
-                )}
-              </ScrollArea>
-            )}
+          {/* Product Search & Catalog */}
+          <div className="h-[400px] border border-border rounded-md overflow-hidden bg-background">
+            <MiniProductCatalog
+              products={products as any}
+              categories={categories}
+              productCatMap={productCatMap}
+              stores={stores}
+              onSelectProduct={(p) => {
+                const isVar = variations.some(v => v.product_id === p.id);
+                if (isVar) {
+                   // This simplified version skips the variation modal for now or needs to open it
+                   // Add logic to open variation modal here
+                   toast.info("Variation selection for Add Orders not yet integrated");
+                } else {
+                  addItem({
+                    id: p.id,
+                    productId: p.id,
+                    name: p.name,
+                    sku: p.sku,
+                    price: p.price,
+                  });
+                }
+              }}
+              onAddCustomItem={() => setCustomItemOpen(true)}
+            />
           </div>
+
 
           {/* Cart Items */}
           {items.length > 0 && (
