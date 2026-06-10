@@ -312,7 +312,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       setProductCatMap(map);
     });
 
-    });
   }, [open]);
 
   // When a new product is added to the cart, lazy-load its measurement groups.
