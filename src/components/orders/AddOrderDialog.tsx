@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Fuse from "fuse.js";
-import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search } from "lucide-react";
+import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search, Package } from "lucide-react";
+
 
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
