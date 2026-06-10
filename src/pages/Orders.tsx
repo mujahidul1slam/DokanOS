@@ -1035,45 +1035,30 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             ...(counts.trash > 0 ? [{ key: "trash" as TabKey, label: "Trash", icon: Trash2, count: counts.trash }] : []),
           ];
           return (
-            <>
-              {/* Desktop: standard tabs */}
-              <div className="hidden xl:block overflow-x-auto">
-                <TabsList className="inline-flex w-auto min-w-full">
-                  {tabItems.map((t) => (
-                    <TabsTrigger key={t.key} value={t.key} className="gap-1.5 text-xs">
-                      <t.icon className="h-3.5 w-3.5" />{t.label} ({t.count})
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </div>
-              {/* Mobile & Tablet: scrollable pill bar */}
-              <div className="xl:hidden -mx-4 px-4 overflow-x-auto scrollbar-none">
-                <div className="flex gap-2 w-max pb-1">
-                  {tabItems.map((t) => {
-                    const active = tab === t.key;
-                    return (
-                      <button
-                        key={t.key}
-                        onClick={() => setTab(t.key)}
-                        className={cn(
-                          "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                          active
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-background text-foreground border-border hover:bg-accent"
-                        )}
-                      >
-                        <t.icon className="h-3.5 w-3.5" />
-                        {t.label}
-                        <span className={cn(
-                          "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none",
-                          active ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground"
-                        )}>{t.count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
+            <div className="flex flex-wrap gap-2 pb-1">
+              {tabItems.map((t) => {
+                const active = tab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setTab(t.key)}
+                    className={cn(
+                      "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                      active
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background text-foreground border-border hover:bg-accent"
+                    )}
+                  >
+                    <t.icon className="h-3.5 w-3.5" />
+                    {t.label}
+                    <span className={cn(
+                      "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none",
+                      active ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground"
+                    )}>{t.count}</span>
+                  </button>
+                );
+              })}
+            </div>
           );
         })()}
         {preOrderMode && (() => {
@@ -1084,45 +1069,30 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
             { key: "pre_order_ready", label: "Ready", icon: Sparkles, count: counts.pre_order_ready },
           ];
           return (
-            <>
-              {/* Desktop: standard tabs */}
-              <div className="hidden xl:block overflow-x-auto">
-                <TabsList className="inline-flex w-auto min-w-full">
-                  {tabItems.map((t) => (
-                    <TabsTrigger key={t.key} value={t.key} className="gap-1.5 text-xs">
-                      <t.icon className="h-3.5 w-3.5" />{t.label} ({t.count})
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </div>
-              {/* Mobile & Tablet: scrollable pill bar */}
-              <div className="xl:hidden -mx-4 px-4 overflow-x-auto scrollbar-none">
-                <div className="flex gap-2 w-max pb-1">
-                  {tabItems.map((t) => {
-                    const active = tab === t.key;
-                    return (
-                      <button
-                        key={t.key}
-                        onClick={() => setTab(t.key)}
-                        className={cn(
-                          "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                          active
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-background text-foreground border-border hover:bg-accent"
-                        )}
-                      >
-                        <t.icon className="h-3.5 w-3.5" />
-                        {t.label}
-                        <span className={cn(
-                          "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none",
-                          active ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground"
-                        )}>{t.count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
+            <div className="flex flex-wrap gap-2 pb-1">
+              {tabItems.map((t) => {
+                const active = tab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setTab(t.key)}
+                    className={cn(
+                      "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                      active
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background text-foreground border-border hover:bg-accent"
+                    )}
+                  >
+                    <t.icon className="h-3.5 w-3.5" />
+                    {t.label}
+                    <span className={cn(
+                      "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none",
+                      active ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground"
+                    )}>{t.count}</span>
+                  </button>
+                );
+              })}
+            </div>
           );
         })()}
         {/* Search bar + filter toggle (always visible) */}
