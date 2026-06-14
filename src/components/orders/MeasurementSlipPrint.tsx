@@ -166,23 +166,49 @@ export async function printMeasurementSlip(orderId: string) {
           .select("name, attributes")
           .eq("product_id", i.product_id);
         if (vars && vars.length > 0) {
-          const haystack = (i.product_name || "").toLowerCase();
+          const rawName = i.product_name || "";
+          const haystack = rawName.toLowerCase();
+          // Tokenize the variation segment (after the last " - ") so short size
+          // codes like "S"/"M"/"L" match as whole tokens, not substrings of
+          // unrelated words (e.g. "S" inside "Small" or "Sleeve").
+          const variationSegment = (() => {
+            const idx = rawName.lastIndexOf(" - ");
+            return (idx > -1 ? rawName.slice(idx + 3) : rawName).toLowerCase();
+          })();
+          const tokens = new Set(
+            variationSegment.split(/[\s/,|:\-]+/).map((t) => t.trim()).filter(Boolean)
+          );
+          const valueMatchesName = (val: string) => {
+            const v = val.trim().toLowerCase();
+            if (!v) return false;
+            // Short tokens (size codes) must match as whole tokens
+            if (v.length <= 3) return tokens.has(v);
+            // Longer values can match as substring (handles multi-word attrs)
+            return haystack.includes(v);
+          };
           let match = variationName
             ? vars.find((v: any) => String(v.name || "").trim().toLowerCase() === variationName!.trim().toLowerCase())
             : null;
           if (!match) {
-            // Fuzzy: variation row whose every attribute value appears in product_name
-            match = vars.find((v: any) => {
+            // Score each variation by number of matched attrs; pick the best.
+            let best: { row: any; score: number } | null = null;
+            for (const v of vars as any[]) {
               const attrs = Array.isArray(v.attributes) ? v.attributes : [];
-              if (attrs.length === 0) return false;
-              return attrs.every((a: any) => {
-                const val = String(a?.value || a?.option || "").trim().toLowerCase();
-                return val && haystack.includes(val);
-              });
-            });
+              if (attrs.length === 0) continue;
+              let score = 0;
+              let allMatch = true;
+              for (const a of attrs) {
+                const val = String(a?.value || a?.option || "");
+                if (valueMatchesName(val)) score++;
+                else { allMatch = false; break; }
+              }
+              if (allMatch && (!best || score > best.score)) best = { row: v, score };
+            }
+            if (best) match = best.row;
           }
           if (match) variationAttrs = match.attributes;
         }
+
       } catch { /* ignore */ }
 
       const sizeLabel = detectSizeFromItem({
