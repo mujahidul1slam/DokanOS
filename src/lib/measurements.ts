@@ -155,12 +155,19 @@ export function detectSizeFromItem(item: {
     if (idx > -1) variationOnly = pn.slice(idx + 3).trim();
   }
   if (variationOnly) {
-    // Split on " / " — take the FIRST short token as the size (Woo lists the
-    // size attribute first when it's the primary attribute).
+    // Split on " / " and find the token most likely to be a size code:
+    // prefer short, single-word, alphanumeric tokens that look like sizes
+    // (S/M/L/XL/XXL/numeric). Woo isn't guaranteed to list size first.
     const parts = variationOnly.split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean);
-    const first = parts[0];
-    if (first && first.length <= 12 && !/\s/.test(first)) return first;
+    const sizeLike = /^(xx?s|x?s|m|x?l|xx?l|xxx?l|[0-9]{1,3}(\.[0-9]+)?)$/i;
+    const sized = parts.find((p) => sizeLike.test(p));
+    if (sized) return sized;
+    // Otherwise, only accept a single-token short value if there is exactly
+    // one such candidate (avoid blindly returning a design/colour name).
+    const shortSingles = parts.filter((p) => p.length <= 4 && !/\s/.test(p));
+    if (shortSingles.length === 1) return shortSingles[0];
   }
+
   return null;
 }
 
