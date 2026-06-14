@@ -131,17 +131,27 @@ export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTempl
   const slipsHtml = allSlips.join("");
   const s = tpl.sizing;
   if (format === "a4") {
+    const slipW = s.a4_slip_width_mm;
+    const slipH = s.a4_slip_height_mm;
     return `<html><head><title>Pickup Slips</title><style>
       @page { size: A4 landscape; margin: 8mm; }
+      html, body { width: 281mm; }
       ${css}
       .grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 6mm;
-        align-items: start;
+        grid-template-columns: ${slipW}mm ${slipW}mm;
+        gap: 5mm;
+        align-content: start;
+        justify-content: center;
       }
-      @media print { body { margin: 0; } }
-    </style></head><body><div class="grid">${slipsHtml}</div></body></html>`;
+      .slip {
+        width: ${slipW}mm;
+        ${slipH && slipH > 0 ? `height: ${slipH}mm;` : ""}
+        overflow: hidden;
+      }
+      @media print { body { margin: 0; } .slip { border: none; } }
+    </style></head><body><div class="grid">${slipsHtml}</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();window.close();},200);}<\/script></body></html>`;
   }
   return `<html><head><title>Pickup Slips</title><style>
     @page { size: ${s.thermal_width_mm}mm ${s.thermal_height_mm > 0 ? `${s.thermal_height_mm}mm` : "auto"}; margin: 0; }
