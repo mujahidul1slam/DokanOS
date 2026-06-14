@@ -140,13 +140,14 @@ const Dispatch = () => {
   /* ─── Load Pathao integrations + linked stores ─── */
   const loadPathaoData = useCallback(async () => {
     const [{ data: integrations }, { data: links }] = await Promise.all([
-      supabase.from("pathao_integrations").select("id, name, is_active").eq("is_active", true).order("name"),
+      supabase.from("pathao_integrations_safe" as any).select("id, name, is_active").eq("is_active", true).order("name"),
       supabase.from("pathao_store_links").select("woo_store_id, pathao_integration_id, default_pathao_store_id"),
     ]);
-    setPathaoIntegrations((integrations || []) as PathaoIntegration[]);
+    const integrationsList = (integrations || []) as unknown as PathaoIntegration[];
+    setPathaoIntegrations(integrationsList);
     setStoreLinks((links || []) as StoreLink[]);
-    if (integrations && integrations.length > 0 && !selectedIntegration) {
-      setSelectedIntegration(integrations[0].id);
+    if (integrationsList.length > 0 && !selectedIntegration) {
+      setSelectedIntegration(integrationsList[0].id);
     }
   }, [selectedIntegration]);
 
