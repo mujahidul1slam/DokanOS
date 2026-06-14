@@ -311,12 +311,16 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
           // New = processing or payment_pending orders not yet dispatched and not pre-order
           return ["processing", "payment_pending"].includes(o.status) && !o.consignment_id && !preOrderOrderIds.has(o.id);
         case "ready":
-          return o.status === "ready_to_ship" && !o.consignment_id && !preOrderOrderIds.has(o.id);
+          // Once moved to ready_to_ship, show here regardless of pre-order origin
+          return o.status === "ready_to_ship" && !o.consignment_id;
         case "pre_order":
-          // Pre-order tab also catches payment_pending orders that contain pre-order items
+          // Pre-order tab catches pre_order_* statuses, plus payment_pending orders that
+          // contain pre-order items. Exclude orders already advanced past pre-order stage
+          // (ready_to_ship, shipped, delivered, etc.) so they show in their proper tab.
           return (
             ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
-            (preOrderOrderIds.has(o.id) && !o.consignment_id && !["completed","cancelled","returned"].includes(o.status))
+            (preOrderOrderIds.has(o.id) && !o.consignment_id &&
+             !["completed","cancelled","returned","ready_to_ship","shipped","delivered"].includes(o.status))
           );
         case "pre_order_pending":
           return o.status === "pre_order_pending";
