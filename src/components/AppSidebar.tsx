@@ -62,9 +62,9 @@ const AppSidebar = ({ mobileOpen: mobileOpenProp, onMobileOpenChange }: AppSideb
   const BrandBlock = (
     <div className="flex items-center gap-2 min-w-0">
       {businessLogo ? (
-        <img src={businessLogo} alt={businessName} className="h-7 w-7 rounded-md object-contain bg-white p-0.5 border border-border shrink-0" />
+        <img src={businessLogo} alt={businessName} className="h-8 w-8 rounded-md object-contain bg-white p-0.5 border border-border shrink-0" />
       ) : (
-        <img src={dokanosIcon} alt={businessName} className="h-7 w-7 rounded-md object-contain shrink-0" />
+        <img src={dokanosIcon} alt={businessName} className="h-8 w-8 rounded-md object-contain shrink-0" />
       )}
       <span className="font-heading text-sm font-semibold text-foreground truncate">{businessName}</span>
       {hasMultiple && <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
