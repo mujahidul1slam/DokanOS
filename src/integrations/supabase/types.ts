@@ -943,6 +943,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "orders_pathao_integration_id_fkey"
+            columns: ["pathao_integration_id"]
+            isOneToOne: false
+            referencedRelation: "pathao_integrations_safe"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "orders_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
@@ -1081,6 +1088,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "pathao_store_links_pathao_integration_id_fkey"
+            columns: ["pathao_integration_id"]
+            isOneToOne: false
+            referencedRelation: "pathao_integrations_safe"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "pathao_store_links_woo_store_id_fkey"
             columns: ["woo_store_id"]
             isOneToOne: true
@@ -1139,6 +1153,13 @@ export type Database = {
             columns: ["integration_id"]
             isOneToOne: false
             referencedRelation: "pathao_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pathao_stores_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "pathao_integrations_safe"
             referencedColumns: ["id"]
           },
         ]
@@ -1937,6 +1958,30 @@ export type Database = {
       }
     }
     Views: {
+      pathao_integrations_safe: {
+        Row: {
+          created_at: string | null
+          id: string | null
+          is_active: boolean | null
+          name: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       stores_safe: {
         Row: {
           created_at: string | null
