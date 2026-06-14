@@ -50,7 +50,7 @@ const Login = () => {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <img src={dokanosLogo} alt="DokanOS" className="mx-auto mb-2 h-28 w-auto object-contain" />
+          <img src={dokanosLogo} alt="DokanOS" className="mx-auto mb-2 h-32 w-auto object-contain" />
           <CardDescription>
             {mode === "login" ? "Sign in to your account" : "Reset your password"}
           </CardDescription>
