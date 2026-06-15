@@ -26,6 +26,21 @@ function makeBarcodeSvg(value: string, opts: { height: number; fontSize: number;
       background: "#ffffff",
       lineColor: "#000000",
     });
+    // Normalize: convert JsBarcode's fixed px width/height into a viewBox so
+    // the browser renders the SVG as pure vector at whatever CSS size we ask
+    // for. Without this, Chrome's PDF/raster pipeline can balloon to GB-sized
+    // output when printing to a non-thermal printer (the SVG gets rasterized
+    // at the printer's native DPI per slip).
+    const widthAttr = el.getAttribute("width");
+    const heightAttr = el.getAttribute("height");
+    const w = widthAttr ? parseFloat(widthAttr) : 0;
+    const h = heightAttr ? parseFloat(heightAttr) : 0;
+    if (w > 0 && h > 0 && !el.getAttribute("viewBox")) {
+      el.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    }
+    el.removeAttribute("width");
+    el.removeAttribute("height");
+    el.setAttribute("preserveAspectRatio", "xMidYMid meet");
     return new XMLSerializer().serializeToString(el);
   } catch {
     return "";
@@ -107,7 +122,7 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
     .header .order-num { font-size: ${s.order_number_size}px; font-weight: 700; margin-top: ${isA4 ? 1 : 2}px; line-height: 1.1; }
     .page-badge { font-size: ${Math.max(9, Math.round(s.section_title_size * 0.85))}px; font-weight: 600; color: #555; margin-left: 4px; }
     .barcode { margin-top: ${isA4 ? 2 : 4}px; display: flex; justify-content: center; line-height: 0; }
-    .barcode svg { max-width: 100%; height: auto; display: block; }
+    .barcode svg { width: 100%; max-width: ${isA4 ? 55 : 60}mm; height: ${Math.max(10, Math.round(s.barcode_height * 0.25))}mm; display: block; }
     .section { margin-bottom: ${isA4 ? 3 : 5}px; }
     .customer-section { margin-bottom: ${isA4 ? 4 : 6}px; }
     .section-title { font-size: ${s.section_title_size}px; font-weight: 600; text-transform: uppercase; color: #666; margin-bottom: ${isA4 ? 1 : 2}px; letter-spacing: 0.4px; line-height: 1.1; }

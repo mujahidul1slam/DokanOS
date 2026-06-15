@@ -21,10 +21,10 @@ export default function PickupSlipPrint({ orders, onPrinted }: Props) {
     if (!printWindow) return;
     printWindow.document.write(buildPrintDocument(orders, tpl, format));
     printWindow.document.close();
-    if (format === "a4") {
-      printWindow.focus();
-      setTimeout(() => printWindow.print(), 300);
-    }
+    // Auto-print is triggered by the document's own window.onload script
+    // (see buildPrintDocument). Calling print() again from here causes Chrome
+    // to re-spool the whole job, which on non-thermal drivers can produce
+    // multi-GB PDFs. Do not add a second print() call.
 
     // Stamp printed-at on each order and log timeline + audit entries.
     const printedOrders = orders.filter((o: any) => o.id);
