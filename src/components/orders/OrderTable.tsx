@@ -40,7 +40,6 @@ interface Props<T extends OrderRowLike> {
   tab: TabKey;
   onToggleSelect: (id: string) => void;
   onToggleAll: () => void;
-  onOpen: (id: string) => void;
   renderActions: (order: T) => ReactNode;
 }
 
