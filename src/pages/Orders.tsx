@@ -43,6 +43,8 @@ import DispatchDialog from "@/components/orders/DispatchDialog";
 import ExchangeDialog from "@/components/orders/ExchangeDialog";
 import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
 import OrderRowActions from "@/components/orders/OrderRowActions";
+import OrderTabs from "@/components/orders/OrderTabs";
+import OrderFilters from "@/components/orders/OrderFilters";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
