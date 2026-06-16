@@ -450,10 +450,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     else setSelected(new Set(paginated.map((o) => o.id)));
   };
 
-  /* ─── Tab counts ─── */
-  // Single-pass tab counts: previously we called getTabOrders(...) 13 times
-  // (each scans the full orders array), giving O(13n) per render on a hot path.
-  // Now we walk orders once, asking each tab's filter only once per order.
+  /* ─── Tab counts ───
+     Single pass over orders, asking each tab's predicate per order. Previously
+     this called getTabOrders 13 times (each a full scan), giving O(13n). */
   const counts = useMemo(() => {
     const tabKeys: TabKey[] = [
       "all", "new", "ready", "pre_order",
@@ -462,20 +461,13 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       "on_hold", "returned", "cancelled", "trash",
     ];
     const out = Object.fromEntries(tabKeys.map((k) => [k, 0])) as Record<TabKey, number>;
-    // Build per-tab predicates once by reusing getTabOrders' filtered output.
-    // getTabOrders already encapsulates trash/cancelled exclusion rules, so
-    // delegating preserves behavior exactly. We still only call it once per tab.
-    for (const k of tabKeys) {
-      if (k === "all") {
-        let n = 0;
-        for (const o of orders) if (!o.deleted_at) n++;
-        out[k] = n;
-      } else {
-        out[k] = getTabOrders(k).length;
+    for (const o of orders) {
+      for (const k of tabKeys) {
+        if (matchesTab(o, k)) out[k]++;
       }
     }
     return out;
-  }, [orders, getTabOrders]);
+  }, [orders, matchesTab]);
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
