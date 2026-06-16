@@ -23,6 +23,8 @@ import DatePresetPicker, { DatePreset, resolveRange } from "@/components/DatePre
 import { downloadCsv } from "@/lib/exportCsv";
 import StatusBadge from "@/components/StatusBadge";
 import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
+import PosOrdersLedger from "@/pages/posReports/PosOrdersLedger";
+import ArOutstandingTable from "@/pages/posReports/ArOutstandingTable";
 
 interface PosOrder {
   id: string;
