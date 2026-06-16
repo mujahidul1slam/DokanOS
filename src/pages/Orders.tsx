@@ -45,6 +45,7 @@ import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
 import OrderRowActions from "@/components/orders/OrderRowActions";
 import OrderTabs from "@/components/orders/OrderTabs";
 import OrderFilters from "@/components/orders/OrderFilters";
+import OrderBulkActionsBar from "@/components/orders/OrderBulkActionsBar";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
