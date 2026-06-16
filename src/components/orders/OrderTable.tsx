@@ -86,10 +86,9 @@ function OrderTable<T extends OrderRowLike>({
           {orders.map((order) => (
             <TableRow
               key={order.id}
-              className={cn("virtual-row-tall group cursor-pointer", selected.has(order.id) && "bg-primary/5")}
-              onClick={() => onOpen(order.id)}
+              className={cn("virtual-row-tall group", selected.has(order.id) && "bg-primary/5")}
             >
-              <TableCell onClick={(e) => e.stopPropagation()}>
+              <TableCell>
                 <Checkbox
                   checked={selected.has(order.id)}
                   onCheckedChange={() => onToggleSelect(order.id)}
