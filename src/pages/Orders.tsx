@@ -61,6 +61,7 @@ import PreOrderCategoriesDialog from "@/components/settings/PreOrderCategoriesDi
 import DuePaymentDialog, { type DuePaymentResult } from "@/components/orders/DuePaymentDialog";
 import { recordDuePayment } from "@/lib/dueCollection";
 import { matchesTab as matchesTabExt, ALL_TAB_KEYS, type TabKey } from "./orders/tabFilters";
+import { useOrderBulkActions } from "./orders/useOrderBulkActions";
 
 interface OrderRow {
   id: string;
@@ -454,246 +455,28 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   );
 
   /* ─── Mark Ready to Ship ─── */
-  const handleMarkReadyToShip = async () => {
-    if (selected.size === 0) return;
-    setBulkUpdating(true);
-    try {
-      const ids = Array.from(selected);
-      await supabase.from("orders").update({ status: "ready_to_ship" }).in("id", ids);
-      const timelineEntries = ids.map((id) => ({
-        order_id: id, event: "status_changed", description: "Marked as Ready to Ship",
-      }));
-      await addOrderTimeline(timelineEntries);
-      await logAction("update", "order_status_bulk", undefined, { ids, to: "ready_to_ship" });
-      await Promise.all(ids.map((id) =>
-        supabase.functions.invoke("woo-push", { body: { action: "push_order", order_id: id } })
-          .catch((e) => console.warn("WooCommerce order push failed:", e))
-      ));
-      toast({ title: `${ids.length} order(s) marked Ready to Ship` });
-      setSelected(new Set());
-      loadOrders();
-    } catch {
-      toast({ title: "Update failed", variant: "destructive" });
-    } finally { setBulkUpdating(false); }
-  };
-
-  /* ─── Bulk Mark Completed ─── */
-  const handleBulkMarkCompleted = async () => {
-    if (selected.size === 0) return;
-    setBulkUpdating(true);
-    try {
-      const ids = Array.from(selected);
-      await supabase.from("orders").update({ status: "completed" }).in("id", ids);
-      const timelineEntries = ids.map((id) => ({
-        order_id: id, event: "status_changed", description: "Marked as Completed",
-      }));
-      await addOrderTimeline(timelineEntries);
-      await logAction("update", "order_status_bulk", undefined, { ids, to: "completed" });
-      await Promise.all(ids.map((id) =>
-        supabase.functions.invoke("woo-push", { body: { action: "push_order", order_id: id } })
-          .catch((e) => console.warn("WooCommerce order push failed:", e))
-      ));
-      // Woo notes auto-posted via addOrderTimeline above
-      toast({ title: `${ids.length} order(s) marked Completed` });
-      setSelected(new Set());
-      loadOrders();
-    } catch {
-      toast({ title: "Update failed", variant: "destructive" });
-    } finally { setBulkUpdating(false); }
-  };
-
-  /* ─── Bulk Mark Paid ─── Opens dialog to capture payment method, then inserts
-   * proper order_payments rows so reporting attributes the collection correctly. */
-  const handleBulkMarkPaid = async () => {
-    if (selected.size === 0) return;
-    const ids = Array.from(selected);
-    // Compute total outstanding for the selection (uses paid totals from orders)
-    const { data: pays } = await supabase
-      .from("order_payments")
-      .select("order_id, amount")
-      .in("order_id", ids);
-    const paidMap = new Map<string, number>();
-    (pays || []).forEach((p: any) => paidMap.set(p.order_id, (paidMap.get(p.order_id) || 0) + Number(p.amount)));
-    const totalDue = orders
-      .filter((o) => ids.includes(o.id))
-      .reduce((s, o) => s + Math.max(0, Number(o.total) - (paidMap.get(o.id) || 0)), 0);
-    if (totalDue <= 0) {
-      toast({ title: "Nothing due — these orders are already fully paid" });
-      return;
-    }
-    setDuePayContext({ ids, totalDue });
-    setDuePayOpen(true);
-  };
-
-  const handleConfirmBulkDuePayment = async (result: DuePaymentResult) => {
-    const { ids } = duePayContext;
-    setBulkUpdating(true);
-    try {
-      // Load current paid totals once
-      const { data: pays } = await supabase
-        .from("order_payments")
-        .select("order_id, amount")
-        .in("order_id", ids);
-      const paidMap = new Map<string, number>();
-      (pays || []).forEach((p: any) => paidMap.set(p.order_id, (paidMap.get(p.order_id) || 0) + Number(p.amount)));
-
-      for (const id of ids) {
-        const ord = orders.find((o) => o.id === id);
-        if (!ord) continue;
-        const due = Math.max(0, Number(ord.total) - (paidMap.get(id) || 0));
-        if (due <= 0) continue;
-        await recordDuePayment({
-          orderId: id,
-          orderNumber: ord.order_number,
-          method: result.method,
-          amount: due,
-          trxId: result.trxId,
-          notes: result.notes || "Bulk Mark Paid",
-        });
-      }
-      await logAction("update", "order_payment_bulk", undefined, { ids, method: result.method, to: "paid" });
-      toast({ title: `${ids.length} order(s) marked Paid via ${result.method}` });
-      setSelected(new Set());
-      loadOrders();
-    } catch {
-      toast({ title: "Update failed", variant: "destructive" });
-    } finally { setBulkUpdating(false); }
-  };
-
-  /* ─── Bulk Cancel ─── */
-  const handleBulkCancel = async () => {
-    if (selected.size === 0) return;
-    setBulkUpdating(true);
-    try {
-      const ids = Array.from(selected);
-      await supabase.from("orders").update({ status: "cancelled" }).in("id", ids);
-      const timelineEntries = ids.map((id) => ({
-        order_id: id, event: "status_changed", description: "Cancelled",
-      }));
-      await addOrderTimeline(timelineEntries);
-      await logAction("update", "order_status_bulk", undefined, { ids, to: "cancelled" });
-      // Woo notes auto-posted via addOrderTimeline above
-      toast({ title: `${ids.length} order(s) cancelled` });
-      setSelected(new Set());
-      loadOrders();
-    } catch {
-      toast({ title: "Update failed", variant: "destructive" });
-    } finally { setBulkUpdating(false); }
-  };
-
-  /* ─── Move to Trash ─── */
-  const handleTrashOrders = async (ids: string[]) => {
-    if (ids.length === 0) return;
-    setBulkUpdating(true);
-    try {
-      const now = new Date().toISOString();
-      await supabase.from("orders").update({ deleted_at: now } as any).in("id", ids);
-      const timelineEntries = ids.map((id) => ({
-        order_id: id, event: "trashed", description: "Order moved to trash",
-        // Posted explicitly BEFORE the WC trash call below so it's still attached.
-        metadata: { skip_woo_note: true },
-      }));
-      await addOrderTimeline(timelineEntries);
-      const wooOrders = orders.filter((o) => ids.includes(o.id) && o.woo_order_id && o.store_id);
-      for (const o of wooOrders) {
-        try {
-          // Note posted before trash so it's visible in WC even if trashed
-          await postWooOrderNote(o.id, "[DokanOS] Order moved to trash");
-          await supabase.functions.invoke("woo-push", { body: { action: "trash_order", order_id: o.id } });
-        } catch {}
-      }
-      await logAction("delete", "order_trash_bulk", undefined, { ids });
-      toast({ title: `${ids.length} order(s) moved to trash` });
-      setSelected(new Set());
-      loadOrders();
-    } catch {
-      toast({ title: "Failed to trash orders", variant: "destructive" });
-    } finally { setBulkUpdating(false); }
-  };
-
-  /* ─── Restore from Trash ─── */
-  const handleRestoreOrders = async (ids: string[]) => {
-    if (ids.length === 0) return;
-    setBulkUpdating(true);
-    try {
-      await supabase.from("orders").update({ deleted_at: null } as any).in("id", ids);
-      const timelineEntries = ids.map((id) => ({
-        order_id: id, event: "restored", description: "Order restored from trash",
-      }));
-      await addOrderTimeline(timelineEntries);
-      await logAction("update", "order_restore_bulk", undefined, { ids });
-      toast({ title: `${ids.length} order(s) restored` });
-      setSelected(new Set());
-      loadOrders();
-    } catch {
-      toast({ title: "Failed to restore orders", variant: "destructive" });
-    } finally { setBulkUpdating(false); }
-  };
-
-  /* ─── Bulk Status Change ─── */
-  const handleBulkStatusChange = async (newStatus: string) => {
-    if (selected.size === 0) return;
-    setBulkUpdating(true);
-    try {
-      const ids = Array.from(selected);
-      await supabase.from("orders").update({ status: newStatus }).in("id", ids);
-      const label = newStatus.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-      const timelineEntries = ids.map((id) => ({
-        order_id: id, event: "status_changed", description: `Status changed to ${label}`,
-      }));
-      await addOrderTimeline(timelineEntries);
-      await logAction("update", "order_status_bulk", undefined, { ids, to: newStatus });
-      // Push status change to WooCommerce for each linked order (same flow as single-order save)
-      await Promise.all(ids.map((id) =>
-        supabase.functions.invoke("woo-push", { body: { action: "push_order", order_id: id } })
-          .catch((e) => console.warn("WooCommerce order push failed:", e))
-      ));
-      toast({ title: `${ids.length} order(s) → ${label}` });
-      setSelected(new Set());
-      loadOrders();
-    } catch {
-      toast({ title: "Update failed", variant: "destructive" });
-    } finally { setBulkUpdating(false); }
-  };
-
-  /* ─── Bulk Print Measurement Slips ─── */
-  const handleBulkPrintMeasurementSlips = async () => {
-    if (selected.size === 0) return;
-    setBulkUpdating(true);
-    try {
-      const ids = Array.from(selected);
-      const { printed, skipped } = await printMeasurementSlipsBulk(ids);
-      toast({
-        title: `Printed ${printed} measurement slip(s)`,
-        description: skipped > 0 ? `${skipped} order(s) skipped — no measurements recorded.` : undefined,
-      });
-      setSelected(new Set());
-      loadOrders();
-    } catch {
-      toast({ title: "Print failed", variant: "destructive" });
-    } finally { setBulkUpdating(false); }
-  };
-
-  /* ─── Bulk Track Selected ─── */
-  const handleBulkTrackSelected = async () => {
-    if (selected.size === 0) return;
-    setBulkUpdating(true);
-    try {
-      const selectedWithConsignment = orders.filter((o) => selected.has(o.id) && o.consignment_id);
-      let updated = 0;
-      for (const o of selectedWithConsignment) {
-        try {
-          const { data } = await supabase.functions.invoke("pathao-courier", { body: { action: "track_order", consignment_id: o.consignment_id } });
-          if (data?.data?.order_status) updated++;
-        } catch {}
-      }
-      toast({ title: `Tracking updated for ${updated} of ${selectedWithConsignment.length} order(s)` });
-      setSelected(new Set());
-      loadOrders();
-    } catch {
-      toast({ title: "Tracking failed", variant: "destructive" });
-    } finally { setBulkUpdating(false); }
-  };
+  const {
+    handleMarkReadyToShip,
+    handleBulkMarkCompleted,
+    handleBulkMarkPaid,
+    handleConfirmBulkDuePayment,
+    handleBulkCancel,
+    handleBulkStatusChange,
+    handleTrashOrders,
+    handleRestoreOrders,
+    handleBulkPrintMeasurementSlips,
+    handleBulkTrackSelected,
+  } = useOrderBulkActions({
+    orders,
+    selected,
+    setSelected,
+    setBulkUpdating,
+    loadOrders,
+    toast,
+    duePayContext,
+    setDuePayContext,
+    setDuePayOpen,
+  });
 
   /* ─── Pathao sync ─── */
   const syncPathaoStores = async () => {
