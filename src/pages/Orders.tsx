@@ -832,36 +832,6 @@ function EmptyState({ tab }: { tab: TabKey }) {
   );
 }
 
-/* ─── Products List ─── */
-function ProductsList({ items }: { items: { name: string; qty: number }[] }) {
-  if (items.length === 0) return <span className="text-xs text-muted-foreground italic">—</span>;
-  return (
-    <div className="max-w-[240px]">
-      <div className="space-y-0.5">
-        {items.slice(0, 3).map((p, i) => (
-          <div key={i} className="text-xs leading-4 break-words whitespace-normal">
-            <span className="text-muted-foreground">×{p.qty}</span>{" "}<span>{p.name}</span>
-          </div>
-        ))}
-        {items.length > 3 && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button className="text-[11px] text-primary hover:underline cursor-pointer">+{items.length - 3} more</button>
-            </PopoverTrigger>
-            <PopoverContent className="w-72 p-3" align="start">
-              <p className="text-xs font-medium text-muted-foreground mb-2">All items ({items.length})</p>
-              <div className="space-y-1 max-h-48 overflow-y-auto">
-                {items.map((p, i) => (
-                  <div key={i} className="text-xs leading-4"><span className="text-muted-foreground">×{p.qty}</span>{" "}<span>{p.name}</span></div>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /* ─── Pagination ─── */
 function Pagination({ page, totalPages, filtered, setPage }: { page: number; totalPages: number; filtered: any[]; setPage: (p: number) => void }) {
