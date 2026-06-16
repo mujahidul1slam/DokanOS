@@ -23,7 +23,7 @@ interface CategoryNode {
   id: string;
   name: string;
   parent_id: string | null;
-  store_id: string;
+  store_id: string | null;
 }
 
 interface OrderFiltersProps {
