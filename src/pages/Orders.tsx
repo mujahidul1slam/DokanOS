@@ -45,6 +45,7 @@ import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
 import OrderRowActions from "@/components/orders/OrderRowActions";
 import OrderTabs from "@/components/orders/OrderTabs";
 import OrderFilters from "@/components/orders/OrderFilters";
+import OrderBulkActionsBar from "@/components/orders/OrderBulkActionsBar";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
@@ -654,68 +655,22 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       </div>
 
       {/* Action Bar — shown when any orders are selected */}
-      {hasSelection && (
-        <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
-          <CheckSquare className="h-4 w-4 text-primary shrink-0" />
-          <span className="text-sm font-medium">{selected.size} order{selected.size > 1 ? "s" : ""} selected</span>
-          <div className="flex items-center gap-2 ml-auto flex-wrap">
-            {canWrite && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline" disabled={bulkUpdating} className="gap-1.5">
-                    <Package className="h-4 w-4" /> Change Status
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("processing")}><Package className="h-4 w-4 mr-2" /> Processing</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("pre_order_pending")}><Hourglass className="h-4 w-4 mr-2" /> Pre-Order</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("pre_order_making")}><Wrench className="h-4 w-4 mr-2" /> Making</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("pre_order_ready")}><Sparkles className="h-4 w-4 mr-2" /> Pre-Order Ready</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("ready_to_ship")}><PackageCheck className="h-4 w-4 mr-2" /> Ready to Ship</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("shipped")}><Truck className="h-4 w-4 mr-2" /> Shipped</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("delivered")}><CheckCircle2 className="h-4 w-4 mr-2" /> Delivered</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("completed")}><BadgeCheck className="h-4 w-4 mr-2" /> Completed</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("returned")}><Undo2 className="h-4 w-4 mr-2" /> Returned</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange("cancelled")} className="text-destructive"><XCircle className="h-4 w-4 mr-2" /> Cancelled</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-            <PickupSlipPrint orders={selectedOrders} />
-            {canWrite && (
-              <Button size="sm" variant="outline" onClick={handleBulkPrintMeasurementSlips} disabled={bulkUpdating} className="gap-1.5">
-                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ruler className="h-4 w-4" />}
-                Print Measurement Slips
-              </Button>
-            )}
-            {canWrite && (
-              <Button size="sm" onClick={() => openDispatch(Array.from(selected))} className="gap-1.5">
-                <Send className="h-4 w-4" /> Dispatch
-              </Button>
-            )}
-            <Button size="sm" variant="outline" onClick={handleBulkTrackSelected} disabled={bulkUpdating} className="gap-1.5">
-              {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Track
-            </Button>
-            {canWrite && (
-              <Button size="sm" variant="outline" onClick={handleBulkMarkPaid} disabled={bulkUpdating} className="gap-1.5">
-                {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-                Mark Paid
-              </Button>
-            )}
-            {canWrite && tab === "trash" && (
-              <Button size="sm" variant="outline" onClick={() => handleRestoreOrders(Array.from(selected))} disabled={bulkUpdating} className="gap-1.5">
-                <RotateCcw className="h-4 w-4" /> Restore
-              </Button>
-            )}
-            {canWrite && tab !== "trash" && (
-              <Button size="sm" variant="outline" onClick={() => { setPendingTrashIds(Array.from(selected)); setTrashConfirmOpen(true); }} disabled={bulkUpdating} className="gap-1.5 text-destructive hover:text-destructive">
-                <Trash2 className="h-4 w-4" /> Trash
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
-          </div>
-        </div>
-      )}
+      <OrderBulkActionsBar
+        selectedCount={selected.size}
+        selectedOrders={selectedOrders}
+        selectedIds={Array.from(selected)}
+        bulkUpdating={bulkUpdating}
+        canWrite={canWrite}
+        tab={tab}
+        onBulkStatusChange={handleBulkStatusChange}
+        onBulkPrintMeasurementSlips={handleBulkPrintMeasurementSlips}
+        onDispatch={() => openDispatch(Array.from(selected))}
+        onBulkTrack={handleBulkTrackSelected}
+        onBulkMarkPaid={handleBulkMarkPaid}
+        onRestore={() => handleRestoreOrders(Array.from(selected))}
+        onTrash={() => { setPendingTrashIds(Array.from(selected)); setTrashConfirmOpen(true); }}
+        onClear={() => setSelected(new Set())}
+      />
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
