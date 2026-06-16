@@ -307,10 +307,10 @@ const MeasurementsTab = () => {
                     <Input value={g.unit} onChange={(e) => updateGroup(g.id, { unit: e.target.value })} className="h-9" placeholder="in" />
                   </div>
                   <div className="col-span-2 flex justify-end gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => duplicateGroup(g.id)} title="Duplicate group">
+                    <Button variant="ghost" size="icon" onClick={() => duplicateGroup(g.id)} title="Duplicate group" aria-label="Duplicate group">
                       <Copy className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteGroup(g.id)} className="text-destructive" title="Delete group">
+                    <Button variant="ghost" size="icon" onClick={() => deleteGroup(g.id)} className="text-destructive" title="Delete group" aria-label="Delete group">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
