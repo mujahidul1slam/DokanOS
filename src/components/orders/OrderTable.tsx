@@ -176,7 +176,7 @@ function OrderTable<T extends OrderRowLike>({
                   <span className="text-xs text-muted-foreground italic">—</span>
                 )}
               </TableCell>
-              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+              <TableCell className="text-right">
                 {renderActions(order)}
               </TableCell>
             </TableRow>
