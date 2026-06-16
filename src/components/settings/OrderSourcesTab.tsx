@@ -85,12 +85,13 @@ const OrderSourcesTab = () => {
               className="h-7 w-7 shrink-0"
               onClick={() => handleSetDefault(s.id)}
               title={s.is_default ? "Default source" : "Set as default"}
+              aria-label={s.is_default ? "Default source" : "Set as default source"}
             >
               <Star className={`h-3.5 w-3.5 ${s.is_default ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
             </Button>
             {s.is_default && <Badge variant="secondary" className="text-xs shrink-0">Default</Badge>}
             {!s.is_default && (
-              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleDelete(s.id)}>
+              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleDelete(s.id)} aria-label="Delete source">
                 <Trash2 className="h-3.5 w-3.5 text-destructive" />
               </Button>
             )}
