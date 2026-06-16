@@ -60,6 +60,7 @@ import { Settings as SettingsIcon } from "lucide-react";
 import PreOrderCategoriesDialog from "@/components/settings/PreOrderCategoriesDialog";
 import DuePaymentDialog, { type DuePaymentResult } from "@/components/orders/DuePaymentDialog";
 import { recordDuePayment } from "@/lib/dueCollection";
+import { matchesTab as matchesTabExt, ALL_TAB_KEYS, type TabKey } from "./orders/tabFilters";
 
 interface OrderRow {
   id: string;
