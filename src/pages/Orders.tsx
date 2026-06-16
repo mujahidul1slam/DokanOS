@@ -293,63 +293,68 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   }, [preOrderOrderIds, orders]);
 
 
-  /* ─── Tab-based filtering ─── */
-  const getTabOrders = useCallback((tabKey: TabKey) => {
-    if (tabKey === "trash") {
-      return orders.filter((o) => !!o.deleted_at);
+  /* ─── Tab-based filtering ───
+     Predicate extracted so both getTabOrders and counts can reuse it without
+     re-implementing the rules. Trash is handled separately because it inverts
+     the deleted_at check. */
+  const matchesTab = useCallback((o: any, tabKey: TabKey): boolean => {
+    if (tabKey === "trash") return !!o.deleted_at;
+    if (o.deleted_at) return false;
+    // Cancelled orders are surfaced ONLY in the cancelled tab (and "all").
+    const isCancelled =
+      o.status === "cancelled" ||
+      (!!o.consignment_id && ["Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || ""));
+    if (tabKey !== "cancelled" && tabKey !== "all" && isCancelled) return false;
+    switch (tabKey) {
+      case "all":
+        return true;
+      case "new":
+        // New = processing or payment_pending orders not yet dispatched and not pre-order
+        return ["processing", "payment_pending"].includes(o.status) && !o.consignment_id && !preOrderOrderIds.has(o.id);
+      case "ready":
+        // Once moved to ready_to_ship, show here regardless of pre-order origin
+        return o.status === "ready_to_ship" && !o.consignment_id;
+      case "pre_order":
+        // Pre-order tab catches pre_order_* statuses, plus payment_pending orders that
+        // contain pre-order items. Exclude orders already advanced past pre-order stage
+        // (ready_to_ship, shipped, delivered, etc.) so they show in their proper tab.
+        return (
+          ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
+          (preOrderOrderIds.has(o.id) && !o.consignment_id &&
+           !["completed","cancelled","returned","ready_to_ship","shipped","delivered"].includes(o.status))
+        );
+      case "pre_order_pending":
+        return o.status === "pre_order_pending";
+      case "pre_order_making":
+        return o.status === "pre_order_making";
+      case "pre_order_ready":
+        return o.status === "pre_order_ready";
+      case "pickup_pending":
+        return !!o.consignment_id && ["Pending","Pickup Pending","Waiting for Pickup","Pickup Requested","Assigned for Pickup","Assigned For Pickup","Picked","Picked Up"].includes(o.tracking_status || "");
+      case "in_transit":
+        return !!o.consignment_id && ["At Sorting Hub","In Transit","On the Way To Delivery Hub","At Delivery Hub","Out for Delivery","Assigned for Delivery","Assigned For Delivery"].includes(o.tracking_status || "");
+      case "delivered":
+        // Delivered: any order whose internal status is delivered/completed,
+        // OR a dispatched parcel whose Pathao tracking reports a delivered state.
+        return (
+          ["delivered","completed"].includes(o.status) ||
+          (!!o.consignment_id && ["Delivered","Partial Delivered","Payment Invoice"].includes(o.tracking_status || ""))
+        );
+      case "on_hold":
+        return !!o.consignment_id && ["On Hold","Hold","Exchange"].includes(o.tracking_status || "");
+      case "returned":
+        return o.status === "returned" || (!!o.consignment_id && ["Return","Returned","Paid Return","Return Requested","Return In Transit","Returned to Merchant","Merchant Return","Return Delivered","Delivery Failed","Customer Refused"].includes(o.tracking_status || ""));
+      case "cancelled":
+        return isCancelled;
+      default:
+        return true;
     }
-    // All non-trash tabs exclude trashed orders
-    const active = orders.filter((o) => !o.deleted_at);
-    return active.filter((o) => {
-      // Cancelled orders are surfaced ONLY in the cancelled tab (and "all").
-      const isCancelled =
-        o.status === "cancelled" ||
-        (!!o.consignment_id && ["Pickup Cancel","Pickup Cancelled","Pickup Failed"].includes(o.tracking_status || ""));
-      if (tabKey !== "cancelled" && tabKey !== "all" && isCancelled) return false;
-      switch (tabKey) {
-        case "new":
-          // New = processing or payment_pending orders not yet dispatched and not pre-order
-          return ["processing", "payment_pending"].includes(o.status) && !o.consignment_id && !preOrderOrderIds.has(o.id);
-        case "ready":
-          // Once moved to ready_to_ship, show here regardless of pre-order origin
-          return o.status === "ready_to_ship" && !o.consignment_id;
-        case "pre_order":
-          // Pre-order tab catches pre_order_* statuses, plus payment_pending orders that
-          // contain pre-order items. Exclude orders already advanced past pre-order stage
-          // (ready_to_ship, shipped, delivered, etc.) so they show in their proper tab.
-          return (
-            ["pre_order_pending","pre_order_making","pre_order_ready"].includes(o.status) ||
-            (preOrderOrderIds.has(o.id) && !o.consignment_id &&
-             !["completed","cancelled","returned","ready_to_ship","shipped","delivered"].includes(o.status))
-          );
-        case "pre_order_pending":
-          return o.status === "pre_order_pending";
-        case "pre_order_making":
-          return o.status === "pre_order_making";
-        case "pre_order_ready":
-          return o.status === "pre_order_ready";
-        case "pickup_pending":
-          return !!o.consignment_id && ["Pending","Pickup Pending","Waiting for Pickup","Pickup Requested","Assigned for Pickup","Assigned For Pickup","Picked","Picked Up"].includes(o.tracking_status || "");
-        case "in_transit":
-          return !!o.consignment_id && ["At Sorting Hub","In Transit","On the Way To Delivery Hub","At Delivery Hub","Out for Delivery","Assigned for Delivery","Assigned For Delivery"].includes(o.tracking_status || "");
-        case "delivered":
-          // Delivered: any order whose internal status is delivered/completed,
-          // OR a dispatched parcel whose Pathao tracking reports a delivered state.
-          return (
-            ["delivered","completed"].includes(o.status) ||
-            (!!o.consignment_id && ["Delivered","Partial Delivered","Payment Invoice"].includes(o.tracking_status || ""))
-          );
-        case "on_hold":
-          return !!o.consignment_id && ["On Hold","Hold","Exchange"].includes(o.tracking_status || "");
-        case "returned":
-          return o.status === "returned" || (!!o.consignment_id && ["Return","Returned","Paid Return","Return Requested","Return In Transit","Returned to Merchant","Merchant Return","Return Delivered","Delivery Failed","Customer Refused"].includes(o.tracking_status || ""));
-        case "cancelled":
-          return isCancelled;
-        default:
-          return true;
-      }
-    });
-  }, [orders, preOrderOrderIds]);
+  }, [preOrderOrderIds]);
+
+  const getTabOrders = useCallback(
+    (tabKey: TabKey) => orders.filter((o) => matchesTab(o, tabKey)),
+    [orders, matchesTab]
+  );
 
   // Categories scoped to currently selected store filter
   const scopedCategories = useMemo(() => {
@@ -445,23 +450,24 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     else setSelected(new Set(paginated.map((o) => o.id)));
   };
 
-  /* ─── Tab counts ─── */
-  const counts = useMemo(() => ({
-    all: orders.filter((o) => !o.deleted_at).length,
-    new: getTabOrders("new").length,
-    ready: getTabOrders("ready").length,
-    pre_order: getTabOrders("pre_order").length,
-    pre_order_pending: getTabOrders("pre_order_pending").length,
-    pre_order_making: getTabOrders("pre_order_making").length,
-    pre_order_ready: getTabOrders("pre_order_ready").length,
-    pickup_pending: getTabOrders("pickup_pending").length,
-    in_transit: getTabOrders("in_transit").length,
-    delivered: getTabOrders("delivered").length,
-    on_hold: getTabOrders("on_hold").length,
-    returned: getTabOrders("returned").length,
-    cancelled: getTabOrders("cancelled").length,
-    trash: getTabOrders("trash").length,
-  }), [orders, getTabOrders]);
+  /* ─── Tab counts ───
+     Single pass over orders, asking each tab's predicate per order. Previously
+     this called getTabOrders 13 times (each a full scan), giving O(13n). */
+  const counts = useMemo(() => {
+    const tabKeys: TabKey[] = [
+      "all", "new", "ready", "pre_order",
+      "pre_order_pending", "pre_order_making", "pre_order_ready",
+      "pickup_pending", "in_transit", "delivered",
+      "on_hold", "returned", "cancelled", "trash",
+    ];
+    const out = Object.fromEntries(tabKeys.map((k) => [k, 0])) as Record<TabKey, number>;
+    for (const o of orders) {
+      for (const k of tabKeys) {
+        if (matchesTab(o, k)) out[k]++;
+      }
+    }
+    return out;
+  }, [orders, matchesTab]);
 
   const activeFilterCount = useMemo(() => {
     let n = 0;

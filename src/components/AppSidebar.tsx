@@ -169,10 +169,10 @@ const AppSidebar = ({ mobileOpen: mobileOpenProp, onMobileOpenChange }: AppSideb
             <p className="truncate text-sm text-foreground">{user?.email}</p>
             <p className="truncate text-xs capitalize text-muted-foreground">{role || "—"}</p>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={toggleTheme} title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={toggleTheme} title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={signOut}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={signOut} aria-label="Sign out">
             <LogOut className="h-4 w-4" />
           </Button>
         </div>

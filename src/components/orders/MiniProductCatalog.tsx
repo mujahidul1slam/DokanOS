@@ -229,11 +229,11 @@ const MiniProductCatalog = ({ products, categories, productCatMap, stores, onSel
       <div className="flex items-center justify-between gap-1 pt-2 border-t border-border mt-auto">
         <span className="text-[10px] text-muted-foreground truncate">{filtered.length} products</span>
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="icon" className="h-6 w-6" disabled={currentPage <= 1} onClick={() => setPage(p => p - 1)}>
+          <Button variant="outline" size="icon" className="h-6 w-6" disabled={currentPage <= 1} onClick={() => setPage(p => p - 1)} aria-label="Previous page">
             <ChevronLeft className="h-3 w-3" />
           </Button>
           <span className="text-[10px] min-w-[30px] text-center">{currentPage}/{totalPages}</span>
-          <Button variant="outline" size="icon" className="h-6 w-6" disabled={currentPage >= totalPages} onClick={() => setPage(p => p + 1)}>
+          <Button variant="outline" size="icon" className="h-6 w-6" disabled={currentPage >= totalPages} onClick={() => setPage(p => p + 1)} aria-label="Next page">
             <ChevronRight className="h-3 w-3" />
           </Button>
         </div>
