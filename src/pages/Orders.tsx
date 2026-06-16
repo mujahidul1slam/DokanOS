@@ -46,6 +46,7 @@ import OrderRowActions from "@/components/orders/OrderRowActions";
 import OrderTabs from "@/components/orders/OrderTabs";
 import OrderFilters from "@/components/orders/OrderFilters";
 import OrderBulkActionsBar from "@/components/orders/OrderBulkActionsBar";
+import OrderTable from "@/components/orders/OrderTable";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
