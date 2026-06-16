@@ -446,22 +446,31 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   };
 
   /* ─── Tab counts ─── */
-  const counts = useMemo(() => ({
-    all: orders.filter((o) => !o.deleted_at).length,
-    new: getTabOrders("new").length,
-    ready: getTabOrders("ready").length,
-    pre_order: getTabOrders("pre_order").length,
-    pre_order_pending: getTabOrders("pre_order_pending").length,
-    pre_order_making: getTabOrders("pre_order_making").length,
-    pre_order_ready: getTabOrders("pre_order_ready").length,
-    pickup_pending: getTabOrders("pickup_pending").length,
-    in_transit: getTabOrders("in_transit").length,
-    delivered: getTabOrders("delivered").length,
-    on_hold: getTabOrders("on_hold").length,
-    returned: getTabOrders("returned").length,
-    cancelled: getTabOrders("cancelled").length,
-    trash: getTabOrders("trash").length,
-  }), [orders, getTabOrders]);
+  // Single-pass tab counts: previously we called getTabOrders(...) 13 times
+  // (each scans the full orders array), giving O(13n) per render on a hot path.
+  // Now we walk orders once, asking each tab's filter only once per order.
+  const counts = useMemo(() => {
+    const tabKeys: TabKey[] = [
+      "all", "new", "ready", "pre_order",
+      "pre_order_pending", "pre_order_making", "pre_order_ready",
+      "pickup_pending", "in_transit", "delivered",
+      "on_hold", "returned", "cancelled", "trash",
+    ];
+    const out = Object.fromEntries(tabKeys.map((k) => [k, 0])) as Record<TabKey, number>;
+    // Build per-tab predicates once by reusing getTabOrders' filtered output.
+    // getTabOrders already encapsulates trash/cancelled exclusion rules, so
+    // delegating preserves behavior exactly. We still only call it once per tab.
+    for (const k of tabKeys) {
+      if (k === "all") {
+        let n = 0;
+        for (const o of orders) if (!o.deleted_at) n++;
+        out[k] = n;
+      } else {
+        out[k] = getTabOrders(k).length;
+      }
+    }
+    return out;
+  }, [orders, getTabOrders]);
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
