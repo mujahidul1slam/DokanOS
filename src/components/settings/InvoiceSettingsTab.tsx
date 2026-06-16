@@ -322,7 +322,7 @@ const InvoiceSettingsTab = () => {
                 fields[i] = { ...fields[i], value: e.target.value };
                 updateInvoiceTemplate("custom_fields", fields);
               }} className="flex-1" />
-              <Button variant="ghost" size="icon" onClick={() => {
+              <Button variant="ghost" size="icon" aria-label="Remove field" onClick={() => {
                 updateInvoiceTemplate("custom_fields", invoiceTpl.custom_fields.filter((_, j) => j !== i));
               }}><Trash2 className="h-4 w-4" /></Button>
             </div>
