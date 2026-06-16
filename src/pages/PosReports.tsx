@@ -23,6 +23,8 @@ import DatePresetPicker, { DatePreset, resolveRange } from "@/components/DatePre
 import { downloadCsv } from "@/lib/exportCsv";
 import StatusBadge from "@/components/StatusBadge";
 import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
+import PosOrdersLedger from "@/pages/posReports/PosOrdersLedger";
+import ArOutstandingTable from "@/pages/posReports/ArOutstandingTable";
 
 interface PosOrder {
   id: string;
@@ -933,176 +935,18 @@ const PosReports = () => {
           <AgingCard label="60+ days" amount={arStats.aging.d60p} count={arStats.agingCount.d60p} tone="destructive" />
         </div>
 
-        {arStats.out.length > 0 && (
-          <div className="rounded-lg border border-border bg-card">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-heading text-sm font-medium text-card-foreground">Outstanding Orders</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Oldest first — click a row to collect dues</p>
-            </div>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Order #</TableHead>
-                    <TableHead className="text-xs">Date</TableHead>
-                    <TableHead className="text-xs">Customer</TableHead>
-                    <TableHead className="text-xs">Fulfillment</TableHead>
-                    <TableHead className="text-xs text-right">Total</TableHead>
-                    <TableHead className="text-xs text-right">Paid</TableHead>
-                    <TableHead className="text-xs text-right">Outstanding</TableHead>
-                    <TableHead className="text-xs text-right">Age</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {arStats.out.slice(0, 100).map((r) => {
-                    const days = differenceInDays(new Date(), new Date(r.order.created_at));
-                    const tone = days > 60 ? "text-destructive" : days > 30 ? "text-amber-600 dark:text-amber-500" : "text-foreground";
-                    return (
-                      <TableRow key={r.order.id} className="text-xs cursor-pointer" onClick={() => setDetailOrderId(r.order.id)}>
-                        <TableCell className="font-medium">{r.order.order_number}</TableCell>
-                        <TableCell className="text-muted-foreground whitespace-nowrap">{format(new Date(r.order.created_at), "MMM d, yyyy")}</TableCell>
-                        <TableCell>
-                          <div className="font-medium text-foreground truncate max-w-[180px]">{r.order.customer_name || "Walk-in"}</div>
-                          {r.order.customer_phone && <div className="text-[11px] text-muted-foreground">{r.order.customer_phone}</div>}
-                        </TableCell>
-                        <TableCell className="capitalize text-muted-foreground">{r.order.fulfillment_type || "walkin"}</TableCell>
-                        <TableCell className="text-right">৳{Number(r.order.total).toLocaleString()}</TableCell>
-                        <TableCell className="text-right text-success">৳{r.paid.toLocaleString()}</TableCell>
-                        <TableCell className="text-right font-semibold text-destructive">৳{r.outstanding.toLocaleString()}</TableCell>
-                        <TableCell className={`text-right tabular-nums ${tone}`}>{days}d</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-            {arStats.out.length > 100 && (
-              <div className="p-3 text-center text-xs text-muted-foreground border-t border-border">
-                Showing oldest 100 of {arStats.out.length} outstanding orders — export AR for full list
-              </div>
-            )}
-          </div>
-        )}
+        <ArOutstandingTable out={arStats.out} onOpen={setDetailOrderId} />
       </section>
 
-      {/* =================== Orders ledger (raw POS list, by order date) =================== */}
-      <section className="space-y-3">
-        <div className="rounded-lg border border-border bg-card">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border-b border-border">
-            <div>
-              <h2 className="font-heading text-sm font-medium text-card-foreground flex items-center gap-2">
-                <ShoppingCart className="h-4 w-4 text-muted-foreground" /> POS Orders Ledger
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">All POS orders in selected period</p>
-            </div>
-            <Input
-              placeholder="Search order #, customer, cashier"
-              value={search} onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-full sm:w-64 text-xs"
-            />
-          </div>
-
-          {/* Mobile cards */}
-          <div className="md:hidden p-3 space-y-2">
-            {filteredOrders.length === 0 ? (
-              <div className="text-center text-sm text-muted-foreground py-10">No POS orders in this period</div>
-            ) : filteredOrders.map((o) => {
-              const paid = paidByOrder.get(o.id) || 0;
-              const due = Math.max(0, Number(o.total) - paid);
-              const ms = methodsByOrder.get(o.id) || (o.payment_method ? [o.payment_method] : []);
-              const addr = [o.customer_address, o.customer_city].filter(Boolean).join(", ");
-              return (
-                <div key={o.id} role="button" onClick={() => setDetailOrderId(o.id)}
-                  className="rounded-lg border border-border bg-card p-3 active:bg-accent/50 transition-colors">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold text-foreground truncate">#{o.order_number}</div>
-                    <div className="font-semibold text-foreground whitespace-nowrap">৳{Number(o.total).toLocaleString()}</div>
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {format(new Date(o.created_at), "MMM d, h:mm a")}{o.salesperson_name ? ` · ${o.salesperson_name}` : ""}
-                  </div>
-                  <div className="mt-2 text-sm text-foreground truncate">{o.customer_name || "Walk-in"}</div>
-                  {o.customer_phone && <div className="text-xs text-muted-foreground truncate">{o.customer_phone}</div>}
-                  {addr && <div className="text-xs text-muted-foreground truncate">{addr}</div>}
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <StatusBadge status={o.status} />
-                    {ms.map((m) => (<Badge key={m} variant="outline" className="text-[10px] capitalize">{m}</Badge>))}
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-                    <div><div className="text-muted-foreground">Items</div><div className="font-medium">{itemsByOrder.get(o.id) || 0}</div></div>
-                    <div><div className="text-muted-foreground">Paid</div><div className="font-medium text-success">৳{paid.toLocaleString()}</div></div>
-                    <div><div className="text-muted-foreground">Due</div>
-                      <div className={`font-medium ${due > 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                        {due > 0 ? `৳${due.toLocaleString()}` : "—"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">Order #</TableHead>
-                  <TableHead className="text-xs">Date</TableHead>
-                  <TableHead className="text-xs">Customer</TableHead>
-                  <TableHead className="text-xs">Cashier</TableHead>
-                  <TableHead className="text-xs text-right">Items</TableHead>
-                  <TableHead className="text-xs text-right">Subtotal</TableHead>
-                  <TableHead className="text-xs text-right">Discount</TableHead>
-                  <TableHead className="text-xs text-right">Delivery</TableHead>
-                  <TableHead className="text-xs text-right">Total</TableHead>
-                  <TableHead className="text-xs text-right">Paid</TableHead>
-                  <TableHead className="text-xs text-right">Due</TableHead>
-                  <TableHead className="text-xs">Payment</TableHead>
-                  <TableHead className="text-xs">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredOrders.length === 0 ? (
-                  <TableRow><TableCell colSpan={13} className="text-center text-sm text-muted-foreground py-10">No POS orders in this period</TableCell></TableRow>
-                ) : filteredOrders.map((o) => {
-                  const paid = paidByOrder.get(o.id) || 0;
-                  const due = Math.max(0, Number(o.total) - paid);
-                  const ms = methodsByOrder.get(o.id) || (o.payment_method ? [o.payment_method] : []);
-                  return (
-                    <TableRow key={o.id} className="text-xs cursor-pointer" onClick={() => setDetailOrderId(o.id)}>
-                      <TableCell className="font-medium text-foreground">{o.order_number}</TableCell>
-                      <TableCell className="text-muted-foreground whitespace-nowrap">{format(new Date(o.created_at), "MMM d, HH:mm")}</TableCell>
-                      <TableCell className="max-w-[200px]">
-                        <div className="font-medium text-foreground truncate">{o.customer_name || "Walk-in"}</div>
-                        {o.customer_phone && <div className="text-[11px] text-muted-foreground truncate">{o.customer_phone}</div>}
-                      </TableCell>
-                      <TableCell className="max-w-[140px] truncate text-muted-foreground">{o.salesperson_name || "—"}</TableCell>
-                      <TableCell className="text-right">{itemsByOrder.get(o.id) || 0}</TableCell>
-                      <TableCell className="text-right">৳{Number(o.subtotal || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">{o.discount ? `-৳${Number(o.discount).toLocaleString()}` : "—"}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">{o.shipping_cost ? `৳${Number(o.shipping_cost).toLocaleString()}` : "—"}</TableCell>
-                      <TableCell className="text-right font-semibold">৳{Number(o.total).toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-success">৳{paid.toLocaleString()}</TableCell>
-                      <TableCell className={`text-right font-medium ${due > 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                        {due > 0 ? `৳${due.toLocaleString()}` : "—"}
-                      </TableCell>
-                      <TableCell>
-                        {ms.length === 0 ? <Badge variant="outline" className="text-[10px]">—</Badge> : (
-                          <div className="flex flex-wrap gap-1">
-                            {ms.map((m) => (<Badge key={m} variant="outline" className="text-[10px] capitalize">{m}</Badge>))}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell><StatusBadge status={o.status} /></TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
-      </section>
+      <PosOrdersLedger
+        orders={filteredOrders}
+        search={search}
+        onSearchChange={setSearch}
+        paidByOrder={paidByOrder}
+        methodsByOrder={methodsByOrder}
+        itemsByOrder={itemsByOrder}
+        onOpen={setDetailOrderId}
+      />
 
       <OrderDetailSheet
         orderId={detailOrderId}
