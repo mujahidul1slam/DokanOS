@@ -1374,6 +1374,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                       className="h-6 w-6 text-muted-foreground hover:text-destructive"
                                       onClick={() => removeMeas(m.id)}
                                       title="Remove this measurement set"
+                                      aria-label="Remove measurement set"
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
