@@ -643,7 +643,7 @@ const ProductList = () => {
           Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
         </p>
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage <= 1} onClick={() => setPage(p => p - 1)}>
+          <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage <= 1} onClick={() => setPage(p => p - 1)} aria-label="Previous page">
             <ChevronLeft className="h-4 w-4" />
           </Button>
           {Array.from({ length: totalPages }, (_, i) => i + 1)
@@ -657,12 +657,12 @@ const ProductList = () => {
               p === "…" ? (
                 <span key={`e${i}`} className="px-2 text-muted-foreground">…</span>
               ) : (
-                <Button key={p} variant={p === currentPage ? "default" : "outline"} size="icon" className="h-8 w-8" onClick={() => setPage(p)}>
+                <Button key={p} variant={p === currentPage ? "default" : "outline"} size="icon" className="h-8 w-8" onClick={() => setPage(p)} aria-label={`Go to page ${p}`} aria-current={p === currentPage ? "page" : undefined}>
                   {p}
                 </Button>
               )
             )}
-          <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage >= totalPages} onClick={() => setPage(p => p + 1)}>
+          <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage >= totalPages} onClick={() => setPage(p => p + 1)} aria-label="Next page">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
