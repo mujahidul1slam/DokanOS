@@ -336,7 +336,7 @@ const MeasurementsTab = () => {
                           className="h-8 text-xs"
                           placeholder="Field name"
                         />
-                        <Button variant="ghost" size="icon" onClick={() => deleteField(g.id, f.id)} className="h-7 w-7 text-destructive">
+                        <Button variant="ghost" size="icon" onClick={() => deleteField(g.id, f.id)} className="h-7 w-7 text-destructive" aria-label="Delete field">
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
