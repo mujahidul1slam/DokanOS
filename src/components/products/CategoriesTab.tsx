@@ -204,7 +204,7 @@ const CategoriesTab = () => {
                   ) : <span className="text-muted-foreground">—</span>}
                 </td>
                 <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(cat.id)}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(cat.id)} aria-label="Delete category">
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </td>

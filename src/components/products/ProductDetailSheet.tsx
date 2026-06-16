@@ -589,7 +589,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
                 <div key={key} className="rounded-lg border border-border p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-foreground">{key}</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => removeAttributeKey(key)}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => removeAttributeKey(key)} aria-label={`Remove attribute ${key}`}>
                       <X className="h-3.5 w-3.5" />
                     </Button>
                   </div>

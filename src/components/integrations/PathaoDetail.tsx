@@ -191,7 +191,7 @@ const PathaoDetail = ({ integration, onDelete, onRefresh }: Props) => {
                   <code className="text-xs font-mono max-w-[200px] truncate">
                     {showSecrets[cred.key] ? cred.value : "••••••••••••"}
                   </code>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleSecret(cred.key)}>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleSecret(cred.key)} aria-label={showSecrets[cred.key] ? "Hide value" : "Show value"}>
                     {showSecrets[cred.key] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </Button>
                 </div>

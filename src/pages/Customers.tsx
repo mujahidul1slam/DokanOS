@@ -420,7 +420,7 @@ const Customers = () => {
                           <span className="text-foreground flex-1">{n.value}</span>
                           <Badge variant="outline" className="text-xs">{storeName(n.source_store_id)}</Badge>
                           {selected.names.length > 1 && n.id && (
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(n)}>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(n)} aria-label="Delete name">
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           )}
@@ -439,7 +439,7 @@ const Customers = () => {
                           <span className="text-foreground flex-1">{e.value}</span>
                           <Badge variant="outline" className="text-xs">{storeName(e.source_store_id)}</Badge>
                           {selected.emails.length > 1 && e.id && (
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(e)}>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(e)} aria-label="Delete email">
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           )}
@@ -458,7 +458,7 @@ const Customers = () => {
                           <span className="text-foreground flex-1">{a.value}</span>
                           <Badge variant="outline" className="text-xs shrink-0">{storeName(a.source_store_id)}</Badge>
                           {selected.addresses.length > 1 && a.id && (
-                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(a)}>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteAlias(a)} aria-label="Delete address">
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           )}

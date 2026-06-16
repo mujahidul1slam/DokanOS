@@ -121,9 +121,9 @@ const RolesTab = ({ onChange }: { onChange?: () => void }) => {
                 {r.description && <p className="text-xs text-muted-foreground mt-0.5">{r.description}</p>}
               </div>
               <div className="flex gap-1">
-                <Button size="icon" variant="ghost" onClick={() => openEdit(r)}><Pencil className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" onClick={() => openEdit(r)} aria-label="Edit role"><Pencil className="h-4 w-4" /></Button>
                 {!r.is_system && (
-                  <Button size="icon" variant="ghost" onClick={() => setDeleteId(r.id)}>
+                  <Button size="icon" variant="ghost" onClick={() => setDeleteId(r.id)} aria-label="Delete role">
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 )}

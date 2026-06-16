@@ -255,12 +255,12 @@ function ProductCuration({ storefrontId }: { storefrontId: string }) {
                   <div className="text-sm truncate">{it.product?.name || "(deleted product)"}</div>
                   <div className="text-xs text-muted-foreground">৳{it.product?.price ?? "—"}</div>
                 </div>
-                <Button size="icon" variant="ghost" onClick={() => move(it, -1)} disabled={idx === 0}><ChevronUp className="h-4 w-4" /></Button>
-                <Button size="icon" variant="ghost" onClick={() => move(it, 1)} disabled={idx === items.length - 1}><ChevronDown className="h-4 w-4" /></Button>
-                <Button size="icon" variant={it.is_featured ? "default" : "ghost"} onClick={() => toggleFeatured(it)} title="Toggle featured">
+                <Button size="icon" variant="ghost" onClick={() => move(it, -1)} disabled={idx === 0} aria-label="Move up"><ChevronUp className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" onClick={() => move(it, 1)} disabled={idx === items.length - 1} aria-label="Move down"><ChevronDown className="h-4 w-4" /></Button>
+                <Button size="icon" variant={it.is_featured ? "default" : "ghost"} onClick={() => toggleFeatured(it)} title="Toggle featured" aria-label="Toggle featured">
                   <Star className="h-4 w-4" />
                 </Button>
-                <Button size="icon" variant="ghost" onClick={() => remove(it.id)} className="text-destructive">
+                <Button size="icon" variant="ghost" onClick={() => remove(it.id)} className="text-destructive" aria-label="Remove item">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>

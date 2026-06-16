@@ -72,7 +72,7 @@ const PosSettingsTab = () => {
                 placeholder={`Preset ${i + 1}`}
               />
               {shippingPresets.length > 1 && (
-                <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setShippingPresets(shippingPresets.filter((_, j) => j !== i))}>
+                <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setShippingPresets(shippingPresets.filter((_, j) => j !== i))} aria-label="Remove preset">
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               )}

@@ -1043,7 +1043,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                           <span className="px-2 text-xs font-medium">{item.qty}</span>
                           <button onClick={() => updateQty(item.uid, item.qty + 1)} className="p-1 hover:bg-muted"><Plus className="h-3 w-3" /></button>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive" onClick={() => removeItem(item.uid)}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive" onClick={() => removeItem(item.uid)} aria-label="Remove item">
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>

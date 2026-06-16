@@ -709,7 +709,7 @@ const POS = () => {
         <SheetContent side="bottom" className="h-[100dvh] p-0 flex flex-col gap-0 [&>button]:hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-card">
             <span className="text-sm font-semibold">Cart</span>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setMobileCartOpen(false)}>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setMobileCartOpen(false)} aria-label="Close cart">
               <X className="h-4 w-4" />
             </Button>
           </div>

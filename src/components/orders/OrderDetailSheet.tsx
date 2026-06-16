@@ -1246,7 +1246,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                 ৳{(item.quantity * item.unit_price).toLocaleString()}
                               </TableCell>
                               <TableCell>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeItem(item.id)} disabled={!canEdit}>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeItem(item.id)} disabled={!canEdit} aria-label="Remove item">
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               </TableCell>
@@ -1374,6 +1374,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                       className="h-6 w-6 text-muted-foreground hover:text-destructive"
                                       onClick={() => removeMeas(m.id)}
                                       title="Remove this measurement set"
+                                      aria-label="Remove measurement set"
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </Button>

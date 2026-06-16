@@ -121,7 +121,7 @@ const PathaoStoreLinks = ({ integrationId }: Props) => {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => handleDelete(l.id)}>
+                <Button variant="ghost" size="icon" onClick={() => handleDelete(l.id)} aria-label="Delete store link">
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>

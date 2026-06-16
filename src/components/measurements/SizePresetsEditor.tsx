@@ -238,7 +238,7 @@ export const SizePresetsEditor = ({ groupId, productId = null, fieldNames, unit,
                 className="h-8 text-xs font-semibold w-32"
               />
               {savingIds.has(r.id) && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-              <Button variant="ghost" size="icon" onClick={() => removeRow(r)} className="h-7 w-7 text-destructive ml-auto">
+              <Button variant="ghost" size="icon" onClick={() => removeRow(r)} className="h-7 w-7 text-destructive ml-auto" aria-label="Remove size">
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
