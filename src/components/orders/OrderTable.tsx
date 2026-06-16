@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
