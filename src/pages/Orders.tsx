@@ -61,6 +61,7 @@ import PreOrderCategoriesDialog from "@/components/settings/PreOrderCategoriesDi
 import DuePaymentDialog, { type DuePaymentResult } from "@/components/orders/DuePaymentDialog";
 import { recordDuePayment } from "@/lib/dueCollection";
 import { matchesTab as matchesTabExt, ALL_TAB_KEYS, type TabKey } from "./orders/tabFilters";
+import { useOrderBulkActions } from "./orders/useOrderBulkActions";
 
 interface OrderRow {
   id: string;
