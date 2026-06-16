@@ -25,6 +25,10 @@ import StatusBadge from "@/components/StatusBadge";
 import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
 import PosOrdersLedger from "@/pages/posReports/PosOrdersLedger";
 import ArOutstandingTable from "@/pages/posReports/ArOutstandingTable";
+import SalesSection from "@/pages/posReports/SalesSection";
+import CashSection from "@/pages/posReports/CashSection";
+import FulfillmentSection from "@/pages/posReports/FulfillmentSection";
+import { AgingCard } from "@/pages/posReports/cards";
 
 interface PosOrder {
   id: string;
