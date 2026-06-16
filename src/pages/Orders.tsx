@@ -406,20 +406,15 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
      Single pass over orders, asking each tab's predicate per order. Previously
      this called getTabOrders 13 times (each a full scan), giving O(13n). */
   const counts = useMemo(() => {
-    const tabKeys: TabKey[] = [
-      "all", "new", "ready", "pre_order",
-      "pre_order_pending", "pre_order_making", "pre_order_ready",
-      "pickup_pending", "in_transit", "delivered",
-      "on_hold", "returned", "cancelled", "trash",
-    ];
-    const out = Object.fromEntries(tabKeys.map((k) => [k, 0])) as Record<TabKey, number>;
+    const out = Object.fromEntries(ALL_TAB_KEYS.map((k) => [k, 0])) as Record<TabKey, number>;
     for (const o of orders) {
-      for (const k of tabKeys) {
+      for (const k of ALL_TAB_KEYS) {
         if (matchesTab(o, k)) out[k]++;
       }
     }
     return out;
   }, [orders, matchesTab]);
+
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
