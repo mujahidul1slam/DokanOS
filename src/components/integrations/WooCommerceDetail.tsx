@@ -157,7 +157,7 @@ const WooCommerceDetail = ({ store, syncingId, onSync, onDelete, onRefresh }: Pr
                 <code className="text-xs font-mono max-w-[220px] truncate">
                   {showSecret ? (store.consumer_secret || "Not set") : "••••••••••••"}
                 </code>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowSecret(!showSecret)}>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowSecret(!showSecret)} aria-label={showSecret ? "Hide consumer secret" : "Show consumer secret"}>
                   {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </Button>
               </div>
