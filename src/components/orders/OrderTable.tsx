@@ -58,7 +58,7 @@ function ProductsList({ items }: { items: { name: string; qty: number }[] }) {
 }
 
 function OrderTable<T extends OrderRowLike>({
-  orders, selected, tab, onToggleSelect, onToggleAll, onOpen, renderActions,
+  orders, selected, tab, onToggleSelect, onToggleAll, renderActions,
 }: Props<T>) {
   const allChecked = orders.length > 0 && orders.every((o) => selected.has(o.id));
   return (
