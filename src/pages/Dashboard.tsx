@@ -24,6 +24,7 @@ import StatusBadge from "@/components/StatusBadge";
 import StatCardDelta from "@/components/dashboard/StatCardDelta";
 import ActionQueue from "@/components/dashboard/ActionQueue";
 import FulfillmentFunnel from "@/components/dashboard/FulfillmentFunnel";
+import OrderPipeline from "@/components/dashboard/OrderPipeline";
 import TopProducts from "@/components/dashboard/TopProducts";
 import SourceMix from "@/components/dashboard/SourceMix";
 import { supabase } from "@/integrations/supabase/client";
