@@ -94,7 +94,7 @@ const Dashboard = () => {
       const prevFrom = from && days ? subDays(from, days) : null;
 
       const baseSel =
-        "id, order_number, total, subtotal, discount, shipping_cost, status, source, payment_status, payment_method, created_at, customer_name, customer_id, consignment_id";
+        "id, order_number, total, subtotal, discount, shipping_cost, status, source, payment_status, payment_method, created_at, customer_name, customer_id, consignment_id, store_id";
 
       let curQ = supabase
         .from("orders")
