@@ -435,6 +435,9 @@ const Dashboard = () => {
         failedDispatch={statusCounts.failed}
       />
 
+      {/* Live Order Pipeline */}
+      <OrderPipeline orders={orders} />
+
       {/* Trend chart + Recent orders */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <div className="col-span-1 lg:col-span-3 rounded-lg border border-border bg-card p-5">
