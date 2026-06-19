@@ -167,6 +167,7 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     const orderParam = searchParams.get("order");
     const tabParam = searchParams.get("tab") as TabKey | null;
     const newParam = searchParams.get("new");
+    const statusParam = searchParams.get("status");
     let changed = false;
     if (orderParam) {
       setDetailOrderId(orderParam);
@@ -181,6 +182,11 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
     if (newParam) {
       setAddOrderOpen(true);
       searchParams.delete("new");
+      changed = true;
+    }
+    if (statusParam) {
+      setStatusFilter(statusParam);
+      searchParams.delete("status");
       changed = true;
     }
     if (changed) setSearchParams(searchParams, { replace: true });
