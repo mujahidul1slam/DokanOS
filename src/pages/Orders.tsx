@@ -189,6 +189,12 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       searchParams.delete("status");
       changed = true;
     }
+    const storeParam = searchParams.get("store");
+    if (storeParam) {
+      setStoreFilter(storeParam);
+      searchParams.delete("store");
+      changed = true;
+    }
     if (changed) setSearchParams(searchParams, { replace: true });
   }, [searchParams, setSearchParams]);
 

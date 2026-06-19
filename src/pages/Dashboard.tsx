@@ -25,6 +25,8 @@ import StatCardDelta from "@/components/dashboard/StatCardDelta";
 import ActionQueue from "@/components/dashboard/ActionQueue";
 import FulfillmentFunnel from "@/components/dashboard/FulfillmentFunnel";
 import OrderPipeline from "@/components/dashboard/OrderPipeline";
+import StoreHealthGrid from "@/components/dashboard/StoreHealthGrid";
+import CourierDispatchStation from "@/components/dashboard/CourierDispatchStation";
 import TopProducts from "@/components/dashboard/TopProducts";
 import SourceMix from "@/components/dashboard/SourceMix";
 import { supabase } from "@/integrations/supabase/client";
@@ -50,6 +52,7 @@ interface OrderRow {
   customer_name: string | null;
   customer_id: string | null;
   consignment_id: string | null;
+  store_id: string | null;
 }
 
 interface OrderItemLite {
@@ -91,7 +94,7 @@ const Dashboard = () => {
       const prevFrom = from && days ? subDays(from, days) : null;
 
       const baseSel =
-        "id, order_number, total, subtotal, discount, shipping_cost, status, source, payment_status, payment_method, created_at, customer_name, customer_id, consignment_id";
+        "id, order_number, total, subtotal, discount, shipping_cost, status, source, payment_status, payment_method, created_at, customer_name, customer_id, consignment_id, store_id";
 
       let curQ = supabase
         .from("orders")
@@ -437,6 +440,12 @@ const Dashboard = () => {
 
       {/* Live Order Pipeline */}
       <OrderPipeline orders={orders} />
+
+      {/* Courier Dispatch Station */}
+      <CourierDispatchStation orders={orders} />
+
+      {/* Store Health Grid */}
+      <StoreHealthGrid orders={orders} />
 
       {/* Trend chart + Recent orders */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
