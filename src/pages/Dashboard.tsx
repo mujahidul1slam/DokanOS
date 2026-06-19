@@ -25,6 +25,8 @@ import StatCardDelta from "@/components/dashboard/StatCardDelta";
 import ActionQueue from "@/components/dashboard/ActionQueue";
 import FulfillmentFunnel from "@/components/dashboard/FulfillmentFunnel";
 import OrderPipeline from "@/components/dashboard/OrderPipeline";
+import StoreHealthGrid from "@/components/dashboard/StoreHealthGrid";
+import CourierDispatchStation from "@/components/dashboard/CourierDispatchStation";
 import TopProducts from "@/components/dashboard/TopProducts";
 import SourceMix from "@/components/dashboard/SourceMix";
 import { supabase } from "@/integrations/supabase/client";
