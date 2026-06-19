@@ -52,6 +52,7 @@ interface OrderRow {
   customer_name: string | null;
   customer_id: string | null;
   consignment_id: string | null;
+  store_id: string | null;
 }
 
 interface OrderItemLite {
