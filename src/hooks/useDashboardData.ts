@@ -142,7 +142,7 @@ export const useDashboardData = (
       setLoading(false);
     };
     load();
-  }, [datePreset, customRange, globalStockEnabled]);
+  }, [datePreset, customRange, globalStockEnabled, storeId]);
 
   const productCostMap = useMemo(() => {
     const m = new Map<string, number>();
