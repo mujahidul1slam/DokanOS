@@ -122,7 +122,8 @@ export const useDashboardData = (
       if (from) curQ = curQ.gte("created_at", from.toISOString());
       if (to && (datePreset === "custom" || datePreset === "today" || datePreset === "yesterday"))
         curQ = curQ.lte("created_at", to.toISOString());
-      if (storeId !== "all") curQ = curQ.eq("store_id", storeId);
+      if (storeId === "pos") curQ = curQ.eq("source", "pos");
+      else if (storeId !== "all") curQ = curQ.eq("store_id", storeId);
 
       let prevQ = supabase.from("orders").select(BASE_SEL).is("deleted_at", null);
       if (prevFrom && prevTo) {
@@ -130,13 +131,15 @@ export const useDashboardData = (
       } else {
         prevQ = prevQ.eq("id", "00000000-0000-0000-0000-000000000000");
       }
-      if (storeId !== "all") prevQ = prevQ.eq("store_id", storeId);
+      if (storeId === "pos") prevQ = prevQ.eq("source", "pos");
+      else if (storeId !== "all") prevQ = prevQ.eq("store_id", storeId);
 
       let allCountQ = supabase
         .from("orders")
         .select("id", { count: "exact", head: true })
         .is("deleted_at", null);
-      if (storeId !== "all") allCountQ = allCountQ.eq("store_id", storeId);
+      if (storeId === "pos") allCountQ = allCountQ.eq("source", "pos");
+      else if (storeId !== "all") allCountQ = allCountQ.eq("store_id", storeId);
 
       // Accurate product totals (head-only counts so the 1000-row default never truncates)
       const productsCountQ = supabase
