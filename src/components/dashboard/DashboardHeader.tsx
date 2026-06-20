@@ -36,6 +36,12 @@ const DashboardHeader = ({
   onStoreChange,
 }: DashboardHeaderProps) => {
   const activeStore = stores.find((s) => s.id === storeId);
+  const scopeLabel =
+    storeId === "pos"
+      ? " · POS orders"
+      : activeStore
+        ? ` · ${activeStore.name}`
+        : " · All stores";
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
@@ -43,7 +49,7 @@ const DashboardHeader = ({
         <p className="text-sm text-muted-foreground">
           {presetLabel[datePreset]}
           {datePreset !== "all" && " · vs prior period"}
-          {activeStore ? ` · ${activeStore.name}` : " · All stores"}
+          {scopeLabel}
         </p>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
