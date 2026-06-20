@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Monitor, Truck, Menu } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Monitor, Package, Menu } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 
@@ -11,8 +11,9 @@ const items = [
   { icon: LayoutDashboard, label: "Home", path: "/", roles: ["admin", "staff", "viewer"] },
   { icon: ShoppingCart, label: "Orders", path: "/orders", roles: ["admin", "staff", "viewer"] },
   { icon: Monitor, label: "POS", path: "/pos", roles: ["admin", "staff"] },
-  { icon: Truck, label: "Dispatch", path: "/orders?tab=ready", roles: ["admin", "staff"], match: "/orders" },
+  { icon: Package, label: "Products", path: "/products", roles: ["admin", "staff", "viewer"] },
 ];
+
 
 const BottomNav = ({ onMenuClick }: Props) => {
   const location = useLocation();
