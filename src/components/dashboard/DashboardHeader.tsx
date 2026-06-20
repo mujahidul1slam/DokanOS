@@ -60,6 +60,7 @@ const DashboardHeader = ({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All stores</SelectItem>
+            <SelectItem value="pos">POS</SelectItem>
             {stores.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
