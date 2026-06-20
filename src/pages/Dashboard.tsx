@@ -60,7 +60,7 @@ const Dashboard = () => {
         allOrdersCount={data.allOrdersCount}
         uniqueCustomers={data.uniqueCustomers}
         prevUniqueCustomers={data.prevUniqueCustomers}
-        productsCount={data.products.length}
+        productsCount={data.productsCount}
         lowStockCount={data.lowStockCount}
         outOfStockCount={data.outOfStockCount}
       />
