@@ -69,7 +69,11 @@ const uniqueCustomersOf = (rows: OrderRow[]) => {
   return set.size;
 };
 
-export const useDashboardData = (datePreset: DatePreset, customRange: DateRange | undefined) => {
+export const useDashboardData = (
+  datePreset: DatePreset,
+  customRange: DateRange | undefined,
+  storeId: string = "all",
+) => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [prevOrders, setPrevOrders] = useState<OrderRow[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemLite[]>([]);
@@ -91,6 +95,7 @@ export const useDashboardData = (datePreset: DatePreset, customRange: DateRange 
         .order("created_at", { ascending: false });
       if (from) curQ = curQ.gte("created_at", from.toISOString());
       if (to && datePreset === "custom") curQ = curQ.lte("created_at", to.toISOString());
+      if (storeId !== "all") curQ = curQ.eq("store_id", storeId);
 
       let prevQ = supabase.from("orders").select(BASE_SEL).is("deleted_at", null);
       if (prevFrom && from) {
@@ -98,6 +103,13 @@ export const useDashboardData = (datePreset: DatePreset, customRange: DateRange 
       } else {
         prevQ = prevQ.eq("id", "00000000-0000-0000-0000-000000000000");
       }
+      if (storeId !== "all") prevQ = prevQ.eq("store_id", storeId);
+
+      let allCountQ = supabase
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .is("deleted_at", null);
+      if (storeId !== "all") allCountQ = allCountQ.eq("store_id", storeId);
 
       const [curRes, prevRes, productsRes, allCountRes] = await Promise.all([
         curQ,
@@ -105,7 +117,7 @@ export const useDashboardData = (datePreset: DatePreset, customRange: DateRange 
         supabase
           .from("products")
           .select("id, name, sku, stock_quantity, stock_status, manage_stock, price, cost_price"),
-        supabase.from("orders").select("id", { count: "exact", head: true }).is("deleted_at", null),
+        allCountQ,
       ]);
 
       const curOrders = ((curRes.data || []) as unknown) as OrderRow[];
