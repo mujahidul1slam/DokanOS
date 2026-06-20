@@ -15,12 +15,15 @@ import { StatsSkeleton, TableSkeleton } from "@/components/ui/loading-states";
 import { type DatePreset } from "@/components/DatePresetPicker";
 import type { DateRange } from "react-day-picker";
 import { useDashboardData } from "@/hooks/useDashboardData";
+import { useStoresList } from "@/hooks/useStoresList";
 import { exportOrdersToCSV } from "@/lib/exportOrdersCSV";
 
 const Dashboard = () => {
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
-  const data = useDashboardData(datePreset, customRange);
+  const [storeId, setStoreId] = useState<string>("all");
+  const stores = useStoresList();
+  const data = useDashboardData(datePreset, customRange, storeId);
 
   if (data.loading) {
     return (
@@ -45,6 +48,9 @@ const Dashboard = () => {
         onPresetChange={setDatePreset}
         onCustomRangeChange={setCustomRange}
         onExport={() => exportOrdersToCSV(data.orders, datePreset)}
+        stores={stores}
+        storeId={storeId}
+        onStoreChange={setStoreId}
       />
 
       <KpiStats
