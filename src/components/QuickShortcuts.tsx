@@ -17,7 +17,11 @@ const QuickShortcuts = () => (
           <Plus className="h-3.5 w-3.5" /> Add Order
         </Link>
       </Button>
-      <Button asChild variant="outline" size="sm" className="gap-1 shrink-0 h-8 px-2.5 text-xs">
+      <Button
+        asChild
+        size="sm"
+        className="gap-1 shrink-0 h-8 px-2.5 text-xs bg-yellow-400 text-black hover:bg-yellow-500 dark:bg-yellow-400 dark:hover:bg-yellow-500"
+      >
         <Link to="/pos">
           <Monitor className="h-3.5 w-3.5" /> POS
         </Link>
