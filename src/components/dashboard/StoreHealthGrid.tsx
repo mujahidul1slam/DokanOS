@@ -72,6 +72,9 @@ export default function StoreHealthGrid({ orders }: Props) {
       return { tone: "border-amber-500/40 bg-amber-500/5", label: "Never synced", dot: "bg-amber-500" };
     }
     const ageHrs = (Date.now() - new Date(s.last_synced_at).getTime()) / 3_600_000;
+    if (ageHrs > 72) {
+      return { tone: "border-rose-500/40 bg-rose-500/5", label: "Out of sync", dot: "bg-rose-500" };
+    }
     if (ageHrs > 24) {
       return { tone: "border-amber-500/40 bg-amber-500/5", label: "Stale", dot: "bg-amber-500" };
     }

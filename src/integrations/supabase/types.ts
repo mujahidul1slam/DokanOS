@@ -2031,6 +2031,7 @@ export type Database = {
         Returns: Database["public"]["Enums"]["app_role"]
       }
       get_user_store_ids: { Args: { _user_id: string }; Returns: string[] }
+      get_woo_sync_cron_token: { Args: never; Returns: string }
       has_permission: {
         Args: {
           _permission: Database["public"]["Enums"]["app_permission"]
