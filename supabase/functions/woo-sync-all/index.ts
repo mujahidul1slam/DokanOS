@@ -25,10 +25,31 @@ Deno.serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const supabase = createClient(SUPABASE_URL, serviceKey);
 
-    const { data: stores, error } = await supabase
-      .from("stores")
-      .select("id, name, status")
-      .eq("status", "connected");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const supabase = createClient(SUPABASE_URL, serviceKey);
+
+    // Auth: accept either the service role bearer, the CRON_SECRET env, or a
+    // token stored in vault under the name 'woo_sync_cron_token'.
+    const auth = req.headers.get("authorization") || "";
+    const provided = req.headers.get("x-cron-secret") || "";
+    const envSecret = Deno.env.get("CRON_SECRET") || "";
+    const isService = serviceKey && auth === `Bearer ${serviceKey}`;
+    let allowed = isService || (!!envSecret && provided === envSecret);
+    if (!allowed && provided) {
+      const { data } = await supabase
+        .from("vault_secret_lookup")
+        .select("decrypted_secret")
+        .eq("name", "woo_sync_cron_token")
+        .maybeSingle();
+      if (data?.decrypted_secret && provided === data.decrypted_secret) allowed = true;
+    }
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (error) throw error;
 
