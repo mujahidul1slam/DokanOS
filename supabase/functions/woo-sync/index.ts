@@ -580,6 +580,10 @@ Deno.serve(async (req) => {
         const billingName = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim();
         const billingAddr = [o.billing?.address_1, o.billing?.address_2].filter(Boolean).join(", ") || null;
         const baseNum = String(o.number || o.id);
+        const method = (o.payment_method || "").toLowerCase();
+        const title = (o.payment_method_title || "").toLowerCase();
+        const orderIsCod = method === "cod" || title.includes("cash on delivery");
+        const orderTotal = parseFloat(o.total) || 0;
         return {
           store_id,
           woo_order_id: o.id,
@@ -592,7 +596,8 @@ Deno.serve(async (req) => {
           subtotal: parseFloat(o.total) - parseFloat(o.shipping_total || "0") + parseFloat(o.discount_total || "0"),
           discount: parseFloat(o.discount_total) || 0,
           shipping_cost: parseFloat(o.shipping_total) || 0,
-          total: parseFloat(o.total) || 0,
+          total: orderTotal,
+          amount_to_collect: orderIsCod ? orderTotal : 0,
           customer_id: orderCustomerMap.get(o.id) || null,
           customer_name: billingName || null,
           customer_phone: phone,

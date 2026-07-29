@@ -195,6 +195,11 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     p_store_id: store_id, p_source: "woo", p_base: baseOrderNum,
   });
 
+  const method = (o.payment_method || "").toLowerCase();
+  const title = (o.payment_method_title || "").toLowerCase();
+  const orderIsCod = method === "cod" || title.includes("cash on delivery");
+  const orderTotal = parseFloat(o.total) || 0;
+
   const orderData = {
     store_id,
     woo_order_id: o.id,
@@ -207,7 +212,8 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     subtotal: parseFloat(o.total) - parseFloat(o.shipping_total || "0") + parseFloat(o.discount_total || "0"),
     discount: parseFloat(o.discount_total) || 0,
     shipping_cost: parseFloat(o.shipping_total) || 0,
-    total: parseFloat(o.total) || 0,
+    total: orderTotal,
+    amount_to_collect: orderIsCod ? orderTotal : 0,
     customer_id,
     customer_name: billingName || null,
     customer_phone: normalizePhone(o.billing?.phone),

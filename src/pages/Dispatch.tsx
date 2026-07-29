@@ -721,8 +721,12 @@ const Dispatch = () => {
             {dispatchOrders.map((order) => {
               const ov = orderOverrides[order.id] || {
                 city_id: "", zone_id: "", area_id: "",
-                amount_to_collect: "", item_weight: "", special_instruction: "",
-                recipient_name: "", recipient_phone: "", recipient_address: "",
+                amount_to_collect: String(order.amount_to_collect ?? order.total ?? 0),
+                item_weight: String(order.item_weight || 0.5),
+                special_instruction: order.special_instruction || "",
+                recipient_name: order.customer_name || "",
+                recipient_phone: order.customer_phone || "",
+                recipient_address: order.customer_address || "",
               };
               const cityId = ov.city_id ? Number(ov.city_id) : 0;
               const zoneId = ov.zone_id ? Number(ov.zone_id) : 0;
