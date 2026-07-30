@@ -110,9 +110,7 @@ const PAGE_SIZE = 200;
 
 // TabKey moved to ./orders/tabFilters
 
-interface OrdersProps { preOrderMode?: boolean }
-
-const Orders = ({ preOrderMode = false }: OrdersProps) => {
+const Orders = () => {
   const { role } = useAuth();
   const { settings: invoiceSettings } = useInvoiceSettings();
   const canWrite = role === "admin" || role === "staff";
@@ -133,7 +131,8 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabKey>(preOrderMode ? "pre_order" : "new");
+  const [tab, setTab] = useState<TabKey>("new");
+  const preOrderMode = tab === "pre_order";
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -621,11 +620,9 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-semibold">{preOrderMode ? "Pre-Orders" : "Orders"}</h1>
+          <h1 className="font-heading text-2xl font-semibold">Orders</h1>
           <p className="text-sm text-muted-foreground">
-            {preOrderMode
-              ? "Orders containing products from configured Pre-Order categories"
-              : "Manage your order pipeline — from new orders to delivery"}
+            Manage your order pipeline — from new orders to delivery
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -687,7 +684,40 @@ const Orders = ({ preOrderMode = false }: OrdersProps) => {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-        <OrderTabs tab={tab} onChange={setTab} counts={counts} preOrderMode={preOrderMode} />
+        <OrderTabs tab={tab} onChange={setTab} counts={counts} />
+
+        {preOrderMode && (
+          <div className="flex flex-wrap gap-2 pt-2 pb-2 pl-1">
+            {[
+              { key: "all", label: "All Pre-Orders", icon: Hourglass, count: counts.pre_order },
+              { key: "pre_order_pending", label: "Pending", icon: Clock, count: counts.pre_order_pending },
+              { key: "pre_order_making", label: "Making", icon: Wrench, count: counts.pre_order_making },
+              { key: "pre_order_ready", label: "Ready", icon: Sparkles, count: counts.pre_order_ready },
+            ].map((t) => {
+              const active = preOrderStatusFilter === t.key;
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setPreOrderStatusFilter(t.key as any)}
+                  className={cn(
+                    "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                    active
+                      ? "bg-secondary text-secondary-foreground border-secondary"
+                      : "bg-background text-foreground border-border hover:bg-accent"
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {t.label}
+                  <span className={cn(
+                    "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none",
+                    active ? "bg-background/20" : "bg-muted text-muted-foreground"
+                  )}>{t.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         <OrderFilters
           search={search}

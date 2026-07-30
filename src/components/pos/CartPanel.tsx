@@ -106,9 +106,17 @@ const CartPanel = ({
     ["chittagong", "chattogram"], ["cumilla", "comilla"], ["jashore", "jessore"],
     ["lakshmipur", "laxmipur", "lokkhipur"], ["munsiganj", "munshiganj"],
     ["narshingdi", "narsingdi"], ["gopalgonj", "gopalganj"],
+    ["bashundhara", "basundhara", "bashundhara r/a", "bashundhara residential area", "boshundhora", "boshundhara", "bosundhora"],
+    ["mirpur", "mirpur 1", "mirpur 2", "mirpur 10", "mirpur 11", "mirpur 12", "mirpur 13", "mirpur 14"],
+    ["uttara", "uttara sector 1", "uttara sector 3", "uttara sector 4", "uttara sector 7", "uttara sector 10", "uttara sector 11", "uttara sector 13", "uttara sector 14"],
+    ["dhanmondi", "dhanmondi r/a"],
+    ["badda", "middle badda", "merul badda", "north badda", "south badda"],
+    ["khilgaon", "khilgaon r/a"],
+    ["cantonment", "dhaka cantonment"],
+    ["farmgate", "farm gate"],
   ], []);
 
-  const normalizeLocationText = useCallback((v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, ""), []);
+  const normalizeLocationText = useCallback((v: string) => v.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""), []);
 
   const getEditDistance = useCallback((a: string, b: string): number => {
     if (a.length === 0) return b.length;
@@ -128,7 +136,10 @@ const CartPanel = ({
     if (!normalized) return variants;
     variants.add(normalized);
     for (const group of LOCATION_ALIAS_GROUPS) {
-      if (group.includes(normalized)) group.forEach((a) => variants.add(a));
+      const normalizedGroup = group.map((alias) => normalizeLocationText(alias)).filter(Boolean);
+      if (normalizedGroup.includes(normalized)) {
+        normalizedGroup.forEach((a) => variants.add(a));
+      }
     }
     return variants;
   }, [normalizeLocationText, LOCATION_ALIAS_GROUPS]);

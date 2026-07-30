@@ -613,12 +613,15 @@ Deno.serve(async (req) => {
       const wooIds = wooOrders.map((o: any) => o.id);
       const { data: preExisting } = await supabase
         .from("orders")
-        .select("woo_order_id, status")
+        .select("woo_order_id, id, status")
         .eq("store_id", store_id)
         .in("woo_order_id", wooIds);
       const preExistingIds = new Set((preExisting || []).map((r: any) => r.woo_order_id));
       const prevStatusMap = new Map<number, string>(
         (preExisting || []).map((r: any) => [r.woo_order_id, r.status])
+      );
+      const preExistingIdMap = new Map<number, string>(
+        (preExisting || []).map((r: any) => [r.woo_order_id, r.id])
       );
       const newWooOrders = wooOrders.filter((o: any) => !preExistingIds.has(o.id));
       const cancelledTransitions = wooOrders.filter((o: any) => {
@@ -628,16 +631,47 @@ Deno.serve(async (req) => {
         return prev !== "cancelled" && next === "cancelled";
       });
 
-      // Upsert orders + return ids in a single round-trip per chunk
+      // Protect locally-advanced orders: if the order has already moved past
+      // payment_pending (e.g. payment confirmed → processing / pre_order_pending),
+      // do NOT let the sync overwrite status, payment_status, or amount_to_collect.
+      // We still allow cancellation / refund from Woo (those are always authoritative).
+      const LOCALLY_ADVANCED = new Set([
+        "processing", "pre_order_pending", "pre_order_making", "pre_order_ready",
+        "ready_to_ship", "shipped", "delivered", "completed",
+      ]);
+
+      const protectedRows: Array<{ dbId: string; row: any }> = [];
+      const safeRows: any[] = [];
+
+      for (const row of orderRows) {
+        const prev = prevStatusMap.get(row.woo_order_id);
+        const incomingIsTerminal = row.status === "cancelled" || row.status === "returned";
+        if (prev && LOCALLY_ADVANCED.has(prev) && !incomingIsTerminal) {
+          // This order was locally advanced — update it WITHOUT overwriting status fields
+          protectedRows.push({ dbId: preExistingIdMap.get(row.woo_order_id)!, row });
+        } else {
+          safeRows.push(row);
+        }
+      }
+
+      // Upsert safe orders (new + non-advanced existing) via fast bulk path
       const orderMap = new Map<number, string>();
-      for (let i = 0; i < orderRows.length; i += 500) {
-        const chunk = orderRows.slice(i, i + 500);
+      for (let i = 0; i < safeRows.length; i += 500) {
+        const chunk = safeRows.slice(i, i + 500);
         const { data: upserted, error } = await supabase
           .from("orders")
           .upsert(chunk, { onConflict: "woo_order_id,store_id", ignoreDuplicates: false })
           .select("id, woo_order_id");
         if (error) console.error("Orders upsert error:", error);
         (upserted || []).forEach((r: any) => orderMap.set(r.woo_order_id, r.id));
+      }
+
+      // Update protected orders individually, excluding status/payment_status/amount_to_collect
+      for (const { dbId, row } of protectedRows) {
+        const { status: _s, payment_status: _ps, amount_to_collect: _atc, ...rest } = row;
+        const { error } = await supabase.from("orders").update(rest).eq("id", dbId);
+        if (error) console.error("Protected order update error:", error);
+        orderMap.set(row.woo_order_id, dbId);
       }
       summary.orders = orderRows.length;
 

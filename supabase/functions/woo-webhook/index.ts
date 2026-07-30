@@ -224,14 +224,34 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   };
 
   const { data: existingOrder } = await supabase
-    .from("orders").select("id, status")
+    .from("orders").select("id, status, payment_status, amount_to_collect")
     .eq("woo_order_id", o.id).eq("store_id", store_id).maybeSingle();
 
   let orderId: string;
   let isNewOrder = false;
   let cancelledTransition = false;
   if (existingOrder) {
-    const { error } = await supabase.from("orders").update(orderData).eq("id", existingOrder.id);
+    // Protect locally-advanced orders: if the order has already moved past
+    // payment_pending (e.g. payment confirmed → processing / pre_order_pending),
+    // do NOT let a stale webhook overwrite status, payment_status, or
+    // amount_to_collect back to the Woo-derived values.
+    // We still allow cancellation / refund from Woo (those are always authoritative).
+    const LOCALLY_ADVANCED = new Set([
+      "processing", "pre_order_pending", "pre_order_making", "pre_order_ready",
+      "ready_to_ship", "shipped", "delivered", "completed",
+    ]);
+    const incomingIsTerminal = orderData.status === "cancelled" || orderData.status === "returned";
+    const locallyAdvanced = LOCALLY_ADVANCED.has(existingOrder.status) && !incomingIsTerminal;
+
+    const updatePayload = locallyAdvanced
+      ? (() => {
+          // Keep all data fields fresh EXCEPT status, payment_status, and amount_to_collect
+          const { status: _s, payment_status: _ps, amount_to_collect: _atc, ...rest } = orderData;
+          return rest;
+        })()
+      : orderData;
+
+    const { error } = await supabase.from("orders").update(updatePayload).eq("id", existingOrder.id);
     if (error) return jsonResp({ error: "Failed to update order" }, 500);
     orderId = existingOrder.id;
     if (existingOrder.status !== "cancelled" && orderData.status === "cancelled") {

@@ -27,7 +27,6 @@ interface OrderTabsProps {
   tab: TabKey;
   onChange: (tab: TabKey) => void;
   counts: TabCounts;
-  preOrderMode: boolean;
 }
 
 interface TabItem {
@@ -37,27 +36,20 @@ interface TabItem {
   count: number;
 }
 
-function OrderTabsImpl({ tab, onChange, counts, preOrderMode }: OrderTabsProps) {
-  const tabItems: TabItem[] = preOrderMode
-    ? [
-        { key: "pre_order", label: "All", icon: Hourglass, count: counts.pre_order },
-        { key: "pre_order_pending", label: "Pending", icon: Clock, count: counts.pre_order_pending },
-        { key: "pre_order_making", label: "Making", icon: Wrench, count: counts.pre_order_making },
-        { key: "pre_order_ready", label: "Ready", icon: Sparkles, count: counts.pre_order_ready },
-      ]
-    : [
-        { key: "all", label: "All", icon: ShoppingCart, count: counts.all },
-        { key: "new", label: "New", icon: Package, count: counts.new },
-        { key: "pre_order", label: "Pre-Order", icon: Hourglass, count: counts.pre_order },
-        { key: "ready", label: "Ready", icon: PackageCheck, count: counts.ready },
-        { key: "pickup_pending", label: "Pickup", icon: Clock, count: counts.pickup_pending },
-        { key: "in_transit", label: "Transit", icon: Truck, count: counts.in_transit },
-        { key: "delivered", label: "Delivered", icon: CheckCircle2, count: counts.delivered },
-        { key: "on_hold", label: "On Hold", icon: AlertTriangle, count: counts.on_hold },
-        { key: "returned", label: "Returned", icon: Undo2, count: counts.returned },
-        { key: "cancelled", label: "Cancelled", icon: XCircle, count: counts.cancelled },
-        ...(counts.trash > 0 ? [{ key: "trash" as TabKey, label: "Trash", icon: Trash2, count: counts.trash }] : []),
-      ];
+function OrderTabsImpl({ tab, onChange, counts }: OrderTabsProps) {
+  const tabItems: TabItem[] = [
+    { key: "all", label: "All", icon: ShoppingCart, count: counts.all },
+    { key: "new", label: "New", icon: Package, count: counts.new },
+    { key: "pre_order", label: "Pre-Order", icon: Hourglass, count: counts.pre_order },
+    { key: "ready", label: "Ready", icon: PackageCheck, count: counts.ready },
+    { key: "pickup_pending", label: "Pickup", icon: Clock, count: counts.pickup_pending },
+    { key: "in_transit", label: "Transit", icon: Truck, count: counts.in_transit },
+    { key: "delivered", label: "Delivered", icon: CheckCircle2, count: counts.delivered },
+    { key: "on_hold", label: "On Hold", icon: AlertTriangle, count: counts.on_hold },
+    { key: "returned", label: "Returned", icon: Undo2, count: counts.returned },
+    { key: "cancelled", label: "Cancelled", icon: XCircle, count: counts.cancelled },
+    ...(counts.trash > 0 ? [{ key: "trash" as TabKey, label: "Trash", icon: Trash2, count: counts.trash }] : []),
+  ];
 
   return (
     <div className="flex flex-wrap gap-2 pb-1">

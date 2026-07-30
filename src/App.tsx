@@ -24,7 +24,6 @@ const StorefrontApp = lazy(() => import("@/storefront/StorefrontApp"));
 // Each page becomes its own JS chunk loaded on-demand.
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Orders = lazy(() => import("./pages/Orders"));
-const PreOrders = lazy(() => import("./pages/PreOrders"));
 const Customers = lazy(() => import("./pages/Customers"));
 const Products = lazy(() => import("./pages/Products"));
 const POS = lazy(() => import("./pages/POS"));
@@ -89,7 +88,6 @@ const AppRoutes = () => {
         <Routes>
           <Route path="/" element={<PermissionGuard permission="dashboard.view"><Dashboard /></PermissionGuard>} />
           <Route path="/orders" element={<PermissionGuard permission="orders.view"><Orders /></PermissionGuard>} />
-          <Route path="/pre-orders" element={<PermissionGuard permission="preorders.view"><PreOrders /></PermissionGuard>} />
           <Route path="/customers" element={<PermissionGuard permission="customers.view"><Customers /></PermissionGuard>} />
           <Route path="/products" element={<PermissionGuard permission="products.view"><Products /></PermissionGuard>} />
           <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />

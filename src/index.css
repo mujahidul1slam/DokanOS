@@ -10,103 +10,219 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --background: 225 15% 7%;
-    --foreground: 220 10% 92%;
-
-    --card: 225 14% 10%;
-    --card-foreground: 220 10% 92%;
-
-    --popover: 225 14% 10%;
-    --popover-foreground: 220 10% 92%;
-
-    --primary: 217 91% 60%;
+  :root, .theme-ocean {
+    /* Deep Ocean Glass */
+    --background: 220 30% 6%;
+    --foreground: 210 20% 98%;
+    --card: 220 30% 8%;
+    --card-foreground: 210 20% 98%;
+    --popover: 220 30% 8%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 195 100% 45%;
     --primary-foreground: 0 0% 100%;
-
-    --secondary: 225 14% 14%;
-    --secondary-foreground: 220 10% 80%;
-
-    --muted: 225 12% 16%;
-    --muted-foreground: 220 8% 52%;
-
-    --accent: 225 14% 14%;
-    --accent-foreground: 220 10% 92%;
-
+    --secondary: 220 40% 12%;
+    --secondary-foreground: 210 20% 90%;
+    --muted: 220 30% 15%;
+    --muted-foreground: 210 20% 60%;
+    --accent: 195 50% 20%;
+    --accent-foreground: 210 20% 98%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
-
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 0%;
-
-    --border: 225 12% 16%;
-    --input: 225 12% 16%;
-    --ring: 217 91% 60%;
-
-    --radius: 0.5rem;
-
-    --sidebar-background: 225 15% 8%;
-    --sidebar-foreground: 220 10% 70%;
-    --sidebar-primary: 217 91% 60%;
+    --border: 220 30% 18%;
+    --input: 220 30% 18%;
+    --ring: 195 100% 45%;
+    --radius: 0.75rem;
+    
+    --sidebar-background: 220 30% 7%;
+    --sidebar-foreground: 210 20% 80%;
+    --sidebar-primary: 195 100% 45%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 225 14% 12%;
-    --sidebar-accent-foreground: 220 10% 92%;
-    --sidebar-border: 225 12% 14%;
-    --sidebar-ring: 217 91% 60%;
+    --sidebar-accent: 220 40% 12%;
+    --sidebar-accent-foreground: 210 20% 98%;
+    --sidebar-border: 220 30% 18%;
+    --sidebar-ring: 195 100% 45%;
+    
+    /* Liquid Glass Effects */
+    --glass-bg: rgba(10, 20, 35, 0.5);
+    --glass-border: rgba(50, 150, 255, 0.15);
+    --glass-highlight: rgba(50, 150, 255, 0.1);
+    --app-bg-gradient: radial-gradient(circle at top left, rgba(15, 45, 80, 0.4), transparent 50%),
+                       radial-gradient(circle at bottom right, rgba(0, 100, 150, 0.3), transparent 50%);
 
     --font-heading: 'Space Grotesk', sans-serif;
     --font-body: 'Inter', sans-serif;
   }
-  .light {
-    --background: 0 0% 98%;
-    --foreground: 224 10% 15%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 224 10% 15%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 10% 15%;
-
-    --primary: 217 91% 50%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 220 14% 94%;
-    --secondary-foreground: 224 10% 30%;
-
-    --muted: 220 12% 92%;
-    --muted-foreground: 220 8% 46%;
-
-    --accent: 220 14% 94%;
-    --accent-foreground: 224 10% 15%;
-
+  .theme-obsidian {
+    /* Obsidian Frost */
+    --background: 240 5% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 5% 6%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 5% 6%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5% 4%;
+    --secondary: 240 5% 10%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 240 5% 15%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 240 5% 15%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-
-    --success: 142 71% 35%;
+    --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
-
-    --warning: 38 92% 45%;
+    --warning: 38 92% 50%;
     --warning-foreground: 0 0% 0%;
+    --border: 240 5% 18%;
+    --input: 240 5% 18%;
+    --ring: 0 0% 98%;
+    
+    --sidebar-background: 240 5% 5%;
+    --sidebar-foreground: 0 0% 75%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 240 5% 4%;
+    --sidebar-accent: 240 5% 12%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 240 5% 18%;
+    --sidebar-ring: 0 0% 98%;
 
-    --border: 220 13% 87%;
-    --input: 220 13% 87%;
-    --ring: 217 91% 50%;
+    --glass-bg: rgba(15, 15, 15, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-highlight: rgba(255, 255, 255, 0.04);
+    --app-bg-gradient: radial-gradient(circle at 20% 30%, rgba(50, 50, 50, 0.3), transparent 40%),
+                       radial-gradient(circle at 80% 70%, rgba(30, 30, 30, 0.4), transparent 40%);
+  }
 
-    --radius: 0.5rem;
-
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 10% 40%;
-    --sidebar-primary: 217 91% 50%;
+  .theme-amethyst {
+    /* Amethyst Liquid */
+    --background: 270 40% 6%;
+    --foreground: 270 20% 98%;
+    --card: 270 40% 8%;
+    --card-foreground: 270 20% 98%;
+    --popover: 270 40% 8%;
+    --popover-foreground: 270 20% 98%;
+    --primary: 270 80% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 270 30% 14%;
+    --secondary-foreground: 270 20% 90%;
+    --muted: 270 30% 18%;
+    --muted-foreground: 270 20% 65%;
+    --accent: 270 50% 25%;
+    --accent-foreground: 270 20% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 0%;
+    --border: 270 30% 20%;
+    --input: 270 30% 20%;
+    --ring: 270 80% 60%;
+    
+    --sidebar-background: 270 40% 7%;
+    --sidebar-foreground: 270 20% 80%;
+    --sidebar-primary: 270 80% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 14% 95%;
-    --sidebar-accent-foreground: 224 10% 15%;
-    --sidebar-border: 220 13% 90%;
-    --sidebar-ring: 217 91% 50%;
+    --sidebar-accent: 270 30% 15%;
+    --sidebar-accent-foreground: 270 20% 98%;
+    --sidebar-border: 270 30% 20%;
+    --sidebar-ring: 270 80% 60%;
 
-    --font-heading: 'Space Grotesk', sans-serif;
-    --font-body: 'Inter', sans-serif;
+    --glass-bg: rgba(20, 10, 35, 0.55);
+    --glass-border: rgba(150, 80, 255, 0.15);
+    --glass-highlight: rgba(150, 80, 255, 0.1);
+    --app-bg-gradient: radial-gradient(circle at 10% 50%, rgba(80, 30, 150, 0.3), transparent 60%),
+                       radial-gradient(circle at 90% 10%, rgba(150, 50, 200, 0.2), transparent 50%);
+  }
+
+  .theme-emerald {
+    /* Emerald Depth */
+    --background: 150 40% 5%;
+    --foreground: 150 20% 98%;
+    --card: 150 40% 7%;
+    --card-foreground: 150 20% 98%;
+    --popover: 150 40% 7%;
+    --popover-foreground: 150 20% 98%;
+    --primary: 150 100% 40%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 150 30% 12%;
+    --secondary-foreground: 150 20% 90%;
+    --muted: 150 30% 15%;
+    --muted-foreground: 150 20% 65%;
+    --accent: 150 50% 20%;
+    --accent-foreground: 150 20% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 0%;
+    --border: 150 30% 18%;
+    --input: 150 30% 18%;
+    --ring: 150 100% 40%;
+    
+    --sidebar-background: 150 40% 6%;
+    --sidebar-foreground: 150 20% 80%;
+    --sidebar-primary: 150 100% 40%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 150 30% 12%;
+    --sidebar-accent-foreground: 150 20% 98%;
+    --sidebar-border: 150 30% 18%;
+    --sidebar-ring: 150 100% 40%;
+
+    --glass-bg: rgba(10, 30, 20, 0.55);
+    --glass-border: rgba(50, 255, 120, 0.15);
+    --glass-highlight: rgba(50, 255, 120, 0.1);
+    --app-bg-gradient: radial-gradient(circle at top right, rgba(20, 100, 60, 0.3), transparent 50%),
+                       radial-gradient(circle at bottom left, rgba(0, 150, 80, 0.2), transparent 50%);
+  }
+
+  .theme-crimson {
+    /* Crimson Night */
+    --background: 350 40% 6%;
+    --foreground: 350 20% 98%;
+    --card: 350 40% 8%;
+    --card-foreground: 350 20% 98%;
+    --popover: 350 40% 8%;
+    --popover-foreground: 350 20% 98%;
+    --primary: 350 90% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 350 30% 12%;
+    --secondary-foreground: 350 20% 90%;
+    --muted: 350 30% 16%;
+    --muted-foreground: 350 20% 65%;
+    --accent: 350 50% 25%;
+    --accent-foreground: 350 20% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 0%;
+    --border: 350 30% 18%;
+    --input: 350 30% 18%;
+    --ring: 350 90% 60%;
+    
+    --sidebar-background: 350 40% 7%;
+    --sidebar-foreground: 350 20% 80%;
+    --sidebar-primary: 350 90% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 350 30% 14%;
+    --sidebar-accent-foreground: 350 20% 98%;
+    --sidebar-border: 350 30% 18%;
+    --sidebar-ring: 350 90% 60%;
+
+    --glass-bg: rgba(35, 10, 15, 0.55);
+    --glass-border: rgba(255, 50, 80, 0.15);
+    --glass-highlight: rgba(255, 50, 80, 0.1);
+    --app-bg-gradient: radial-gradient(circle at 60% 0%, rgba(150, 20, 50, 0.35), transparent 50%),
+                       radial-gradient(circle at 20% 100%, rgba(200, 30, 60, 0.2), transparent 50%);
   }
 }
 

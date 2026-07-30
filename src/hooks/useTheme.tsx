@@ -1,36 +1,47 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
-type Theme = "dark" | "light";
+export type Theme = "theme-ocean" | "theme-obsidian" | "theme-amethyst" | "theme-emerald" | "theme-crimson";
+
+export const THEMES: Theme[] = [
+  "theme-ocean",
+  "theme-obsidian",
+  "theme-amethyst",
+  "theme-emerald",
+  "theme-crimson"
+];
 
 interface ThemeContextType {
   theme: Theme;
+  setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const stored = localStorage.getItem("omnisync-theme");
-    return (stored === "light" ? "light" : "dark") as Theme;
-  });
+  const [theme, setThemeState] = useState<Theme>("theme-ocean");
 
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === "light") {
-      root.classList.add("light");
-      root.classList.remove("dark");
-    } else {
-      root.classList.add("dark");
-      root.classList.remove("light");
-    }
-    localStorage.setItem("omnisync-theme", theme);
+    // Remove all themes
+    THEMES.forEach(t => root.classList.remove(t));
+    // Remove old light/dark if present
+    root.classList.remove("light", "dark");
+    // Add new theme
+    root.classList.add(theme);
+    localStorage.setItem("dokanos-liquid-theme", theme);
   }, [theme]);
 
-  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+  const toggleTheme = () => {
+    // Cycle through themes for legacy toggle button support
+    setThemeState((current) => {
+      const idx = THEMES.indexOf(current);
+      return THEMES[(idx + 1) % THEMES.length];
+    });
+  };
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme: setThemeState, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );
