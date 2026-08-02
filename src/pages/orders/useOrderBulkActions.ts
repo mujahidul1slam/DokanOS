@@ -50,15 +50,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
           ids.map((id) => ({ order_id: id, event: "status_changed", description })),
         );
         await logAction("update", "order_status_bulk", undefined, { ids, to: newStatus });
-        if (pushWoo) {
-          await Promise.all(
-            ids.map((id) =>
-              supabase.functions
-                .invoke("woo-push", { body: { action: "push_order", order_id: id } })
-                .catch((e) => console.warn("WooCommerce order push failed:", e)),
-            ),
-          );
-        }
+
         toast({ title: toastTitle.replace("{n}", String(ids.length)) });
         setSelected(new Set());
         loadOrders();

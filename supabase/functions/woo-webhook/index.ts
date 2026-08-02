@@ -1,29 +1,18 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import { 
+  mapWooStatus, 
+  fromWooStockStatus, 
+  derivePaymentStatus, 
+  fromWooShipping, 
+  normalizePhone, 
+  extractMeasurementsFromMeta, 
+  buildVariationLabel 
+} from "../_shared/woo-mapping.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-wc-webhook-signature, x-wc-webhook-source, x-wc-webhook-topic",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-wc-webhook-signature, x-wc-webhook-source, x-wc-webhook-topic, x-wc-webhook-delivery-id",
 };
-
-function fromWooStockStatus(status: string): string {
-  const map: Record<string, string> = {
-    instock: "in_stock", outofstock: "out_of_stock", onbackorder: "on_backorder",
-    in_stock: "in_stock", out_of_stock: "out_of_stock", on_backorder: "on_backorder",
-  };
-  return map[status] || "in_stock";
-}
-
-/** Maps a WooCommerce order's shipping_lines into our fulfillment_type. */
-function fromWooShipping(o: any): string {
-  const lines = Array.isArray(o?.shipping_lines) ? o.shipping_lines : [];
-  if (lines.length === 0) return "delivery"; // online order with no shipping line — still not walk-in
-  const title = String(lines[0]?.method_title || "").toLowerCase();
-  const id = String(lines[0]?.method_id || "").toLowerCase();
-  if (title.includes("pickup") || title.includes("showroom") || id.includes("pickup") || id.includes("local_pickup")) {
-    return "pickup";
-  }
-  return "delivery";
-}
 
 function jsonResp(body: any, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -44,10 +33,28 @@ Deno.serve(async (req) => {
       return jsonResp({ ok: true });
     }
 
+    // Skip echo loop if DokanOS originated the update
+    if (payload.meta_data?.some((m: any) => m.key === "_dokan_origin")) {
+      return jsonResp({ ok: true, skipped: "echo" });
+    }
+
     const webhookSource = req.headers.get("x-wc-webhook-source") || "";
     const webhookTopic = req.headers.get("x-wc-webhook-topic") || "";
+    const deliveryId = req.headers.get("x-wc-webhook-delivery-id") || "";
 
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+    // Idempotency check: if we already processed this delivery, skip it
+    if (deliveryId) {
+      const { data: existingEvent } = await supabase
+        .from("webhook_events")
+        .select("id")
+        .eq("delivery_id", deliveryId)
+        .maybeSingle();
+      if (existingEvent) {
+        return jsonResp({ ok: true, skipped: "duplicate" });
+      }
+    }
 
     const normalizedSource = webhookSource.replace(/\/+$/, "");
     const { data: store } = await supabase
@@ -78,11 +85,41 @@ Deno.serve(async (req) => {
     const store_id = store.id;
     const isProduct = webhookTopic.startsWith("product.") || (payload.name && !payload.line_items && payload.type);
     const isOrder = webhookTopic.startsWith("order.") || payload.line_items;
+    const entityType = isOrder ? "order" : (isProduct ? "product" : "unknown");
 
-    if (isProduct) return await handleProductWebhook(supabase, store, payload);
-    if (isOrder) return await handleOrderWebhook(supabase, store_id, payload);
+    let resultResponse;
+    try {
+      if (isProduct) resultResponse = await handleProductWebhook(supabase, store, payload);
+      else if (isOrder) resultResponse = await handleOrderWebhook(supabase, store_id, payload);
+      else resultResponse = jsonResp({ ok: true, message: "Unhandled topic" });
 
-    return jsonResp({ ok: true, message: "Unhandled topic" });
+      if (deliveryId) {
+        supabase.from("webhook_events").insert({
+          store_id: store_id,
+          delivery_id: deliveryId,
+          topic: webhookTopic,
+          woo_id: payload.id || null,
+          entity_type: entityType,
+          status_code: resultResponse.status,
+          payload_size: body.length
+        }).then();
+      }
+      return resultResponse;
+    } catch (handlerErr: any) {
+      if (deliveryId) {
+        supabase.from("webhook_events").insert({
+          store_id: store_id,
+          delivery_id: deliveryId,
+          topic: webhookTopic,
+          woo_id: payload.id || null,
+          entity_type: entityType,
+          status_code: 500,
+          error: handlerErr.message,
+          payload_size: body.length
+        }).then();
+      }
+      throw handlerErr;
+    }
   } catch (err: any) {
     console.error("woo-webhook error:", err);
     return jsonResp({ error: err.message }, 500);
@@ -376,61 +413,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
   return jsonResp({ success: true, order_id: orderId });
 }
 
-function extractMeasurementsFromMeta(
-  meta: any[],
-  fieldMap: Map<string, { groupName: string; displayFormat: string; unit: string; fieldName: string }>
-): Array<{ groupName: string; displayFormat: string; unit: string; values: { name: string; value: string }[] }> {
-  if (!Array.isArray(meta) || meta.length === 0 || fieldMap.size === 0) return [];
-  const grouped = new Map<string, { displayFormat: string; unit: string; values: { name: string; value: string }[] }>();
-  for (const m of meta) {
-    const rawKey = String(m?.key ?? m?.display_key ?? "").trim();
-    if (!rawKey || rawKey.startsWith("_")) continue;
-    const key = rawKey.toLowerCase();
-    const match = fieldMap.get(key);
-    if (!match) continue;
-    const value = String(m?.value ?? m?.display_value ?? "").trim();
-    if (!value) continue;
-    if (!grouped.has(match.groupName)) {
-      grouped.set(match.groupName, { displayFormat: match.displayFormat, unit: match.unit, values: [] });
-    }
-    grouped.get(match.groupName)!.values.push({ name: match.fieldName, value });
-  }
-  return Array.from(grouped.entries()).map(([groupName, info]) => ({
-    groupName, displayFormat: info.displayFormat, unit: info.unit, values: info.values,
-  }));
-}
 
-/**
- * Build a variation suffix from Woo line item meta_data (e.g., "Size: M / Color: Red").
- * Skips hidden meta (keys starting with `_`) and any keys that match measurement fields.
- */
-function buildVariationLabel(meta: any[], measurementNames: Set<string>): string {
-  if (!Array.isArray(meta) || meta.length === 0) return "";
-  const parts: string[] = [];
-  for (const m of meta) {
-    const rawKey = String(m?.display_key ?? m?.key ?? "").trim();
-    if (!rawKey || rawKey.startsWith("_")) continue;
-    if (measurementNames.has(rawKey.toLowerCase())) continue;
-    const value = String(m?.display_value ?? m?.value ?? "").trim();
-    if (!value || value.includes("<")) continue;
-    parts.push(`${rawKey}: ${value}`);
-  }
-  return parts.join(" / ");
-}
-
-/* ====== Customer resolution: GLOBAL phone-based, alias-aware ======
- * Phone is the primary identity. Same phone in any store = same customer.
- * Order's billing snapshot is recorded as aliases (name/email/address) the first time we see it.
- * The customers row itself is NEVER overwritten by later orders — its first-seen values stick.
- */
-function normalizePhone(raw: any): string | null {
-  if (!raw) return null;
-  let p = String(raw).replace(/[^0-9]/g, "");
-  if (!p) return null;
-  if (p.startsWith("880") && p.length >= 13) p = p.slice(3);
-  if (p.length === 10 && p.startsWith("1")) p = "0" + p;
-  return p;
-}
 
 async function resolveOrCreateCustomer(supabase: any, store_id: string, o: any): Promise<string | null> {
   const phone = normalizePhone(o.billing?.phone);
@@ -498,28 +481,3 @@ async function resolveOrCreateCustomer(supabase: any, store_id: string, o: any):
   return customerId;
 }
 
-function mapWooStatus(status: string, paymentMethod?: string): string {
-  const isCod = (paymentMethod || "").toLowerCase().includes("cod") ||
-                (paymentMethod || "").toLowerCase().includes("cash on delivery");
-  const map: Record<string, string> = {
-    pending: "pending",
-    processing: "processing",
-    "on-hold": isCod ? "processing" : "payment_pending",
-    completed: "completed", cancelled: "cancelled", refunded: "returned",
-    failed: "cancelled", shipped: "shipped",
-  };
-  return map[status] || "pending";
-}
-
-function derivePaymentStatus(o: any): string {
-  const method = (o.payment_method || "").toLowerCase();
-  const title = (o.payment_method_title || "").toLowerCase();
-  const status = (o.status || "").toLowerCase();
-  const isCod = method === "cod" || title.includes("cash on delivery");
-  if (isCod) return "cod";
-  // Non-COD: on-hold = awaiting confirmation
-  if (status === "on-hold") return "online";
-  if (status === "pending") return "unpaid";
-  if (status === "completed" || status === "processing") return "paid";
-  return "unpaid";
-}

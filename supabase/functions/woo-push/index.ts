@@ -132,6 +132,7 @@ async function pushProduct(supabase: any, productId: string) {
     stock_status: toWooStockStatus(product.stock_status),
     backorders: product.backorders || "no",
     status: product.is_active ? "publish" : "draft",
+    meta_data: [{ key: "_dokan_origin", value: "true" }],
   };
 
   // Push categories
@@ -186,6 +187,7 @@ async function pushProduct(supabase: any, productId: string) {
         manage_stock: v.manage_stock,
         stock_quantity: v.manage_stock ? v.stock_quantity : null,
         stock_status: toWooStockStatus(v.stock_status),
+        meta_data: [{ key: "_dokan_origin", value: "true" }],
       };
       const varUrl = `${baseUrl(store)}/wp-json/wc/v3/products/${product.woo_product_id}/variations/${v.woo_variation_id}`;
       const varRes = await fetch(varUrl, {
@@ -221,6 +223,7 @@ async function pushStock(supabase: any, productId: string) {
     manage_stock: product.manage_stock,
     stock_quantity: product.manage_stock ? product.stock_quantity : null,
     stock_status: toWooStockStatus(product.stock_status),
+    meta_data: [{ key: "_dokan_origin", value: "true" }],
   };
 
   const url = `${baseUrl(store)}/wp-json/wc/v3/products/${product.woo_product_id}`;
@@ -255,6 +258,7 @@ async function pushStock(supabase: any, productId: string) {
           manage_stock: v.manage_stock,
           stock_quantity: v.manage_stock ? v.stock_quantity : null,
           stock_status: toWooStockStatus(v.stock_status),
+          meta_data: [{ key: "_dokan_origin", value: "true" }],
         }),
       });
     }
@@ -282,6 +286,7 @@ async function pushOrder(supabase: any, orderId: string) {
 
   const wooPayload: any = {
     status: wooStatus,
+    meta_data: [{ key: "_dokan_origin", value: "true" }],
   };
 
   // If order has notes, set customer_note

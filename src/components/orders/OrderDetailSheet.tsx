@@ -632,19 +632,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         console.warn("Measurement save failed:", e);
       }
 
-      // Push status/notes change to WooCommerce if linked
-      if (order.id) {
-        try {
-          await supabase.functions.invoke("woo-push", {
-            body: { action: "push_order", order_id: order.id },
-          });
-        } catch (e) {
-          console.warn("WooCommerce order push failed:", e);
-        }
 
-        // Status/payment/customer/item/total changes are already mirrored to Woo notes
-        // automatically via addOrderTimeline above.
-      }
 
       toast.success("Order updated & synced");
       onSaved?.();
@@ -856,10 +844,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         amount_to_collect: remaining,
       });
 
-      // Push to WooCommerce
-      supabase.functions.invoke("woo-push", {
-        body: { action: "push_order", order_id: order.id },
-      }).catch((e) => console.warn("Woo push failed:", e));
 
       setConfirmPayAmount("");
       setConfirmPayTrxId("");
