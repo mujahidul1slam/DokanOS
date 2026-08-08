@@ -12,7 +12,7 @@ SELECT cron.schedule(
   '*/15 * * * *',
   $$
   SELECT net.http_post(
-    url := 'https://kjmvbqlemdfddjrjtiik.supabase.co/functions/v1/woo-sync-all',
+    url := 'https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/woo-sync-all',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'x-cron-secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'woo_sync_cron_token' LIMIT 1)

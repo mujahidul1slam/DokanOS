@@ -39,19 +39,13 @@ function mapPathaoStatus(status: string | null | undefined): string | undefined 
 // Invoke woo-push edge function to sync order status back to WooCommerce.
 // Used when a Pathao tracking update transitions an order to "delivered".
 async function pushOrderStatusToWoo(sb: any, orderId: string): Promise<void> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const res = await fetch(`${supabaseUrl}/functions/v1/woo-push`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceKey}`,
-    },
-    body: JSON.stringify({ action: "push_order", order_id: orderId }),
+  const { error } = await sb.from("sync_queue").insert({
+    order_id: orderId,
+    action: "push_order",
+    payload: { order_id: orderId },
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`woo-push responded ${res.status}: ${text}`);
+  if (error) {
+    throw new Error(`Failed to queue woo-push: ${error.message}`);
   }
 }
 
@@ -472,12 +466,22 @@ Deno.serve(async (req) => {
       }
 
       case "track_all": {
-        // Track using ALL integrations: group orders by their pathao_integration_id and use that integration's token
-        const { data: activeOrders } = await sb
+        const { order_ids } = params;
+
+        let query = sb
           .from("orders")
           .select("id, consignment_id, tracking_status, pathao_integration_id")
-          .not("consignment_id", "is", null)
-          .not("status", "in", '("delivered","completed","cancelled","returned")');
+          .not("consignment_id", "is", null);
+
+        if (order_ids && Array.isArray(order_ids) && order_ids.length > 0) {
+          query = query.in("id", order_ids);
+        } else {
+          query = query.not("status", "in", '("delivered","completed","cancelled","returned")');
+        }
+
+        const { data: activeOrders } = await query
+          .order("updated_at", { ascending: true })
+          .limit(50);
 
         const trackResults: any[] = [];
         const tokenByIntegration = new Map<string, string>();

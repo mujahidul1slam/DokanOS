@@ -277,7 +277,7 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
       "processing", "pre_order_pending", "pre_order_making", "pre_order_ready",
       "ready_to_ship", "shipped", "delivered", "completed",
     ]);
-    const incomingIsTerminal = orderData.status === "cancelled" || orderData.status === "returned";
+    const incomingIsTerminal = orderData.status === "cancelled" || orderData.status === "returned" || orderData.status === "completed";
     const locallyAdvanced = LOCALLY_ADVANCED.has(existingOrder.status) && !incomingIsTerminal;
 
     const updatePayload = locallyAdvanced

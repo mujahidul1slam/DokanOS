@@ -412,12 +412,19 @@ const Dispatch = () => {
   const handleTrackAll = async () => {
     setTrackingLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("pathao-track");
+      const orderIds = shippedOrders.map(o => o.id);
+      if (orderIds.length === 0) {
+        toast({ title: "No shipped orders to track." });
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke("pathao-courier", {
+        body: { action: "track_all", order_ids: orderIds },
+      });
       if (error) throw error;
       const info = data?.data || {};
       toast({
         title: "Tracking updated",
-        description: `Checked ${info.total || 0} shipments, ${info.updated || 0} updated`,
+        description: `Checked ${info.total || 0} shipments, ${info.updated || 0} updated. If there are more than 50 orders, click again.`,
       });
       loadOrders();
     } catch (err: any) {

@@ -512,9 +512,16 @@ const Orders = () => {
   const handleTrackAll = async () => {
     setTrackingLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("pathao-track");
+      const orderIds = filtered.map(o => o.id);
+      if (orderIds.length === 0) {
+        toast({ title: "No orders to track in this view." });
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke("pathao-courier", {
+        body: { action: "track_all", order_ids: orderIds },
+      });
       if (error) throw error;
-      toast({ title: "Tracking updated", description: `Checked ${data?.data?.total || 0}, updated ${data?.data?.updated || 0}` });
+      toast({ title: "Tracking updated", description: `Checked ${data?.data?.total || 0}, updated ${data?.data?.updated || 0}. If you have more than 50 orders in this view, click again to track the rest.` });
       loadOrders();
     } catch (err: any) { toast({ title: "Tracking failed", description: err.message, variant: "destructive" }); }
     finally { setTrackingLoading(false); }

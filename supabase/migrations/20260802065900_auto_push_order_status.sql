@@ -10,10 +10,10 @@ BEGIN
   IF NEW.woo_order_id IS NOT NULL 
      AND OLD.status IS DISTINCT FROM NEW.status THEN
     PERFORM net.http_post(
-      url := 'https://kjmvbqlemdfddjrjtiik.supabase.co/functions/v1/woo-push',
+      url := 'https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/woo-push',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
-        'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtqbXZicWxlbWRmZGRqcmp0aWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1MzgxNjksImV4cCI6MjA5MTExNDE2OX0.7r2znKjCxnoJrHMxWFuK2PqJ6GO6LeF8MvFOI1Qhg7Y'
+        'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imppd25kaWN2ZmtpbHRnYWdlcXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMjg5OTcsImV4cCI6MjEwMDkwNDk5N30.zWbTtxLYD1hw-vQ7qZdxm1NgUSWYHsS-0wWXg89_7MY'
       ),
       body := jsonb_build_object('action', 'push_order', 'order_id', NEW.id)
     );
