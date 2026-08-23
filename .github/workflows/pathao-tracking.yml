@@ -1,0 +1,94 @@
+## Pathao courier tracking — external scheduler
+##
+## WHY THIS EXISTS
+## The Supabase pg_cron scheduler on project jiwndicvfkiltgageqwv stopped
+## executing jobs on 2026-07-29 14:00 UTC. Its launcher process exits with code 1
+## about one second after every scheduled dispatch minute, and because it dies
+## before dispatching, nothing is recorded in cron.job_run_details -- the failure
+## is completely silent. A full database restart on 2026-08-23 19:01 did NOT fix
+## it (the launcher died again on the very next dispatch at 19:05:01), which means
+## the cause is a persistent condition in the database environment rather than
+## wedged process state.
+##
+## This workflow calls the Edge Function directly over HTTPS, bypassing pg_cron
+## entirely. The in-database cron job is left scheduled so that tracking resumes
+## natively if Supabase ever fixes the scheduler -- but note that BOTH would then
+## run. Delete this workflow, or unschedule the DB job, once pg_cron works again.
+##
+## AUTH
+## The token below is the project's anon (publishable) key. It is already public:
+## it ships in the frontend bundle as VITE_SUPABASE_PUBLISHABLE_KEY. The
+## pathao-courier function treats action=track_all as a system call and skips the
+## user-identity check, so the anon key is all the API gateway needs. No
+## service-role key and no vault secret are involved here.
+##
+## CAVEATS
+## - GitHub's scheduled runners are best-effort. A */15 schedule can slip by
+##   several minutes under load. That is fine for courier polling.
+## - GitHub disables scheduled workflows after ~60 days with no repository
+##   activity. If tracking silently stops, check that first.
+## - Use the "Run workflow" button on the Actions tab to trigger a poll by hand.
+
+name: Pathao tracking refresh
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+# Never let two polls overlap: a run takes ~2.3s per consignment (a 41-order
+# batch measured 93 seconds), so a slow run must not collide with the next tick.
+concurrency:
+  group: pathao-tracking
+  cancel-in-progress: false
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Poll Pathao for all active consignments
+        env:
+          FN_URL: https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/pathao-courier
+          ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imppd25kaWN2ZmtpbHRnYWdlcXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMjg5OTcsImV4cCI6MjEwMDkwNDk5N30.zWbTtxLYD1hw-vQ7qZdxm1NgUSWYHsS-0wWXg89_7MY
+        run: |
+          set -euo pipefail
+
+          # --max-time must exceed the worst realistic batch: 50 orders x ~2.3s
+          # is ~115s, so allow generous headroom before giving up.
+          status=$(curl -sS -o response.json -w '%{http_code}' \
+            --max-time 300 \
+            -X POST "$FN_URL" \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $ANON_KEY" \
+            -d '{"action":"track_all"}')
+
+          echo "HTTP $status"
+          cat response.json
+          echo
+
+          if [ "$status" != "200" ]; then
+            echo "::error::pathao-courier returned HTTP $status"
+            exit 1
+          fi
+
+          # A 200 with an error body still means the poll failed. Surface it as a
+          # failed run rather than a green tick, so a broken Pathao token or an
+          # expired anon key cannot hide behind a passing workflow.
+          python3 - <<'PY'
+          import json, sys
+          with open("response.json") as fh:
+              body = json.load(fh)
+          if body.get("error"):
+              print(f"::error::function reported: {body['error']}")
+              sys.exit(1)
+          data = body.get("data", body)
+          total = data.get("total")
+          updated = data.get("updated")
+          failed = [r for r in (data.get("results") or []) if r.get("error")]
+          print(f"::notice::polled {total} consignments, updated {updated}, {len(failed)} errored")
+          # Individual consignment errors are worth seeing but must not fail the
+          # run -- one bad consignment should not stop the other 40 from syncing.
+          for r in failed[:10]:
+              print(f"::warning::{r.get('consignment_id')}: {r.get('error')}")
+          PY

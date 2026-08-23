@@ -11,29 +11,80 @@ const PATHAO_BASE = "https://api-hermes.pathao.com";
 // In-memory token cache per integration (lives for the function's runtime)
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
+// Normalize status string: lowercase, replace underscores/hyphens with spaces, collapse whitespace
+function normalizeStatus(s: string): string {
+  return s.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 // Maps any Pathao tracking status to one of our 5 internal buckets:
 // Pickup Pending + In Transit -> "shipped" | Delivered -> "delivered"
 // On Hold -> "processing" | Returned -> "returned" | Cancelled -> "cancelled"
 function mapPathaoStatus(status: string | null | undefined): string | undefined {
   if (!status) return undefined;
-  const s = status.trim().toLowerCase();
-  if ([
-    "pending","pickup pending","pickup requested","assigned for pickup",
-    "picked","picked up","pickup cancel","pickup cancelled","pickup canceled",
-    "pickup failed",
-  ].includes(s)) return "shipped";
-  if ([
-    "at sorting hub","in transit","on the way to delivery hub","at delivery hub","out for delivery",
-  ].includes(s)) return "shipped";
-  if (["delivered","partial delivered","payment invoice"].includes(s)) return "delivered";
-  if (["on hold","hold","exchange"].includes(s)) return "processing";
-  if ([
-    "return","returned","delivery failed","customer refused",
-    "paid return","return requested","return in transit","returned to merchant",
-    "merchant return","return delivered",
-  ].includes(s)) return "returned";
-  if (["cancelled","canceled"].includes(s)) return "cancelled";
-  return undefined;
+  const normalized = normalizeStatus(status);
+
+  const rawStatusMap: Record<string, string> = {
+    // Pickup lifecycle
+    "pending": "shipped",
+    "pickup pending": "shipped",
+    "waiting for pickup": "shipped",
+    "pickup requested": "shipped",
+    "assigned for pickup": "shipped",
+    "picked": "shipped",
+    "picked up": "shipped",
+    // Hub / transit lifecycle
+    "at sorting hub": "shipped",
+    "received at sorting hub": "shipped",
+    "sent to sub sorting hub": "shipped",
+    "received at sub sorting hub": "shipped",
+    "sent to last mile hub": "shipped",
+    "in transit": "shipped",
+    "on the way to delivery hub": "shipped",
+    "at delivery hub": "shipped",
+    // Delivery lifecycle
+    "assigned for delivery": "shipped",
+    "sent for delivery": "shipped",
+    "out for delivery": "shipped",
+    "delivery confirmed": "shipped",
+    "delivered": "delivered",
+    "partial delivery": "delivered",
+    "partial delivered": "delivered",
+    "payment invoice": "delivered",
+    // Return lifecycle
+    "return": "returned",
+    "returned": "returned",
+    "paid return": "returned",
+    "return requested": "returned",
+    "return in transit": "returned",
+    "returned to merchant": "returned",
+    "merchant return": "returned",
+    "return delivered": "returned",
+    "delivery failed": "returned",
+    "customer refused": "returned",
+    "drt requested": "returned",
+    "drt pick requested": "returned",
+    "drt pick failed": "returned",
+    "drt cancelled": "returned",
+    "lost": "returned",
+    "damaged": "returned",
+    // Cancel / hold
+    "cancelled": "cancelled",
+    // Pickup never happened, so no shipment exists to track.
+    "pickup cancel": "cancelled",
+    "pickup cancelled": "cancelled",
+    "pickup failed": "cancelled",
+    "on hold": "processing",
+    "pickup on hold": "processing",
+    "on hold by customer request": "processing",
+    "hold": "processing",
+    "exchange": "processing",
+  };
+
+  const mapped = rawStatusMap[normalized];
+  if (!mapped) {
+    console.warn(`[pathao-courier] Unmapped Pathao status: "${status}" (normalized: "${normalized}")`);
+  }
+  return mapped;
 }
 
 // Invoke woo-push edge function to sync order status back to WooCommerce.
@@ -435,7 +486,8 @@ Deno.serve(async (req) => {
         const { consignment_id } = params;
         const data = await pathaoGet(token, `/aladdin/api/v1/orders/${consignment_id}`);
         const info = data.data || data;
-        const order_status = info.order_status || info.status;
+        const orderStatusRaw = info.order_status ?? info.status ?? info.order_status_slug ?? "";
+        const order_status = typeof orderStatusRaw === "string" ? orderStatusRaw.trim() : "";
 
         if (consignment_id) {
           const mappedStatus = mapPathaoStatus(order_status);
@@ -479,8 +531,13 @@ Deno.serve(async (req) => {
           query = query.not("status", "in", '("delivered","completed","cancelled","returned")');
         }
 
+        // Order by last_tracked_at, not updated_at: updated_at only moves when a
+        // status actually changes, so terminal-but-still-open orders kept their
+        // original timestamp and permanently occupied this 50-row window. Every
+        // order below is stamped whether or not it changed, so the window
+        // rotates through the whole active set instead of deadlocking.
         const { data: activeOrders } = await query
-          .order("updated_at", { ascending: true })
+          .order("last_tracked_at", { ascending: true, nullsFirst: true })
           .limit(50);
 
         const trackResults: any[] = [];
@@ -493,6 +550,13 @@ Deno.serve(async (req) => {
           // 350ms ≈ ~170 req/min headroom; combined with retry-on-429 backoff
           // inside pathaoGet this keeps the loop reliable for large batches.
           if (i > 0) await sleep(350);
+          // Stamped in `finally` below so that *every* outcome — changed,
+          // unchanged, unusable status, or a thrown error — moves this order to
+          // the back of the queue. If any path could skip the stamp, that order
+          // would keep last_tracked_at = NULL, sort first forever (NULLS FIRST)
+          // and re-jam the window exactly like updated_at did.
+          let stamped = false;
+          const polledAt = new Date().toISOString();
           try {
             let useToken = token;
             const intId = (order as any).pathao_integration_id as string | null;
@@ -514,11 +578,16 @@ Deno.serve(async (req) => {
             }
 
             const mappedStatus = mapPathaoStatus(order_status);
-            const updateData: any = { tracking_status: order_status };
+            const updateData: any = { tracking_status: order_status, last_tracked_at: polledAt };
             if (mappedStatus) updateData.status = mappedStatus;
 
             if (order.tracking_status !== order_status) {
-              await sb.from("orders").update(updateData).eq("id", order.id);
+              const { error: updErr } = await sb.from("orders").update(updateData).eq("id", order.id);
+              // Only claim the stamp landed if the write actually succeeded —
+              // otherwise fall through to the `finally` stamp, or this order
+              // would keep a NULL cursor and re-jam the queue.
+              stamped = !updErr;
+              if (updErr) throw new Error(`orders update failed: ${updErr.message}`);
               await sb.from("order_timeline").insert({
                 order_id: order.id,
                 event: "tracking_update",
@@ -555,9 +624,28 @@ Deno.serve(async (req) => {
               consignment_id: order.consignment_id,
               error: err.message,
             });
+          } finally {
+            if (!stamped) {
+              // supabase-js resolves with { error } instead of rejecting, so read
+              // the error rather than relying on a catch handler here.
+              const { error: stampErr } = await sb.from("orders")
+                .update({ last_tracked_at: polledAt })
+                .eq("id", order.id);
+              if (stampErr) {
+                console.warn(`last_tracked_at stamp failed for ${order.id}: ${stampErr.message}`);
+              }
+            }
           }
         }
-        result = { tracked: trackResults.length, results: trackResults };
+        const updatedCount = trackResults.filter((r) => r.updated).length;
+        // `total`/`updated` are what the Orders and Dispatch toasts read; keep
+        // them in sync with those callers or the UI silently reports 0/0.
+        result = {
+          tracked: trackResults.length,
+          total: trackResults.length,
+          updated: updatedCount,
+          results: trackResults,
+        };
         break;
       }
 
