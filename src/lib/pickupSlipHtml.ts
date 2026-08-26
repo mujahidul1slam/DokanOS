@@ -24,7 +24,7 @@ export const A4_PRINTABLE_W_MM = 281;
 export const A4_PRINTABLE_H_MM = 194;
 export const A4_PAGE_MARGIN_MM = 8;
 export const A4_SLIP_GAP_MM = 5;
-export const A4_SLIP_COLUMNS = 2;
+export const A4_SLIP_COLUMNS = 3;
 
 /** Widest slip that still fits two columns plus the gutter. */
 export const A4_MAX_SLIP_W_MM = Math.floor(
@@ -218,40 +218,43 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
 
 export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTemplateConfig, format: "thermal" | "a4"): string {
   const css = buildSlipCss(tpl, format);
-  const allSlips = orders.flatMap(o => buildSlipPagesHtml(o, tpl).map(html => `<div class="slip">${html}</div>`));
-  const slipsHtml = allSlips.join("");
   const s = tpl.sizing;
+
   if (format === "a4") {
-    // Clamped here as well as in the settings UI: a width past A4_MAX_SLIP_W_MM
-    // pushes the second column off the sheet, and the driver silently clips it.
+    // 3 columns × auto rows = up to 6 slips per sheet (more if content is short).
+    // Each slip sizes to its content; CSS Grid auto-flows them across columns.
+    // When a slip's content is taller than one row, it simply occupies more
+    // vertical space and subsequent slips flow around it.
     const slipW = Math.min(s.a4_slip_width_mm, A4_MAX_SLIP_W_MM);
-    const slipH = Math.min(s.a4_slip_height_mm, A4_MAX_SLIP_H_MM);
     return `<html><head><title>Pickup Slips</title><style>
       @page { size: A4 landscape; margin: ${A4_PAGE_MARGIN_MM}mm; }
-      html, body { width: ${A4_PRINTABLE_W_MM}mm; }
+      html, body { width: ${A4_PRINTABLE_W_MM}mm; height: ${A4_PRINTABLE_H_MM}mm; }
       ${css}
       .grid {
         display: grid;
         grid-template-columns: repeat(${A4_SLIP_COLUMNS}, ${slipW}mm);
+        grid-auto-rows: min-content;
         gap: ${A4_SLIP_GAP_MM}mm;
         align-content: start;
         justify-content: center;
       }
       .slip {
         width: ${slipW}mm;
-        ${slipH && slipH > 0 ? `height: ${slipH}mm;` : ""}
-        overflow: hidden;
+        /* No fixed height — content flows naturally. If it's taller than the
+           remaining space on the sheet, the whole slip moves to the next page. */
       }
       @media print { body { margin: 0; } .slip { border: none; } }
-    </style></head><body><div class="grid">${slipsHtml}</div>
+    </style></head><body><div class="grid">${orders.flatMap(o => buildSlipPagesHtml(o, tpl).map(html => `<div class="slip">${html}</div>`)).join("")}</div>
     ${PRINT_BOOTSTRAP}</body></html>`;
   }
+
+  const allSlips = orders.flatMap(o => buildSlipPagesHtml(o, tpl).map(html => `<div class="slip">${html}</div>`));
   return `<html><head><title>Pickup Slips</title><style>
     @page { size: ${s.thermal_width_mm}mm ${s.thermal_height_mm > 0 ? `${s.thermal_height_mm}mm` : "auto"}; margin: 0; }
     .slip { ${s.thermal_height_mm > 0 ? `height: ${s.thermal_height_mm}mm;` : ""} }
     ${css}
     @media print { body { margin: 0; } .slip { border: none; } }
-  </style></head><body>${slipsHtml}
+  </style></head><body>${allSlips.join("")}
   ${PRINT_BOOTSTRAP}</body></html>`;
 }
 

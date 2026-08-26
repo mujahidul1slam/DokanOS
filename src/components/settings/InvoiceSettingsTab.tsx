@@ -277,12 +277,11 @@ const InvoiceSettingsTab = () => {
               <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="thermal">Thermal (80mm)</SelectItem>
-                <SelectItem value="a4">A4 landscape (2 slips across)</SelectItem>
+                <SelectItem value="a4">A4 landscape (3 slips across)</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              A4 gangs slips 2 across in landscape — {a4PerSheet} per sheet at the current{" "}
-              {pickupTpl.sizing.a4_slip_height_mm > 0 ? `${pickupTpl.sizing.a4_slip_height_mm}mm slip height` : "auto slip height"}.
+              A4 gangs 3 slips across in landscape, auto-rows by content height — up to ~6 per sheet.
             </p>
           </div>
           <div className="space-y-1.5"><Label>Footer Text</Label><Input value={settings.footer_text} onChange={(e) => updateField("footer_text", e.target.value)} /></div>

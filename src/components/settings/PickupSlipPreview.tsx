@@ -130,23 +130,24 @@ export default function PickupSlipPreview({ tpl, format }: Props) {
 }
 
 /**
- * Renders the real printed layout: A4 landscape sheets with the page margin as
- * visible white space, slips ganged in the same grid buildPrintDocument uses,
- * and one sheet per page break. Scaled down to fit the panel, because a true
- * 297mm sheet is ~1122px wide and would otherwise need sideways scrolling.
+ * Renders the real printed layout: A4 landscape sheets with 3 columns, where
+ * each slip sizes to its content and flows naturally across columns. Slips with
+ * more content simply occupy more vertical space. Scaled down to fit the panel.
  *
- * This mirrors buildPrintDocument deliberately — the previous preview stacked
- * slips in a single column, so the operator could not see how many landed on a
- * sheet or that a too-wide slip pushed the second column off the paper.
+ * This mirrors buildPrintDocument deliberately — 3 columns, auto-height slips,
+ * CSS Grid auto-flow. The preview shows approximately 6 slips per sheet (3×2),
+ * but tall slips may reduce that count naturally.
  */
 function buildA4Preview(tpl: PickupSlipTemplateConfig, css: string, panelWidth: number): string {
   const slipW = Math.min(tpl.sizing.a4_slip_width_mm, A4_MAX_SLIP_W_MM);
-  const slipH = Math.min(tpl.sizing.a4_slip_height_mm, A4_MAX_SLIP_H_MM);
 
   const allSlips = sampleOrders.flatMap((o) =>
     buildSlipPagesHtml(o, tpl).map((h) => `<div class="slip">${h}</div>`),
   );
-  const sheets = chunk(allSlips, a4SlipsPerSheet(slipH));
+
+  // For preview purposes, show ~6 slips per sheet (3 columns × ~2 rows).
+  // Actual print layout auto-flows based on content height.
+  const sheets = chunk(allSlips, 6);
 
   const avail = Math.max(280, (panelWidth || 640) - 40);
   const scale = Math.min(1, avail / (SHEET_W_MM * PX_PER_MM));
@@ -159,7 +160,7 @@ function buildA4Preview(tpl: PickupSlipTemplateConfig, css: string, panelWidth: 
         <div class="sheet-frame">
           <div class="sheet"><div class="grid">${slips.join("")}</div></div>
         </div>
-        <div class="sheet-label">Sheet ${i + 1} of ${sheets.length} — A4 landscape, ${slips.length} slip${slips.length === 1 ? "" : "s"}</div>
+        <div class="sheet-label">Sheet ${i + 1} of ${sheets.length} — A4 landscape (3 columns), ${slips.length} slip${slips.length === 1 ? "" : "s"}</div>
       </div>`,
     )
     .join("");
@@ -185,12 +186,12 @@ function buildA4Preview(tpl: PickupSlipTemplateConfig, css: string, panelWidth: 
     .grid {
       display: grid;
       grid-template-columns: repeat(${A4_SLIP_COLUMNS}, ${slipW}mm);
+      grid-auto-rows: min-content;
       gap: ${A4_SLIP_GAP_MM}mm;
       align-content: start;
       justify-content: center;
-      height: 100%;
     }
-    .slip { width: ${slipW}mm; ${slipH && slipH > 0 ? `height: ${slipH}mm;` : ""} overflow: hidden; }
+    .slip { width: ${slipW}mm; }
     .sheet-label {
       font-family: 'Segoe UI', Arial, sans-serif;
       font-size: 11px;
