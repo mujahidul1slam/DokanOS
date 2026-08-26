@@ -1,0 +1,74 @@
+## WooCommerce push worker — external scheduler
+##
+## WHY THIS EXISTS
+## The Supabase pg_cron scheduler stopped executing jobs on 2026-07-29.
+## sync-worker drains the sync_queue table (push_order rows) and invokes
+## woo-push for each, updating WooCommerce order statuses. Without this
+## workflow, newly-enqueued pushes sit indefinitely.
+##
+## AUTH
+## The anon (publishable) key is used. sync-worker has no in-function auth
+## check — it relies on the API gateway's verify_jwt, and the anon key is a
+## valid project JWT. The function itself uses the service-role key from its
+## own environment, not from the request.
+##
+## CAVEATS
+## - sync-worker processes up to 20 rows per invocation (BATCH_SIZE constant).
+##   If the queue is larger, multiple runs will drain it over time.
+## - GitHub disables scheduled workflows after ~60 days of repo inactivity.
+
+name: Sync queue worker
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-worker
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run sync-worker
+        env:
+          FN_URL: https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/sync-worker
+          ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imppd25kaWN2ZmtpbHRnYWdlcXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMjg5OTcsImV4cCI6MjEwMDkwNDk5N30.zWbTtxLYD1hw-vQ7qZdxm1NgUSWYHsS-0wWXg89_7MY
+        run: |
+          set -euo pipefail
+
+          status=$(curl -sS -o response.json -w '%{http_code}' \
+            --max-time 300 \
+            -X POST "$FN_URL" \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $ANON_KEY" \
+            -d '{}')
+
+          echo "HTTP $status"
+          cat response.json
+          echo
+
+          if [ "$status" != "200" ]; then
+            echo "::error::sync-worker returned HTTP $status"
+            exit 1
+          fi
+
+          # Surface results in the Actions summary
+          python3 - <<'PY'
+          import json, sys
+          with open("response.json") as fh:
+              body = json.load(fh)
+          if body.get("error"):
+              print(f"::error::function reported: {body['error']}")
+              sys.exit(1)
+          processed = body.get("processed", [])
+          failed = body.get("failed", [])
+          print(f"::notice::processed {len(processed)}, failed {len(failed)}")
+          if body.get("message") == "No items to process":
+              print("Queue empty — nothing to do.")
+          for f in failed[:10]:
+              print(f"::warning::{f.get('id')}: {f.get('error')}")
+          PY

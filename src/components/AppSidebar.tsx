@@ -362,6 +362,9 @@ const AppSidebar = ({
           )}
           
           <div className={`flex ${collapsed ? "flex-col gap-2" : "gap-1 shrink-0"}`}>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-secondary/50" onClick={toggleTheme} title="Toggle Theme">
+              {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+            </Button>
             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-secondary/50" onClick={signOut} title="Sign out">
               <LogOut className="h-4 w-4" />
             </Button>

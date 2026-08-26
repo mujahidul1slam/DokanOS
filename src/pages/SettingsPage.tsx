@@ -157,15 +157,7 @@ const SettingsPage = () => {
                     <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} />
                   </div>
                 </div>
-                <div className="flex items-center justify-between rounded-lg border border-border p-4">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm font-medium">Theme</Label>
-                    <p className="text-xs text-muted-foreground">Switch between dark and light mode</p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={toggleTheme} className="gap-2">
-                    {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
-                  </Button>
-                </div>
+
                 <InstallAppButton />
               </div>
             </SettingsSection>

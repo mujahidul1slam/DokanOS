@@ -1,0 +1,76 @@
+## WooCommerce order sync — external scheduler
+##
+## WHY THIS EXISTS
+## The Supabase pg_cron scheduler stopped executing jobs on 2026-07-29.
+## woo-sync-all triggers a full order sync from WooCommerce to DokanOS for
+## all connected stores. Without this workflow, new WooCommerce orders won't
+## be pulled into DokanOS.
+##
+## AUTH
+## woo-sync-all requires either service-role bearer OR x-cron-secret matching
+## the token stored in Supabase vault (woo_sync_cron_token). This workflow
+## uses x-cron-secret, which you must set as a GitHub repository secret named
+## WOO_SYNC_CRON_TOKEN before this workflow can succeed.
+##
+## CAVEATS
+## - GitHub disables scheduled workflows after ~60 days of repo inactivity.
+
+name: WooCommerce sync all stores
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: woo-sync-all
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sync all WooCommerce stores
+        env:
+          FN_URL: https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/woo-sync-all
+          CRON_TOKEN: ${{ secrets.WOO_SYNC_CRON_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::WOO_SYNC_CRON_TOKEN secret is not set. Add it in repository settings."
+            exit 1
+          fi
+
+          status=$(curl -sS -o response.json -w '%{http_code}' \
+            --max-time 300 \
+            -X POST "$FN_URL" \
+            -H 'Content-Type: application/json' \
+            -H "x-cron-secret: $CRON_TOKEN" \
+            -d '{}')
+
+          echo "HTTP $status"
+          cat response.json
+          echo
+
+          if [ "$status" != "200" ]; then
+            echo "::error::woo-sync-all returned HTTP $status"
+            exit 1
+          fi
+
+          # Surface results in the Actions summary
+          python3 - <<'PY'
+          import json, sys
+          with open("response.json") as fh:
+              body = json.load(fh)
+          if body.get("error"):
+              print(f"::error::function reported: {body['error']}")
+              sys.exit(1)
+          triggered = body.get("triggered", 0)
+          results = body.get("results", [])
+          failed = [r for r in results if not r.get("ok")]
+          print(f"::notice::triggered {triggered} store(s), {len(failed)} failed")
+          for r in failed[:10]:
+              print(f"::warning::{r.get('name')}: {r.get('error')}")
+          PY
