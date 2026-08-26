@@ -3,6 +3,7 @@ import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type Captur
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
+import { PRINT_BOOTSTRAP, openPrintWindow } from "@/lib/printWindow";
 
 /**
  * If the order is currently in pre_order_pending status, promote it to
@@ -253,7 +254,11 @@ export async function printMeasurementSlip(orderId: string) {
   }
 
   const fmt = tpl.print_format || "thermal";
-  const width = fmt === "thermal" ? "280px" : "210mm";
+  // Must fit the @page printable area (sheet minus margins), with border-box
+  // below so the padding counts against that width rather than adding to it.
+  // A4 210mm - 2x15mm = 180mm; thermal 80mm - 2x4mm = 72mm. The old hardcoded
+  // 210mm plus content-box padding overflowed onto extra pages.
+  const width = fmt === "thermal" ? "72mm" : "100%";
   const date = new Date(order.created_at);
 
   const headerInfo: string[] = [];
@@ -290,6 +295,7 @@ export async function printMeasurementSlip(orderId: string) {
 
   const html = `<!DOCTYPE html><html><head><title>Measurement Slip - ${order.order_number}</title>
     <style>
+      * { box-sizing: border-box; }
       @page { size: ${fmt === "thermal" ? "80mm auto" : "A4"}; margin: ${fmt === "thermal" ? "4mm" : "15mm"}; }
       body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; margin: 0; padding: 0; }
       .slip { max-width: ${width}; margin: 0 auto; padding: ${fmt === "thermal" ? "8px" : "20px"}; }
@@ -303,15 +309,9 @@ export async function printMeasurementSlip(orderId: string) {
       ${productSections}
       ${orphanSection}
       ${tpl.footer_text ? `<div class="footer">${tpl.footer_text}</div>` : ""}
-    </div></body></html>`;
+    </div>${PRINT_BOOTSTRAP}</body></html>`;
 
-  const w = window.open("", "_blank", "width=800,height=600");
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 300);
-  }
+  openPrintWindow(html);
 
   // Stamp printed-at so the Orders list can show an indicator + log it.
   try {

@@ -5,6 +5,7 @@ import { buildPrintDocument, type SlipOrderData } from "@/lib/pickupSlipHtml";
 import { supabase } from "@/integrations/supabase/client";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
+import { openPrintWindow } from "@/lib/printWindow";
 
 interface Props {
   orders: SlipOrderData[];
@@ -17,15 +18,11 @@ export default function PickupSlipPrint({ orders, onPrinted }: Props) {
   const format = (settings.pickup_slip_print_format || "thermal") as "thermal" | "a4";
 
   const handlePrint = async () => {
-    const printWindow = window.open("", "_blank", "width=800,height=600");
-    if (!printWindow) return;
-    printWindow.document.write(buildPrintDocument(orders, tpl, format));
-    printWindow.document.close();
-    // Auto-print is triggered by the document's own window.onload script
-    // (see buildPrintDocument). Calling print() again from here causes Chrome
-    // to re-spool the whole job, which on non-thermal drivers can produce
-    // multi-GB PDFs. Do not add a second print() call.
-
+    // Auto-print is triggered by the document's own bootstrap script (see
+    // PRINT_BOOTSTRAP in lib/printWindow). Calling print() again from here
+    // causes Chrome to re-spool the whole job, which on non-thermal drivers
+    // can produce multi-GB PDFs. Do not add a second print() call.
+    if (!openPrintWindow(buildPrintDocument(orders, tpl, format))) return;
     // Stamp printed-at on each order and log timeline + audit entries.
     const printedOrders = orders.filter((o: any) => o.id);
     const ids = printedOrders.map((o: any) => o.id);

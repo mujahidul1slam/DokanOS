@@ -13,6 +13,7 @@ import { logChange } from "@/lib/auditLog";
 import { Slider } from "@/components/ui/slider";
 import PickupSlipPreview from "./PickupSlipPreview";
 import { defaultPickupSlipSizing, type InvoiceTemplateConfig, type PickupSlipTemplateConfig, type PickupSlipSizing } from "@/hooks/useInvoiceSettings";
+import { A4_MAX_SLIP_H_MM, A4_MAX_SLIP_W_MM, a4SlipsPerSheet } from "@/lib/pickupSlipHtml";
 
 interface InvoiceSettings {
   id: string;
@@ -37,11 +38,21 @@ const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   show_logo: true, show_tagline: true, show_address: true, show_contact: true,
   show_customer: true, show_customer_phone: true, show_customer_address: true,
   show_item_price: true, show_item_qty: true, show_item_total: true,
-  show_subtotal: true, show_discount: true, show_shipping: true, show_tax: true,
+  show_subtotal: true, show_discount: true, show_shipping: true,
   show_total: true, show_payments: true, show_notes: true, show_terms: true,
   show_footer: true, show_order_date: true, show_fulfillment: true,
   show_due: true,
   custom_fields: [],
+};
+
+/**
+ * Upper bounds for the sizes that have to fit a physical sheet. A slip wider
+ * than A4_MAX_SLIP_W_MM pushes the second column off the page and the driver
+ * silently clips it, so the input is clamped rather than trusted.
+ */
+const SIZING_MAX: Partial<Record<keyof PickupSlipSizing, number>> = {
+  a4_slip_width_mm: A4_MAX_SLIP_W_MM,
+  a4_slip_height_mm: A4_MAX_SLIP_H_MM,
 };
 
 const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
@@ -103,11 +114,16 @@ const InvoiceSettingsTab = () => {
 
   const updatePickupSizing = (field: keyof PickupSlipSizing, value: number) => {
     if (!settings) return;
+    // Upper bound only. Clamping the lower bound on every keystroke would fight
+    // an operator typing "138" one digit at a time, and an over-max width is
+    // the case that actually breaks the sheet.
+    const max = SIZING_MAX[field];
+    const next = max !== undefined ? Math.min(max, value) : value;
     setSettings({
       ...settings,
       pickup_slip_template: {
         ...settings.pickup_slip_template,
-        sizing: { ...settings.pickup_slip_template.sizing, [field]: value },
+        sizing: { ...settings.pickup_slip_template.sizing, [field]: next },
       },
     });
   };
@@ -182,6 +198,9 @@ const InvoiceSettingsTab = () => {
 
   const invoiceTpl = settings.invoice_template;
   const pickupTpl = settings.pickup_slip_template;
+  // Derived, never hardcoded: the copy below and the preview both read this, so
+  // the number the operator is told matches what the printer actually does.
+  const a4PerSheet = a4SlipsPerSheet(pickupTpl.sizing.a4_slip_height_mm);
 
   return (
     <div className="space-y-4">
@@ -258,10 +277,13 @@ const InvoiceSettingsTab = () => {
               <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="thermal">Thermal (80mm)</SelectItem>
-                <SelectItem value="a4">A4 (8 slips per page, landscape)</SelectItem>
+                <SelectItem value="a4">A4 landscape (2 slips across)</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">A4 prints 8 pickup slips horizontally on one page.</p>
+            <p className="text-xs text-muted-foreground">
+              A4 gangs slips 2 across in landscape — {a4PerSheet} per sheet at the current{" "}
+              {pickupTpl.sizing.a4_slip_height_mm > 0 ? `${pickupTpl.sizing.a4_slip_height_mm}mm slip height` : "auto slip height"}.
+            </p>
           </div>
           <div className="space-y-1.5"><Label>Footer Text</Label><Input value={settings.footer_text} onChange={(e) => updateField("footer_text", e.target.value)} /></div>
           <div className="space-y-1.5"><Label>Terms & Conditions</Label><Textarea value={settings.terms_text} onChange={(e) => updateField("terms_text", e.target.value)} rows={3} /></div>
@@ -292,7 +314,6 @@ const InvoiceSettingsTab = () => {
             ["show_subtotal", "Subtotal"],
             ["show_discount", "Discount"],
             ["show_shipping", "Shipping"],
-            ["show_tax", "Tax"],
             ["show_total", "Grand Total"],
             ["show_payments", "Payment Details"],
             ["show_notes", "Order Notes"],
@@ -354,7 +375,8 @@ const InvoiceSettingsTab = () => {
             ["show_items", "Item List"],
             ["show_item_qty", "Item Quantity"],
             ["show_total", "Order Total"],
-            ["show_notes", "Notes"],
+            ["show_due", "Due Amount"],
+            ["show_notes", "Special Instruction"],
           ] as [keyof PickupSlipTemplateConfig, string][]).map(([key, label]) => (
             <div key={key} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
               <span className="text-sm">{label}</span>
@@ -404,17 +426,21 @@ const InvoiceSettingsTab = () => {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Slip Width (mm)</Label>
-                <Input type="number" value={pickupTpl.sizing.a4_slip_width_mm} onChange={(e) => updatePickupSizing("a4_slip_width_mm", Number(e.target.value) || 0)} />
+                <Input type="number" min={40} max={A4_MAX_SLIP_W_MM} value={pickupTpl.sizing.a4_slip_width_mm} onChange={(e) => updatePickupSizing("a4_slip_width_mm", Number(e.target.value) || 0)} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Slip Height (mm)</Label>
-                <Input type="number" value={pickupTpl.sizing.a4_slip_height_mm} onChange={(e) => updatePickupSizing("a4_slip_height_mm", Number(e.target.value) || 0)} />
+                <Input type="number" min={0} max={A4_MAX_SLIP_H_MM} value={pickupTpl.sizing.a4_slip_height_mm} onChange={(e) => updatePickupSizing("a4_slip_height_mm", Number(e.target.value) || 0)} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Padding (mm)</Label>
-                <Input type="number" value={pickupTpl.sizing.a4_slip_padding_mm} onChange={(e) => updatePickupSizing("a4_slip_padding_mm", Number(e.target.value) || 0)} />
+                <Input type="number" min={0} value={pickupTpl.sizing.a4_slip_padding_mm} onChange={(e) => updatePickupSizing("a4_slip_padding_mm", Number(e.target.value) || 0)} />
               </div>
-              <p className="col-span-3 text-xs text-muted-foreground">A4 prints 8 slips per landscape page; width/height drive the preview only — actual size fits the page grid.</p>
+              <p className="col-span-3 text-xs text-muted-foreground">
+                These are the real printed sizes. Two slips sit side by side, so width caps at {A4_MAX_SLIP_W_MM}mm;
+                height caps at {A4_MAX_SLIP_H_MM}mm and decides how many rows fit — currently{" "}
+                <strong>{a4PerSheet} slips per sheet</strong>. Set height to 0 to size each slip to its content.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-3">
