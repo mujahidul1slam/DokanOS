@@ -15,7 +15,6 @@ export interface InvoiceTemplateConfig {
   show_subtotal: boolean;
   show_discount: boolean;
   show_shipping: boolean;
-  show_tax: boolean;
   show_total: boolean;
   show_payments: boolean;
   show_notes: boolean;
@@ -32,8 +31,11 @@ export interface PickupSlipSizing {
   thermal_width_mm: number;
   thermal_height_mm: number; // 0 = auto
   thermal_padding_mm: number;
-  a4_slip_width_mm: number;   // approximate, used for preview only
-  a4_slip_height_mm: number;  // approximate, used for preview only
+  // Real printed geometry, not a preview approximation: buildPrintDocument
+  // drives the A4 grid off these (clamped to A4_MAX_SLIP_W_MM / _H_MM), and
+  // the height is what decides how many slips land on a sheet.
+  a4_slip_width_mm: number;
+  a4_slip_height_mm: number;  // 0 = size to content
   a4_slip_padding_mm: number;
   // Font sizes (px)
   title_size: number;
@@ -86,7 +88,7 @@ const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   show_logo: true, show_tagline: true, show_address: true, show_contact: true,
   show_customer: true, show_customer_phone: true, show_customer_address: true,
   show_item_price: true, show_item_qty: true, show_item_total: true,
-  show_subtotal: true, show_discount: true, show_shipping: true, show_tax: true,
+  show_subtotal: true, show_discount: true, show_shipping: true,
   show_total: true, show_payments: true, show_notes: true, show_terms: true,
   show_footer: true, show_order_date: true, show_fulfillment: true,
   show_due: true,

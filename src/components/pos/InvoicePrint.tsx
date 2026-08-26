@@ -1,5 +1,6 @@
 import type { Cart } from "./types";
 import type { InvoiceSettings, InvoiceTemplateConfig } from "@/hooks/useInvoiceSettings";
+import { PRINT_BOOTSTRAP, openPrintWindow } from "@/lib/printWindow";
 
 interface InvoiceData {
   orderNumber: string;
@@ -31,7 +32,7 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
     show_logo: true, show_tagline: true, show_address: true, show_contact: true,
     show_customer: true, show_customer_phone: true, show_customer_address: true,
     show_item_price: true, show_item_qty: true, show_item_total: true,
-    show_subtotal: true, show_discount: true, show_shipping: true, show_tax: true,
+    show_subtotal: true, show_discount: true, show_shipping: true,
     show_total: true, show_payments: true, show_notes: true, show_terms: true,
     show_footer: true, show_order_date: true, show_fulfillment: true,
     show_due: true,
@@ -75,7 +76,13 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
     `<div style="font-size:${format === "thermal" ? "11px" : "12px"};margin-top:4px;"><strong>${f.label}:</strong> ${f.value}</div>`
   ).join("");
 
-  const width = format === "thermal" ? "280px" : "210mm";
+  // The invoice has to fit the @page printable area — the sheet minus its
+  // margins — and box-sizing: border-box below makes the padding count against
+  // that width instead of adding to it. A4 is 210mm with 15mm margins, so only
+  // 180mm is printable; the old hardcoded 210mm plus 24px of content-box
+  // padding measured 222.71mm and the driver spilled the excess onto extra
+  // pages. Thermal is 80mm less 2x4mm margins = 72mm.
+  const width = format === "thermal" ? "72mm" : "100%";
   const fontSize = format === "thermal" ? "12px" : "14px";
 
   const logoHtml = tpl.show_logo && biz.logo_url
@@ -86,10 +93,12 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
 
   const html = `<!DOCTYPE html><html><head><title>Invoice - ${orderNumber}</title>
     <style>
+      * { box-sizing: border-box; }
       @page { size: ${format === "thermal" ? "80mm auto" : "A4"}; margin: ${format === "thermal" ? "4mm" : "15mm"}; }
       body { font-family: 'Segoe UI', Arial, sans-serif; font-size: ${fontSize}; color: #111; margin: 0; padding: 0; }
       .invoice { max-width: ${width}; margin: 0 auto; padding: ${format === "thermal" ? "8px" : "24px"}; }
-      table { width: 100%; border-collapse: collapse; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      td { word-break: break-word; }
       th { text-align: left; padding: 4px 2px; border-bottom: 2px solid #333; font-size: ${format === "thermal" ? "11px" : "13px"}; }
       .header { text-align: center; margin-bottom: 12px; }
       .header h1 { margin: 0; font-size: ${format === "thermal" ? "16px" : "22px"}; }
@@ -127,13 +136,7 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
       ${tpl.show_notes && cart.notes ? `<div style="margin-top:8px;font-size:11px;"><strong>Notes:</strong> ${cart.notes}</div>` : ""}
       ${tpl.show_terms && biz.terms_text ? `<div style="margin-top:12px;padding-top:8px;border-top:1px solid #ddd;font-size:${format === "thermal" ? "9px" : "10px"};color:#888;"><strong>Terms:</strong><br/>${biz.terms_text}</div>` : ""}
       ${tpl.show_footer ? `<div class="footer">${biz.footer_text || "Thank you for shopping with us!"}</div>` : ""}
-    </div></body></html>`;
+    </div>${PRINT_BOOTSTRAP}</body></html>`;
 
-  const printWindow = window.open("", "_blank", "width=800,height=600");
-  if (printWindow) {
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => printWindow.print(), 300);
-  }
+  openPrintWindow(html);
 };
