@@ -14,6 +14,7 @@
 ##
 ## CAVEATS
 ## - GitHub disables scheduled workflows after ~60 days of repo inactivity.
+## - A push is required every ~24h to keep schedules active.
 
 name: WooCommerce sync all stores
 
