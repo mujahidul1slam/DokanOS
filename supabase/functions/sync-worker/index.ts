@@ -67,14 +67,15 @@ serve(async (req) => {
       }
     }
 
-    // Fetch up to BATCH_SIZE pending/failed tasks that are ready for retry
-    const { data: queueItems, error: fetchErr } = await sb
-      .from("sync_queue")
-      .select("*")
-      .in("status", ["pending", "failed"])
-      .lte("next_retry_at", new Date().toISOString())
-      .order("created_at", { ascending: true })
-      .limit(BATCH_SIZE);
+    // Atomically claim a batch. claim_sync_queue_batch flips the rows to
+    // "processing" inside one transaction with FOR UPDATE SKIP LOCKED, so two
+    // concurrent dispatchers (GitHub Actions + a revived pg_cron, or two
+    // overlapping Actions runs) can never take the same row — which previously
+    // caused the same order to be pushed to WooCommerce twice.
+    const { data: queueItems, error: fetchErr } = await sb.rpc(
+      "claim_sync_queue_batch",
+      { p_limit: BATCH_SIZE },
+    );
 
     if (fetchErr) throw fetchErr;
 
@@ -89,11 +90,9 @@ serve(async (req) => {
 
     for (const item of queueItems) {
       try {
-        // Mark as processing. updated_at is set explicitly because the orphan
-        // sweep above uses it to tell a stuck row from an in-flight one.
-        await sb.from("sync_queue")
-          .update({ status: "processing", updated_at: new Date().toISOString() })
-          .eq("id", item.id);
+        // Rows are already "processing" (set atomically by the claim RPC). The
+        // orphan sweep relies on updated_at to tell a stuck row from an in-flight
+        // one, so the claim's updated_at write is what marks in-flight work.
 
         if (item.action === "push_order") {
           // Invoke woo-push function

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DokanOS Sync Architecture</title>
+<style>
+  :root{
+    --primary: hsl(195 100% 45%);
+    --primary-weak: hsl(195 100% 92%);
+    --ink: hsl(210 30% 12%);
+    --muted: hsl(210 16% 42%);
+    --line: hsl(210 30% 80%);
+    --surface: hsl(200 40% 98%);
+    --surface-2: hsl(200 50% 95%);
+    --glass: hsla(200, 60%, 100%, 0.6);
+    --good: hsl(150 70% 38%);
+    --warn: hsl(38 95% 50%);
+    --bad: hsl(355 80% 55%);
+    --radius: 14px;
+    --shadow: 0 8px 30px hsla(210, 40%, 30%, 0.12);
+  }
+  [data-theme="dark"]{
+    --ink: hsl(200 30% 92%);
+    --muted: hsl(200 16% 60%);
+    --line: hsl(220 24% 24%);
+    --surface: hsl(220 30% 8%);
+    --surface-2: hsl(220 28% 12%);
+    --glass: hsla(220, 40%, 14%, 0.6);
+    --primary-weak: hsl(195 60% 18%);
+    --shadow: 0 8px 30px hsla(0, 0%, 0%, 0.4);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:Inter,system-ui,sans-serif; color:var(--ink);
+    background:
+      radial-gradient(1200px 600px at 80% -10%, var(--primary-weak), transparent 60%),
+      var(--surface);
+    line-height:1.55;
+  }
+  header{
+    padding:48px 24px 24px; max-width:1100px; margin:0 auto;
+  }
+  h1{
+    font-family:"Space Grotesk",Inter,sans-serif; font-size:clamp(28px,4vw,42px);
+    margin:0 0 8px; letter-spacing:-0.02em;
+  }
+  .sub{color:var(--muted); font-size:18px; max-width:70ch}
+  .toggle{
+    position:fixed; top:16px; right:16px; z-index:5;
+    border:1px solid var(--line); background:var(--glass); backdrop-filter:blur(8px);
+    color:var(--ink); border-radius:999px; padding:8px 14px; cursor:pointer; font-size:13px;
+  }
+  main{max-width:1100px; margin:0 auto; padding:0 24px 80px}
+  .panel{
+    background:var(--glass); backdrop-filter:blur(10px);
+    border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:24px; margin:20px 0;
+  }
+  .panel h2{
+    font-family:"Space Grotesk",Inter,sans-serif; font-size:20px; margin:0 0 4px;
+  }
+  .panel p.lead{color:var(--muted); margin:0 0 18px; font-size:14px}
+  .cols{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+  @media(max-width:760px){.cols{grid-template-columns:1fr}}
+  .box{
+    border:1px solid var(--line); border-radius:12px; padding:14px 16px; background:var(--surface-2);
+  }
+  .box h3{margin:0 0 6px; font-size:15px; font-family:"Space Grotesk",Inter,sans-serif}
+  .box ol{margin:6px 0 0; padding-left:18px; font-size:13px; color:var(--muted)}
+  .box ol li{margin:4px 0}
+  .tag{display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; letter-spacing:.02em}
+  .tag.cur{background:hsl(38 95% 90%); color:hsl(38 90% 30%)}
+  .tag.tgt{background:var(--primary-weak); color:var(--primary)}
+  .flow{display:flex; align-items:stretch; gap:10px; flex-wrap:wrap; margin:8px 0 4px}
+  .node{
+    flex:1 1 120px; min-width:120px; border:1px solid var(--line); border-radius:10px;
+    background:var(--surface); padding:12px; text-align:center; font-size:13px; position:relative;
+  }
+  .node b{display:block; font-family:"Space Grotesk",Inter,sans-serif; font-size:13px; margin-bottom:2px}
+  .node small{color:var(--muted); font-size:11px}
+  .arrow{display:flex; align-items:center; color:var(--primary); font-weight:700; font-size:18px}
+  .bottleneck{border-color:var(--bad); background:hsl(355 80% 96%)}
+  .bottleneck b{color:var(--bad)}
+  .lane{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px}
+  .pill{border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:12px; background:var(--surface)}
+  .pill b{display:block; color:var(--ink)}
+  .pill.bad{border-color:var(--bad)} .pill.bad b{color:var(--bad)}
+  .pill.good{border-color:var(--good)} .pill.good b{color:var(--good)}
+  table{width:100%; border-collapse:collapse; font-size:13px; margin-top:10px}
+  th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em}
+  tr:last-child td{border-bottom:none}
+  .phase{display:flex; gap:14px; align-items:flex-start}
+  .num{
+    flex:0 0 42px; height:42px; border-radius:12px; display:grid; place-items:center;
+    background:var(--primary); color:#fff; font-family:"Space Grotesk",Inter,sans-serif; font-weight:700;
+  }
+  .phase h3{margin:0 0 4px; font-family:"Space Grotesk",Inter,sans-serif; font-size:16px}
+  .phase p{margin:0; color:var(--muted); font-size:13px}
+  .phase .meta{font-size:11px; color:var(--muted); margin-top:6px; font-weight:600; letter-spacing:.03em}
+</style>
+</head>
+<body>
+<button class="toggle" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme==='dark'?'light':'dark'">◐ theme</button>
+
+<header>
+  <h1>DokanOS Sync Architecture</h1>
+  <div class="sub">Scaling order sync from 1 operator to 100 users across 500 WooCommerce stores — without double-sends, stalls, or 7-hour outages.</div>
+</header>
+
+<main>
+
+  <section class="panel">
+    <h2>Current system <span class="tag cur">today</span></h2>
+    <p class="lead">Timer-driven polling. A single worker drains a shared queue 20 rows at a time, sequentially.</p>
+    <div class="flow">
+      <div class="node"><b>GitHub Actions</b><small>cron every 5/15 min</small></div>
+      <div class="arrow">→</div>
+      <div class="node bottleneck"><b>sync-worker</b><small>1 process · 20/batch</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>WooCommerce</b><small>REST per row</small></div>
+    </div>
+    <div class="lane">
+      <div class="pill bad"><b>Single point of failure</b>One worker, one process. If it dies, nothing syncs.</div>
+      <div class="pill bad"><b>Sequential</b>20 rows then loop. 500 stores = minutes of head-of-line blocking.</div>
+      <div class="pill bad"><b>Timer drift</b>pg_cron died 2026-07-29; GitHub schedule died on repo rename.</div>
+      <div class="pill bad"><b>Shared queue</b>No per-store isolation — one slow store stalls all others.</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Target system <span class="tag tgt">revamp</span></h2>
+    <p class="lead">Event-driven. WooCommerce pushes changes; a durable queue fans out to a parallel worker pool with idempotency and per-store circuit breakers.</p>
+    <div class="flow">
+      <div class="node"><b>WooCommerce</b><small>webhook fires</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>webhook-in fn</b><small>verify + sign</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>PGMQ</b><small>durable queue</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>worker pool</b><small>parallel ×N</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>adapters</b><small>WC/Pathao/…</small></div>
+    </div>
+    <div class="lane">
+      <div class="pill good"><b>No polling</b>Work appears only when there's work. Zero idle cost.</div>
+      <div class="pill good"><b>Idempotent</b>Every event keyed; replays never double-send.</div>
+      <div class="pill good"><b>Per-store breaker</b>One failing store is isolated, not systemic.</div>
+      <div class="pill good"><b>DLQ</b>Poison events go to dead-letter, never block the queue.</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Where the wins come from</h2>
+    <table>
+      <thead><tr><th>Concern</th><th>Current</th><th>Target</th></tr></thead>
+      <tbody>
+        <tr><td>Trigger</td><td>Timer poll (drifts / dies)</td><td>WooCommerce webhook (event)</td></tr>
+        <tr><td>Transport</td><td>Direct REST in worker</td><td>PGMQ durable queue</td></tr>
+        <tr><td>Concurrency</td><td>1 process, sequential</td><td>Worker pool, parallel per store</td></tr>
+        <tr><td>Duplicate safety</td><td>status flags only</td><td>Idempotency key per event</td></tr>
+        <tr><td>Failure isolation</td><td>Shared queue stalls</td><td>Circuit breaker + DLQ</td></tr>
+        <tr><td>Replay</td><td>Manual re-run</td><td>Read queue archive / re-enqueue</td></tr>
+        <tr><td>Observability</td><td>none</td><td>metrics + per-store dash</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Phased roadmap</h2>
+    <div class="phase"><div class="num">1</div><div>
+      <h3>Stabilize (now)</h3>
+      <p>Repoint git remote to the renamed repo, re-enable the schedules in GitHub UI, confirm cron token in vault. Keep the existing worker but make it idempotent with a dedup key.</p>
+      <div class="meta">No new infra · unblocks today</div>
+    </div></div>
+    <div class="phase"><div class="num">2</div><div>
+      <h3>Webhooks in (next)</h3>
+      <p>Register WooCommerce webhooks → <code>webhook-in</code> edge fn. Verify signature, normalize, enqueue to a <code>sync_events</code> table. Keep the timer as a fallback backfill for missed webhooks.</p>
+      <div class="meta">Edge fn + 1 table · cuts idle polling</div>
+    </div></div>
+    <div class="phase"><div class="num">3</div><div>
+      <h3>Queue + pool</h3>
+      <p>Adopt PGMQ (or the <code>sync_events</code> table with SKIP LOCKED). Run a worker pool that claims per-store batches in parallel. Add circuit breaker + dead-letter status. Retire sequential 20-row loop.</p>
+      <div class="meta">PGMQ / SKIP LOCKED · parallelism</div>
+    </div></div>
+    <div class="phase"><div class="num">4</div><div>
+      <h3>Resilience</h3>
+      <p>Per-store backoff, exponential retry, DLQ dashboard, replay tooling. Monitor queue depth + send latency per store.</p>
+      <div class="meta">Observability · self-healing</div>
+    </div></div>
+    <div class="phase"><div class="num">5</div><div>
+      <h3>Scale</h3>
+      <p>Horizontal worker replicas behind a queue, sharding by store id. 500 stores × 100 users handled by N parallel workers with bounded concurrency.</p>
+      <div class="meta">Horizontal scale · 500 stores</div>
+    </div></div>
+  </section>
+
+</main>
+</body>
+</html>
