@@ -6,6 +6,20 @@ import { brandBasePath, fmtBDT } from "../lib/brand";
 import { listStorefrontProducts, type StorefrontProduct } from "../lib/catalog";
 import ProductCard from "../components/ProductCard";
 
+/**
+ * Determine the homepage layout style based on the storefront's `theme` field.
+ * - "editorial" or legacy "enveil" → light editorial magazine layout
+ * - "cinematic" or legacy "vincent" → dark cinematic layout
+ * - default → editorial layout
+ */
+function getLayoutStyle(theme: string): "editorial" | "cinematic" {
+  const t = theme.toLowerCase();
+  if (t === "cinematic" || t === "vincent" || t.includes("dark") || t.includes("cinematic")) {
+    return "cinematic";
+  }
+  return "editorial";
+}
+
 export default function Home() {
   const { brand, storefront } = useBrand();
   const [products, setProducts] = useState<StorefrontProduct[]>([]);
@@ -17,8 +31,9 @@ export default function Home() {
   const featured = products.filter((p) => p.is_featured).slice(0, 4);
   const hero = featured[0] || products[0];
   const grid = products.slice(0, 8);
+  const layout = getLayoutStyle(storefront.theme);
 
-  if (brand === "enveil") {
+  if (layout === "editorial") {
     return (
       <div>
         {/* Editorial Magazine hero */}
@@ -27,10 +42,10 @@ export default function Home() {
           <div className="relative grid lg:grid-cols-12 gap-12 items-center">
             <div className="lg:col-span-7">
               <div className="text-xs uppercase tracking-[0.25em] text-primary/80 mb-6">
-                Volume 01 — Heritage Edit
+                {storefront.name}
               </div>
               <h1 className="sf-display text-6xl md:text-7xl lg:text-8xl mb-8 text-foreground">
-                {storefront.hero_title || "Quiet luxury, woven slow."}
+                {storefront.hero_title || `Welcome to ${storefront.name}`}
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground max-w-xl mb-10 leading-relaxed">
                 {storefront.hero_subtitle}
@@ -39,7 +54,7 @@ export default function Home() {
                 to={`${brandBasePath(brand)}/shop`}
                 className="inline-flex items-center gap-3 px-7 py-4 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition group"
               >
-                <span className="text-sm uppercase tracking-widest">Explore the edit</span>
+                <span className="text-sm uppercase tracking-widest">Explore the collection</span>
                 <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition" />
               </Link>
             </div>
@@ -89,7 +104,7 @@ export default function Home() {
     );
   }
 
-  // Vincent — Dark Cinematic
+  // Cinematic layout
   return (
     <div>
       <section className="relative min-h-[92vh] flex items-center justify-center overflow-hidden">
@@ -103,9 +118,9 @@ export default function Home() {
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/60 to-background" />
         <div className="relative max-w-5xl mx-auto px-4 text-center">
-          <div className="text-xs uppercase tracking-[0.4em] text-foreground/60 mb-8">FW · MMXXVI</div>
+          <div className="text-xs uppercase tracking-[0.4em] text-foreground/60 mb-8">{storefront.name}</div>
           <h1 className="sf-display text-7xl md:text-9xl lg:text-[10rem] leading-[0.85] mb-10">
-            {storefront.hero_title?.toUpperCase() || "TAILORED FOR THE NIGHT"}
+            {(storefront.hero_title || storefront.name).toUpperCase()}
           </h1>
           <p className="text-base md:text-lg text-muted-foreground max-w-xl mx-auto mb-12 uppercase tracking-wider">
             {storefront.hero_subtitle}
@@ -146,7 +161,7 @@ export default function Home() {
 
       <section className="max-w-7xl mx-auto px-4 lg:px-8 py-24">
         <div className="flex items-end justify-between mb-12">
-          <h2 className="sf-display text-4xl md:text-5xl">THE LINE</h2>
+          <h2 className="sf-display text-4xl md:text-5xl">THE COLLECTION</h2>
           <Link to={`${brandBasePath(brand)}/shop`} className="text-xs uppercase tracking-[0.3em] underline underline-offset-4">
             View all
           </Link>

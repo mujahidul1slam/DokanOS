@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -16,7 +16,7 @@ import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import { Loader2 } from "lucide-react";
 import { markAppLoaded } from "@/lib/chunkRecovery";
-import { detectBrand } from "@/storefront/lib/brand";
+import { detectBrand, detectBrandAsync } from "@/storefront/lib/brand";
 
 const StorefrontApp = lazy(() => import("@/storefront/StorefrontApp"));
 
@@ -107,7 +107,29 @@ const AppRoutes = () => {
 };
 
 const Root = () => {
-  const brand = detectBrand();
+  // Phase 1: synchronous check (path / query param)
+  const syncBrand = detectBrand();
+
+  // Phase 2: async check (hostname / subdomain / custom domain)
+  const [asyncBrand, setAsyncBrand] = useState<string | null | undefined>(
+    syncBrand ? syncBrand : undefined, // undefined = still loading
+  );
+
+  useEffect(() => {
+    if (syncBrand) {
+      setAsyncBrand(syncBrand);
+      return;
+    }
+    detectBrandAsync().then((b) => setAsyncBrand(b ?? null));
+  }, [syncBrand]);
+
+  // Still resolving async brand detection
+  if (asyncBrand === undefined) {
+    return <FullScreenLoader label="Loading…" />;
+  }
+
+  const brand = asyncBrand;
+
   if (brand) {
     const basePath = `/storefront/${brand}`;
     return (

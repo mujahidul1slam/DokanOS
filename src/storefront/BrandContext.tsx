@@ -19,13 +19,44 @@ export function BrandProvider({ brand, children }: { brand: BrandSlug; children:
   const [sf, setSf] = useState<Storefront | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // Set data-brand attribute for CSS theming
   useEffect(() => {
     document.documentElement.setAttribute("data-brand", brand);
-    document.title = brand === "enveil" ? "Enveil — quiet luxury" : "Vincent — tailored for the night";
     return () => {
       document.documentElement.removeAttribute("data-brand");
     };
   }, [brand]);
+
+  // Set data-theme attribute when storefront loads (drives CSS themes)
+  useEffect(() => {
+    if (sf) {
+      const theme = sf.theme || brand;
+      document.documentElement.setAttribute("data-theme", theme);
+      document.title = sf.hero_title
+        ? `${sf.name} — ${sf.hero_title}`
+        : sf.name;
+
+      // Inject accent color as a CSS custom property
+      if (sf.accent_hex) {
+        document.documentElement.style.setProperty("--sf-accent-hex", sf.accent_hex);
+      }
+
+      // Set favicon if configured
+      if (sf.favicon_url) {
+        let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+        if (!link) {
+          link = document.createElement("link");
+          link.rel = "icon";
+          document.head.appendChild(link);
+        }
+        link.href = sf.favicon_url;
+      }
+    }
+    return () => {
+      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.style.removeProperty("--sf-accent-hex");
+    };
+  }, [sf, brand]);
 
   useEffect(() => {
     loadStorefront(brand)

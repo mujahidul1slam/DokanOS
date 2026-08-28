@@ -10,7 +10,17 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ExternalLink, Loader2, Plus, Trash2, Star, ChevronUp, ChevronDown, Store as StoreIcon } from "lucide-react";
+import { ExternalLink, Loader2, Plus, Trash2, Star, ChevronUp, ChevronDown, Store as StoreIcon, Globe } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { invalidateSlugCache } from "@/storefront/lib/brand";
+
+/** Available theme presets for new storefronts */
+const THEME_PRESETS = [
+  { value: "editorial", label: "Editorial (Light)", description: "Warm, elegant magazine style" },
+  { value: "cinematic", label: "Cinematic (Dark)", description: "Bold, dark immersive layout" },
+  { value: "minimal", label: "Minimal (Clean)", description: "Clean, modern, black & white" },
+  { value: "warm", label: "Warm (Earthy)", description: "Earthy, warm-toned and inviting" },
+] as const;
 
 interface Storefront {
   id: string; slug: string; name: string; accent_hex: string; theme: string;
@@ -28,6 +38,14 @@ export default function StorefrontsPage() {
   const [list, setList] = useState<Storefront[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  async function reload() {
+    const { data } = await supabase.from("storefronts").select("*").order("name");
+    setList((data as any) || []);
+    invalidateSlugCache();
+    return data;
+  }
 
   useEffect(() => {
     supabase.from("storefronts").select("*").order("name").then(({ data }) => {
@@ -48,7 +66,7 @@ export default function StorefrontsPage() {
           <h1 className="text-2xl font-semibold">Storefronts</h1>
           <p className="text-sm text-muted-foreground">Manage your native online stores</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center flex-wrap">
           {list.map((s) => (
             <Button
               key={s.id}
@@ -59,10 +77,18 @@ export default function StorefrontsPage() {
               {s.name}
             </Button>
           ))}
+          <CreateStorefrontDialog
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            onCreate={async (newSf) => {
+              const data = await reload();
+              setActiveId(newSf.id);
+            }}
+          />
         </div>
       </div>
 
-      {active && <StorefrontEditor sf={active} onUpdate={(s) => setList((l) => l.map((x) => x.id === s.id ? s : x))} />}
+      {active && <StorefrontEditor sf={active} onUpdate={(s) => { setList((l) => l.map((x) => x.id === s.id ? s : x)); invalidateSlugCache(); }} />}
     </div>
   );
 }
@@ -78,7 +104,7 @@ function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Stor
       name: form.name, hero_title: form.hero_title, hero_subtitle: form.hero_subtitle,
       hero_image_url: form.hero_image_url, logo_url: form.logo_url, about_md: form.about_md,
       contact_email: form.contact_email, contact_phone: form.contact_phone,
-      accent_hex: form.accent_hex, is_active: form.is_active,
+      accent_hex: form.accent_hex, is_active: form.is_active, theme: form.theme,
     }).eq("id", form.id).select().single();
     setSaving(false);
     if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return; }
@@ -109,6 +135,17 @@ function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Stor
           <TabsContent value="profile" className="space-y-4 pt-4">
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+              <div className="space-y-1">
+                <Label className="text-xs">Theme</Label>
+                <Select value={form.theme || "editorial"} onValueChange={(v) => setForm({ ...form, theme: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {THEME_PRESETS.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Field label="Accent color (hex)" value={form.accent_hex} onChange={(v) => setForm({ ...form, accent_hex: v })} />
               <Field label="Hero title" value={form.hero_title} onChange={(v) => setForm({ ...form, hero_title: v })} className="sm:col-span-2" />
               <Field label="Hero subtitle" value={form.hero_subtitle} onChange={(v) => setForm({ ...form, hero_subtitle: v })} className="sm:col-span-2" />
@@ -319,5 +356,120 @@ function StoreLink({ sf, onChange }: { sf: Storefront; onChange: (store_id: stri
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function CreateStorefrontDialog({ open, onOpenChange, onCreate }: { open: boolean, onOpenChange: (open: boolean) => void, onCreate: (sf: any) => void }) {
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [theme, setTheme] = useState("editorial");
+  const [saving, setSaving] = useState(false);
+
+  // Auto-generate slug from name if user hasn't explicitly typed one
+  useEffect(() => {
+    if (!open) {
+      setName("");
+      setSlug("");
+      setTheme("editorial");
+    }
+  }, [open]);
+
+  function handleNameChange(val: string) {
+    setName(val);
+    if (!slug || slug === name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")) {
+      setSlug(val.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
+    }
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name || !slug) return;
+    
+    setSaving(true);
+    
+    // Default accent colors based on theme picked
+    const defaultAccents: Record<string, string> = {
+      editorial: "#814037",
+      cinematic: "#ffffff",
+      minimal: "#000000",
+      warm: "#b56149"
+    };
+
+    const { data: storeData } = await supabase.from('stores').select('id, store_currency').limit(1).single();
+    
+    const { data, error } = await supabase.from("storefronts").insert({
+      name,
+      slug,
+      theme,
+      accent_hex: defaultAccents[theme] || "#000000",
+      store_id: storeData?.id || null,
+      currency: storeData?.store_currency || "BDT"
+    }).select().single();
+    
+    setSaving(false);
+    
+    if (error) {
+      toast({ title: "Failed to create", description: error.message, variant: "destructive" });
+    } else if (data) {
+      toast({ title: "Storefront created successfully" });
+      onCreate(data);
+      onOpenChange(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button variant="default" size="sm" className="gap-2">
+          <Plus className="h-4 w-4" /> New Storefront
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[500px]">
+        <form onSubmit={handleCreate}>
+          <DialogHeader>
+            <DialogTitle>Create new storefront</DialogTitle>
+            <DialogDescription>
+              Launch a new native storefront brand. You can configure domains and content later.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-6">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Storefront Name</Label>
+              <Input id="name" value={name} onChange={(e) => handleNameChange(e.target.value)} required placeholder="e.g. My Brand" />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="slug">URL Slug</Label>
+              <Input id="slug" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} required placeholder="e.g. my-brand" />
+              <p className="text-xs text-muted-foreground">Will be accessible at shohoz.biz/storefront/{slug || '...'}</p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="theme">Initial Theme</Label>
+              <Select value={theme} onValueChange={setTheme}>
+                <SelectTrigger id="theme">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {THEME_PRESETS.map(t => (
+                    <SelectItem key={t.value} value={t.value}>
+                      <div>
+                        <div>{t.label}</div>
+                        <div className="text-xs text-muted-foreground">{t.description}</div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={saving || !name || !slug}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

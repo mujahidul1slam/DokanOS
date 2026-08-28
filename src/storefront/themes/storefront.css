@@ -5,14 +5,17 @@
 @import url('@fontsource/archivo-black/400.css');
 
 [data-brand] {
-  /* Common base — overridden by per-brand blocks below */
+  /* Common base — overridden by per-theme blocks below */
   --sf-radius: 1rem;
   --sf-radius-lg: 1.5rem;
   --sf-shadow-soft: 0 10px 40px -10px hsl(0 0% 0% / 0.15);
   --sf-shadow-glow: 0 20px 80px -20px hsl(var(--sf-accent) / 0.4);
 }
 
-/* ============ ENVEIL — Editorial Magazine ============ */
+/* ============ EDITORIAL THEME (default / enveil) ============ */
+/* Matches: data-theme="editorial" OR data-theme="enveil" OR data-brand="enveil" */
+[data-theme="editorial"],
+[data-theme="enveil"],
 [data-brand="enveil"] {
   --background: 35 30% 96%;
   --foreground: 18 25% 12%;
@@ -45,7 +48,10 @@
   --font-body: 'Inter', sans-serif;
 }
 
-/* ============ VINCENT — Dark Cinematic ============ */
+/* ============ CINEMATIC THEME (dark / vincent) ============ */
+/* Matches: data-theme="cinematic" OR data-theme="vincent" OR data-brand="vincent" */
+[data-theme="cinematic"],
+[data-theme="vincent"],
 [data-brand="vincent"] {
   --background: 0 0% 4%;
   --foreground: 0 0% 98%;
@@ -75,6 +81,72 @@
   --sf-glass-border: 0 0% 100% / 0.12;
   --font-heading: 'Archivo Black', 'Inter', sans-serif;
   --font-display: 'Archivo Black', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+/* ============ MINIMAL THEME (clean, modern, light) ============ */
+[data-theme="minimal"] {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 0 0% 96%;
+  --accent-foreground: 0 0% 9%;
+  --border: 0 0% 90%;
+  --input: 0 0% 90%;
+  --ring: 0 0% 9%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+
+  --sf-accent: 0 0% 9%;
+  --sf-accent-soft: 0 0% 92%;
+  --sf-ink: 0 0% 9%;
+  --sf-cream: 0 0% 100%;
+  --sf-glass: 0 0% 100% / 0.7;
+  --sf-glass-border: 0 0% 0% / 0.08;
+  --font-heading: 'Inter', sans-serif;
+  --font-display: 'Inter', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+/* ============ WARM THEME (earthy, warm tones) ============ */
+[data-theme="warm"] {
+  --background: 30 20% 95%;
+  --foreground: 20 15% 15%;
+  --card: 30 15% 98%;
+  --card-foreground: 20 15% 15%;
+  --popover: 30 15% 98%;
+  --popover-foreground: 20 15% 15%;
+  --primary: 20 60% 45%;
+  --primary-foreground: 30 20% 98%;
+  --secondary: 30 15% 88%;
+  --secondary-foreground: 20 15% 20%;
+  --muted: 30 12% 90%;
+  --muted-foreground: 20 8% 40%;
+  --accent: 20 60% 45%;
+  --accent-foreground: 30 20% 98%;
+  --border: 30 12% 82%;
+  --input: 30 12% 82%;
+  --ring: 20 60% 45%;
+  --destructive: 0 70% 50%;
+  --destructive-foreground: 0 0% 100%;
+
+  --sf-accent: 20 60% 45%;
+  --sf-accent-soft: 20 40% 88%;
+  --sf-ink: 20 15% 15%;
+  --sf-cream: 30 20% 95%;
+  --sf-glass: 30 15% 98% / 0.65;
+  --sf-glass-border: 20 30% 65% / 0.25;
+  --font-heading: 'Cormorant Garamond', serif;
+  --font-display: 'Cormorant Garamond', serif;
   --font-body: 'Inter', sans-serif;
 }
 
@@ -131,5 +203,11 @@
   font-family: var(--font-body);
 }
 
-[data-brand="enveil"] .sf-display { font-weight: 500; letter-spacing: -0.01em; }
-[data-brand="vincent"] .sf-display { text-transform: uppercase; letter-spacing: -0.01em; }
+[data-brand="enveil"] .sf-display,
+[data-theme="editorial"] .sf-display,
+[data-theme="enveil"] .sf-display,
+[data-theme="warm"] .sf-display { font-weight: 500; letter-spacing: -0.01em; }
+
+[data-brand="vincent"] .sf-display,
+[data-theme="cinematic"] .sf-display,
+[data-theme="vincent"] .sf-display { text-transform: uppercase; letter-spacing: -0.01em; }

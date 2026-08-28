@@ -8,7 +8,7 @@ const corsHeaders = {
 
 interface CheckoutItem { product_id: string; quantity: number; }
 interface CheckoutBody {
-  storefront_slug: "enveil" | "vincent";
+  storefront_slug: string;
   customer: {
     name: string; phone: string; email?: string; address: string;
     city_id: number; zone_id: number; area_id?: number | null;
