@@ -1,5 +1,13 @@
 project_id = "jiwndicvfkiltgageqwv"
 
+# WooCommerce delivers webhooks with NO Authorization header — the Supabase
+# gateway's JWT check would reject every delivery with 401 before this
+# function runs. The function authenticates deliveries itself by matching
+# x-wc-webhook-source against the stores table and verifying the HMAC
+# signature against the store's consumer_secret.
+[functions.woo-webhook]
+verify_jwt = false
+
 [functions.storefront-checkout]
 verify_jwt = false
 

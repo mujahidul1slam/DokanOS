@@ -10,6 +10,10 @@ const corsHeaders = {
 // How many queue rows one invocation will attempt.
 const BATCH_SIZE = 20;
 
+// Phase 3: how many orders we push to WooCommerce concurrently (worker pool).
+// Bounded so 50 parallel dispatcher runs don't open unbounded HTTP sockets.
+const CONCURRENCY = 10;
+
 // Give up retrying a row after this many attempts and dead-letter it.
 const MAX_ATTEMPTS = 5;
 
@@ -88,7 +92,23 @@ serve(async (req) => {
     const processed = [];
     const failed = [];
 
-    for (const item of queueItems) {
+    // Bounded-concurrency map: drive up to CONCURRENCY pushes to WooCommerce in
+    // parallel instead of one-at-a-time (Phase 3 worker pool). Promise.allSettled
+    // means one row's failure never aborts the others.
+    async function pMap(items, limit, fn) {
+      const results = new Array(items.length);
+      let next = 0;
+      async function worker() {
+        while (next < items.length) {
+          const idx = next++;
+          results[idx] = await fn(items[idx]);
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+      return results;
+    }
+
+    await pMap(queueItems, CONCURRENCY, async (item) => {
       try {
         // Rows are already "processing" (set atomically by the claim RPC). The
         // orphan sweep relies on updated_at to tell a stuck row from an in-flight
@@ -122,6 +142,7 @@ serve(async (req) => {
           .update({ status: "completed", error_log: null, updated_at: new Date().toISOString() })
           .eq("id", item.id);
         processed.push(item.id);
+        return { ok: true, id: item.id };
 
       } catch (err: any) {
         // Handle failure
@@ -137,12 +158,14 @@ serve(async (req) => {
         } else {
           // Dead letter, do not retry further
           nextStatus = DEAD_LETTER_STATUS;
-          await sb.from("order_timeline").insert({
-            order_id: item.order_id,
-            event: "sync_failed",
-            description: `Permanent failure syncing to WooCommerce after ${MAX_ATTEMPTS} attempts.`,
-            metadata: { error: err.message }
-          });
+          if (item.order_id) {
+            await sb.from("order_timeline").insert({
+              order_id: item.order_id,
+              event: "sync_failed",
+              description: `Permanent failure syncing to WooCommerce after ${MAX_ATTEMPTS} attempts.`,
+              metadata: { error: err.message }
+            });
+          }
         }
 
         await sb.from("sync_queue").update({ 
@@ -154,8 +177,9 @@ serve(async (req) => {
         }).eq("id", item.id);
         
         failed.push({ id: item.id, error: err.message });
+        return { ok: false, id: item.id, error: err.message };
       }
-    }
+    });
 
     return new Response(JSON.stringify({ processed, failed }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

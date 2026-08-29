@@ -24,6 +24,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
+    supabaseInstance = supabase;
 
     if (action === "push_product" && product_id) {
       return await pushProduct(supabase, product_id);
@@ -95,6 +96,45 @@ function baseUrl(store: any) {
   return store.url.replace(/\/+$/, "");
 }
 
+// Phase 4: circuit breaker.
+// On a hard failure (bad auth / store offline / timeout) bump the store's
+// sync_failures; once it crosses the threshold the store is tripped for an hour
+// so the worker stops hammering it. Success resets the counter. The threshold
+// (5) and 1-hour cooldown are enforced in the SQL RPCs
+// (bump_store_sync_failure / reset_store_circuit_breaker).
+const BREAKER_THRESHOLD = 5;
+
+async function recordCircuitResult(supabase: any, storeId: string | undefined, failed: boolean) {
+  if (!storeId) return;
+  if (!failed) {
+    await supabase.rpc("reset_store_circuit_breaker", { p_store_id: storeId });
+    return;
+  }
+  const { error } = await supabase.rpc("bump_store_sync_failure", { p_store_id: storeId });
+  if (error) console.warn("circuit breaker bump failed:", error.message);
+}
+
+async function fetchWithBreaker(url: string, opts: any, storeId: string | undefined): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, opts);
+  } catch (err) {
+    // Network-level failure (DNS, TLS, timeout) — treat as store offline.
+    await recordCircuitResult(supabaseInstance, storeId, true);
+    throw err;
+  }
+  // 401 = bad credentials, 502/503/504 = store offline / gateway error.
+  if (res.status === 401 || res.status === 502 || res.status === 503 || res.status === 504) {
+    await recordCircuitResult(supabaseInstance, storeId, true);
+  } else if (res.ok) {
+    await recordCircuitResult(supabaseInstance, storeId, false);
+  }
+  return res;
+}
+
+// Captured after client creation so fetchWithBreaker can reach it.
+let supabaseInstance: any = null;
+
 /** Convert DB stock_status to WooCommerce format — handles both formats gracefully */
 function toWooStockStatus(status: string): string {
   const map: Record<string, string> = {
@@ -154,14 +194,14 @@ async function pushProduct(supabase: any, productId: string) {
   }
 
   const url = `${baseUrl(store)}/wp-json/wc/v3/products/${product.woo_product_id}`;
-  const res = await fetch(url, {
+  const res = await fetchWithBreaker(url, {
     method: "PUT",
     headers: {
       Authorization: wooAuth(store),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(wooPayload),
-  });
+  }, store.id);
 
   if (!res.ok) {
     const text = await res.text();
@@ -227,11 +267,11 @@ async function pushStock(supabase: any, productId: string) {
   };
 
   const url = `${baseUrl(store)}/wp-json/wc/v3/products/${product.woo_product_id}`;
-  const res = await fetch(url, {
+  const res = await fetchWithBreaker(url, {
     method: "PUT",
     headers: { Authorization: wooAuth(store), "Content-Type": "application/json" },
     body: JSON.stringify(wooPayload),
-  });
+  }, store.id);
 
   if (!res.ok) {
     const text = await res.text();
@@ -295,11 +335,11 @@ async function pushOrder(supabase: any, orderId: string) {
   }
 
   const url = `${baseUrl(store)}/wp-json/wc/v3/orders/${order.woo_order_id}`;
-  const res = await fetch(url, {
+  const res = await fetchWithBreaker(url, {
     method: "PUT",
     headers: { Authorization: wooAuth(store), "Content-Type": "application/json" },
     body: JSON.stringify(wooPayload),
-  });
+  }, store.id);
 
   if (!res.ok) {
     const text = await res.text();

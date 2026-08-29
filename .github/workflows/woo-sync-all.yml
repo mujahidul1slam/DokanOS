@@ -36,6 +36,7 @@ jobs:
         env:
           FN_URL: https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/woo-sync-all
           CRON_TOKEN: ${{ secrets.WOO_SYNC_CRON_TOKEN }}
+          ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imppd25kaWN2ZmtpbHRnYWdlcXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMjg5OTcsImV4cCI6MjEwMDkwNDk5N30.zWbTtxLYD1hw-vQ7qZdxm1NgUSWYHsS-0wWXg89_7MY
         run: |
           set -euo pipefail
 
@@ -48,6 +49,7 @@ jobs:
             --max-time 300 \
             -X POST "$FN_URL" \
             -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $ANON_KEY" \
             -H "x-cron-secret: $CRON_TOKEN" \
             -d '{}')
 
@@ -70,8 +72,10 @@ jobs:
               sys.exit(1)
           triggered = body.get("triggered", 0)
           results = body.get("results", [])
-          failed = [r for r in results if not r.get("ok")]
+          # Each result is {name, id, status, error?} where status is the HTTP
+          # status from the woo-sync invocation (0 = network failure).
+          failed = [r for r in results if r.get("status", 0) < 200 or r.get("status", 0) >= 300]
           print(f"::notice::triggered {triggered} store(s), {len(failed)} failed")
           for r in failed[:10]:
-              print(f"::warning::{r.get('name')}: {r.get('error')}")
+              print(f"::warning::{r.get('name')}: status={r.get('status')} {r.get('error')}")
           PY

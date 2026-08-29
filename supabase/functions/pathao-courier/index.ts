@@ -87,10 +87,23 @@ function mapPathaoStatus(status: string | null | undefined): string | undefined 
   return mapped;
 }
 
-// Invoke woo-push edge function to sync order status back to WooCommerce.
-// Used when a Pathao tracking update transitions an order to "delivered".
+// Enqueue a push_order so the linked WooCommerce order gets marked completed
+// once the Pathao cycle terminates (delivered/returned). Uses the new
+// store-aware queue — store_id is NOT NULL, so it must be looked up from the
+// order before enqueueing.
 async function pushOrderStatusToWoo(sb: any, orderId: string): Promise<void> {
+  const { data: order, error: orderErr } = await sb
+    .from("orders")
+    .select("store_id")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (orderErr || !order?.store_id) {
+    throw new Error(
+      `Cannot queue woo-push for order ${orderId}: ${orderErr?.message || "no store_id"}`,
+    );
+  }
   const { error } = await sb.from("sync_queue").insert({
+    store_id: order.store_id,
     order_id: orderId,
     action: "push_order",
     payload: { order_id: orderId },

@@ -69,6 +69,11 @@ Deno.serve(async (req) => {
       return jsonResp({ error: "Unknown store" }, 404);
     }
 
+    const store_id = store.id;
+    const isProduct = webhookTopic.startsWith("product.") || (payload.name && !payload.line_items && payload.type);
+    const isOrder = webhookTopic.startsWith("order.") || payload.line_items;
+    const entityType = isOrder ? "order" : (isProduct ? "product" : "unknown");
+
     const signature = req.headers.get("x-wc-webhook-signature") || "";
     if (store.consumer_secret && signature) {
       try {
@@ -78,14 +83,25 @@ Deno.serve(async (req) => {
         );
         const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
         const expected = btoa(String.fromCharCode(...sig));
-        if (signature !== expected) console.warn("Webhook signature mismatch — processing anyway.");
-      } catch (sigErr) { console.warn("Signature verification error:", sigErr); }
+        // Phase 2: reject forged/spoofed payloads. WooCommerce signs the raw
+        // request body with the store's consumer_secret; a mismatch means the
+        // caller is not WooCommerce, so we must NOT persist the payload.
+        if (signature !== expected) {
+          console.error("Webhook signature mismatch — rejecting payload.", { store_id });
+          if (deliveryId) {
+            supabase.from("webhook_events").insert({
+              store_id, delivery_id: deliveryId, topic: webhookTopic,
+              woo_id: payload.id || null, entity_type: entityType,
+              status_code: 401, error: "signature mismatch", payload_size: body.length,
+            }).then();
+          }
+          return jsonResp({ error: "invalid signature" }, 401);
+        }
+      } catch (sigErr) {
+        console.warn("Signature verification error:", sigErr);
+        return jsonResp({ error: "signature verification failed" }, 401);
+      }
     }
-
-    const store_id = store.id;
-    const isProduct = webhookTopic.startsWith("product.") || (payload.name && !payload.line_items && payload.type);
-    const isOrder = webhookTopic.startsWith("order.") || payload.line_items;
-    const entityType = isOrder ? "order" : (isProduct ? "product" : "unknown");
 
     let resultResponse;
     try {
@@ -142,14 +158,20 @@ async function handleProductWebhook(supabase: any, store: any, p: any) {
     category: p.categories?.map((c: any) => c.name).join(", ") || null,
     image_url: p.images?.[0]?.src || null, is_active: p.status === "publish",
     barcode: p.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
+    woo_updated_at: p.date_modified_gmt ? new Date(p.date_modified_gmt + "Z").toISOString() : null,
   };
 
   const { data: existing } = await supabase
-    .from("products").select("id")
+    .from("products").select("id, woo_updated_at")
     .eq("woo_product_id", p.id).eq("store_id", store_id).maybeSingle();
 
   let productId: string;
   if (existing) {
+    // Phase 2 idempotency guard: skip if the incoming snapshot is older.
+    if (productData.woo_updated_at && existing.woo_updated_at &&
+        productData.woo_updated_at < existing.woo_updated_at) {
+      return jsonResp({ ok: true, skipped: "stale", product_id: existing.id });
+    }
     const { error } = await supabase.from("products").update(productData).eq("id", existing.id);
     if (error) return jsonResp({ error: "Failed to update product" }, 500);
     productId = existing.id;
@@ -258,16 +280,25 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     customer_address: billingAddr,
     customer_city: o.billing?.city || null,
     notes: o.customer_note || null,
+    woo_updated_at: o.date_modified_gmt ? new Date(o.date_modified_gmt + "Z").toISOString() : null,
   };
 
   const { data: existingOrder } = await supabase
-    .from("orders").select("id, status, payment_status, amount_to_collect")
+    .from("orders").select("id, status, payment_status, amount_to_collect, woo_updated_at")
     .eq("woo_order_id", o.id).eq("store_id", store_id).maybeSingle();
 
   let orderId: string;
   let isNewOrder = false;
   let cancelledTransition = false;
   if (existingOrder) {
+    // Phase 2 idempotency guard: WooCommerce can redeliver older snapshots out of
+    // order. If the payload's modified time is not strictly newer than what we
+    // already hold, skip the write entirely to avoid clobbering newer data.
+    if (orderData.woo_updated_at && existingOrder.woo_updated_at &&
+        orderData.woo_updated_at < existingOrder.woo_updated_at) {
+      return jsonResp({ ok: true, skipped: "stale", order_id: existingOrder.id });
+    }
+
     // Protect locally-advanced orders: if the order has already moved past
     // payment_pending (e.g. payment confirmed → processing / pre_order_pending),
     // do NOT let a stale webhook overwrite status, payment_status, or

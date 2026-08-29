@@ -35,30 +35,47 @@ Deno.serve(async (req) => {
       .eq("status", "connected");
     if (error) throw error;
 
-    const results: { store_id: string; name: string; ok: boolean; error?: string }[] = [];
+    // Phase 5: distributed fan-out. With hundreds of stores, sequentially awaiting
+    // each woo-sync call would blow the Deno execution limit. Instead we fire every
+    // call without blocking on the HTTP round-trip and let EdgeRuntime.waitUntil keep
+    // the function alive until they all settle. Each store's sync runs independently.
+    const triggers: Promise<{ name: string; id: string; status: number; error?: string }>[] = [];
 
     for (const s of stores || []) {
-      try {
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/woo-sync`, {
+      triggers.push(
+        fetch(`${SUPABASE_URL}/functions/v1/woo-sync`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${serviceKey}`,
           },
           body: JSON.stringify({ store_id: s.id, sync_customers: false }),
-        });
-        const ok = res.ok;
-        const text = ok ? "" : await res.text();
-        results.push({ store_id: s.id, name: s.name, ok, error: ok ? undefined : text.slice(0, 200) });
-        console.log(`[woo-sync-all] triggered ${s.name} (${s.id}) -> ${res.status}`);
-      } catch (e: any) {
-        results.push({ store_id: s.id, name: s.name, ok: false, error: e?.message || String(e) });
-        console.error(`[woo-sync-all] failed ${s.name}:`, e?.message || e);
-      }
+        })
+          .then((res) => {
+            console.log(`[woo-sync-all] triggered ${s.name} (${s.id}) -> ${res.status}`);
+            return { name: s.name, id: s.id, status: res.status };
+          })
+          .catch((e: any) => {
+            console.error(`[woo-sync-all] failed ${s.name}:`, e?.message || e);
+            return { name: s.name, id: s.id, status: 0, error: e?.message || String(e) };
+          })
+      );
     }
 
+    // Keep the function alive until all fan-out calls resolve (Deno / Supabase
+    // Edge Runtime supports waitUntil). If the runtime lacks it, fall back to await.
+    const settled = (
+      typeof (globalThis as any).EdgeRuntime?.waitUntil === "function"
+        ? (globalThis as any).EdgeRuntime.waitUntil(Promise.allSettled(triggers))
+        : await Promise.allSettled(triggers)
+    );
+    const triggered = triggers.length;
+    const resultRows = settled instanceof Array
+      ? settled.map((r: any) => (r.status === "fulfilled" ? r.value : { error: String(r.reason) }))
+      : [];
+
     return new Response(
-      JSON.stringify({ success: true, triggered: results.length, results }),
+      JSON.stringify({ success: true, triggered, results: resultRows }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {

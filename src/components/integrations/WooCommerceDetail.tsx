@@ -22,6 +22,7 @@ interface Props {
     productCount: number;
     consumer_key?: string;
     consumer_secret?: string;
+    circuit_breaker_until?: string | null;
   };
   syncingId: string | null;
   onSync: (id: string) => void;
@@ -43,6 +44,22 @@ const WooCommerceDetail = ({ store, syncingId, onSync, onDelete, onRefresh }: Pr
     consumer_secret: store.consumer_secret || "",
   });
   const { toast } = useToast();
+
+  // Phase 4: "Sync Now" also clears an active circuit breaker so a previously
+  // offline/bad-credential store resumes pushing immediately instead of waiting
+  // out the 1-hour cooldown.
+  const handleSync = async (id: string) => {
+    if (store.circuit_breaker_until) {
+      const { error } = await supabase.rpc("reset_store_circuit_breaker", { p_store_id: id });
+      if (error) {
+        toast({ title: "Could not reset breaker", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Circuit breaker cleared", description: "Store will resume syncing." });
+        onRefresh();
+      }
+    }
+    onSync(id);
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -77,6 +94,11 @@ const WooCommerceDetail = ({ store, syncingId, onSync, onDelete, onRefresh }: Pr
             <Badge className={`border-0 text-xs ${store.status === "connected" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
               {store.status === "connected" ? <><CheckCircle className="h-3 w-3 mr-1" /> Connected</> : store.status}
             </Badge>
+            {store.circuit_breaker_until && (
+              <Badge className="border-0 text-xs bg-destructive/15 text-destructive">
+                Sync paused until {new Date(store.circuit_breaker_until).toLocaleTimeString()}
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -198,7 +220,7 @@ const WooCommerceDetail = ({ store, syncingId, onSync, onDelete, onRefresh }: Pr
         <Button
           variant="outline"
           disabled={syncingId === store.id}
-          onClick={() => onSync(store.id)}
+          onClick={() => handleSync(store.id)}
           className="gap-1.5"
         >
           {syncingId === store.id ? (
