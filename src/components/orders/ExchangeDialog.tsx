@@ -205,7 +205,7 @@ export default function ExchangeDialog({
           "id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status"
         )
         .or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%`)
-        .in("status", ["delivered", "completed"])
+        .eq("status", "delivered")
         .order("created_at", { ascending: false })
         .limit(10);
       setPickerResults((data || []) as ParentOrder[]);

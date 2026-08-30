@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw } from "lucide-react";
+import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw, Link2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
@@ -13,6 +13,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import { getGlobalStockEnabled } from "@/lib/stockSettings";
 import ExchangeDialog from "./ExchangeDialog";
+import AttachParcelDialog from "./AttachParcelDialog";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -130,6 +131,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const canChangeStatus = can("orders.change_status");
   const canRefund = can("orders.refund");
   const canLogPayment = can("orders.log_payment");
+  const canAttachCourier = can("orders.attach_courier");
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
@@ -159,6 +161,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   // Exchange dialog
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [exchangeParent, setExchangeParent] = useState<any>(null);
+
+  // Attach / Replace Parcel dialog
+  const [attachParcelOpen, setAttachParcelOpen] = useState(false);
 
   const openExchange = useCallback(async () => {
     if (!order) return;
@@ -536,6 +541,16 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           event: "items_updated",
           description: `Items updated — ${itemChangeNotes.join("; ")}`,
           metadata: { changes: itemChangeNotes, new_total: computedTotal },
+        });
+
+        // Item edits must reach Woo as a full line_items overwrite
+        // (approved decision). enqueue_order_push(reason='items_updated')
+        // sets include_items=true on the queue row; the worker drains it and
+        // woo-push rebuilds Woo's line items from DokanOS order_items.
+        // Silent no-op for non-Woo orders (RPC checks woo_order_id).
+        await supabase.rpc("enqueue_order_push", {
+          p_order_id: order.id,
+          p_reason: "items_updated",
         });
       }
 
@@ -947,17 +962,35 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           {order && (
             <p className="text-xs text-muted-foreground mt-1">
               {format(new Date(order.created_at), "MMM d, yyyy · h:mm a")} · {order.source === "pos" ? "POS" : "WooCommerce"}
-              {order.consignment_id && (
-                <a
-                  href={`https://merchant.pathao.com/tracking?consignment_id=${order.consignment_id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-2 inline-flex items-center gap-1 text-primary hover:underline"
+              {order.consignment_id ? (
+                <>
+                  <a
+                    href={`https://merchant.pathao.com/tracking?consignment_id=${order.consignment_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 inline-flex items-center gap-1 text-primary hover:underline"
+                  >
+                    Pathao: {order.consignment_id}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                  {canAttachCourier && (
+                    <button
+                      onClick={() => setAttachParcelOpen(true)}
+                      className="ml-2 text-xs text-muted-foreground hover:text-primary underline"
+                    >
+                      Replace
+                    </button>
+                  )}
+                </>
+              ) : canAttachCourier ? (
+                <button
+                  onClick={() => setAttachParcelOpen(true)}
+                  className="ml-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
-                  Pathao: {order.consignment_id}
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              )}
+                  <Link2 className="h-3 w-3" />
+                  Attach Pathao Parcel
+                </button>
+              ) : null}
             </p>
           )}
         </SheetHeader>
@@ -1567,19 +1600,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
                 <SelectItem value="shipped">Shipped</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="returned">Returned</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="flex items-center gap-2">
-            {order && (order.status === "delivered" || order.status === "completed") && canEdit && (
+            {order && order.status === "delivered" && canEdit && (
               <Button variant="outline" onClick={openExchange} disabled={saving} className="gap-1.5">
                 <RefreshCw className="h-4 w-4" /> Create Exchange
               </Button>
             )}
-            {order && (order.status === "delivered" || order.status === "completed") && canRefund && (
+            {order && order.status === "delivered" && canRefund && (
               <Button variant="outline" onClick={handleReturn} disabled={saving} className="gap-1.5 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
                 <Undo2 className="h-4 w-4" /> Return
               </Button>
@@ -1597,6 +1629,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         parentOrder={exchangeParent}
         onCreated={() => { setExchangeOpen(false); onSaved?.(); }}
       />
+
+      {order && (
+        <AttachParcelDialog
+          open={attachParcelOpen}
+          onOpenChange={setAttachParcelOpen}
+          orderId={order.id}
+          orderNumber={order.order_number}
+          existingConsignmentId={order.consignment_id}
+          onAttached={() => { load(); onSaved?.(); }}
+        />
+      )}
     </Sheet>
   );
 }
@@ -1620,7 +1663,6 @@ function FulfillmentBadge({ status }: { status: string }) {
     case "shipped":
       return <Badge className="bg-primary/15 text-primary border-primary/20">Shipped</Badge>;
     case "delivered":
-    case "completed":
       return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20">Delivered</Badge>;
     case "returned":
       return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20">Returned</Badge>;

@@ -119,12 +119,12 @@ const Stores = () => {
         .select("id, order_number, status, woo_order_id")
         .eq("store_id", storeId)
         .not("woo_order_id", "is", null)
-        .in("status", ["delivered", "completed"]);
+        .eq("status", "delivered");
       if (error) throw error;
 
       const candidates = orders || [];
       if (candidates.length === 0) {
-        toast({ title: "Nothing to backfill", description: "No delivered/completed orders linked to WooCommerce." });
+        toast({ title: "Nothing to backfill", description: "No delivered orders linked to WooCommerce." });
         return;
       }
 
@@ -264,7 +264,7 @@ const Stores = () => {
                 <Button
                   size="sm"
                   variant="outline"
-                  title="Push locally delivered/completed orders to WooCommerce as Completed"
+                  title="Push locally delivered orders to WooCommerce as Completed"
                   disabled={backfillingId === store.id}
                   onClick={() => handleBackfillCompleted(store.id)}
                 >

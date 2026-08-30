@@ -384,7 +384,7 @@ const PosReports = () => {
       const st = (o.status || "").toLowerCase();
       if (st === "cancelled") { buckets.cancelled++; continue; }
       if (st === "returned") { buckets.returned++; continue; }
-      const done = st === "delivered" || st === "completed";
+      const done = st === "delivered";
       if (ft === "walkin") {
         buckets.walkinDelivered++;
       } else if (ft === "pickup") {

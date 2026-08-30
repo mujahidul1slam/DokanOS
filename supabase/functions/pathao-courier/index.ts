@@ -146,7 +146,12 @@ function supabaseAdmin() {
 async function loadIntegration(sb: ReturnType<typeof supabaseAdmin>, integrationId?: string): Promise<PathaoCreds> {
   let q = sb.from("pathao_integrations").select("id, client_id, client_secret, username, password").eq("is_active", true);
   if (integrationId) q = q.eq("id", integrationId);
-  const { data, error } = await q.limit(1).maybeSingle();
+  // Deterministic pick: without an explicit ORDER BY, "limit 1" returned an
+  // arbitrary active integration per invocation — with multiple merchants that
+  // meant random credentials for default-token calls (location lists, price
+  // checks, token bootstrap). created_at makes the oldest active integration
+  // the stable default.
+  const { data, error } = await q.order("created_at", { ascending: true }).limit(1).maybeSingle();
   if (error || !data) {
     // Fallback to env vars (legacy)
     const envCreds = {
@@ -394,6 +399,26 @@ Deno.serve(async (req) => {
 
       case "create_order": {
         const { order_id, order_payload } = params;
+
+        // Dispatch idempotency: never create a second parcel for an order that
+        // already has one (timeout + retry / double-invoke previously created
+        // two physical parcels and two COD collections for one order).
+        if (order_id) {
+          const { data: existing } = await sb
+            .from("orders")
+            .select("id, consignment_id")
+            .eq("id", order_id)
+            .maybeSingle();
+          if (existing?.consignment_id) {
+            result = {
+              skipped: true,
+              consignment_id: existing.consignment_id,
+              reason: "Order already dispatched",
+            };
+            break;
+          }
+        }
+
         const data = await pathaoPost(token, "/aladdin/api/v1/orders", order_payload);
         const consignment_id = data.data?.consignment_id || data.consignment_id;
 
@@ -444,6 +469,27 @@ Deno.serve(async (req) => {
           const chunkResults = await Promise.allSettled(
             chunk.map(async (entry: any) => {
               try {
+                // Dispatch idempotency: never create a second parcel for an
+                // order that already has one. A timeout + user retry (or a
+                // double-invoke) used to create TWO physical parcels and TWO
+                // COD collections for the same order.
+                if (entry.order_id) {
+                  const { data: existing } = await sb
+                    .from("orders")
+                    .select("id, consignment_id, status")
+                    .eq("id", entry.order_id)
+                    .maybeSingle();
+                  if (existing?.consignment_id) {
+                    return {
+                      order_id: entry.order_id,
+                      success: false,
+                      skipped: true,
+                      consignment_id: existing.consignment_id,
+                      error: `Order already dispatched — consignment ${existing.consignment_id}`,
+                    };
+                  }
+                }
+
                 const data = await pathaoPost(token, "/aladdin/api/v1/orders", entry.order_payload);
                 const consignment_id = data.data?.consignment_id || data.consignment_id;
 
@@ -541,7 +587,7 @@ Deno.serve(async (req) => {
         if (order_ids && Array.isArray(order_ids) && order_ids.length > 0) {
           query = query.in("id", order_ids);
         } else {
-          query = query.not("status", "in", '("delivered","completed","cancelled","returned")');
+          query = query.not("status", "in", '("delivered","cancelled","returned")');
         }
 
         // Order by last_tracked_at, not updated_at: updated_at only moves when a
@@ -557,12 +603,17 @@ Deno.serve(async (req) => {
         const tokenByIntegration = new Map<string, string>();
         tokenByIntegration.set(creds.id, token);
 
-        for (let i = 0; i < (activeOrders || []).length; i++) {
-          const order = activeOrders![i];
-          // Pace requests to stay under Pathao's per-minute rate limit.
-          // 350ms ≈ ~170 req/min headroom; combined with retry-on-429 backoff
-          // inside pathaoGet this keeps the loop reliable for large batches.
-          if (i > 0) await sleep(350);
+        // Parallel tracking (revamp Phase 0): a serial loop measured ~2.3s per
+        // consignment (~2.65s with pacing), capping the whole system at ~200
+        // consignments/hour — at 500 stores each parcel's status would be a
+        // DAY stale. A worker pool keeps the per-request retry/backoff (inside
+        // pathaoGet) but overlaps the network latency. Concurrency 8 is a safe
+        // compromise between throughput (~15-20x serial) and Pathao's limits;
+        // 429 backoff inside pathaoGet absorbs bursts.
+        const TRACK_CONCURRENCY = 8;
+
+        let cursor = 0;
+        const trackOrder = async (order: any): Promise<any> => {
           // Stamped in `finally` below so that *every* outcome — changed,
           // unchanged, unusable status, or a thrown error — moves this order to
           // the back of the queue. If any path could skip the stamp, that order
@@ -587,7 +638,7 @@ Deno.serve(async (req) => {
             const order_status = typeof orderStatusRaw === "string" ? orderStatusRaw.trim() : "";
 
             if (!order_status || order_status.toLowerCase() === "undefined" || order_status.toLowerCase() === "null") {
-              continue;
+              return null;
             }
 
             const mappedStatus = mapPathaoStatus(order_status);
@@ -649,7 +700,24 @@ Deno.serve(async (req) => {
               }
             }
           }
-        }
+          return null;
+        };
+
+        // Worker pool: N trackers pull from a shared cursor until the window
+        // is exhausted. Results are pushed by the workers themselves, so order
+        // in trackResults is arrival order (irrelevant to the consumers, which
+        // only read counts and per-order fields).
+        const workers = Array.from(
+          { length: Math.min(TRACK_CONCURRENCY, (activeOrders || []).length) },
+          async () => {
+            while (true) {
+              const i = cursor++;
+              if (i >= (activeOrders || []).length) return;
+              await trackOrder((activeOrders as any[])[i]);
+            }
+          },
+        );
+        await Promise.all(workers);
         const updatedCount = trackResults.filter((r) => r.updated).length;
         // `total`/`updated` are what the Orders and Dispatch toasts read; keep
         // them in sync with those callers or the UI silently reports 0/0.
@@ -658,6 +726,188 @@ Deno.serve(async (req) => {
           total: trackResults.length,
           updated: updatedCount,
           results: trackResults,
+        };
+        break;
+      }
+
+      case "attach_parcel": {
+        const { order_id, consignment_id: newConsignmentId, replace } = params;
+
+        // --- Validate inputs ---
+        if (!order_id || !newConsignmentId) {
+          return new Response(
+            JSON.stringify({ error: "order_id and consignment_id are required" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        const cid = String(newConsignmentId).trim();
+        if (!cid) {
+          return new Response(
+            JSON.stringify({ error: "consignment_id cannot be empty" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // --- Load the target order ---
+        const { data: targetOrder, error: orderErr } = await sb
+          .from("orders")
+          .select("id, consignment_id, status, tracking_status, order_number, store_id, woo_order_id")
+          .eq("id", order_id)
+          .maybeSingle();
+        if (orderErr || !targetOrder) {
+          return new Response(
+            JSON.stringify({ error: `Order not found: ${orderErr?.message || order_id}` }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // --- Handle existing consignment (replace mode) ---
+        const oldConsignment = targetOrder.consignment_id;
+        if (oldConsignment) {
+          if (!replace) {
+            return new Response(
+              JSON.stringify({
+                error: `Order #${targetOrder.order_number} already has consignment ${oldConsignment}. Set "replace": true to detach and attach the new one.`,
+                existing_consignment_id: oldConsignment,
+              }),
+              { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+          // Log the detachment before overwriting
+          await sb.from("order_timeline").insert({
+            order_id,
+            event: "parcel_detached",
+            description: `Previous Pathao parcel detached. Old consignment: ${oldConsignment}`,
+            metadata: {
+              old_consignment_id: oldConsignment,
+              old_tracking_status: targetOrder.tracking_status,
+              user_id: callerId,
+              user_email: callerEmail,
+              user_name: callerName,
+            },
+          });
+          await sb.from("audit_log").insert({
+            user_id: callerId,
+            user_email: callerEmail,
+            action: "parcel_detached",
+            entity_type: "order",
+            entity_id: order_id,
+            details: {
+              old_consignment_id: oldConsignment,
+              old_tracking_status: targetOrder.tracking_status,
+              new_consignment_id: cid,
+              courier: "pathao",
+            },
+          });
+        }
+
+        // --- Check no OTHER order already uses this consignment ---
+        const { data: conflicting } = await sb
+          .from("orders")
+          .select("id, order_number")
+          .eq("consignment_id", cid)
+          .neq("id", order_id)
+          .maybeSingle();
+        if (conflicting) {
+          return new Response(
+            JSON.stringify({
+              error: `Consignment ${cid} is already attached to order #${conflicting.order_number}`,
+              conflicting_order_id: conflicting.id,
+            }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // --- Verify consignment exists on Pathao and fetch live status ---
+        let liveStatus = "";
+        let pathaoInfo: any = {};
+        try {
+          const data = await pathaoGet(token, `/aladdin/api/v1/orders/${cid}`);
+          pathaoInfo = data.data || data;
+          const rawStatus = pathaoInfo.order_status ?? pathaoInfo.status ?? pathaoInfo.order_status_slug ?? "";
+          liveStatus = typeof rawStatus === "string" ? rawStatus.trim() : "";
+        } catch (verifyErr: any) {
+          return new Response(
+            JSON.stringify({
+              error: `Pathao could not verify consignment ${cid}: ${verifyErr.message}`,
+            }),
+            { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        if (!liveStatus || liveStatus.toLowerCase() === "undefined" || liveStatus.toLowerCase() === "null") {
+          return new Response(
+            JSON.stringify({ error: `Pathao returned no valid status for consignment ${cid}` }),
+            { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // --- Map Pathao status to DokanOS status ---
+        const mappedStatus = mapPathaoStatus(liveStatus) || "shipped";
+
+        // --- Update the order ---
+        const now = new Date().toISOString();
+        const { error: updateErr } = await sb.from("orders").update({
+          consignment_id: cid,
+          tracking_status: liveStatus,
+          status: mappedStatus,
+          pathao_integration_id: creds.id !== "env" ? creds.id : null,
+          last_tracked_at: now,
+        }).eq("id", order_id);
+        if (updateErr) {
+          return new Response(
+            JSON.stringify({ error: `Failed to update order: ${updateErr.message}` }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // --- Timeline entry ---
+        const verb = oldConsignment ? "replaced" : "attached";
+        await sb.from("order_timeline").insert({
+          order_id,
+          event: "dispatched",
+          description: `Pathao parcel ${verb} manually. Consignment: ${cid}. Current status: ${liveStatus}`,
+          metadata: {
+            consignment_id: cid,
+            tracking_status: liveStatus,
+            mapped_status: mappedStatus,
+            integration_id: creds.id,
+            replaced_from: oldConsignment || null,
+            user_id: callerId,
+            user_email: callerEmail,
+            user_name: callerName,
+          },
+        });
+
+        // --- Audit log ---
+        await sb.from("audit_log").insert({
+          user_id: callerId,
+          user_email: callerEmail,
+          action: `parcel_${verb}`,
+          entity_type: "order",
+          entity_id: order_id,
+          details: {
+            consignment_id: cid,
+            tracking_status: liveStatus,
+            mapped_status: mappedStatus,
+            integration_id: creds.id,
+            replaced_from: oldConsignment || null,
+            courier: "pathao",
+          },
+        });
+
+        // --- Woo note (best-effort) ---
+        await postWooOrderNote(
+          order_id,
+          `[DokanOS] Pathao parcel ${verb} by ${callerName || callerEmail || "system"}. Consignment: ${cid}. Status: ${liveStatus}`,
+        );
+
+        result = {
+          consignment_id: cid,
+          tracking_status: liveStatus,
+          mapped_status: mappedStatus,
+          replaced_from: oldConsignment || null,
         };
         break;
       }

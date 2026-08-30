@@ -6,7 +6,7 @@ import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
-  Trash2, RotateCcw, Hourglass, Tags, Ruler, Sparkles, Wrench, SlidersHorizontal, ChevronDown, X, Pencil,
+  Trash2, RotateCcw, Hourglass, Tags, Ruler, Sparkles, Wrench, SlidersHorizontal, ChevronDown, X, Pencil, Link2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
@@ -41,7 +41,9 @@ import AddOrderDialog from "@/components/orders/AddOrderDialog";
 import OrderCard from "@/components/orders/OrderCard";
 import DispatchDialog from "@/components/orders/DispatchDialog";
 import ExchangeDialog from "@/components/orders/ExchangeDialog";
+import AttachParcelDialog from "@/components/orders/AttachParcelDialog";
 import PickupSlipPrint from "@/components/orders/PickupSlipPrint";
+import { usePermissions } from "@/hooks/usePermissions";
 import OrderRowActions from "@/components/orders/OrderRowActions";
 import OrderTabs from "@/components/orders/OrderTabs";
 import OrderFilters from "@/components/orders/OrderFilters";
@@ -112,6 +114,8 @@ const PAGE_SIZE = 200;
 
 const Orders = () => {
   const { role } = useAuth();
+  const { can } = usePermissions();
+  const canAttachCourier = can("orders.attach_courier");
   const { settings: invoiceSettings } = useInvoiceSettings();
   const canWrite = role === "admin" || role === "staff";
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -146,6 +150,8 @@ const Orders = () => {
   const [addOrderOpen, setAddOrderOpen] = useState(false);
   // Exchange parcel
   const [exchangeOpen, setExchangeOpen] = useState(false);
+  // Attach / replace parcel
+  const [attachParcelOrder, setAttachParcelOrder] = useState<OrderRow | null>(null);
 
   // Tracking
   const [trackingLoading, setTrackingLoading] = useState(false);
@@ -473,7 +479,6 @@ const Orders = () => {
   /* ─── Mark Ready to Ship ─── */
   const {
     handleMarkReadyToShip,
-    handleBulkMarkCompleted,
     handleBulkMarkPaid,
     handleConfirmBulkDuePayment,
     handleBulkCancel,
@@ -605,6 +610,13 @@ const Orders = () => {
     }
     if (["pickup_pending", "in_transit", "on_hold", "returned", "delivered", "cancelled"].includes(tab) && order.consignment_id) {
       actions.push({ key: "track", label: "Refresh Tracking", icon: RefreshCw, onClick: () => handleTrackOne(order.consignment_id!) });
+    }
+    if (canAttachCourier && !["trash", "cancelled"].includes(tab)) {
+      if (!order.consignment_id) {
+        actions.push({ key: "attach_parcel", label: "Attach Pathao Parcel", icon: Link2, onClick: () => setAttachParcelOrder(order) });
+      } else {
+        actions.push({ key: "replace_parcel", label: "Replace Pathao Parcel", icon: Link2, onClick: () => setAttachParcelOrder(order) });
+      }
     }
     if (["delivered", "in_transit", "pickup_pending", "ready", "all"].includes(tab)) {
       actions.push({ key: "print", label: "Print Invoice", icon: Printer, onClick: () => handleReprintOrder(order.id) });
@@ -850,6 +862,17 @@ const Orders = () => {
         title={duePayContext.ids.length > 1 ? "Collect Dues — Bulk Mark Paid" : "Collect Due"}
         onConfirm={handleConfirmBulkDuePayment}
       />
+
+      {attachParcelOrder && (
+        <AttachParcelDialog
+          open={!!attachParcelOrder}
+          onOpenChange={(v) => !v && setAttachParcelOrder(null)}
+          orderId={attachParcelOrder.id}
+          orderNumber={attachParcelOrder.order_number}
+          existingConsignmentId={attachParcelOrder.consignment_id}
+          onAttached={() => { setAttachParcelOrder(null); loadOrders(); }}
+        />
+      )}
     </div>
   );
 };

@@ -127,7 +127,6 @@ function OrderFiltersImpl(props: OrderFiltersProps) {
                   <SelectItem value="ready_to_ship">Ready to Ship</SelectItem>
                   <SelectItem value="shipped">Shipped</SelectItem>
                   <SelectItem value="delivered">Delivered</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="returned">Returned</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>

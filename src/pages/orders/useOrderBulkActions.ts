@@ -68,11 +68,6 @@ export function useOrderBulkActions<T extends BulkOrder>({
     [runBulkStatus],
   );
 
-  const handleBulkMarkCompleted = useCallback(
-    () => runBulkStatus("completed", "Marked as Completed", "{n} order(s) marked Completed"),
-    [runBulkStatus],
-  );
-
   const handleBulkCancel = useCallback(
     () => runBulkStatus("cancelled", "Cancelled", "{n} order(s) cancelled", false),
     [runBulkStatus],
@@ -265,7 +260,6 @@ export function useOrderBulkActions<T extends BulkOrder>({
 
   return {
     handleMarkReadyToShip,
-    handleBulkMarkCompleted,
     handleBulkMarkPaid,
     handleConfirmBulkDuePayment,
     handleBulkCancel,

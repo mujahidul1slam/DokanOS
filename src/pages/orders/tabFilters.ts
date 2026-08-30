@@ -136,7 +136,7 @@ export function matchesTab(
         ["pre_order_pending", "pre_order_making", "pre_order_ready"].includes(o.status) ||
         (preOrderOrderIds.has(o.id) &&
           !o.consignment_id &&
-          !["completed", "cancelled", "returned", "ready_to_ship", "shipped", "delivered"].includes(o.status))
+          !["cancelled", "returned", "ready_to_ship", "shipped", "delivered"].includes(o.status))
       );
     case "pre_order_pending":
       return o.status === "pre_order_pending";
@@ -149,10 +149,10 @@ export function matchesTab(
     case "in_transit":
       return !!o.consignment_id && IN_TRANSIT_TRACKING.includes(o.tracking_status || "");
     case "delivered":
-      // Delivered: any order whose internal status is delivered/completed,
+      // Delivered: any order whose internal status is delivered,
       // OR a dispatched parcel whose Pathao tracking reports a delivered state.
       return (
-        ["delivered", "completed"].includes(o.status) ||
+        o.status === "delivered" ||
         (!!o.consignment_id && DELIVERED_TRACKING.includes(o.tracking_status || ""))
       );
     case "on_hold":

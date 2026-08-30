@@ -11,7 +11,7 @@ export function mapWooStatus(status: string, paymentMethod?: string): string {
     processing: "processing",
     // Non-COD on-hold = awaiting payment confirmation; COD on-hold falls back to processing
     "on-hold": isCod ? "processing" : "payment_pending",
-    completed: "completed", cancelled: "cancelled", refunded: "returned",
+    completed: "delivered", cancelled: "cancelled", refunded: "returned",
     failed: "cancelled", shipped: "shipped",
   };
   return map[status] || "pending";
@@ -36,7 +36,7 @@ export function derivePaymentStatus(o: any): string {
   // on-hold = awaiting payment confirmation
   if (status === "on-hold") return "online";
   if (status === "pending") return "unpaid";
-  if (status === "completed" || status === "processing") return "paid";
+  if (status === "completed" || status === "delivered" || status === "processing") return "paid";
   return "unpaid";
 }
 

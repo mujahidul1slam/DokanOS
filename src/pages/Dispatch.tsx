@@ -121,7 +121,7 @@ const Dispatch = () => {
         .from("orders")
         .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, stores(name), order_items(id)")
         .not("consignment_id", "is", null)
-        .not("status", "in", '("delivered","completed","cancelled","returned")')
+        .not("status", "in", '("delivered","cancelled","returned")')
         .order("created_at", { ascending: false }),
     ]);
 

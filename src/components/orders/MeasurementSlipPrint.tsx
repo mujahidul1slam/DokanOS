@@ -20,7 +20,7 @@ async function promotePreOrderOnSlipPrint(orderId: string) {
     if (!order) return;
 
     // Already past the "making" stage — nothing to do.
-    if (["pre_order_making", "pre_order_ready", "ready_to_ship", "shipped", "delivered", "completed", "cancelled", "returned"].includes(order.status)) {
+    if (["pre_order_making", "pre_order_ready", "ready_to_ship", "shipped", "delivered", "cancelled", "returned"].includes(order.status)) {
       return;
     }
 

@@ -1,7 +1,7 @@
 import { memo } from "react";
 import {
   CheckSquare, Package, Hourglass, Wrench, Sparkles, PackageCheck, Truck,
-  CheckCircle2, BadgeCheck, Undo2, XCircle, Loader2, Ruler, Send, RefreshCw,
+  CheckCircle2, Undo2, XCircle, Loader2, Ruler, Send, RefreshCw,
   CreditCard, RotateCcw, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -56,7 +56,6 @@ function OrderBulkActionsBarImpl({
               <DropdownMenuItem onClick={() => onBulkStatusChange("ready_to_ship")}><PackageCheck className="h-4 w-4 mr-2" /> Ready to Ship</DropdownMenuItem>
               <DropdownMenuItem onClick={() => onBulkStatusChange("shipped")}><Truck className="h-4 w-4 mr-2" /> Shipped</DropdownMenuItem>
               <DropdownMenuItem onClick={() => onBulkStatusChange("delivered")}><CheckCircle2 className="h-4 w-4 mr-2" /> Delivered</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onBulkStatusChange("completed")}><BadgeCheck className="h-4 w-4 mr-2" /> Completed</DropdownMenuItem>
               <DropdownMenuItem onClick={() => onBulkStatusChange("returned")}><Undo2 className="h-4 w-4 mr-2" /> Returned</DropdownMenuItem>
               <DropdownMenuItem onClick={() => onBulkStatusChange("cancelled")} className="text-destructive"><XCircle className="h-4 w-4 mr-2" /> Cancelled</DropdownMenuItem>
             </DropdownMenuContent>

@@ -417,10 +417,29 @@ Deno.serve(async (req) => {
         // Prefer Woo's "featured" image when flagged; fall back to first gallery image
         const featured = (p.images || []).find((img: any) => img?.position === 0 || img?.featured) || p.images?.[0];
         const primary = featured?.src || allImages[0] || null;
+        // Price handling: Woo's `price` is the EFFECTIVE price (sale price while
+        // on sale). Keep `price` as effective for POS, and store regular/sale
+        // separately so pushes never destroy Woo sale structures.
+        const regular = parseFloat(p.regular_price) || 0;
+        const sale = p.sale_price && parseFloat(p.sale_price) > 0 ? parseFloat(p.sale_price) : null;
         return {
           store_id, woo_product_id: p.id, name: p.name, sku: p.sku || null,
-          description: p.short_description || p.description || null,
+          short_description: p.short_description || null,
+          description: p.description || p.short_description || null,
           price: parseFloat(p.price) || 0,
+          regular_price: regular,
+          sale_price: sale,
+          sale_price_from: p.date_on_sale_from_gmt ? p.date_on_sale_from_gmt + "Z" : null,
+          sale_price_to: p.date_on_sale_to_gmt ? p.date_on_sale_to_gmt + "Z" : null,
+          attributes: (p.attributes || []).map((a: any) => ({
+            id: a.id, name: a.name, slug: a.slug, position: a.position,
+            visible: a.visible, variation: a.variation, options: a.options,
+          })),
+          tags: (p.tags || []).map((t: any) => ({ id: t.id, name: t.name, slug: t.slug })),
+          weight: p.weight != null ? parseFloat(p.weight) : null,
+          dimensions: p.dimensions && (p.dimensions.length || p.dimensions.width || p.dimensions.height)
+            ? { length: p.dimensions.length, width: p.dimensions.width, height: p.dimensions.height }
+            : null,
           cost_price: parseFloat(p.meta_data?.find((m: any) => m.key === "_cost")?.value) || 0,
           stock_quantity: p.stock_quantity ?? 0, manage_stock: p.manage_stock ?? false,
           stock_status: fromWooStockStatus(p.stock_status || "instock"),
@@ -430,6 +449,9 @@ Deno.serve(async (req) => {
           image_urls: allImages,
           is_active: p.status === "publish",
           barcode: p.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
+          // Stamp marks this row as Woo-originated: the order/stock push
+          // triggers use woo_updated_at as an echo guard.
+          woo_updated_at: p.date_modified_gmt ? p.date_modified_gmt + "Z" : new Date().toISOString(),
         };
       });
 
@@ -479,6 +501,8 @@ Deno.serve(async (req) => {
             product_id: prodId, woo_variation_id: v.id,
             name: v.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${v.id}`,
             sku: v.sku || null, price: parseFloat(v.price) || 0,
+            regular_price: parseFloat(v.regular_price) || 0,
+            sale_price: v.sale_price && parseFloat(v.sale_price) > 0 ? parseFloat(v.sale_price) : null,
             // WooCommerce variations may return manage_stock as the string "parent"
             // (= inherit from parent). Coerce to a boolean for our DB column.
             manage_stock: v.manage_stock === true,
@@ -486,6 +510,8 @@ Deno.serve(async (req) => {
             stock_status: fromWooStockStatus(v.stock_status || "instock"),
             barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
             attributes: (v.attributes || []).map((a: any) => ({ key: a.name || a.slug, value: a.option })),
+            // Echo-guard stamp for the stock push trigger.
+            woo_updated_at: v.date_modified_gmt ? v.date_modified_gmt + "Z" : new Date().toISOString(),
           }));
           const { error: varErr } = await supabase
             .from("product_variations")
@@ -608,6 +634,9 @@ Deno.serve(async (req) => {
           customer_city: o.billing?.city || null,
           notes: o.customer_note || null,
           created_at: o.date_created_gmt ? o.date_created_gmt + "Z" : undefined,
+          // Echo-guard stamp: order push trigger skips rows whose
+          // woo_updated_at just changed (i.e. writes that came FROM Woo).
+          woo_updated_at: o.date_modified_gmt ? o.date_modified_gmt + "Z" : new Date().toISOString(),
         };
       });
 
@@ -639,7 +668,7 @@ Deno.serve(async (req) => {
       // We still allow cancellation / refund from Woo (those are always authoritative).
       const LOCALLY_ADVANCED = new Set([
         "processing", "pre_order_pending", "pre_order_making", "pre_order_ready",
-        "ready_to_ship", "shipped", "delivered", "completed",
+        "ready_to_ship", "shipped", "delivered",
       ]);
 
       const protectedRows: Array<{ dbId: string; row: any }> = [];
@@ -700,6 +729,31 @@ Deno.serve(async (req) => {
           await pMap(tlChunks, 3, (c) => supabase.from("order_timeline").insert(c).then(({ error }) => {
             if (error) console.warn("Timeline insert warn:", error.message);
           }));
+
+          // Confirm receipt back on the WooCommerce order (Issue 3): the
+          // merchant should be able to see in Woo admin that DokanOS has
+          // picked the order up, with what total and how many items.
+          // Best-effort — never fails the sync. Bounded parallel so a large
+          // import burst doesn't serialize hundreds of note round-trips.
+          const noteTargets = newWooOrders
+            .map((o: any) => ({ o, orderId: orderMap.get(o.id) as string | undefined }))
+            .filter((t: any) => t.orderId);
+          await pMap(noteTargets, 5, async ({ o, orderId }) => {
+            try {
+              const itemCount = (o.line_items || []).reduce((n: number, li: any) => n + (li.quantity || 0), 0);
+              const note = `[DokanOS] ✅ Order synced to DokanOS — #${o.number || o.id}, ` +
+                `${(o.line_items || []).length} item(s) (${itemCount} pcs), ` +
+                `total ৳${(parseFloat(o.total) || 0).toLocaleString()}. Managed in DokanOS.`;
+              await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/woo-push`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+                },
+                body: JSON.stringify({ action: "post_note", order_id: orderId, note, customer_note: false }),
+              }).catch(() => {});
+            } catch { /* best-effort */ }
+          });
         }
       }
 

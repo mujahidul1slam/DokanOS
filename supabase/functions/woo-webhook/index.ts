@@ -147,10 +147,28 @@ async function handleProductWebhook(supabase: any, store: any, p: any) {
   const store_id = store.id;
   if (p.type === "variation") return jsonResp({ ok: true, skipped: "variation" });
 
+  // Price handling mirrors woo-sync: `price` stays the effective price,
+  // regular/sale stored separately so pushes never destroy Woo sales.
+  const regular = parseFloat(p.regular_price) || 0;
+  const sale = p.sale_price && parseFloat(p.sale_price) > 0 ? parseFloat(p.sale_price) : null;
   const productData = {
     store_id, woo_product_id: p.id, name: p.name, sku: p.sku || null,
-    description: p.short_description || p.description || null,
+    short_description: p.short_description || null,
+    description: p.description || p.short_description || null,
     price: parseFloat(p.price) || 0,
+    regular_price: regular,
+    sale_price: sale,
+    sale_price_from: p.date_on_sale_from_gmt ? p.date_on_sale_from_gmt + "Z" : null,
+    sale_price_to: p.date_on_sale_to_gmt ? p.date_on_sale_to_gmt + "Z" : null,
+    attributes: (p.attributes || []).map((a: any) => ({
+      id: a.id, name: a.name, slug: a.slug, position: a.position,
+      visible: a.visible, variation: a.variation, options: a.options,
+    })),
+    tags: (p.tags || []).map((t: any) => ({ id: t.id, name: t.name, slug: t.slug })),
+    weight: p.weight != null ? parseFloat(p.weight) : null,
+    dimensions: p.dimensions && (p.dimensions.length || p.dimensions.width || p.dimensions.height)
+      ? { length: p.dimensions.length, width: p.dimensions.width, height: p.dimensions.height }
+      : null,
     cost_price: parseFloat(p.meta_data?.find((m: any) => m.key === "_cost")?.value) || 0,
     stock_quantity: p.stock_quantity ?? 0, manage_stock: p.manage_stock ?? false,
     stock_status: fromWooStockStatus(p.stock_status || "instock"),
@@ -225,11 +243,15 @@ async function syncProductVariations(supabase: any, store: any, wooProductId: nu
     name: v.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${v.id}`,
     sku: v.sku || null,
     price: parseFloat(v.price) || 0,
+    regular_price: parseFloat(v.regular_price) || 0,
+    sale_price: v.sale_price && parseFloat(v.sale_price) > 0 ? parseFloat(v.sale_price) : null,
     manage_stock: v.manage_stock === true, // Woo can return "parent" string; coerce to boolean
     stock_quantity: v.stock_quantity ?? 0,
     stock_status: fromWooStockStatus(v.stock_status || "instock"),
     barcode: v.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
     attributes: (v.attributes || []).map((a: any) => ({ key: a.name || a.slug, value: a.option })),
+    // Echo-guard stamp for the stock push trigger.
+    woo_updated_at: v.date_modified_gmt ? v.date_modified_gmt + "Z" : new Date().toISOString(),
   }));
 
   const { error } = await supabase
@@ -306,9 +328,9 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
     // We still allow cancellation / refund from Woo (those are always authoritative).
     const LOCALLY_ADVANCED = new Set([
       "processing", "pre_order_pending", "pre_order_making", "pre_order_ready",
-      "ready_to_ship", "shipped", "delivered", "completed",
+      "ready_to_ship", "shipped", "delivered",
     ]);
-    const incomingIsTerminal = orderData.status === "cancelled" || orderData.status === "returned" || orderData.status === "completed";
+    const incomingIsTerminal = orderData.status === "cancelled" || orderData.status === "returned" || orderData.status === "delivered";
     const locallyAdvanced = LOCALLY_ADVANCED.has(existingOrder.status) && !incomingIsTerminal;
 
     const updatePayload = locallyAdvanced
@@ -347,6 +369,22 @@ async function handleOrderWebhook(supabase: any, store_id: string, o: any) {
         user_email: null,
       },
     });
+
+    // Confirm receipt back on the WooCommerce order (Issue 3). Best-effort.
+    try {
+      const itemCount = (o.line_items || []).reduce((n: number, li: any) => n + (li.quantity || 0), 0);
+      const note = `[DokanOS] ✅ Order synced to DokanOS — #${o.number || o.id}, ` +
+        `${(o.line_items || []).length} item(s) (${itemCount} pcs), ` +
+        `total ৳${(parseFloat(o.total) || 0).toLocaleString()}. Managed in DokanOS.`;
+      await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/woo-push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        },
+        body: JSON.stringify({ action: "post_note", order_id: orderId, note, customer_note: false }),
+      }).catch(() => {});
+    } catch { /* best-effort */ }
   } else if (cancelledTransition) {
     await supabase.from("order_timeline").insert({
       order_id: orderId,

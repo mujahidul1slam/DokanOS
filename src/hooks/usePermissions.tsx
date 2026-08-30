@@ -90,6 +90,7 @@ export const PERMISSION_GROUPS: { group: string; items: { key: AppPermission; la
       { key: "orders.delete", label: "Delete / trash orders" },
       { key: "orders.change_status", label: "Change order status" },
       { key: "orders.dispatch", label: "Send to courier (Pathao)" },
+      { key: "orders.attach_courier", label: "Attach / replace Pathao parcel" },
       { key: "orders.refund", label: "Issue order refunds" },
       { key: "orders.log_payment", label: "Log payments" },
       { key: "orders.discount_large", label: "Apply large discounts (above threshold)" },

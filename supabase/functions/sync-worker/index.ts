@@ -49,26 +49,42 @@ serve(async (req) => {
     // to "pending", so a row that reliably kills the worker still dead-letters
     // after MAX_ATTEMPTS instead of looping forever.
     const staleCutoff = new Date(Date.now() - STALE_PROCESSING_MS).toISOString();
-    const { data: orphans, error: orphanErr } = await sb
-      .from("sync_queue")
-      .select("id, attempts")
-      .eq("status", "processing")
-      .lt("updated_at", staleCutoff);
+    // Atomic per-row recovery RPC (attempts incremented per row — a bulk
+    // client-side update would apply one row's count to the whole set).
+    const { data: recoveredCount, error: orphanErr } = await sb.rpc(
+      "recover_orphaned_sync_rows",
+      { p_stale_before: staleCutoff },
+    );
 
     if (orphanErr) {
       // A failed sweep must not stop the batch below from running.
       console.warn(`[sync-worker] orphan sweep failed: ${orphanErr.message}`);
-    } else if (orphans?.length) {
-      console.warn(`[sync-worker] recovering ${orphans.length} orphaned row(s)`);
-      for (const o of orphans) {
-        await sb.from("sync_queue").update({
-          status: "failed",
-          attempts: o.attempts + 1,
-          next_retry_at: new Date().toISOString(),
-          error_log: "orphaned in 'processing' by a worker run that never finished",
-          updated_at: new Date().toISOString(),
-        }).eq("id", o.id);
-      }
+    } else if (recoveredCount && recoveredCount > 0) {
+      console.warn(`[sync-worker] recovering ${recoveredCount} orphaned row(s)`);
+    }
+
+    // Retention sweep (audit + performance): completed rows older than 7
+    // days and dead_letter older than 30 days are purged. Without this the
+    // claim query scans an ever-growing dead mass — and the old per-status
+    // idempotency keys were exactly what silently blocked legitimate
+    // re-pushes (Issue 2). Best-effort: a failure here never stops the drain.
+    try {
+      const completedCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const deadCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { error: purgeCompletedErr } = await sb
+        .from("sync_queue")
+        .delete()
+        .eq("status", "completed")
+        .lt("updated_at", completedCutoff);
+      const { error: purgeDeadErr } = await sb
+        .from("sync_queue")
+        .delete()
+        .eq("status", "dead_letter")
+        .lt("updated_at", deadCutoff);
+      if (purgeCompletedErr) console.warn(`[sync-worker] completed purge failed: ${purgeCompletedErr.message}`);
+      if (purgeDeadErr) console.warn(`[sync-worker] dead_letter purge failed: ${purgeDeadErr.message}`);
+    } catch (e: any) {
+      console.warn(`[sync-worker] retention sweep error: ${e?.message || e}`);
     }
 
     // Atomically claim a batch. claim_sync_queue_batch flips the rows to
@@ -114,8 +130,10 @@ serve(async (req) => {
         // orphan sweep relies on updated_at to tell a stuck row from an in-flight
         // one, so the claim's updated_at write is what marks in-flight work.
 
-        if (item.action === "push_order") {
-          // Invoke woo-push function
+        if (item.action === "push_order" || item.action === "push_stock") {
+          // Invoke woo-push function. push_stock rows carry product_id in
+          // payload (they may have no order); push_order rows pass the queue's
+          // order_id plus payload (which may carry include_items for item edits).
           const res = await fetch(`${supabaseUrl}/functions/v1/woo-push`, {
             method: "POST",
             headers: {
@@ -124,7 +142,7 @@ serve(async (req) => {
             },
             body: JSON.stringify({ action: item.action, order_id: item.order_id, ...item.payload }),
           });
-          
+
           if (!res.ok) {
             const text = await res.text();
             throw new Error(`woo-push responded ${res.status}: ${text}`);

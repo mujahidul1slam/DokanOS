@@ -68,7 +68,6 @@ export function FulfillmentBadge({ status }: { status: string }) {
     case "shipped":
       return <Badge className="bg-primary/15 text-primary border-primary/20 hover:bg-primary/25">Shipped</Badge>;
     case "delivered":
-    case "completed":
       return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/25">Delivered</Badge>;
     case "returned":
       return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">Returned</Badge>;

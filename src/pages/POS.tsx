@@ -404,7 +404,7 @@ const POS = () => {
     const dueAmount = Math.max(0, total - totalPaid);
     const paymentStatus = dueAmount > 0 ? "partial" : "paid";
     const needsFulfillment = cart.fulfillment === "delivery" || cart.fulfillment === "pickup";
-    const orderStatus = needsFulfillment ? "processing" : "completed";
+    const orderStatus = needsFulfillment ? "processing" : "delivered";
 
     const { data: order } = await supabase
       .from("orders")
