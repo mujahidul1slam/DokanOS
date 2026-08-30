@@ -14,7 +14,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
     }
 
     /** Bounded-concurrency map. */
-    async function pMap<T, R>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<R>): Promise<R[]> {
+    async function pMap<T, R>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<R> | PromiseLike<R> | any): Promise<R[]> {
       const results: R[] = new Array(items.length);
       let next = 0;
       const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
@@ -256,9 +256,10 @@ Deno.serve(async (req) => {
         for (let i = 0; i < phoneArr.length; i += 500) {
           const chunk = phoneArr.slice(i, i + 500);
           tasks.push(
-            supabase.from("customers").select("id, phone").in("phone", chunk).then(({ data }) => {
+            (async () => {
+              const { data } = await supabase.from("customers").select("id, phone").in("phone", chunk);
               (data || []).forEach((r: any) => { if (r.phone) customerCache.set(`p:${r.phone}`, r.id); });
-            })
+            })()
           );
         }
       }
@@ -266,9 +267,10 @@ Deno.serve(async (req) => {
         for (let i = 0; i < emailArr.length; i += 500) {
           const chunk = emailArr.slice(i, i + 500);
           tasks.push(
-            supabase.from("customers").select("id, email").in("email", chunk).then(({ data }) => {
+            (async () => {
+              const { data } = await supabase.from("customers").select("id, email").in("email", chunk);
               (data || []).forEach((r: any) => { if (r.email) customerCache.set(`e:${r.email}`, r.id); });
-            })
+            })()
           );
         }
       }
@@ -309,10 +311,10 @@ Deno.serve(async (req) => {
         } else {
           customerId = created.id;
         }
-        if (phone) customerCache.set(`p:${phone}`, customerId);
-        if (email) customerCache.set(`e:${email}`, customerId);
+        if (phone && customerId) customerCache.set(`p:${phone}`, customerId);
+        if (email && customerId) customerCache.set(`e:${email}`, customerId);
       }
-      queueAliases(customerId, name, email, address, city);
+      if (customerId) queueAliases(customerId, name, email, address, city);
       return customerId;
     }
 
@@ -352,8 +354,8 @@ Deno.serve(async (req) => {
 
     // --- Categories, Products, Orders fetched IN PARALLEL ---
     // Each fetch is independent of the others until upserts happen.
-    const productParams = incremental ? { modified_after: sinceIso! } : {};
-    const orderParams = incremental ? { modified_after: sinceIso! } : {};
+    const productParams: Record<string, string> = incremental && sinceIso ? { modified_after: sinceIso } : {};
+    const orderParams: Record<string, string> = incremental && sinceIso ? { modified_after: sinceIso } : {};
 
     const [wooCategories, wooProducts, wooOrders] = await Promise.all([
       wooFetchAll("products/categories"),
@@ -485,7 +487,7 @@ Deno.serve(async (req) => {
         // Parallel chunk inserts
         const chunks: any[][] = [];
         for (let i = 0; i < pcRows.length; i += 500) chunks.push(pcRows.slice(i, i + 500));
-        await pMap(chunks, 4, (c) => supabase.from("product_categories").insert(c).then());
+        await pMap(chunks, 4, async (c: any) => { await supabase.from("product_categories").insert(c); });
       }
 
       // Variations — parallel by product, parallel pages within each
@@ -726,9 +728,10 @@ Deno.serve(async (req) => {
         if (newTimelineRows.length > 0) {
           const tlChunks: any[][] = [];
           for (let i = 0; i < newTimelineRows.length; i += 500) tlChunks.push(newTimelineRows.slice(i, i + 500));
-          await pMap(tlChunks, 3, (c) => supabase.from("order_timeline").insert(c).then(({ error }) => {
-            if (error) console.warn("Timeline insert warn:", error.message);
-          }));
+          await pMap(tlChunks, 3, async (c: any) => {
+            const { error } = await supabase.from("order_timeline").insert(c);
+            if (error) console.warn("Timeline insert warn:", error?.message);
+          });
 
           // Confirm receipt back on the WooCommerce order (Issue 3): the
           // merchant should be able to see in Woo admin that DokanOS has
@@ -895,9 +898,10 @@ Deno.serve(async (req) => {
       if (measRows.length > 0) {
         const mChunks: any[][] = [];
         for (let i = 0; i < measRows.length; i += 500) mChunks.push(measRows.slice(i, i + 500));
-        await pMap(mChunks, 3, (c) => supabase.from("order_item_measurements").insert(c).then(({ error }) => {
-          if (error) console.warn(`Measurements bulk insert warn:`, error.message);
-        }));
+        await pMap(mChunks, 3, async (c: any) => {
+          const { error } = await supabase.from("order_item_measurements").insert(c);
+          if (error) console.warn(`Measurements bulk insert warn:`, error?.message);
+        });
         ts(`inserted ${measRows.length} measurements`);
       }
     }

@@ -1,5 +1,4 @@
-import { serve } from "https://deno.land/std@0.177.1/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2.38.4";
+import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,7 +26,7 @@ const STALE_PROCESSING_MS = 15 * 60 * 1000;
 // glance in the table rather than hiding among rows still awaiting a retry.
 const DEAD_LETTER_STATUS = "dead_letter";
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -105,14 +104,18 @@ serve(async (req) => {
       });
     }
 
-    const processed = [];
-    const failed = [];
+    const processed: string[] = [];
+    const failed: Array<{ id: string; error: string }> = [];
 
     // Bounded-concurrency map: drive up to CONCURRENCY pushes to WooCommerce in
     // parallel instead of one-at-a-time (Phase 3 worker pool). Promise.allSettled
     // means one row's failure never aborts the others.
-    async function pMap(items, limit, fn) {
-      const results = new Array(items.length);
+    async function pMap<T, R>(
+      items: T[],
+      limit: number,
+      fn: (item: T) => Promise<R>
+    ): Promise<R[]> {
+      const results: R[] = new Array(items.length);
       let next = 0;
       async function worker() {
         while (next < items.length) {
@@ -124,7 +127,7 @@ serve(async (req) => {
       return results;
     }
 
-    await pMap(queueItems, CONCURRENCY, async (item) => {
+    await pMap(queueItems, CONCURRENCY, async (item: any) => {
       try {
         // Rows are already "processing" (set atomically by the claim RPC). The
         // orphan sweep relies on updated_at to tell a stuck row from an in-flight
