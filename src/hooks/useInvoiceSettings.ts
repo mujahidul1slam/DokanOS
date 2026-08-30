@@ -23,7 +23,38 @@ export interface InvoiceTemplateConfig {
   show_order_date: boolean;
   show_fulfillment: boolean;
   show_due: boolean;
+  show_barcode: boolean;
   custom_fields: { label: string; value: string }[];
+  sizing: InvoiceSizing;
+}
+
+export interface InvoiceSizing {
+  // Page dimensions (mm)
+  thermal_width_mm: number;
+  thermal_height_mm: number; // 0 = auto
+  thermal_padding_mm: number;
+  a4_margin_mm: number;
+  a4_padding_mm: number;
+  // Font sizes (px)
+  business_name_size: number;
+  meta_size: number;
+  invoice_number_size: number;
+  section_title_size: number;
+  customer_name_size: number;
+  customer_detail_size: number;
+  item_size: number;
+  subtotal_size: number;
+  total_size: number;
+  payment_size: number;
+  due_size: number;
+  notes_size: number;
+  terms_size: number;
+  footer_size: number;
+  custom_field_size: number;
+  // Barcode
+  barcode_height: number;
+  barcode_font_size: number;
+  barcode_bar_width: number;
 }
 
 export interface PickupSlipSizing {
@@ -84,7 +115,33 @@ export interface InvoiceSettings {
   shipping_presets: number[];
 }
 
-const defaultInvoiceTemplate: InvoiceTemplateConfig = {
+export const defaultInvoiceSizing: InvoiceSizing = {
+  thermal_width_mm: 80,
+  thermal_height_mm: 0,
+  thermal_padding_mm: 5,
+  a4_margin_mm: 15,
+  a4_padding_mm: 6,
+  business_name_size: 22,
+  meta_size: 11,
+  invoice_number_size: 14,
+  section_title_size: 13,
+  customer_name_size: 14,
+  customer_detail_size: 12,
+  item_size: 12,
+  subtotal_size: 12,
+  total_size: 16,
+  payment_size: 11,
+  due_size: 13,
+  notes_size: 11,
+  terms_size: 10,
+  footer_size: 11,
+  custom_field_size: 11,
+  barcode_height: 60,
+  barcode_font_size: 18,
+  barcode_bar_width: 2,
+};
+
+export const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   show_logo: true, show_tagline: true, show_address: true, show_contact: true,
   show_customer: true, show_customer_phone: true, show_customer_address: true,
   show_item_price: true, show_item_qty: true, show_item_total: true,
@@ -92,7 +149,9 @@ const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   show_total: true, show_payments: true, show_notes: true, show_terms: true,
   show_footer: true, show_order_date: true, show_fulfillment: true,
   show_due: true,
+  show_barcode: false,
   custom_fields: [],
+  sizing: defaultInvoiceSizing,
 };
 
 export const defaultPickupSlipSizing: PickupSlipSizing = {
@@ -156,7 +215,11 @@ export function useInvoiceSettings() {
             ...defaults,
             ...data,
             pickup_slip_print_format: data.pickup_slip_print_format || "thermal",
-            invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
+            invoice_template: {
+              ...defaultInvoiceTemplate,
+              ...(data.invoice_template || {}),
+              sizing: { ...defaultInvoiceSizing, ...((data.invoice_template || {}).sizing || {}) },
+            },
             pickup_slip_template: {
               ...defaultPickupSlipTemplate,
               ...(data.pickup_slip_template || {}),

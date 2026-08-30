@@ -32,6 +32,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - New `recover_orphaned_sync_rows(stale_before)` RPC: atomic single-statement recovery of rows stranded in `processing`, with per-row attempt counting.
 - **Unit tests** — new `src/test/tabFilters.test.ts` covering order tab matching (delivered / ready / new / pre-order / courier-tracking-delivered) and the Woo status + payment-status mapping.
 - **Trigger verification harnesses** — temporary verify functions were created and exercised against live data during rollout, then dropped (migrations `20260831000380`–`00392` and `20260831000590`–`00596`).
+- **Invoice live preview & full print customization** — the invoice now gets the same treatment as the pickup slip:
+  - New shared builder `src/lib/invoiceHtml.ts` (`buildInvoiceInnerHtml` / `buildInvoiceCss` / `buildInvoicePrintDocument`) — the single source of truth the print popup and the preview both render through, so settings preview and printer output can never drift apart. `printInvoice` now renders through it (signature unchanged).
+  - New `src/components/settings/InvoicePreview.tsx` iframe preview with sample cart data (multi-item table, variation labels, custom-tailoring tag, delivery shipping + discount, split payments with due, notes) — scaled A4 portrait page or thermal receipt strip, following the pickup slip preview.
+  - New `InvoiceSizing` config inside `invoice_template` (deep-merged for existing rows — no migration needed): thermal roll width/height/padding, A4 page margin + content padding, per-element font sizes (business name, invoice number, customer, items, totals, payments, due, notes, terms, footer, custom fields), and barcode geometry.
+  - Settings → Invoice now exposes "Invoice Dimensions (mm)", an 18-slider "Element Sizes (px)" grid with reset, an "Order Number Barcode" visibility toggle, and a live preview that follows the chosen default print format.
+  - Barcode SVG generation extracted to shared `src/lib/barcodeSvg.ts` (viewBox-normalized, print-vector-safe) — used by both the pickup slip and invoice builders.
+  - Unit tests `src/test/invoiceHtml.test.ts` covering visibility toggles, due-amount math, custom-field filtering, thermal/A4 geometry, and the print document skeleton.
 
 ### Changed
 

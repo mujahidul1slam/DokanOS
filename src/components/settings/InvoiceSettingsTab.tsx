@@ -12,7 +12,8 @@ import { Upload, X, FileText, Plus, Trash2 } from "lucide-react";
 import { logChange } from "@/lib/auditLog";
 import { Slider } from "@/components/ui/slider";
 import PickupSlipPreview from "./PickupSlipPreview";
-import { defaultPickupSlipSizing, type InvoiceTemplateConfig, type PickupSlipTemplateConfig, type PickupSlipSizing } from "@/hooks/useInvoiceSettings";
+import InvoicePreview from "./InvoicePreview";
+import { defaultInvoiceSizing, defaultPickupSlipSizing, type InvoiceTemplateConfig, type PickupSlipTemplateConfig, type PickupSlipSizing, type InvoiceSizing } from "@/hooks/useInvoiceSettings";
 import { A4_MAX_SLIP_H_MM, A4_MAX_SLIP_W_MM, a4SlipsPerSheet } from "@/lib/pickupSlipHtml";
 
 interface InvoiceSettings {
@@ -41,8 +42,9 @@ const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   show_subtotal: true, show_discount: true, show_shipping: true,
   show_total: true, show_payments: true, show_notes: true, show_terms: true,
   show_footer: true, show_order_date: true, show_fulfillment: true,
-  show_due: true,
+  show_due: true, show_barcode: false,
   custom_fields: [],
+  sizing: defaultInvoiceSizing,
 };
 
 /**
@@ -81,7 +83,11 @@ const InvoiceSettingsTab = () => {
           const merged: InvoiceSettings = {
             ...data,
             pickup_slip_print_format: data.pickup_slip_print_format || "thermal",
-            invoice_template: { ...defaultInvoiceTemplate, ...(data.invoice_template || {}) },
+            invoice_template: {
+              ...defaultInvoiceTemplate,
+              ...(data.invoice_template || {}),
+              sizing: { ...defaultInvoiceSizing, ...((data.invoice_template || {}).sizing || {}) },
+            },
             pickup_slip_template: {
               ...defaultPickupSlipTemplate,
               ...(data.pickup_slip_template || {}),
@@ -110,6 +116,17 @@ const InvoiceSettingsTab = () => {
   const updatePickupTemplate = (field: keyof PickupSlipTemplateConfig, value: any) => {
     if (!settings) return;
     setSettings({ ...settings, pickup_slip_template: { ...settings.pickup_slip_template, [field]: value } });
+  };
+
+  const updateInvoiceSizing = (field: keyof InvoiceSizing, value: number) => {
+    if (!settings) return;
+    setSettings({
+      ...settings,
+      invoice_template: {
+        ...settings.invoice_template,
+        sizing: { ...settings.invoice_template.sizing, [field]: value },
+      },
+    });
   };
 
   const updatePickupSizing = (field: keyof PickupSlipSizing, value: number) => {
@@ -319,6 +336,7 @@ const InvoiceSettingsTab = () => {
             ["show_terms", "Terms & Conditions"],
             ["show_footer", "Footer Text"],
             ["show_due", "Due Amount"],
+            ["show_barcode", "Order Number Barcode"],
           ] as [keyof InvoiceTemplateConfig, string][]).map(([key, label]) => (
             <div key={key} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
               <span className="text-sm">{label}</span>
@@ -350,6 +368,112 @@ const InvoiceSettingsTab = () => {
           <Button variant="outline" size="sm" onClick={() => updateInvoiceTemplate("custom_fields", [...invoiceTpl.custom_fields, { label: "", value: "" }])} className="gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Add Field
           </Button>
+        </div>
+
+        {/* Invoice Dimensions */}
+        <div className="space-y-3 rounded-md border border-border p-4">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Invoice Dimensions (mm)</Label>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => updateInvoiceTemplate("sizing", { ...invoiceTpl.sizing, ...defaultInvoiceSizing })}
+            >
+              Reset all sizes
+            </Button>
+          </div>
+          {settings.default_print_format === "a4" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Page Margin (mm)</Label>
+                <Input type="number" min={0} max={30} value={invoiceTpl.sizing.a4_margin_mm} onChange={(e) => updateInvoiceSizing("a4_margin_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Content Padding (mm)</Label>
+                <Input type="number" min={0} max={20} value={invoiceTpl.sizing.a4_padding_mm} onChange={(e) => updateInvoiceSizing("a4_padding_mm", Number(e.target.value) || 0)} />
+              </div>
+              <p className="col-span-2 text-xs text-muted-foreground">
+                A4 portrait, one invoice per page. The margin is the printer's unprintable border; padding adds breathing room inside it.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Roll Width (mm)</Label>
+                <Input type="number" min={40} max={120} value={invoiceTpl.sizing.thermal_width_mm} onChange={(e) => updateInvoiceSizing("thermal_width_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Slip Height (mm)</Label>
+                <Input type="number" min={0} value={invoiceTpl.sizing.thermal_height_mm} onChange={(e) => updateInvoiceSizing("thermal_height_mm", Number(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Padding (mm)</Label>
+                <Input type="number" min={0} max={20} value={invoiceTpl.sizing.thermal_padding_mm} onChange={(e) => updateInvoiceSizing("thermal_padding_mm", Number(e.target.value) || 0)} />
+              </div>
+              <p className="col-span-3 text-xs text-muted-foreground">Set Slip Height to 0 for auto height (recommended for continuous rolls). Use a fixed height for pre-cut receipts.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Element Sizes */}
+        <div className="space-y-3 rounded-md border border-border p-4">
+          <Label className="text-sm font-medium">Element Sizes (px)</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            {([
+              ["business_name_size", "Business Name", 12, 48],
+              ["meta_size", "Meta / Date Lines", 8, 24],
+              ["invoice_number_size", "Invoice Number", 10, 32],
+              ["section_title_size", "Table Heading", 8, 24],
+              ["customer_name_size", "Customer Name", 10, 32],
+              ["customer_detail_size", "Customer Details", 8, 28],
+              ["item_size", "Item Rows", 8, 28],
+              ["subtotal_size", "Subtotal", 8, 28],
+              ["total_size", "Total Amount", 10, 36],
+              ["payment_size", "Payment Details", 8, 24],
+              ["due_size", "Due Amount", 10, 32],
+              ["notes_size", "Notes", 8, 24],
+              ["terms_size", "Terms", 7, 20],
+              ["footer_size", "Footer", 8, 24],
+              ["custom_field_size", "Custom Fields", 8, 24],
+              ["barcode_height", "Barcode Height", 20, 120],
+              ["barcode_font_size", "Barcode Number", 8, 28],
+              ["barcode_bar_width", "Barcode Bar Width", 1, 4],
+            ] as [keyof InvoiceSizing, string, number, number][]).map(([key, label, min, max]) => (
+              <div key={key} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span>{label}</span>
+                  <span className="tabular-nums text-muted-foreground">{invoiceTpl.sizing[key]}</span>
+                </div>
+                <Slider
+                  min={min}
+                  max={max}
+                  step={key === "barcode_bar_width" ? 0.1 : 1}
+                  value={[Number(invoiceTpl.sizing[key])]}
+                  onValueChange={(v) => updateInvoiceSizing(key, v[0])}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Invoice Live Preview */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Live Preview ({settings.default_print_format === "a4" ? "A4" : "Thermal"})</Label>
+          <InvoicePreview
+            tpl={invoiceTpl}
+            biz={{
+              business_name: settings.business_name,
+              tagline: settings.tagline,
+              address: settings.address,
+              phone: settings.phone,
+              email: settings.email,
+              logo_url: settings.logo_url,
+              footer_text: settings.footer_text,
+              terms_text: settings.terms_text,
+            }}
+            format={(settings.default_print_format || "thermal") as "thermal" | "a4"}
+          />
+          <p className="text-xs text-muted-foreground">Preview uses sample order data and reflects all sizing changes instantly.</p>
         </div>
       </div>
 

@@ -1,5 +1,5 @@
-import JsBarcode from "jsbarcode";
 import type { PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
+import { makeBarcodeSvg } from "./barcodeSvg";
 import { PRINT_BOOTSTRAP } from "./printWindow";
 
 export interface SlipOrderData {
@@ -75,42 +75,6 @@ const ICON_PIN =
   `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
   `<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/>` +
   `<circle cx="12" cy="10" r="3"/></svg>`;
-
-function makeBarcodeSvg(value: string, opts: { height: number; fontSize: number; width: number }): string {
-  try {
-    if (!value) return "";
-    const el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    JsBarcode(el, String(value), {
-      format: "CODE128",
-      displayValue: true,
-      height: opts.height,
-      fontSize: opts.fontSize,
-      width: opts.width,
-      margin: 0,
-      textMargin: 2,
-      background: "#ffffff",
-      lineColor: "#000000",
-    });
-    // Normalize: convert JsBarcode's fixed px width/height into a viewBox so
-    // the browser renders the SVG as pure vector at whatever CSS size we ask
-    // for. Without this, Chrome's PDF/raster pipeline can balloon to GB-sized
-    // output when printing to a non-thermal printer (the SVG gets rasterized
-    // at the printer's native DPI per slip).
-    const widthAttr = el.getAttribute("width");
-    const heightAttr = el.getAttribute("height");
-    const w = widthAttr ? parseFloat(widthAttr) : 0;
-    const h = heightAttr ? parseFloat(heightAttr) : 0;
-    if (w > 0 && h > 0 && !el.getAttribute("viewBox")) {
-      el.setAttribute("viewBox", `0 0 ${w} ${h}`);
-    }
-    el.removeAttribute("width");
-    el.removeAttribute("height");
-    el.setAttribute("preserveAspectRatio", "xMidYMid meet");
-    return new XMLSerializer().serializeToString(el);
-  } catch {
-    return "";
-  }
-}
 
 const ITEMS_PER_SLIP = 5;
 
