@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
-import { postWooOrderNote } from "@/lib/wooNotes";
+import { postWooOrderNote, kickSyncWorker } from "@/lib/wooNotes";
 import { printMeasurementSlipsBulk } from "@/components/orders/MeasurementSlipPrint";
 import { recordDuePayment } from "@/lib/dueCollection";
 import type { DuePaymentResult } from "@/components/orders/DuePaymentDialog";
@@ -50,6 +50,11 @@ export function useOrderBulkActions<T extends BulkOrder>({
           ids.map((id) => ({ order_id: id, event: "status_changed", description })),
         );
         await logAction("update", "order_status_bulk", undefined, { ids, to: newStatus });
+
+        // The DB trigger enqueued one push per order; drain them now so the
+        // Woo status flips within seconds (Issue 2: manual/bulk status changes
+        // must reach WooCommerce without waiting on the throttled cron).
+        void kickSyncWorker();
 
         toast({ title: toastTitle.replace("{n}", String(ids.length)) });
         setSelected(new Set());

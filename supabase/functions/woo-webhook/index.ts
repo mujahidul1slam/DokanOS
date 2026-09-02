@@ -29,7 +29,10 @@ Deno.serve(async (req: Request) => {
     if (!contentType.includes("application/json")) return jsonResp({ ok: true });
 
     const payload = JSON.parse(body);
-    if (payload.webhook_id && !payload.line_items && !payload.name && !payload.sku) {
+    // Woo sends a "ping" delivery when a webhook is saved (webhook_id with an
+    // empty shell). Real variation payloads also lack `name`/`sku`, so
+    // parent_id (always present on variations) must NOT be treated as a ping.
+    if (payload.webhook_id && !payload.line_items && !payload.name && !payload.sku && !payload.parent_id) {
       return jsonResp({ ok: true });
     }
 
@@ -145,7 +148,54 @@ Deno.serve(async (req: Request) => {
 /* ====== PRODUCT WEBHOOK ====== */
 async function handleProductWebhook(supabase: any, store: any, p: any) {
   const store_id = store.id;
-  if (p.type === "variation") return jsonResp({ ok: true, skipped: "variation" });
+
+  // Variation payloads (product.updated fired on a variation): Woo merchants
+  // edit per-variation stock/pricing constantly; these used to be dropped
+  // here ("skipped: variation"), which meant Woo-side stock edits on variable
+  // products NEVER synced until the throttled bulk sync ran. Handle them
+  // directly: resolve the local parent by parent_id, then upsert this one
+  // variation. The woo_updated_at stamp is the echo guard — it stops the
+  // stock-push trigger from bouncing the write back to Woo.
+  if (p.type === "variation") {
+    if (!p.parent_id) return jsonResp({ ok: true, skipped: "variation_without_parent" });
+
+    const { data: parent } = await supabase
+      .from("products")
+      .select("id")
+      .eq("woo_product_id", p.parent_id)
+      .eq("store_id", store_id)
+      .maybeSingle();
+    if (!parent) {
+      // Parent not imported yet; the bulk sync will bring the whole family.
+      return jsonResp({ ok: true, skipped: "parent_not_found", woo_parent: p.parent_id });
+    }
+
+    const varRow = {
+      product_id: parent.id,
+      woo_variation_id: p.id,
+      name: p.attributes?.map((a: any) => a.option).join(" / ") || `Variation ${p.id}`,
+      sku: p.sku || null,
+      price: parseFloat(p.price) || 0,
+      regular_price: parseFloat(p.regular_price) || 0,
+      sale_price: p.sale_price && parseFloat(p.sale_price) > 0 ? parseFloat(p.sale_price) : null,
+      manage_stock: p.manage_stock === true, // "parent" string -> inherit, coerce
+      stock_quantity: p.stock_quantity ?? 0,
+      stock_status: fromWooStockStatus(p.stock_status || "instock"),
+      barcode: p.meta_data?.find((m: any) => m.key === "_barcode")?.value || null,
+      attributes: (p.attributes || []).map((a: any) => ({ key: a.name || a.slug, value: a.option })),
+      woo_updated_at: p.date_modified_gmt ? p.date_modified_gmt + "Z" : new Date().toISOString(),
+    };
+
+    const { error: varErr } = await supabase
+      .from("product_variations")
+      .upsert(varRow, { onConflict: "woo_variation_id,product_id", ignoreDuplicates: false });
+    if (varErr) {
+      console.error(`Variation upsert error (webhook, variation ${p.id}):`, varErr.message);
+      return jsonResp({ error: "Failed to upsert variation" }, 500);
+    }
+
+    return jsonResp({ success: true, variation_id: p.id, product_id: parent.id });
+  }
 
   // Price handling mirrors woo-sync: `price` stays the effective price,
   // regular/sale stored separately so pushes never destroy Woo sales.

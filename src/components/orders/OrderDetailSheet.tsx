@@ -8,6 +8,7 @@ import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset } from "@/lib/measurements";
 import { postWooOrderNote } from "@/lib/wooNotes";
+import { kickSyncWorker } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
@@ -552,6 +553,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           p_order_id: order.id,
           p_reason: "items_updated",
         });
+        // Drain immediately: the user just edited this order; don't let the
+        // push sit behind the throttled cron.
+        void kickSyncWorker();
       }
 
       // Recompute payment_status & amount_to_collect against the new total
@@ -570,6 +574,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           description: `Order updated — ${totalsChanges.join(", ")}`,
           metadata: { changes: totalsChanges, new_total: computedTotal },
         });
+      }
+
+      // Status / customer / totals edits all enqueue via the DB trigger on
+      // orders.update; kick the worker so the push lands within seconds
+      // instead of waiting for the throttled scheduler.
+      if (
+        status !== order.status ||
+        paymentStatus !== order.payment_status ||
+        custChanges.length > 0 ||
+        totalsChanges.length > 0
+      ) {
+        void kickSyncWorker();
       }
 
       {

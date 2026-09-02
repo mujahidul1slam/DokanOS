@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { kickSyncWorker } from "@/lib/wooNotes";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -37,8 +38,11 @@ interface ProductForm {
   name: string;
   sku: string;
   price: number;
+  regular_price: number;
+  sale_price: number;
   cost_price: number;
   description: string;
+  short_description: string;
   category: string;
   image_url: string;
   barcode: string;
@@ -46,12 +50,14 @@ interface ProductForm {
   stock_quantity: number;
   stock_status: string;
   is_active: boolean;
+  weight: string;
 }
 
 const emptyForm: ProductForm = {
-  name: "", sku: "", price: 0, cost_price: 0, description: "", category: "",
+  name: "", sku: "", price: 0, regular_price: 0, sale_price: 0, cost_price: 0,
+  description: "", short_description: "", category: "",
   image_url: "", barcode: "", manage_stock: true, stock_quantity: 0,
-  stock_status: "in_stock", is_active: true,
+  stock_status: "in_stock", is_active: true, weight: "",
 };
 
 const STOCK_STATUSES = [
@@ -110,6 +116,11 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   const [productGroups, setProductGroups] = useState<MeasurementGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
 
+  // Woo parent attributes/tags (read-only display — variation editing happens
+  // through the Variations tab; these come from Woo as structured terms).
+  const [wooAttributes, setWooAttributes] = useState<Array<Record<string, unknown>>>([]);
+  const [wooTags, setWooTags] = useState<Array<Record<string, unknown>>>([]);
+
   useEffect(() => {
     if (!open) return;
     loadCategories();
@@ -156,10 +167,15 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     if (p) {
       setForm({
         id: p.id, name: p.name, sku: p.sku || "", price: Number(p.price),
-        cost_price: Number(p.cost_price || 0), description: p.description || "",
+        regular_price: p.regular_price != null ? Number(p.regular_price) : Number(p.price),
+        sale_price: p.sale_price != null ? Number(p.sale_price) : 0,
+        cost_price: Number(p.cost_price || 0),
+        description: p.description || "",
+        short_description: (p as any).short_description || "",
         category: p.category || "", image_url: p.image_url || "", barcode: p.barcode || "",
         manage_stock: p.manage_stock ?? true, stock_quantity: p.stock_quantity,
         stock_status: normalizeStockStatus(p.stock_status || "in_stock"), is_active: p.is_active,
+        weight: (p as any).weight != null ? String((p as any).weight) : "",
       });
 
       // Build WooCommerce product URL if linked
@@ -170,6 +186,9 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
           setWooUrl(`${base}/?p=${p.woo_product_id}`);
         }
       }
+
+      setWooAttributes(Array.isArray((p as any).attributes) ? (p as any).attributes : []);
+      setWooTags(Array.isArray((p as any).tags) ? (p as any).tags : []);
     }
 
     // Load product categories
@@ -279,11 +298,17 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     collectLabels(catTree);
 
     const payload = {
-      name: form.name, sku: form.sku || null, price: form.price, cost_price: form.cost_price,
-      description: form.description || null, category: selectedLabels.join(", ") || null,
+      name: form.name, sku: form.sku || null, price: form.price,
+      regular_price: form.regular_price || null,
+      sale_price: form.sale_price > 0 ? form.sale_price : null,
+      cost_price: form.cost_price,
+      description: form.description || null,
+      short_description: form.short_description || null,
+      category: selectedLabels.join(", ") || null,
       image_url: form.image_url || null, barcode: form.barcode || null,
       manage_stock: form.manage_stock, stock_quantity: form.manage_stock ? form.stock_quantity : 0,
       stock_status: normalizeStockStatus(form.stock_status), is_active: form.is_active,
+      weight: form.weight !== "" ? parseFloat(form.weight) : null,
     };
 
     let savedId = form.id;
@@ -339,6 +364,9 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
           toast({ title: "Saved locally, but WooCommerce sync failed", variant: "destructive" });
         }
       }
+      // Stock edits enqueue via the DB trigger; drain immediately so Woo
+      // reflects the change within seconds (throttled-cron fallback remains).
+      void kickSyncWorker();
     }
 
     setSaving(false);
@@ -532,10 +560,66 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
                 </div>
               )}
             </div>
+            {/* Woo pricing fields (Issue 4): regular vs sale price so DokanOS
+                edits stop destroying Woo sale structures, and so imported sale
+                data is visible/editable. `price` stays the effective price. */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Regular Price (BDT)</Label>
+                <Input type="number" value={form.regular_price} onChange={e => set("regular_price", Number(e.target.value))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Sale Price (BDT)</Label>
+                <Input type="number" value={form.sale_price} onChange={e => set("sale_price", Number(e.target.value))} placeholder="0 = no sale" />
+              </div>
+              <div className="space-y-2">
+                <Label>Weight (kg)</Label>
+                <Input type="number" step="0.01" value={form.weight} onChange={e => set("weight", e.target.value)} placeholder="Optional" />
+              </div>
+            </div>
+            {(form.regular_price > 0 || form.sale_price > 0) && (
+              <p className="text-xs text-muted-foreground">
+                {form.sale_price > 0
+                  ? `On sale: ৳${form.regular_price.toLocaleString()} → ৳${form.sale_price.toLocaleString()} (pushed to Woo as a scheduled sale; Price ৳${form.price.toLocaleString()} stays the effective/POS price)`
+                  : `Regular price ৳${form.regular_price.toLocaleString()} — pushes to Woo's regular_price`}
+              </p>
+            )}
             <div className="space-y-2">
               <Label>Description</Label>
               <Textarea value={form.description} onChange={e => set("description", e.target.value)} rows={3} placeholder="Product description…" />
             </div>
+            <div className="space-y-2">
+              <Label>Short Description</Label>
+              <Textarea value={form.short_description} onChange={e => set("short_description", e.target.value)} rows={2} placeholder="Short description (Woo short_description / storefront snippets)…" />
+            </div>
+            {/* Woo attributes/tags (Issue 4): imported from Woo, shown read-only
+                so the merchant sees the full Woo product picture in DokanOS.
+                Editing stays in Woo (global taxonomy terms round-trip best there). */}
+            {(wooAttributes.length > 0 || wooTags.length > 0) && (
+              <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  WooCommerce attributes & tags (synced from Woo — edit in Woo)
+                </p>
+                {wooAttributes.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {wooAttributes.map((a: any, i: number) => (
+                      <Badge key={i} variant="outline" className="text-xs">
+                        {String(a.name || a.slug || "?")}: {(a.options || []).join(", ")}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {wooTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {wooTags.map((t: any, i: number) => (
+                      <Badge key={i} variant="secondary" className="text-xs">
+                        {String(t.name || t.slug || "?")}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Image URL</Label>
               <Input value={form.image_url} onChange={e => set("image_url", e.target.value)} placeholder="https://..." />
