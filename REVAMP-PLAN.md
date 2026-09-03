@@ -111,13 +111,28 @@ A.6 Instant delivery: full-queue drain + frontend `kickSyncWorker()` after every
     attach. Verified live: track_all through new code path, fresh
     out_for_delivery/in_transit/on_hold canonical writes.
 
-### Phase 3 — Scale to 100–500 stores ⬜ REMAINING
-3.1 Chunk `woo-sync-all` fan-out (concurrency ~50 with retry on throttled invokes) + jitter + skip stores synced < X min ago.
-3.2 Fair scheduling in `claim_sync_queue_batch` (round-robin by store) so one merchant's burst can't starve others.
-3.3 Observability: `sync_health` view (queue depth, oldest-pending age, DLQ count, breaker trips, per-courier latency, tracking rotation age) + dashboard surface + alert webhook.
-3.4 Supabase Realtime on `orders`/`courier_shipments` (replace the 5s `GlobalSyncIndicator` poll).
-3.5 Load test: 500 synthetic stores (directive in `directives/`, script in `execution/` per repo conventions).
-3.6 Sustained-drain architecture: Supabase throttles sustained edge invocations (~30 per ~45s window — discovered live). If a single drain must push >1000 rows, move processing into ONE batched `woo-push` invocation (one fn call, many orders) or a Vercel Cron worker with direct DB access.
+### Phase 3 — Scale to 100–500 stores ✅ DONE except 3.5/3.6 (2026-09-03)
+3.1 `woo-sync-all` bounded fan-out: worker pool (50 concurrent), per-call
+    jitter, retry on 429/5xx with Retry-After, and skip-stores-synced-<10min
+    (uses 1.5's gapless HWM windows). Live: 2 stores, 200s, skipped_fresh
+    field surfaces fresh-skips.
+3.2 Fair round-robin `claim_sync_queue_batch` (rank per store oldest-first,
+    claim by (store_seq, store_id) — NOT created_at across stores, which
+    re-introduced burst priority). Verified rollback-safe: claim(4) with 4
+    eligible stores = exactly 1 row/store across rounds 1 AND 2.
+3.3 `sync_health` VIEW (queue depth/age, retry-waiting, DLQ, breaker trips,
+    store freshness, per-courier rotation staleness, webhook failure rate).
+    Dashboard `SyncHealthCard` (30s refresh). `sync-alert` edge fn evaluates
+    8 rules + POSTs Slack-shaped payload to vault secret
+    `sync_alert_webhook_url` (one-time manual setup — missing = disabled).
+    Live: correctly flags the real stale-row problem.
+3.4 Realtime publication on stores/orders/courier_shipments;
+    GlobalSyncIndicator now Realtime-first (postgres_changes UPDATE on
+    stores) with 30s poll fallback (was unconditional 5s poll).
+3.5 Load test 500 synthetic stores — REMAINING (needs the CF worker deployed
+    first so the scheduler isn't the bottleneck being measured).
+3.6 Sustained-drain batching (one woo-push call per many orders) — REMAINING,
+    only needed if a single drain must push >1000 rows.
 
 ### Cross-cutting hardening (from the original audit, folded in)
 - Webhook order handlers still write directly to DB (mitigated by the `woo_updated_at` stale guard). Optional Phase 2+: route webhook writes through the queue.
@@ -174,6 +189,12 @@ attributes/tags/weight/dimensions`.
 20260902000100_verify_phase2_schema.sql                    (temp oracle — dropped by …0300)
 20260902000200_verify_phase2_runtime.sql                   (temp oracle — dropped by …0300)
 20260902000300_drop_phase2_oracles.sql                     (drops both oracles)
+20260903000010_fair_claim_round_robin_v2.sql                (3.2 fair claim; …00000 renamed+repaired)
+20260903000100…0230                                       (fair-claim verification harnesses — dropped by …0310)
+20260903000300_sync_health_view.sql                        (3.3 health view)
+20260903000310_drop_fair_claim_harness.sql                 (drops the harness)
+20260903000400_sync_alert_webhook_url.sql                  (3.3 vault getter)
+20260903000500_enable_realtime.sql                         (3.4 realtime publication)
 ```
 
 ---
@@ -189,15 +210,22 @@ attributes/tags/weight/dimensions`.
      `*/15 * * * *`.
    - Then demote the three GitHub workflows to once-daily dead-man's-switch
      runs that alert if `sync_queue` newest `updated_at` is stale (their file
-     headers describe the switch).
-2. **Phase 3.1 — Chunk `woo-sync-all`** (bounded pMap ~50, jitter, skip
-   stores synced < X min ago).
-3. **Phase 3.3 — `sync_health` view + dashboard surface + alert webhook.**
-4. **Phase 3.2 / 3.4 / 3.5** as capacity allows.
+     headers describe the switch). Point them at `sync-alert` with the cron
+     secret for the actual alerting.
+2. **One-time alerting setup (Phase 3.3 finishing move):** create the vault
+   secret with a real webhook URL:
+   `SELECT vault.create_secret('<slack-or-discord-url>', 'sync_alert_webhook_url');`
+3. **Phase 3.5 — 500-store load test** (after CF worker deploy).
+4. **Phase 3.6 — sustained-drain batching** (only if real load demands it).
 5. **Courier #2 onboarding** (whenever a second courier is signed): implement
    `adapters/<courier>.ts` against `_shared/courier-adapter.ts`, add a
    `courier_providers` row + `courier_integrations` creds, and dispatch/
-   track through the existing queue actions. No core changes needed.---
+   track through the existing queue actions. No core changes needed.
+6. **Backlog cleanup:** the live queue still holds ~400 pre-revamp pending
+   rows (oldest ~80h, from the GitHub-scheduler starvation era). They are
+   healthy rows throttled by the platform limiter; successive drains eat
+   ~30/tick. Either let the cron drain them over a day, or run
+   `.tmp/drain-once.cjs` repeatedly in one sitting (respecting the throttle).---
 
 ## 5. Known quirks the next agent MUST know
 
@@ -267,12 +295,13 @@ attributes/tags/weight/dimensions`.
 
 | Concern | File(s) |
 |---|---|
-| Queue drain | `supabase/functions/sync-worker/index.ts` |
+| Queue drain | `supabase/functions/sync-worker/index.ts` (courier actions route to pathao-courier) |
 | Woo writes (orders/products/stock/notes) | `supabase/functions/woo-push/index.ts` |
 | Woo import (bulk) | `supabase/functions/woo-sync/index.ts` |
 | Woo import (webhooks, incl. variations) | `supabase/functions/woo-webhook/index.ts` |
-| Fan-out scheduler fn | `supabase/functions/woo-sync-all/index.ts` |
+| Fan-out scheduler fn | `supabase/functions/woo-sync-all/index.ts` (bounded 50-pool + retry) |
 | Pathao dispatch/track/attach | `supabase/functions/pathao-courier/index.ts` |
+| Health view + alerting | `sync_health` view, `supabase/functions/sync-alert/index.ts`, `src/components/dashboard/SyncHealthCard.tsx` |
 | Push triggers | migrations `20260831000200`, `...0400`, `...0500` |
 | Claim RPC + breaker skip | migrations `20260829000000`, `20260830000100` |
 | Frontend kick + notes | `src/lib/wooNotes.ts`, `src/lib/orderTimeline.ts` |

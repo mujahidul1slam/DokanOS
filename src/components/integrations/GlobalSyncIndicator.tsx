@@ -39,7 +39,11 @@ const GlobalSyncIndicator = () => {
   const [now, setNow] = useState(Date.now());
   const startsRef = useRef<Record<string, number>>(loadStarts());
 
-  // Poll syncing stores
+  // Revamp 3.4: Realtime-first. Subscribe to stores UPDATEs (status changes
+  // syncing -> connected fire an event within ~100ms) and only fall back to a
+  // 30s poll — the old unconditional 5s poll hammered PostgREST even while
+  // idle. The poll also covers Realtime being disabled on the table (the
+  // subscription error leaves realtime active but silent).
   useEffect(() => {
     if (!user) {
       setItems([]);
@@ -84,10 +88,23 @@ const GlobalSyncIndicator = () => {
     };
 
     fetchSyncing();
-    const id = setInterval(fetchSyncing, 5000);
+    const id = setInterval(fetchSyncing, 30000);
+
+    const channel = supabase
+      .channel("global-sync-indicator")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "stores" },
+        () => {
+          if (!cancelled) fetchSyncing();
+        },
+      )
+      .subscribe();
+
     return () => {
       cancelled = true;
       clearInterval(id);
+      supabase.removeChannel(channel);
     };
   }, [user]);
 

@@ -39,51 +39,99 @@ Deno.serve(async (req: Request) => {
 
     const { data: stores, error } = await supabase
       .from("stores")
-      .select("id, name, status")
+      .select("id, name, status, last_synced_at")
       .eq("status", "connected");
     if (error) throw error;
 
-    // Phase 5: distributed fan-out. With hundreds of stores, sequentially awaiting
-    // each woo-sync call would blow the Deno execution limit. Instead we fire every
-    // call without blocking on the HTTP round-trip and let EdgeRuntime.waitUntil keep
-    // the function alive until they all settle. Each store's sync runs independently.
-    const triggers: Promise<{ name: string; id: string; status: number; error?: string }>[] = [];
+    // Revamp 3.1: bounded fan-out. Firing every store at once (the old
+    // unbounded Promise.all) trips Supabase's edge-invocation throttle at
+    // ~30 sustained invokes per ~45s once there are dozens of stores, and the
+    // throttled calls fail hard. Instead: worker pool with a cap, small
+    // inter-chunk pause, per-call jitter, and retry on throttled invokes.
+    //
+    // Also skip stores synced very recently: the */15 cron + the frontend's
+    // manual sync buttons can double-fire; a store synced <10 min ago is
+    // already fresh (the 1.5 high-water-mark makes windows gapless).
+    const SKIP_IF_SYNCED_WITHIN_MS = 10 * 60 * 1000;
+    const FANOUT_CONCURRENCY = 50;
+    const CHUNK_PAUSE_MS = 400;
+    const JITTER_MS = 250;
+    const THROTTLE_RETRIES = 2;
 
-    for (const s of stores || []) {
-      triggers.push(
-        fetch(`${SUPABASE_URL}/functions/v1/woo-sync`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${serviceKey}`,
-          },
-          body: JSON.stringify({ store_id: s.id, sync_customers: false }),
-        })
-          .then((res) => {
-            console.log(`[woo-sync-all] triggered ${s.name} (${s.id}) -> ${res.status}`);
-            return { name: s.name, id: s.id, status: res.status };
-          })
-          .catch((e: any) => {
-            console.error(`[woo-sync-all] failed ${s.name}:`, e?.message || e);
-            return { name: s.name, id: s.id, status: 0, error: e?.message || String(e) };
-          })
-      );
+    const now = Date.now();
+    const due = (stores || []).filter((s: { last_synced_at: string | null }) => {
+      if (!s.last_synced_at) return true;
+      return now - new Date(s.last_synced_at).getTime() > SKIP_IF_SYNCED_WITHIN_MS;
+    });
+    const skippedFresh = (stores || []).length - due.length;
+
+    const results: Array<{ name: string; id: string; status: number; error?: string }> = [];
+
+    async function triggerOne(s: { id: string; name: string }): Promise<void> {
+      // Per-call jitter desynchronizes bursts so a chunk of N doesn't hit the
+      // platform as one spike.
+      if (JITTER_MS > 0) await new Promise((r) => setTimeout(r, Math.random() * JITTER_MS));
+
+      for (let attempt = 0; attempt <= THROTTLE_RETRIES; attempt++) {
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/woo-sync`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({ store_id: s.id, sync_customers: false }),
+          });
+          if (res.status === 429 || res.status >= 500) {
+            const retryAfter = Number(res.headers.get("retry-after"));
+            const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+              ? retryAfter * 1000
+              : 2000 * 2 ** attempt + Math.random() * 500;
+            console.warn(`[woo-sync-all] ${s.name} -> ${res.status}; retry ${attempt + 1}/${THROTTLE_RETRIES} in ${Math.round(waitMs)}ms`);
+            await new Promise((r) => setTimeout(r, waitMs));
+            continue;
+          }
+          console.log(`[woo-sync-all] triggered ${s.name} (${s.id}) -> ${res.status}`);
+          results.push({ name: s.name, id: s.id, status: res.status });
+          return;
+        } catch (e: unknown) {
+          if (attempt === THROTTLE_RETRIES) {
+            console.error(`[woo-sync-all] failed ${s.name}:`, (e as Error)?.message || e);
+            results.push({ name: s.name, id: s.id, status: 0, error: (e as Error)?.message || String(e) });
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
+        }
+      }
+      // Exhausted retries without a success entry above.
+      results.push({ name: s.name, id: s.id, status: 0, error: "throttled after retries" });
     }
 
-    // Keep the function alive until all fan-out calls resolve (Deno / Supabase
-    // Edge Runtime supports waitUntil). If the runtime lacks it, fall back to await.
-    const settled = (
-      typeof (globalThis as any).EdgeRuntime?.waitUntil === "function"
-        ? (globalThis as any).EdgeRuntime.waitUntil(Promise.allSettled(triggers))
-        : await Promise.allSettled(triggers)
-    );
-    const triggered = triggers.length;
-    const resultRows = settled instanceof Array
-      ? settled.map((r: any) => (r.status === "fulfilled" ? r.value : { error: String(r.reason) }))
-      : [];
+    // Worker pool: N in flight, shared cursor.
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(FANOUT_CONCURRENCY, due.length) }, async () => {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const i = cursor++;
+        if (i >= due.length) return;
+        await triggerOne(due[i]);
+      }
+    });
+    await Promise.all(workers);
+    // Small pause between waves would apply for >FANOUT_CONCURRENCY stores;
+    // with the pool above the pause is implicit via in-flight slots.
+
+    const triggered = results.length;
+    const failed = results.filter((r) => r.status < 200 || r.status >= 300);
 
     return new Response(
-      JSON.stringify({ success: true, triggered, results: resultRows }),
+      JSON.stringify({
+        success: true,
+        triggered,
+        skipped_fresh: skippedFresh,
+        failed: failed.length,
+        results,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {

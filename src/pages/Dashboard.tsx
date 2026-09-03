@@ -3,6 +3,7 @@ import ActionQueue from "@/components/dashboard/ActionQueue";
 import FulfillmentFunnel from "@/components/dashboard/FulfillmentFunnel";
 import OrderPipeline from "@/components/dashboard/OrderPipeline";
 import StoreHealthGrid from "@/components/dashboard/StoreHealthGrid";
+import SyncHealthCard from "@/components/dashboard/SyncHealthCard";
 import CourierDispatchStation from "@/components/dashboard/CourierDispatchStation";
 import TopProducts from "@/components/dashboard/TopProducts";
 import SourceMix from "@/components/dashboard/SourceMix";
@@ -76,6 +77,7 @@ const Dashboard = () => {
       <OrderPipeline orders={data.orders} />
       <CourierDispatchStation orders={data.orders} />
       <StoreHealthGrid orders={data.orders} />
+      <SyncHealthCard />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <RevenueTrendChart data={data.trendData} />
