@@ -158,6 +158,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [addProductId, setAddProductId] = useState<string>("");
+  // Multi-business Phase 3: fulfillment location (warehouse/showroom)
+  const [locationId, setLocationId] = useState<string>("");
+  const [locationOptions, setLocationOptions] = useState<Array<{ id: string; name: string; type: string }>>([]);
 
   // Exchange dialog
   const [exchangeOpen, setExchangeOpen] = useState(false);
@@ -206,7 +209,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes, measRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, stores(url, name)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, location_id, selling_point_id, stores(url, name)")
         .eq("id", orderId)
         .single(),
       supabase
@@ -243,6 +246,29 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setNotes(o.notes || "");
       setFulfillmentType(o.fulfillment_type || "delivery");
       setPaymentMethod(o.payment_method || "");
+      setLocationId((o as { location_id?: string | null }).location_id || "");
+    }
+
+    // Phase 3: locations for the order's brand (via store linkage) for the
+    // fulfillment-location picker. Best-effort: empty list hides the picker.
+    try {
+      const { data: oRow } = await supabase
+        .from("orders")
+        .select("store_id")
+        .eq("id", orderId)
+        .single();
+      if (oRow?.store_id) {
+        const { data: locs } = await supabase
+          .from("locations")
+          .select("id, name, type, brand_id, brands!inner(woo_store_id)")
+          .eq("brands.woo_store_id", oRow.store_id)
+          .order("name");
+        setLocationOptions((locs as Array<{ id: string; name: string; type: string }>) || []);
+      } else {
+        setLocationOptions([]);
+      }
+    } catch {
+      setLocationOptions([]);
     }
     const liRaw = (itemsRes.data || []) as any[];
     const li: LineItem[] = liRaw.map((r) => ({
@@ -441,6 +467,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           notes,
           fulfillment_type: fulfillmentType,
           payment_method: paymentMethod || null,
+          location_id: locationId || null,
         })
         .eq("id", order.id);
 
@@ -1176,6 +1203,24 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         </SelectContent>
                       </Select>
                     </div>
+                    {locationOptions.length > 0 && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Fulfill From</Label>
+                        <Select value={locationId || "none"} onValueChange={(v) => setLocationId(v === "none" ? "" : v)}>
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Default location" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Default location</SelectItem>
+                            {locationOptions.map((l) => (
+                              <SelectItem key={l.id} value={l.id}>
+                                {l.name} ({l.type})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 </section>
 
