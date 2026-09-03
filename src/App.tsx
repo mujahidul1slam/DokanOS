@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { PermissionsProvider } from "@/hooks/usePermissions";
 import { BusinessProfileProvider } from "@/hooks/useBusinessProfile";
+import { BusinessContextProvider } from "@/hooks/useBusinessContext";
 import { ThemeProvider } from "@/hooks/useTheme";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import PermissionGuard from "@/components/PermissionGuard";
@@ -141,9 +142,11 @@ const Root = () => {
   return (
     <AuthProvider>
       <PermissionsProvider>
-        <BusinessProfileProvider>
-          <AppRoutes />
-        </BusinessProfileProvider>
+        <BusinessContextProvider>
+          <BusinessProfileProvider>
+            <AppRoutes />
+          </BusinessProfileProvider>
+        </BusinessContextProvider>
       </PermissionsProvider>
     </AuthProvider>
   );

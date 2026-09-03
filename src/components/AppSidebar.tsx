@@ -8,6 +8,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,8 @@ const BASE_NAV_GROUPS: NavGroup[] = [
     title: "System",
     items: [
       { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin"] },
-      { icon: Store, label: "Storefronts", path: "/storefronts", roles: ["admin", "staff"] },
+      { icon: Store, label: "Stores", path: "/stores", roles: ["admin", "staff"] },
+      { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin", "staff"] },
       { icon: Plug, label: "Integrations", path: "/integrations", roles: ["admin"] },
       { icon: UsersRound, label: "Team", path: "/team", roles: ["admin"] },
       { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },
@@ -87,7 +89,20 @@ const AppSidebar = ({
   const [searchParams] = useSearchParams();
   const { user, role, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { active, profiles, setActive } = useBusinessProfile();
+  const { active: legacyProfile, profiles, setActive: setLegacyProfile } = useBusinessProfile();
+  // Multi-business Phase 1: prefer real businesses over the invoice_settings
+  // profile rows. Same UI shape either way (name + logo + switcher).
+  const { active: activeBusiness, businesses, setActive: setActiveBusiness, brands } = useBusinessContext();
+  const active = activeBusiness
+    ? { id: activeBusiness.id, business_name: activeBusiness.name, logo_url: activeBusiness.logo_url }
+    : legacyProfile;
+  const switcherList = businesses.length > 0
+    ? businesses.map((b) => ({ id: b.id, business_name: b.name, logo_url: b.logo_url }))
+    : profiles.map((p) => ({ id: p.id, business_name: p.business_name, logo_url: p.logo_url }));
+  const setActive = (id: string) => {
+    if (businesses.length > 0) setActiveBusiness(id);
+    else setLegacyProfile(id);
+  };
   
   // Fetch product categories for sidebar
   const { data: productCategories } = useQuery({
@@ -156,7 +171,7 @@ const AppSidebar = ({
   const initials = user?.email?.slice(0, 2).toUpperCase() || "??";
   const businessName = active?.business_name || "DokanOS";
   const businessLogo = active?.logo_url || "";
-  const hasMultiple = profiles.length > 1;
+  const hasMultiple = switcherList.length > 1;
 
   const BrandBlock = (
     <div className={`flex items-center gap-2 min-w-0 ${collapsed ? "justify-center w-full px-0" : ""}`}>
@@ -185,7 +200,7 @@ const AppSidebar = ({
             <DropdownMenuContent align="start" className="w-56 bg-sidebar/90 backdrop-blur-md border-border/30">
               <DropdownMenuLabel>Switch business</DropdownMenuLabel>
               <DropdownMenuSeparator className="bg-border/30" />
-              {profiles.map((p) => (
+              {switcherList.map((p) => (
                 <DropdownMenuItem key={p.id} onClick={() => setActive(p.id)} className="gap-2">
                   {p.logo_url ? (
                     <img src={p.logo_url} alt="" className="h-5 w-5 rounded object-contain bg-white p-0.5 border border-border/30" />
@@ -198,6 +213,14 @@ const AppSidebar = ({
                   {active?.id === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
                 </DropdownMenuItem>
               ))}
+              {brands.length > 0 && (
+                <>
+                  <DropdownMenuSeparator className="bg-border/30" />
+                  <DropdownMenuLabel className="text-[10px] text-muted-foreground">
+                    {brands.length} brand{brands.length === 1 ? "" : "s"} · {switcherList.length === 1 ? "configure in Stores" : "manage in Stores"}
+                  </DropdownMenuLabel>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
