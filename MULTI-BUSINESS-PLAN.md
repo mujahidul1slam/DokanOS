@@ -112,15 +112,45 @@ Key rules:
 
 ## 5. Status ledger
 
-- 2026-09-04: Plan written. Recon done (recon oracle …000010, to be dropped
-  with Phase 0's drop migration).
+- **Phase 0 DONE** (`59a3cc2`): 12 new tables + scope columns + RLS + full
+  backfill, live-verified (1 business/2 owners/2 brands/8 selling points/
+  4 connectors incl. 2 pathao couriers/205 product_locations/2559 orders
+  scoped). Courier connector fix in `…0210` (pathao_store_links mapping).
+- **Phase 1 DONE** (`65bd48a`): useBusinessContext (multi-tenant via
+  user_business_access, brands, per-business persisted selection, realtime) +
+  sidebar switcher prefers businesses w/ legacy fallback + /stores nav.
+- **Phase 2 DONE** (`c7b1e3e`): /stores hub — brand cards with
+  Locations/Selling Points/Connectors/Product Sources/Customer Sources tabs
+  + CRUD dialogs + per-brand Woo sync preserved.
+- **Phase 3 DONE** (`96145ef`): product_locations_stock_sync trigger
+  (aggregate verified live 14→21) + orders.location_id Fulfill-From picker in
+  OrderDetailSheet.
+- **Suppliers UI DONE** (suppliers tab in hub CRUD; PO flow remains §6).
+- Gates at every phase: tests 21/21, build ✅, lint-neutral, harnesses
+  dropped after verification.
 
 ## 6. HUMAN-INPUT PARKING LOT (execute last)
 
 1. CF Worker deploy (from previous revamp) — user does in dashboard.
-2. Alert webhook secret — user provides URL.
+2. Alert webhook secret — user provides URL:
+   `SELECT vault.create_secret('<url>', 'sync_alert_webhook_url');`
 3. Confirm business name/brand mapping ("Enveil Vincent" business with two
-   brands Enveil+Vincent) — plan assumes yes; changing later = 3 UPDATEs.
-4. RLS tightening sign-off for true tenant isolation on core tables.
+   brands Enveil+Vincent assumed; changing later = 3 UPDATEs).
+4. RLS tightening sign-off: existing core tables (orders/products/customers/
+   …) still use app-wide (true)-style policies. True tenant isolation needs
+   them switched to is_business_member-scoped — high-risk change, requires
+   human review because a bug = cross-tenant data leak.
 5. Custom-domain → storefront mapping strategy (Vercel rewrite vs CF).
 6. invoice_settings split (per-business defaults + per-store overrides).
+7. Purchase-order UI (create from low stock, receive-into-warehouse,
+   cost revaluation) — schema ready in `purchase_orders`/`supplier_products`.
+8. Excel/CSV product & customer import pipelines (product_sources/
+   customer_sources registry rows exist; the import tooling itself is new
+   scope — bucket upload, mapping UI, preview, idempotent commit).
+9. POS device/till registration UI (pos_shifts.selling_point_id column is
+   backfilled; the POS screen still uses store-level context until the
+   selling-point picker is built).
+10. NEXT PLAN (queued after this one): the storefront website-builder phases
+    (theme system, visual page editor, AI generation) — see the storefront
+    builder plan; storefronts are now selling-point-linked so the builder
+    integrates through that layer.

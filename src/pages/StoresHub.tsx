@@ -11,7 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   Warehouse, Store as StoreIcon, Plug, Package, Users, Plus, Trash2, Pencil,
-  MapPin, Globe, Truck, Loader2, Building2,
+  MapPin, Globe, Truck, Loader2, Building2, Factory,
 } from "lucide-react";
 
 /**
@@ -41,6 +41,10 @@ interface ConnectorRow {
 interface SourceRow {
   id: string; brand_id: string | null; name: string; type: string;
   status: string; sync_direction: string; last_sync_at: string | null;
+}
+interface SupplierRow {
+  id: string; name: string; is_factory: boolean; contact_name: string | null;
+  phone: string | null; city: string | null; is_active: boolean;
 }
 
 const SP_TYPE_LABELS: Record<string, string> = {
@@ -115,6 +119,7 @@ function BrandCard({
   const [connectors, setConnectors] = useState<ConnectorRow[]>([]);
   const [productSources, setProductSources] = useState<SourceRow[]>([]);
   const [customerSources, setCustomerSources] = useState<SourceRow[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
   const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
@@ -126,18 +131,20 @@ function BrandCard({
         .maybeSingle();
       setWooStore(s as { id: string; name: string; url: string; status: string; last_synced_at: string | null } | null);
     }
-    const [loc, sp, conn, psrc, csrc] = await Promise.all([
+    const [loc, sp, conn, psrc, csrc, sup] = await Promise.all([
       supabase.from("locations").select("*").eq("brand_id", brand.id).order("name"),
       supabase.from("selling_points").select("*").eq("brand_id", brand.id).order("name"),
       supabase.from("connectors").select("*").or(`brand_id.eq.${brand.id},brand_id.is.null`).order("category").order("name"),
       supabase.from("product_sources").select("*").or(`brand_id.eq.${brand.id},brand_id.is.null`).order("name"),
       supabase.from("customer_sources").select("*").or(`brand_id.eq.${brand.id},brand_id.is.null`).order("name"),
+      supabase.from("suppliers").select("*").order("name"),
     ]);
     setLocations((loc.data as LocationRow[]) || []);
     setSellingPoints((sp.data as SellingPointRow[]) || []);
     setConnectors((conn.data as ConnectorRow[]) || []);
     setProductSources((psrc.data as SourceRow[]) || []);
     setCustomerSources((csrc.data as SourceRow[]) || []);
+    setSuppliers((sup.data as SupplierRow[]) || []);
   }, [brand.id, brand.woo_store_id]);
 
   useEffect(() => { load(); }, [load]);
@@ -163,6 +170,7 @@ function BrandCard({
     { id: "connectors", label: "Connectors", icon: Plug, count: connectors.length },
     { id: "psources", label: "Product Sources", icon: Package, count: productSources.length },
     { id: "csources", label: "Customer Sources", icon: Users, count: customerSources.length },
+    { id: "suppliers", label: "Suppliers", icon: Factory, count: suppliers.length },
   ];
 
   return (
@@ -227,6 +235,7 @@ function BrandCard({
           {tab === "connectors" && <ConnectorsPanel rows={connectors} />}
           {tab === "psources" && <SourcesPanel kind="product" brandId={brand.id} rows={productSources} onChanged={load} />}
           {tab === "csources" && <SourcesPanel kind="customer" brandId={brand.id} rows={customerSources} onChanged={load} />}
+          {tab === "suppliers" && <SuppliersPanel rows={suppliers} onChanged={load} />}
         </div>
       )}
     </div>
@@ -424,7 +433,119 @@ function SellingPointsPanel({
             )}
           </div>
           <DialogFooter>
-            <Button onClick={save} disabled={saving || !form.name || (needsLocation && !form.location_id)}>
+            <Button onClick={save} disabled={saving || !form.name}>
+              {saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />} Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Suppliers panel (suppliers/factories — business-scoped)
+// ---------------------------------------------------------------------------
+function SuppliersPanel({ rows, onChanged }: { rows: SupplierRow[]; onChanged: () => void }) {
+  const { active } = useBusinessContext();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", is_factory: false, contact_name: "", phone: "", city: "" });
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!form.name) return;
+    setSaving(true);
+    await supabase.from("suppliers").insert({
+      business_id: active!.id,
+      name: form.name,
+      is_factory: form.is_factory,
+      contact_name: form.contact_name || null,
+      phone: form.phone || null,
+      city: form.city || null,
+    });
+    setSaving(false);
+    setOpen(false);
+    setForm({ name: "", is_factory: false, contact_name: "", phone: "", city: "" });
+    onChanged();
+  };
+
+  const toggleActive = async (s: SupplierRow) => {
+    await supabase.from("suppliers").update({ is_active: !s.is_active }).eq("id", s.id);
+    onChanged();
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          Vendors & factories for this business (purchase orders in a later phase).
+        </p>
+        <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+          <Plus className="h-3.5 w-3.5 mr-1" /> Add
+        </Button>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">No suppliers yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((s) => (
+            <div key={s.id} className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2">
+              <Factory className="h-4 w-4 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium">{s.name}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {s.is_factory ? "Factory" : "Vendor"}
+                  {s.contact_name ? ` · ${s.contact_name}` : ""}
+                  {s.phone ? ` · ${s.phone}` : ""}
+                  {s.city ? ` · ${s.city}` : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => toggleActive(s)}
+                className={`text-[10px] rounded-full px-2 py-0.5 ${s.is_active ? "bg-emerald-500/10 text-emerald-600" : "bg-secondary text-muted-foreground"}`}
+              >
+                {s.is_active ? "Active" : "Inactive"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Supplier</DialogTitle>
+            <DialogDescription>Vendors supply products; factories manufacture them.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Name</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="ACME Fabrics" />
+            </div>
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={form.is_factory}
+                onChange={(e) => setForm({ ...form, is_factory: e.target.checked })}
+              />
+              This is a factory
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Contact</Label>
+                <Input value={form.contact_name} onChange={(e) => setForm({ ...form, contact_name: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Phone</Label>
+                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>City</Label>
+              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={save} disabled={saving || !form.name}>
               {saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />} Add
             </Button>
           </DialogFooter>
