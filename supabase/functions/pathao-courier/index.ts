@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-cron-secret",
 };
 
 const PATHAO_BASE = "https://api-hermes.pathao.com";
@@ -168,8 +168,33 @@ async function loadIntegration(sb: ReturnType<typeof supabaseAdmin>, integration
 }
 
 async function getAccessToken(creds: PathaoCreds): Promise<string> {
+  // Two-tier cache (revamp 1.2):
+  //   1. in-memory Map — free, but dies with the function instance (cold
+  //      starts used to re-issue a token EVERY invocation);
+  //   2. courier_tokens table — survives cold starts. Supabase edge functions
+  //      recycle frequently, so the DB tier is what actually saves Pathao
+  //      issue-token round-trips in practice.
+  const sb = supabaseAdmin();
+  const now = Date.now();
+
   const cached = tokenCache.get(creds.id);
-  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
+  if (cached && cached.expiresAt > now + 60_000) return cached.token;
+
+  if (creds.id !== "env") {
+    const { data: row } = await sb
+      .from("courier_tokens")
+      .select("token, expires_at")
+      .eq("provider", "pathao")
+      .eq("integration_id", creds.id)
+      .maybeSingle();
+    if (row && new Date(row.expires_at).getTime() > now + 60_000) {
+      tokenCache.set(creds.id, {
+        token: row.token,
+        expiresAt: new Date(row.expires_at).getTime(),
+      });
+      return row.token;
+    }
+  }
 
   const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/issue-token`, {
     method: "POST",
@@ -187,10 +212,23 @@ async function getAccessToken(creds: PathaoCreds): Promise<string> {
     throw new Error(`Pathao auth failed [${res.status}]: ${txt}`);
   }
   const data = await res.json();
-  tokenCache.set(creds.id, {
-    token: data.access_token,
-    expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
-  });
+  const expiresAt = now + (data.expires_in || 3600) * 1000;
+  tokenCache.set(creds.id, { token: data.access_token, expiresAt });
+
+  // Persist for other (possibly cold) instances. Best-effort: env creds and
+  // transient DB errors must not break dispatch/tracking over a cache write.
+  if (creds.id !== "env") {
+    sb.from("courier_tokens")
+      .upsert({
+        provider: "pathao",
+        integration_id: creds.id,
+        token: data.access_token,
+        expires_at: new Date(expiresAt).toISOString(),
+      }, { onConflict: "provider,integration_id" })
+      .then(({ error }: { error: { message: string } | null }) => {
+        if (error) console.warn(`[pathao-courier] courier_tokens upsert failed: ${error.message}`);
+      });
+  }
   return data.access_token;
 }
 
@@ -251,8 +289,11 @@ Deno.serve(async (req: Request) => {
     const { action, integration_id, ...params } = body;
 
     // `track_all` is a system-level refresh action: it does not accept user-specific
-    // input and only writes Pathao tracking status onto orders. Allow it without
-    // a user JWT so it can be triggered by pg_cron / scheduled jobs.
+    // input and only writes Pathao tracking status onto orders. Allow it via
+    // service-role bearer, a valid user JWT (the Dispatch/Orders pages' bulk
+    // "refresh tracking" buttons), OR the x-cron-secret vault token
+    // `sync_worker_cron_token` (schedulers: GitHub Actions / Cloudflare cron).
+    // The public anon key alone is rejected.
     const isSystemTrackAll = action === "track_all";
 
     let callerId: string | null = null;
@@ -283,6 +324,40 @@ Deno.serve(async (req: Request) => {
         .eq("user_id", caller.id)
         .maybeSingle();
       callerName = (prof?.full_name as string | undefined) || callerEmail;
+    } else {
+      // System path (track_all). Order matters: schedulers send BOTH an anon
+      // bearer (gateway JWT) and x-cron-secret, so the secret must be checked
+      // BEFORE attempting user-JWT verification (an anon key is a Bearer but
+      // not a user session).
+      const authHeader = req.headers.get("Authorization") || "";
+      const providedSecret = req.headers.get("x-cron-secret") || "";
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+      if (serviceKey && authHeader === `Bearer ${serviceKey}`) {
+        // service-role — ok
+      } else if (providedSecret) {
+        const { data: token } = await sb.rpc("get_sync_worker_cron_token");
+        if (!token || providedSecret !== token) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } else if (authHeader.startsWith("Bearer ")) {
+        const { data: { user: caller }, error: authErr } = await sb.auth.getUser(authHeader.replace("Bearer ", ""));
+        if (authErr || !caller) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        callerId = caller.id;
+        callerEmail = caller.email ?? null;
+      } else {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const creds = await loadIntegration(sb, integration_id);

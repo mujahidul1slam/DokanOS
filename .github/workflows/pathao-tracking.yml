@@ -16,11 +16,12 @@
 ## run. Delete this workflow, or unschedule the DB job, once pg_cron works again.
 ##
 ## AUTH
-## The token below is the project's anon (publishable) key. It is already public:
-## it ships in the frontend bundle as VITE_SUPABASE_PUBLISHABLE_KEY. The
-## pathao-courier function treats action=track_all as a system call and skips the
-## user-identity check, so the anon key is all the API gateway needs. No
-## service-role key and no vault secret are involved here.
+## track_all accepts: service-role bearer, a valid authenticated user JWT
+## (Dispatch/Orders page buttons), or x-cron-secret matching the vault token
+## `sync_worker_cron_token`. This workflow uses the anon key (valid project
+## JWT for the gateway) + the SYNC_WORKER_CRON_TOKEN repo secret (same value
+## as sync-worker — one scheduler token, two functions). Set via:
+## `Write-Output '<token>' | gh secret set SYNC_WORKER_CRON_TOKEN`.
 ##
 ## CAVEATS
 ## - GitHub's scheduled runners are best-effort. A */15 schedule can slip by
@@ -28,6 +29,8 @@
 ## - GitHub disables scheduled workflows after ~60 days with no repository
 ##   activity. If tracking silently stops, check that first.
 ## - Use the "Run workflow" button on the Actions tab to trigger a poll by hand.
+## - Once the Cloudflare Worker cron is deployed as the primary scheduler,
+##   demote this workflow to a once-daily dead-man's-switch.
 
 name: Pathao tracking refresh
 
@@ -50,9 +53,15 @@ jobs:
       - name: Poll Pathao for all active consignments
         env:
           FN_URL: https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/pathao-courier
+          CRON_TOKEN: ${{ secrets.SYNC_WORKER_CRON_TOKEN }}
           ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imppd25kaWN2ZmtpbHRnYWdlcXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMjg5OTcsImV4cCI6MjEwMDkwNDk5N30.zWbTtxLYD1hw-vQ7qZdxm1NgUSWYHsS-0wWXg89_7MY
         run: |
           set -euo pipefail
+
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::SYNC_WORKER_CRON_TOKEN secret is not set. Add it in repository settings."
+            exit 1
+          fi
 
           # --max-time must exceed the worst realistic batch: 50 orders x ~2.3s
           # is ~115s, so allow generous headroom before giving up.
@@ -61,6 +70,7 @@ jobs:
             -X POST "$FN_URL" \
             -H 'Content-Type: application/json' \
             -H "Authorization: Bearer $ANON_KEY" \
+            -H "x-cron-secret: $CRON_TOKEN" \
             -d '{"action":"track_all"}')
 
           echo "HTTP $status"

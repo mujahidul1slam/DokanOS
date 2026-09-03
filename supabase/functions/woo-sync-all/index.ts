@@ -13,14 +13,22 @@ Deno.serve(async (req: Request) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     const supabase = createClient(SUPABASE_URL, serviceKey);
 
-    // Auth: service-role bearer, OR x-cron-secret matching the token stored in vault.
+    // Auth: service-role bearer, OR x-cron-secret matching a vault token.
+    // Accepts both `woo_sync_cron_token` (legacy, used by the GitHub workflow
+    // secret WOO_SYNC_CRON_TOKEN) and `sync_worker_cron_token` (revamp 1.3 —
+    // lets schedulers like the Cloudflare Worker carry ONE secret for all
+    // three scheduled functions).
     const auth = req.headers.get("authorization") || "";
     const provided = req.headers.get("x-cron-secret") || "";
     const isService = serviceKey && auth === `Bearer ${serviceKey}`;
     let allowed = isService;
     if (!allowed && provided) {
-      const { data: token } = await supabase.rpc("get_woo_sync_cron_token");
-      if (token && provided === token) allowed = true;
+      const { data: legacyToken } = await supabase.rpc("get_woo_sync_cron_token");
+      if (legacyToken && provided === legacyToken) allowed = true;
+      if (!allowed) {
+        const { data: newToken } = await supabase.rpc("get_sync_worker_cron_token");
+        if (newToken && provided === newToken) allowed = true;
+      }
     }
     if (!allowed) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {

@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret",
 };
 
 // How many queue rows one claim will take.
@@ -55,6 +55,36 @@ Deno.serve(async (req: Request) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, serviceKey);
 
+    // Auth (revamp 1.3): the drain loop is a system maintenance action that can
+    // flip queue rows to dead_letter — it must not be anon-triggerable (the anon
+    // key is public in the frontend bundle). Accept any of:
+    //   - service-role bearer (used by other edge functions),
+    //   - x-cron-secret matching vault token `sync_worker_cron_token`
+    //     (GitHub Actions / Cloudflare Worker cron),
+    //   - a valid authenticated user JWT (frontend kickSyncWorker — the
+    //     instant-drain path from A.6; claim SKIP LOCKED makes concurrent
+    //     drains safe, so a user kick is harmless).
+    {
+      const auth = req.headers.get("authorization") || "";
+      const provided = req.headers.get("x-cron-secret") || "";
+      const isService = serviceKey && auth === `Bearer ${serviceKey}`;
+      let allowed = isService;
+      if (!allowed && provided) {
+        const { data: token } = await sb.rpc("get_sync_worker_cron_token");
+        if (token && provided === token) allowed = true;
+      }
+      if (!allowed && auth.startsWith("Bearer ")) {
+        const { data: { user } } = await sb.auth.getUser(auth.replace("Bearer ", ""));
+        allowed = !!user;
+      }
+      if (!allowed) {
+        return new Response(JSON.stringify({ error: "unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Recover rows orphaned by an earlier run that died mid-flight.
     //
     // A row is flipped to "processing" *before* its push is attempted, so if this
@@ -101,6 +131,13 @@ Deno.serve(async (req: Request) => {
         .lt("updated_at", deadCutoff);
       if (purgeCompletedErr) console.warn(`[sync-worker] completed purge failed: ${purgeCompletedErr.message}`);
       if (purgeDeadErr) console.warn(`[sync-worker] dead_letter purge failed: ${purgeDeadErr.message}`);
+      // 1.6: webhook delivery audit grows forever otherwise; delivery dedup
+      // only cares about recent events (Woo retries within minutes).
+      const { error: purgeWebhookErr } = await sb
+        .from("webhook_events")
+        .delete()
+        .lt("created_at", deadCutoff);
+      if (purgeWebhookErr) console.warn(`[sync-worker] webhook_events purge failed: ${purgeWebhookErr.message}`);
     } catch (e: any) {
       console.warn(`[sync-worker] retention sweep error: ${e?.message || e}`);
     }

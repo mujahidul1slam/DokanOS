@@ -7,15 +7,18 @@
 ## workflow, newly-enqueued pushes sit indefinitely.
 ##
 ## AUTH
-## The anon (publishable) key is used. sync-worker has no in-function auth
-## check — it relies on the API gateway's verify_jwt, and the anon key is a
-## valid project JWT. The function itself uses the service-role key from its
-## own environment, not from the request.
+## sync-worker accepts: service-role bearer, a valid authenticated user JWT
+## (frontend kickSyncWorker), or x-cron-secret matching the vault token
+## `sync_worker_cron_token`. This workflow uses the anon key (valid project
+## JWT for the gateway) + the SYNC_WORKER_CRON_TOKEN repo secret. Set the
+## secret via: `Write-Output '<token>' | gh secret set SYNC_WORKER_CRON_TOKEN`.
 ##
 ## CAVEATS
-## - sync-worker processes up to 20 rows per invocation (BATCH_SIZE constant).
-##   If the queue is larger, multiple runs will drain it over time.
+## - sync-worker full-drains up to 1000 rows per invocation (BATCH 50 x 20).
 ## - GitHub disables scheduled workflows after ~60 days of repo inactivity.
+## - Once the Cloudflare Worker cron is deployed as the primary scheduler,
+##   demote this workflow to a once-daily dead-man's-switch (alert if the
+##   queue's newest updated_at is stale).
 
 name: Sync queue worker
 
@@ -36,15 +39,22 @@ jobs:
       - name: Run sync-worker
         env:
           FN_URL: https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/sync-worker
+          CRON_TOKEN: ${{ secrets.SYNC_WORKER_CRON_TOKEN }}
           ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imppd25kaWN2ZmtpbHRnYWdlcXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMjg5OTcsImV4cCI6MjEwMDkwNDk5N30.zWbTtxLYD1hw-vQ7qZdxm1NgUSWYHsS-0wWXg89_7MY
         run: |
           set -euo pipefail
+
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::SYNC_WORKER_CRON_TOKEN secret is not set. Add it in repository settings."
+            exit 1
+          fi
 
           status=$(curl -sS -o response.json -w '%{http_code}' \
             --max-time 300 \
             -X POST "$FN_URL" \
             -H 'Content-Type: application/json' \
             -H "Authorization: Bearer $ANON_KEY" \
+            -H "x-cron-secret: $CRON_TOKEN" \
             -d '{}')
 
           echo "HTTP $status"

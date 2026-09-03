@@ -206,6 +206,15 @@ Deno.serve(async (req: Request) => {
       supabase.from("stores").update({ updated_at: new Date().toISOString() }).eq("id", store_id).then();
     }, 30000);
 
+    // Revamp 1.5: sync window high-water mark. last_synced_at must advance to
+    // the newest date_modified_gmt we actually OBSERVED (or, when nothing was
+    // fetched, the moment the fetch began) — never wall-clock "now" at
+    // completion. A slow store whose sync body runs 10 minutes would
+    // otherwise mark orders modified mid-run (after their pages were read) as
+    // already-synced, permanently skipping them: the next incremental window
+    // only overlaps by 5 minutes.
+    let syncHighWaterMark: string | null = null;
+
     // --- Customer helpers (with in-memory cache) -------------------------
     // NOTE: These MUST be declared before `syncTask` because the background
     // closure references them; otherwise they hit the temporal dead zone.
@@ -321,11 +330,17 @@ Deno.serve(async (req: Request) => {
     // Kick off background sync (runFullSync is hoisted, declared below).
     const syncTask = (async () => {
       try {
+        const fetchStartedAt = new Date().toISOString(); // captured BEFORE any Woo fetch
         await runFullSync();
+        // 1.5: advance to the observed high-water mark. If the store returned
+        // nothing (nothing modified), advance to fetch-start so the next
+        // incremental window starts where this one began reading, not where it
+        // finished.
+        const nextSyncedAt = syncHighWaterMark || fetchStartedAt;
         await supabase.from("stores")
-          .update({ status: "connected", last_synced_at: new Date().toISOString() })
+          .update({ status: "connected", last_synced_at: nextSyncedAt })
           .eq("id", store_id);
-        ts(`completed: ${JSON.stringify(summary)}`);
+        ts(`completed: ${JSON.stringify(summary)} (last_synced_at -> ${nextSyncedAt})`);
       } catch (e: any) {
         console.error("woo-sync background error:", e?.message || e);
         await supabase.from("stores").update({ status: "error" }).eq("id", store_id);
@@ -363,6 +378,23 @@ Deno.serve(async (req: Request) => {
       wooFetchAll("orders", orderParams),
     ]);
     ts(`fetched ${wooCategories.length} categories, ${wooProducts.length} products${incremental ? " (modified)" : ""}, ${wooOrders.length} orders${incremental ? " (modified)" : ""}`);
+
+    // 1.5: the newest date_modified_gmt across everything fetched this run.
+    // Orders created between the "since" window and now can carry modified
+    // times newer than the window start; the max of all observed values is
+    // the true point-in-time this run is caught up to.
+    {
+      let hwm: Date | null = null;
+      const consider = (v: unknown) => {
+        if (!v) return;
+        const s = String(v);
+        const d = new Date(s.endsWith("Z") ? s : s + "Z");
+        if (!isNaN(d.getTime()) && (!hwm || d > hwm)) hwm = d;
+      };
+      wooOrders.forEach((o: { date_modified_gmt?: string; date_created_gmt?: string }) => consider(o.date_modified_gmt || o.date_created_gmt));
+      wooProducts.forEach((p: { date_modified_gmt?: string; date_created_gmt?: string }) => consider(p.date_modified_gmt || p.date_created_gmt));
+      if (hwm) syncHighWaterMark = hwm.toISOString();
+    }
 
     // --- Categories: upsert in 2 passes (without parent, then with parent_id resolved) ---
     let catByWooId = new Map<number, string>();

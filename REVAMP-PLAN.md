@@ -66,13 +66,28 @@ A.4 Rich product info: sale price, sale dates, short description, attributes, ta
 A.5 Rich Woo order notes: itemized changes, amounts, consignments, "synced to DokanOS" receipt confirmation.
 A.6 Instant delivery: full-queue drain + frontend `kickSyncWorker()` after every action.
 
-### Phase 1 — Own the scheduler + hygiene ⬜ REMAINING
-1.1 Move primary scheduling to Vercel Cron or Cloudflare Workers Cron (*/1 or */5). Keep GitHub Actions as a once-daily dead-man's-switch that alerts if the primary missed ticks.
-1.2 Courier token caching in DB (expiry-aware) — currently every cold start issues a fresh Pathao token.
-1.3 `sync-worker` auth via `x-cron-secret` (same pattern as `woo-sync-all`) — currently anon-triggerable (harmless but sloppy).
-1.4 Enforce Woo webhook signatures (currently `if (consumer_secret && signature)` — unsigned payloads are accepted).
-1.5 `woo-sync`: advance `last_synced_at` on completion/high-water-mark, not at start (slow stores can permanently skip orders otherwise).
-1.6 Retention for `webhook_events` (>30d) — sync_queue retention already done.
+### Phase 1 — Own the scheduler + hygiene ✅ DONE (2026-09-03)
+1.1 CF Worker cron fully prepped (back-burner deploy): ready-to-paste script at
+    `cloudflare/dokanos-cron.js` (*/5 sync-worker, */15 woo-sync-all+track_all),
+    single secret `SYNC_WORKER_CRON_TOKEN`. GitHub workflows updated to the new
+    auth and remain the active scheduler until the CF worker is deployed; the
+    workflow headers document the demote-to-dead-man's-switch step.
+1.2 `courier_tokens` table (provider, integration_id, token, expires_at;
+    service_role-only) + two-tier cache in `getAccessToken` — verified live:
+    2 rows, future-dated expiry.
+1.3 `sync-worker` + `pathao-courier track_all` + `woo-sync-all` all require
+    service-role / valid user JWT / `x-cron-secret` (vault `sync_worker_cron_token`,
+    same value in GitHub secret SYNC_WORKER_CRON_TOKEN). Anon-key-only callers
+    now get 401 (verified live on all three).
+1.4 Webhook signatures REQUIRED when store has `consumer_secret` (missing or
+    wrong -> 401). Both stores' Woo hooks hardened with their consumer_secret
+    via REST PUT. Verified 3-way live (401 missing / 401 mismatch / 200 valid
+    HMAC) and real Woo deliveries processed (status 200 in webhook_events).
+1.5 `last_synced_at` advances to max observed `date_modified_gmt` high-water
+    mark (falls back to fetch-start when nothing fetched). Verified live:
+    last_synced_at == Woo max modified, to the second, both stores.
+1.6 `webhook_events` >30d retention sweep added to sync-worker's sweep
+    (verified running; oldest row currently 2026-08-29, nothing to purge yet).
 
 ### Phase 2 — Courier-agnostic core ⬜ REMAINING (do before integrating courier #2)
 2.1 Schema: `courier_providers` (code), `courier_integrations` (per-merchant creds), `courier_shipments` (order_id, provider, consignment_id, raw/canonical status, last_tracked_at). Keep `pathao_*` location tables as the Pathao adapter's location store. Backfill `orders.consignment_id` → `courier_shipments`.
@@ -147,43 +162,52 @@ attributes/tags/weight/dimensions`.
 20260831000590…596                                          (stock verification harness no-op pairs)
 20260831000600_requeue_rate_limit_victims.sql               (713 rows restored)
 20260831000790…794                                          (debug oracle no-op pairs)
+20260901000000_scheduler_auth_and_courier_tokens.sql        (vault sync_worker_cron_token + RPC + courier_tokens)
+20260901000100_verify_webhook_signatures.sql                (temp oracle — dropped by …0250)
+20260901000190_verify_phase1_final_v2.sql                  (temp oracle — dropped by …0250; …0150 renamed+repaired)
+20260901000200_verify_phase1_retention.sql                 (temp oracle — dropped by …0250)
+20260901000250_drop_phase1_verification_oracles.sql        (drops all three oracles)
 ```
 
 ---
 
 ## 4. Status Ledger — REMAINING (pick up here, in this order)
 
-1. **Phase 1.1 — Scheduler ownership (highest impact).**
-   - Add `api/cron/sync-worker.ts` (Vercel serverless route) POSTing to the
-     Supabase function with `x-cron-secret`; add crons to `vercel.json`
-     (`*/5` sync-worker, `*/15` pathao-tracking — sub-daily needs Vercel Pro).
-     Alternative: Cloudflare Worker Cron (free).
-   - Do 1.3 at the same time (token exists in vault as `woo_sync_cron_token`;
-     copy the `get_woo_sync_cron_token` pattern from `woo-sync-all`).
-   - Demote the three GitHub workflows to once-daily dead-man's-switch runs
-     that alert if the queue's newest `updated_at` is stale.
-2. **Phase 1.2 — Token cache table** (`courier_tokens`: integration_id,
-   token, expires_at). Update `getAccessToken` in `pathao-courier`.
-3. **Phase 1.4 — Enforce webhook signatures.** In `woo-webhook`, when
-   `store.consumer_secret` is set, REQUIRE a valid signature (currently
-   optional). Both live stores show `secret: MISSING` in the Woo API view —
-   `.tmp/harden-woo-webhooks.cjs` exists to set them.
-4. **Phase 1.5 — Sync window fix.** In `woo-sync`, set `last_synced_at` to
-   max `date_modified_gmt` AFTER the sync body completes (currently set at
-   start, around line 324).
-5. **Phase 2 — Courier-agnostic core** (full spec in §2). Before courier #2.
-6. **Phase 3.1 — Chunk `woo-sync-all`** (bounded pMap ~50).
-7. **Phase 3.3 — `sync_health` view + dashboard surface + alert webhook.**
-8. **Phase 3.2 / 3.4 / 3.5** as capacity allows.---
+1. **DEPLOY the Cloudflare Worker (Phase 1.1 finishing move, user does this).**
+   - dash.cloudflare.com → Workers & Pages → Create Worker `dokanos-cron`,
+     paste `cloudflare/dokanos-cron.js`, Deploy.
+   - Settings → Variables: `SYNC_WORKER_CRON_TOKEN` =
+     `z4i13r8XGeY2ASnPhyabNQ20IviKCGoA` (Type: Secret).
+   - Settings → Trigger Events → Cron Triggers: `*/5 * * * *` AND
+     `*/15 * * * *`.
+   - Then demote the three GitHub workflows to once-daily dead-man's-switch
+     runs that alert if `sync_queue` newest `updated_at` is stale (their file
+     headers describe the switch).
+2. **Phase 2 — Courier-agnostic core** (full spec in §2). Before courier #2.
+3. **Phase 3.1 — Chunk `woo-sync-all`** (bounded pMap ~50).
+4. **Phase 3.3 — `sync_health` view + dashboard surface + alert webhook.**
+5. **Phase 3.2 / 3.4 / 3.5** as capacity allows.---
 
 ## 5. Known quirks the next agent MUST know
 
+- **Woo webhook signing secrets cannot be READ back via the REST API** (the
+  `secret` field always returns null/absent — `secret: MISSING` in the API
+  view does NOT mean unset). To verify, fire a real delivery and check
+  webhook_events, or use the 3-way HMAC probe (`.tmp/sig-3way-test.cjs`).
+- **Woo's webhook deliveries lag minutes on shared hosting** (Action
+  Scheduler batching) — don't assume a webhook is broken under ~2-5 min.
+- **`woo-sync-all` accepts TWO cron secrets now** (legacy
+  `woo_sync_cron_token` and `sync_worker_cron_token`) so schedulers can
+  carry one secret.
 - **`npx supabase db push` hangs on its Y/n prompt** in this shell - pipe
   `Write-Output 'y' |` into it. It is transactional: a failed migration fully
   rolls back and is not recorded.
 - **Do not write SQL files from PowerShell** (`Set-Content -Encoding utf8`
   adds a BOM -> `syntax error at or near "..."`). Use the editor tool, or
   `[System.IO.File]::WriteAllText(path, text, [System.Text.UTF8Encoding]::new($false))`.
+- **Renaming an already-pushed migration file breaks history** — repair with
+  `npx supabase migration repair --status reverted <version> --linked`, then
+  push the renamed file. (Learned 2026-09-03 with ...0150 → ...190.)
 - **Apply-order trap:** if you push a verification-RPC migration together
   with its drop migration, the drop wins immediately. Pattern: create ->
   push -> verify -> THEN write+push the drop.
@@ -245,7 +269,9 @@ attributes/tags/weight/dimensions`.
 | Bulk status push callsite | `src/pages/orders/useOrderBulkActions.ts` |
 | Product UI (sale price etc.) | `src/components/products/ProductDetailSheet.tsx` |
 | External schedulers | `.github/workflows/{sync-worker,woo-sync-all,pathao-tracking}.yml` |
-| Cron token vault fn | `get_woo_sync_cron_token` (used by woo-sync-all) |
-| Diagnostic scripts (Woo keys, E2E) | `.tmp/check-woo-webhooks.cjs`, `.tmp/e2e-variation-stock-test.cjs` |
+| CF Worker cron script (to paste in dashboard) | `cloudflare/dokanos-cron.js` |
+| Cron token vault fns | `get_woo_sync_cron_token`, `get_sync_worker_cron_token` (used by woo-sync-all / sync-worker / pathao track_all) |
+| Courier token cache | `courier_tokens` table (migration `20260901000000`), `getAccessToken` in `pathao-courier` |
+| Diagnostic scripts (Woo keys, E2E) | `.tmp/check-woo-webhooks.cjs`, `.tmp/e2e-variation-stock-test.cjs`, `.tmp/sig-3way-test.cjs`, `.tmp/verify-auth.cjs`, `.tmp/drain-once.cjs` |
 
 *End of handoff document.*

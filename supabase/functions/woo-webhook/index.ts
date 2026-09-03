@@ -78,7 +78,23 @@ Deno.serve(async (req: Request) => {
     const entityType = isOrder ? "order" : (isProduct ? "product" : "unknown");
 
     const signature = req.headers.get("x-wc-webhook-signature") || "";
-    if (store.consumer_secret && signature) {
+    // Revamp 1.4: when the store has a consumer_secret configured, a valid
+    // HMAC-SHA256 signature over the raw body is REQUIRED. Unsigned payloads
+    // are rejected — anyone who guesses the endpoint URL could otherwise
+    // inject fake orders/products. (Both live stores' hooks were hardened
+    // with the same secret via .tmp/harden-woo-webhooks.cjs.)
+    if (store.consumer_secret) {
+      if (!signature) {
+        console.error("Webhook rejected: missing signature (store has consumer_secret).", { store_id });
+        if (deliveryId) {
+          supabase.from("webhook_events").insert({
+            store_id, delivery_id: deliveryId, topic: webhookTopic,
+            woo_id: payload.id || null, entity_type: entityType,
+            status_code: 401, error: "missing signature", payload_size: body.length,
+          }).then();
+        }
+        return jsonResp({ error: "missing signature" }, 401);
+      }
       try {
         const key = await crypto.subtle.importKey(
           "raw", new TextEncoder().encode(store.consumer_secret),
@@ -86,9 +102,6 @@ Deno.serve(async (req: Request) => {
         );
         const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
         const expected = btoa(String.fromCharCode(...sig));
-        // Phase 2: reject forged/spoofed payloads. WooCommerce signs the raw
-        // request body with the store's consumer_secret; a mismatch means the
-        // caller is not WooCommerce, so we must NOT persist the payload.
         if (signature !== expected) {
           console.error("Webhook signature mismatch — rejecting payload.", { store_id });
           if (deliveryId) {
