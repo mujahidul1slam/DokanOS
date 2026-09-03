@@ -34,6 +34,7 @@ const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
+const StoresHub = lazy(() => import("./pages/StoresHub"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -97,6 +98,7 @@ const AppRoutes = () => {
           <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
           <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
           <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
+          <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
           <Route path="/storefronts" element={<StorefrontsPage />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
