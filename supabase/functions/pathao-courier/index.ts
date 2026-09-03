@@ -1,4 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+// Revamp 2.5: the ~60-entry Pathao status map now lives in the adapter.
+import { legacyStatusFor, canonicalStatusFor } from "../adapters/pathao.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,80 +13,44 @@ const PATHAO_BASE = "https://api-hermes.pathao.com";
 // In-memory token cache per integration (lives for the function's runtime)
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
-// Normalize status string: lowercase, replace underscores/hyphens with spaces, collapse whitespace
-function normalizeStatus(s: string): string {
-  return s.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
-}
-
-// Maps any Pathao tracking status to one of our 5 internal buckets:
-// Pickup Pending + In Transit -> "shipped" | Delivered -> "delivered"
-// On Hold -> "processing" | Returned -> "returned" | Cancelled -> "cancelled"
+// Legacy order-status bucket mapper (shipped/delivered/returned/cancelled/
+// processing) — delegates to the adapter's status map.
 function mapPathaoStatus(status: string | null | undefined): string | undefined {
-  if (!status) return undefined;
-  const normalized = normalizeStatus(status);
-
-  const rawStatusMap: Record<string, string> = {
-    // Pickup lifecycle
-    "pending": "shipped",
-    "pickup pending": "shipped",
-    "waiting for pickup": "shipped",
-    "pickup requested": "shipped",
-    "assigned for pickup": "shipped",
-    "picked": "shipped",
-    "picked up": "shipped",
-    // Hub / transit lifecycle
-    "at sorting hub": "shipped",
-    "received at sorting hub": "shipped",
-    "sent to sub sorting hub": "shipped",
-    "received at sub sorting hub": "shipped",
-    "sent to last mile hub": "shipped",
-    "in transit": "shipped",
-    "on the way to delivery hub": "shipped",
-    "at delivery hub": "shipped",
-    // Delivery lifecycle
-    "assigned for delivery": "shipped",
-    "sent for delivery": "shipped",
-    "out for delivery": "shipped",
-    "delivery confirmed": "shipped",
-    "delivered": "delivered",
-    "partial delivery": "delivered",
-    "partial delivered": "delivered",
-    "payment invoice": "delivered",
-    // Return lifecycle
-    "return": "returned",
-    "returned": "returned",
-    "paid return": "returned",
-    "return requested": "returned",
-    "return in transit": "returned",
-    "returned to merchant": "returned",
-    "merchant return": "returned",
-    "return delivered": "returned",
-    "delivery failed": "returned",
-    "customer refused": "returned",
-    "drt requested": "returned",
-    "drt pick requested": "returned",
-    "drt pick failed": "returned",
-    "drt cancelled": "returned",
-    "lost": "returned",
-    "damaged": "returned",
-    // Cancel / hold
-    "cancelled": "cancelled",
-    // Pickup never happened, so no shipment exists to track.
-    "pickup cancel": "cancelled",
-    "pickup cancelled": "cancelled",
-    "pickup failed": "cancelled",
-    "on hold": "processing",
-    "pickup on hold": "processing",
-    "on hold by customer request": "processing",
-    "hold": "processing",
-    "exchange": "processing",
-  };
-
-  const mapped = rawStatusMap[normalized];
-  if (!mapped) {
-    console.warn(`[pathao-courier] Unmapped Pathao status: "${status}" (normalized: "${normalized}")`);
+  const mapped = legacyStatusFor(status);
+  if (!mapped && status) {
+    console.warn(`[pathao-courier] Unmapped Pathao status: "${status}"`);
   }
   return mapped;
+}
+
+// Revamp 2.1: keep courier_shipments (the provider-agnostic shipment record)
+// in lockstep with the legacy orders.* fields the UI reads today. Best-effort
+// by design — a failure here must never fail dispatch/tracking.
+async function upsertShipmentRow(
+  sb: ReturnType<typeof supabaseAdmin>,
+  row: {
+    order_id: string;
+    consignment_id: string;
+    integration_id: string | null;
+    raw_status?: string | null;
+    canonical_status?: string | null;
+    last_tracked_at?: string | null;
+  },
+): Promise<void> {
+  try {
+    const { error } = await sb.from("courier_shipments").upsert({
+      order_id: row.order_id,
+      provider: "pathao",
+      integration_id: row.integration_id && row.integration_id !== "env" ? row.integration_id : null,
+      consignment_id: row.consignment_id,
+      raw_status: row.raw_status ?? null,
+      canonical_status: row.canonical_status ?? null,
+      last_tracked_at: row.last_tracked_at ?? new Date().toISOString(),
+    }, { onConflict: "provider,consignment_id" });
+    if (error) console.warn(`[pathao-courier] courier_shipments upsert warn: ${error.message}`);
+  } catch (e: unknown) {
+    console.warn(`[pathao-courier] courier_shipments upsert failed: ${(e as Error)?.message || e}`);
+  }
 }
 
 // Enqueue a push_order so the linked WooCommerce order gets marked completed
@@ -506,6 +472,14 @@ Deno.serve(async (req: Request) => {
             pathao_store_id: order_payload.store_id || null,
           }).eq("id", order_id);
 
+          await upsertShipmentRow(sb, {
+            order_id,
+            consignment_id,
+            integration_id: creds.id,
+            raw_status: "Pickup Pending",
+            canonical_status: "pending",
+          });
+
           await sb.from("order_timeline").insert({
             order_id,
             event: "dispatched",
@@ -577,6 +551,14 @@ Deno.serve(async (req: Request) => {
                     pathao_store_id: entry.order_payload.store_id || null,
                   }).eq("id", entry.order_id);
 
+                  await upsertShipmentRow(sb, {
+                    order_id: entry.order_id,
+                    consignment_id,
+                    integration_id: creds.id,
+                    raw_status: "Pickup Pending",
+                    canonical_status: "pending",
+                  });
+
                   await sb.from("order_timeline").insert({
                     order_id: entry.order_id,
                     event: "dispatched",
@@ -631,9 +613,19 @@ Deno.serve(async (req: Request) => {
 
           const { data: ord } = await sb
             .from("orders")
-            .select("id, woo_order_id, store_id, tracking_status")
+            .select("id, woo_order_id, store_id, tracking_status, pathao_integration_id")
             .eq("consignment_id", consignment_id)
             .maybeSingle();
+
+          if (ord?.id) {
+            await upsertShipmentRow(sb, {
+              order_id: ord.id,
+              consignment_id,
+              integration_id: ord.pathao_integration_id || creds.id,
+              raw_status: order_status,
+              canonical_status: canonicalStatusFor(order_status) || null,
+            });
+          }
 
           if (ord?.id && ord.tracking_status !== order_status) {
             await postWooOrderNote(ord.id, `[DokanOS] Pathao status update: ${order_status}`);
@@ -727,6 +719,14 @@ Deno.serve(async (req: Request) => {
               // would keep a NULL cursor and re-jam the queue.
               stamped = !updErr;
               if (updErr) throw new Error(`orders update failed: ${updErr.message}`);
+              await upsertShipmentRow(sb, {
+                order_id: order.id,
+                consignment_id: order.consignment_id,
+                integration_id: (order as any).pathao_integration_id || creds.id,
+                raw_status: order_status,
+                canonical_status: canonicalStatusFor(order_status) || null,
+                last_tracked_at: polledAt,
+              });
               await sb.from("order_timeline").insert({
                 order_id: order.id,
                 event: "tracking_update",
@@ -936,6 +936,15 @@ Deno.serve(async (req: Request) => {
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
+
+        await upsertShipmentRow(sb, {
+          order_id,
+          consignment_id: cid,
+          integration_id: creds.id,
+          raw_status: liveStatus,
+          canonical_status: canonicalStatusFor(liveStatus) || null,
+          last_tracked_at: now,
+        });
 
         // --- Timeline entry ---
         const verb = oldConsignment ? "replaced" : "attached";

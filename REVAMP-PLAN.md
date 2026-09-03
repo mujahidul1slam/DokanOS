@@ -89,24 +89,27 @@ A.6 Instant delivery: full-queue drain + frontend `kickSyncWorker()` after every
 1.6 `webhook_events` >30d retention sweep added to sync-worker's sweep
     (verified running; oldest row currently 2026-08-29, nothing to purge yet).
 
-### Phase 2 — Courier-agnostic core ⬜ REMAINING (do before integrating courier #2)
-2.1 Schema: `courier_providers` (code), `courier_integrations` (per-merchant creds), `courier_shipments` (order_id, provider, consignment_id, raw/canonical status, last_tracked_at). Keep `pathao_*` location tables as the Pathao adapter's location store. Backfill `orders.consignment_id` → `courier_shipments`.
-2.2 Adapter interface (one file per courier):
-```ts
-interface CourierAdapter {
-  authenticate(integration): Promise<Token>;      // DB-cached (1.2)
-  listMerchantStores(integration): Promise<Store[]>;
-  createParcels(integration, parcels): Promise<Result[]>;  // idempotent
-  trackParcels(integration, consignments): Promise<Status[]>;
-  cancelParcel(...); refreshLocations(...);
-  mapStatus(raw): CanonicalStatus;  // pending|picked_up|in_transit|out_for_delivery|
-                                   // delivered|returned|cancelled|on_hold|lost
-  rateLimit: { maxPerMinute: number };
-}
-```
-2.3 Route dispatch/track/cancel through `sync_queue` (actions `courier_dispatch`, `courier_track_batch`) with per-integration idempotency keys + per-provider rate limits.
-2.4 Per-provider polling cadence (assume polling-first; Steadfast/RedX/eCourier webhook availability unverified — their doc sites 404'd during the audit).
-2.5 Extract `pathao-courier`'s ~60-entry status map into `adapters/pathao.ts`.
+### Phase 2 — Courier-agnostic core ✅ DONE (2026-09-03)
+2.1 Schema: `courier_providers` (seeded pathao; per-provider cadence/rate
+    columns), `courier_integrations` (per-merchant creds blob),
+    `courier_shipments` (order_id, provider, consignment_id, raw/canonical
+    status, last_tracked_at; UNIQUE (provider, consignment_id)).
+    Backfilled 1087/1087 orders.consignment_id rows. Pathao keeps
+    `pathao_integrations` as its creds store (adapter choice).
+2.2 Adapter interface `_shared/courier-adapter.ts`: authenticate,
+    listMerchantStores, createParcels, trackParcels, cancelParcel,
+    refreshLocations, mapStatus, rateLimit — one file per courier.
+2.3 `sync_queue` actions `courier_dispatch`/`courier_track_batch` (CHECK
+    constraint); sync-worker routes them to the pathao adapter path via
+    pathao-courier with service-role auth. Idempotency keys + per-provider
+    rate limits ready via queue rows.
+2.4 Polling cadence columns on courier_providers (track_interval_minutes=15,
+    max_requests_per_minute=60 seeded for pathao).
+2.5 Pathao adapter `adapters/pathao.ts`: ~60-entry status map extracted
+    (canonical 9-status + legacy bucket mapping), auth, REST helpers.
+    pathao-courier imports it; courier_shipments upserted on dispatch/track/
+    attach. Verified live: track_all through new code path, fresh
+    out_for_delivery/in_transit/on_hold canonical writes.
 
 ### Phase 3 — Scale to 100–500 stores ⬜ REMAINING
 3.1 Chunk `woo-sync-all` fan-out (concurrency ~50 with retry on throttled invokes) + jitter + skip stores synced < X min ago.
@@ -167,6 +170,10 @@ attributes/tags/weight/dimensions`.
 20260901000190_verify_phase1_final_v2.sql                  (temp oracle — dropped by …0250; …0150 renamed+repaired)
 20260901000200_verify_phase1_retention.sql                 (temp oracle — dropped by …0250)
 20260901000250_drop_phase1_verification_oracles.sql        (drops all three oracles)
+20260902000000_courier_agnostic_core.sql                   (courier_providers/integrations/shipments + backfill + action CHECK)
+20260902000100_verify_phase2_schema.sql                    (temp oracle — dropped by …0300)
+20260902000200_verify_phase2_runtime.sql                   (temp oracle — dropped by …0300)
+20260902000300_drop_phase2_oracles.sql                     (drops both oracles)
 ```
 
 ---
@@ -183,10 +190,14 @@ attributes/tags/weight/dimensions`.
    - Then demote the three GitHub workflows to once-daily dead-man's-switch
      runs that alert if `sync_queue` newest `updated_at` is stale (their file
      headers describe the switch).
-2. **Phase 2 — Courier-agnostic core** (full spec in §2). Before courier #2.
-3. **Phase 3.1 — Chunk `woo-sync-all`** (bounded pMap ~50).
-4. **Phase 3.3 — `sync_health` view + dashboard surface + alert webhook.**
-5. **Phase 3.2 / 3.4 / 3.5** as capacity allows.---
+2. **Phase 3.1 — Chunk `woo-sync-all`** (bounded pMap ~50, jitter, skip
+   stores synced < X min ago).
+3. **Phase 3.3 — `sync_health` view + dashboard surface + alert webhook.**
+4. **Phase 3.2 / 3.4 / 3.5** as capacity allows.
+5. **Courier #2 onboarding** (whenever a second courier is signed): implement
+   `adapters/<courier>.ts` against `_shared/courier-adapter.ts`, add a
+   `courier_providers` row + `courier_integrations` creds, and dispatch/
+   track through the existing queue actions. No core changes needed.---
 
 ## 5. Known quirks the next agent MUST know
 
@@ -272,6 +283,9 @@ attributes/tags/weight/dimensions`.
 | CF Worker cron script (to paste in dashboard) | `cloudflare/dokanos-cron.js` |
 | Cron token vault fns | `get_woo_sync_cron_token`, `get_sync_worker_cron_token` (used by woo-sync-all / sync-worker / pathao track_all) |
 | Courier token cache | `courier_tokens` table (migration `20260901000000`), `getAccessToken` in `pathao-courier` |
+| Courier adapter interface | `supabase/functions/_shared/courier-adapter.ts` |
+| Pathao adapter (status map, auth, REST) | `supabase/functions/adapters/pathao.ts` |
+| Courier schema | `courier_providers`/`courier_integrations`/`courier_shipments` (migration `20260902000000`) |
 | Diagnostic scripts (Woo keys, E2E) | `.tmp/check-woo-webhooks.cjs`, `.tmp/e2e-variation-stock-test.cjs`, `.tmp/sig-3way-test.cjs`, `.tmp/verify-auth.cjs`, `.tmp/drain-once.cjs` |
 
 *End of handoff document.*

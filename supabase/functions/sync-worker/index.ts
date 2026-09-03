@@ -206,6 +206,28 @@ Deno.serve(async (req: Request) => {
               const text = await res.text();
               throw new Error(`woo-push responded ${res.status}: ${text}`);
             }
+          } else if (item.action === "courier_dispatch" || item.action === "courier_track_batch") {
+            // Revamp 2.3: courier actions route to pathao-courier (the only
+            // adapter today) instead of woo-push. Payload carries the
+            // pathao-courier action + its params; service-role bearer
+            // authenticates.
+            const res = await fetch(`${supabaseUrl}/functions/v1/pathao-courier`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${serviceKey}`,
+              },
+              body: JSON.stringify({
+                action: item.payload?.courier_action ||
+                  (item.action === "courier_dispatch" ? "create_bulk" : "track_all"),
+                ...item.payload,
+              }),
+            });
+
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(`pathao-courier responded ${res.status}: ${text}`);
+            }
           } else {
             // Never report work done that was never attempted. An unrecognised
             // action used to fall straight through to the "completed" update
