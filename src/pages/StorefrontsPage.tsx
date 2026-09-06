@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ExternalLink, Loader2, Plus, Trash2, Star, ChevronUp, ChevronDown, Store as StoreIcon, Globe } from "lucide-react";
+import { ExternalLink, Loader2, Plus, Trash2, Star, ChevronUp, ChevronDown, Store as StoreIcon, Globe, Sparkles } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { invalidateSlugCache } from "@/storefront/lib/brand";
 
@@ -35,6 +35,14 @@ interface Storefront {
 interface SfProduct {
   id: string; product_id: string; position: number; is_featured: boolean; badge: string;
   product?: { id: string; name: string; price: number; image_url: string | null; stock_quantity: number };
+}
+
+/** Content returned by the generate-storefront-content edge function */
+interface GeneratedContent {
+  hero_title: string;
+  hero_subtitle: string;
+  about_md: string;
+  policies: { shipping: string; returns: string; privacy: string };
 }
 
 export default function StorefrontsPage() {
@@ -109,6 +117,17 @@ function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Stor
     }));
   }
 
+  /** Fill the form with AI-generated content (nothing is saved until Save changes). */
+  function applyGenerated(c: GeneratedContent) {
+    setForm((f) => ({
+      ...f,
+      hero_title: c.hero_title || f.hero_title,
+      hero_subtitle: c.hero_subtitle || f.hero_subtitle,
+      about_md: c.about_md || f.about_md,
+      policies: { ...(f.policies || {}), ...(c.policies || {}) } as Record<string, string>,
+    }));
+  }
+
   async function save() {
     setSaving(true);
     const { data, error } = await supabase.from("storefronts").update({
@@ -146,6 +165,9 @@ function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Stor
             <TabsTrigger value="products">Products</TabsTrigger>
           </TabsList>
           <TabsContent value="profile" className="space-y-4 pt-4">
+            <div className="flex justify-end">
+              <AiContentDialog sf={sf} onApply={applyGenerated} />
+            </div>
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
               <div className="space-y-1">
@@ -404,6 +426,141 @@ function StoreLink({ sf, onChange }: { sf: Storefront; onChange: (store_id: stri
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function AiContentDialog({ sf, onApply }: { sf: Storefront; onApply: (c: GeneratedContent) => void }) {
+  const [open, setOpen] = useState(false);
+  const [brief, setBrief] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<GeneratedContent | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setBrief("");
+      setResult(null);
+    }
+  }, [open]);
+
+  async function generate() {
+    setLoading(true);
+    try {
+      // Product names give the model concrete things to write about
+      const { data: rows } = await supabase
+        .from("storefront_products")
+        .select("products(name)")
+        .eq("storefront_id", sf.id)
+        .limit(8);
+      const productNames = ((rows || []) as Array<{ products?: { name?: string } | null }>)
+        .map((r) => r.products?.name || "")
+        .filter(Boolean);
+
+      const { data, error } = await supabase.functions.invoke("generate-storefront-content", {
+        body: {
+          name: sf.name,
+          theme: sf.theme,
+          accent_hex: sf.accent_hex,
+          brief: brief.trim() || undefined,
+          product_names: productNames,
+        },
+      });
+      if (error) throw new Error(error.message);
+      const content = (data as { content?: GeneratedContent })?.content;
+      if (!content) throw new Error("No content returned");
+      setResult(content);
+    } catch (e) {
+      toast({
+        title: "Generation failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2">
+          <Sparkles className="h-4 w-4" /> Generate with AI
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[640px]">
+        <DialogHeader>
+          <DialogTitle>Generate storefront content with AI</DialogTitle>
+          <DialogDescription>
+            Drafts hero copy, an About page and policies for {sf.name}. Nothing is saved until you
+            apply it and press Save changes.
+          </DialogDescription>
+        </DialogHeader>
+        {!result ? (
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="ai-brief">Brief (optional)</Label>
+              <Textarea
+                id="ai-brief"
+                rows={3}
+                value={brief}
+                onChange={(e) => setBrief(e.target.value)}
+                placeholder="e.g. Luxury Eid capsule for Dhaka — muted tones, handwoven fabrics"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button type="button" onClick={generate} disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {loading ? "Generating…" : "Generate"}
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="grid gap-4 py-2">
+            <div className="space-y-3 max-h-[50vh] overflow-auto pr-1 text-sm">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-muted-foreground">Hero title</div>
+                <div className="text-base font-medium">{result.hero_title}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wider text-muted-foreground">Hero subtitle</div>
+                <div>{result.hero_subtitle}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wider text-muted-foreground">About</div>
+                <pre className="whitespace-pre-wrap font-sans text-muted-foreground">{result.about_md}</pre>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Shipping</div>
+                  <pre className="whitespace-pre-wrap font-sans text-muted-foreground">{result.policies.shipping}</pre>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Returns</div>
+                  <pre className="whitespace-pre-wrap font-sans text-muted-foreground">{result.policies.returns}</pre>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Privacy</div>
+                  <pre className="whitespace-pre-wrap font-sans text-muted-foreground">{result.policies.privacy}</pre>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setResult(null)}>Regenerate</Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  onApply(result);
+                  setOpen(false);
+                  toast({ title: "Applied to form", description: "Review the fields and press Save changes." });
+                }}
+              >
+                Apply to form
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
