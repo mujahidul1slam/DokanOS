@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler,
   Building2, Hash, Hourglass, Search, ChevronRight, ArrowLeft, X,
+  Palette, User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -20,11 +21,15 @@ import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
+import BusinessAccountTab from "@/components/settings/BusinessAccountTab";
+import BrandSettingsTab from "@/components/settings/BrandSettingsTab";
+import ProfileSettingsTab from "@/components/settings/ProfileSettingsTab";
 import PreOrdersSettingsTab from "@/components/settings/PreOrdersSettingsTab";
 import InstallAppButton from "@/components/InstallAppButton";
 import { setGlobalStockEnabled, useGlobalStockEnabled } from "@/lib/stockSettings";
 
 type TabId =
+  | "profile" | "account" | "brands"
   | "general" | "inventory" | "pos" | "orders"
   | "preorders" | "measurements" | "invoice" | "sources" | "audit";
 
@@ -44,6 +49,15 @@ type GroupDef = {
 };
 
 const groups: GroupDef[] = [
+  {
+    id: "account",
+    label: "Account",
+    tabs: [
+      { id: "profile", label: "My Profile", icon: User, description: "Your name, photo, password and session", keywords: "profile user personal account name avatar photo password email sign out" },
+      { id: "account", label: "Business Account", icon: Building2, description: "Active business details, contact and currency", keywords: "business organization company currency timezone address logo contact phone email" },
+      { id: "brands", label: "Brand Settings", icon: Palette, description: "Selling identities under this business", keywords: "brand identity logo slug active woo store" },
+    ],
+  },
   {
     id: "business",
     label: "Business",
@@ -97,7 +111,7 @@ const SettingsPage = () => {
 
   // On desktop, default to first tab if none selected
   useEffect(() => {
-    if (!isMobile && activeTab === null) setActiveTab("general");
+    if (!isMobile && activeTab === null) setActiveTab(groups[0].tabs[0].id);
   }, [isMobile, activeTab]);
 
   // Business settings
@@ -134,6 +148,9 @@ const SettingsPage = () => {
 
   const renderContent = (id: TabId) => {
     switch (id) {
+      case "profile": return <ProfileSettingsTab />;
+      case "account": return <BusinessAccountTab />;
+      case "brands": return <BrandSettingsTab />;
       case "general":
         return (
           <div className="space-y-4">

@@ -35,10 +35,11 @@ async function upsertShipmentRow(
     raw_status?: string | null;
     canonical_status?: string | null;
     last_tracked_at?: string | null;
+    cancelled_at?: string | null;
   },
 ): Promise<void> {
   try {
-    const { error } = await sb.from("courier_shipments").upsert({
+    const payload: Record<string, any> = {
       order_id: row.order_id,
       provider: "pathao",
       integration_id: row.integration_id && row.integration_id !== "env" ? row.integration_id : null,
@@ -46,7 +47,11 @@ async function upsertShipmentRow(
       raw_status: row.raw_status ?? null,
       canonical_status: row.canonical_status ?? null,
       last_tracked_at: row.last_tracked_at ?? new Date().toISOString(),
-    }, { onConflict: "provider,consignment_id" });
+    };
+    if (row.cancelled_at !== undefined) {
+      payload.cancelled_at = row.cancelled_at;
+    }
+    const { error } = await sb.from("courier_shipments").upsert(payload, { onConflict: "provider,consignment_id" });
     if (error) console.warn(`[pathao-courier] courier_shipments upsert warn: ${error.message}`);
   } catch (e: unknown) {
     console.warn(`[pathao-courier] courier_shipments upsert failed: ${(e as Error)?.message || e}`);
@@ -243,6 +248,28 @@ async function pathaoPost(token: string, path: string, body: unknown) {
     );
   }
   return data;
+}
+
+async function cancelPathaoOrder(token: string, consignmentId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/orders/${consignmentId}/cancel`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.type === "error" || data?.type === "validation_error") {
+      const errMsg = data?.message || data?.errors || data?.error || JSON.stringify(data) || `HTTP ${res.status}`;
+      return { success: false, error: typeof errMsg === "object" ? JSON.stringify(errMsg) : String(errMsg) };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || String(err) };
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -806,7 +833,7 @@ Deno.serve(async (req: Request) => {
       }
 
       case "attach_parcel": {
-        const { order_id, consignment_id: newConsignmentId, replace } = params;
+        const { order_id, consignment_id: newConsignmentId, replace, add_new, force } = params;
 
         // --- Validate inputs ---
         if (!order_id || !newConsignmentId) {
@@ -827,7 +854,7 @@ Deno.serve(async (req: Request) => {
         // --- Load the target order ---
         const { data: targetOrder, error: orderErr } = await sb
           .from("orders")
-          .select("id, consignment_id, status, tracking_status, order_number, store_id, woo_order_id")
+          .select("id, consignment_id, status, tracking_status, order_number, store_id, woo_order_id, pathao_integration_id")
           .eq("id", order_id)
           .maybeSingle();
         if (orderErr || !targetOrder) {
@@ -837,44 +864,93 @@ Deno.serve(async (req: Request) => {
           );
         }
 
-        // --- Handle existing consignment (replace mode) ---
+        // --- Handle existing consignment (replace vs add_new) ---
         const oldConsignment = targetOrder.consignment_id;
+        let cancelRes: { success: boolean; error?: string } = { success: false };
+
         if (oldConsignment) {
-          if (!replace) {
+          if (!replace && !add_new) {
             return new Response(
               JSON.stringify({
-                error: `Order #${targetOrder.order_number} already has consignment ${oldConsignment}. Set "replace": true to detach and attach the new one.`,
+                error: `Order #${targetOrder.order_number} already has consignment ${oldConsignment}.`,
                 existing_consignment_id: oldConsignment,
+                has_existing: true,
               }),
               { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
             );
           }
-          // Log the detachment before overwriting
-          await sb.from("order_timeline").insert({
-            order_id,
-            event: "parcel_detached",
-            description: `Previous Pathao parcel detached. Old consignment: ${oldConsignment}`,
-            metadata: {
-              old_consignment_id: oldConsignment,
-              old_tracking_status: targetOrder.tracking_status,
+
+          if (replace) {
+            // Overwrite mode: cancel previous active parcel on Pathao and mark cancelled in courier_shipments
+            let oldToken = token;
+            const { data: oldShipment } = await sb
+              .from("courier_shipments")
+              .select("id, integration_id")
+              .eq("order_id", order_id)
+              .eq("consignment_id", oldConsignment)
+              .maybeSingle();
+
+            const oldIntegId = oldShipment?.integration_id || targetOrder.pathao_integration_id;
+            if (oldIntegId && oldIntegId !== creds.id) {
+              try {
+                const oldCreds = await loadIntegration(sb, oldIntegId);
+                oldToken = await getAccessToken(oldCreds);
+              } catch (e) {
+                console.warn("Could not load credentials for previous integration:", e);
+              }
+            }
+
+            cancelRes = await cancelPathaoOrder(oldToken, oldConsignment);
+            if (!cancelRes.success && !force) {
+              return new Response(
+                JSON.stringify({
+                  error: `Could not cancel previous parcel ${oldConsignment} on Pathao: ${cancelRes.error}`,
+                  pathao_failed: true,
+                  reason: cancelRes.error,
+                  consignment_id: oldConsignment,
+                }),
+                { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+              );
+            }
+
+            const cancelNow = new Date().toISOString();
+            await sb.from("courier_shipments").update({
+              cancelled_at: cancelNow,
+              canonical_status: "cancelled",
+              raw_status: "Cancelled",
+            }).eq("order_id", order_id).eq("consignment_id", oldConsignment);
+
+            // Log the cancellation and detachment before overwriting
+            await sb.from("order_timeline").insert({
+              order_id,
+              event: "parcel_detached",
+              description: `Previous Pathao parcel ${oldConsignment} cancelled${cancelRes.success ? " on Pathao" : " locally (Pathao API cancel failed/forced)"} and replaced with ${cid}.`,
+              metadata: {
+                old_consignment_id: oldConsignment,
+                old_tracking_status: targetOrder.tracking_status,
+                pathao_cancel_success: cancelRes.success,
+                pathao_cancel_error: cancelRes.error || null,
+                user_id: callerId,
+                user_email: callerEmail,
+                user_name: callerName,
+              },
+            });
+            await sb.from("audit_log").insert({
               user_id: callerId,
               user_email: callerEmail,
-              user_name: callerName,
-            },
-          });
-          await sb.from("audit_log").insert({
-            user_id: callerId,
-            user_email: callerEmail,
-            action: "parcel_detached",
-            entity_type: "order",
-            entity_id: order_id,
-            details: {
-              old_consignment_id: oldConsignment,
-              old_tracking_status: targetOrder.tracking_status,
-              new_consignment_id: cid,
-              courier: "pathao",
-            },
-          });
+              action: "parcel_detached",
+              entity_type: "order",
+              entity_id: order_id,
+              details: {
+                old_consignment_id: oldConsignment,
+                old_tracking_status: targetOrder.tracking_status,
+                new_consignment_id: cid,
+                pathao_cancel_success: cancelRes.success,
+                pathao_cancel_error: cancelRes.error || null,
+                courier: "pathao",
+              },
+            });
+          }
         }
 
         // --- Check no OTHER order already uses this consignment ---
@@ -944,20 +1020,22 @@ Deno.serve(async (req: Request) => {
           raw_status: liveStatus,
           canonical_status: canonicalStatusFor(liveStatus) || null,
           last_tracked_at: now,
+          cancelled_at: null,
         });
 
         // --- Timeline entry ---
-        const verb = oldConsignment ? "replaced" : "attached";
+        const verb = replace ? "replaced" : (add_new ? "added" : (oldConsignment ? "replaced" : "attached"));
         await sb.from("order_timeline").insert({
           order_id,
           event: "dispatched",
-          description: `Pathao parcel ${verb} manually. Consignment: ${cid}. Current status: ${liveStatus}`,
+          description: `Pathao parcel ${verb} manually. Consignment: ${cid}. Current status: ${liveStatus}${oldConsignment && add_new ? ` (Previous active consignment: ${oldConsignment})` : ""}`,
           metadata: {
             consignment_id: cid,
             tracking_status: liveStatus,
             mapped_status: mappedStatus,
             integration_id: creds.id,
-            replaced_from: oldConsignment || null,
+            replaced_from: replace ? (oldConsignment || null) : null,
+            previous_consignment_id: add_new ? (oldConsignment || null) : null,
             user_id: callerId,
             user_email: callerEmail,
             user_name: callerName,
@@ -976,7 +1054,8 @@ Deno.serve(async (req: Request) => {
             tracking_status: liveStatus,
             mapped_status: mappedStatus,
             integration_id: creds.id,
-            replaced_from: oldConsignment || null,
+            replaced_from: replace ? (oldConsignment || null) : null,
+            previous_consignment_id: add_new ? (oldConsignment || null) : null,
             courier: "pathao",
           },
         });
@@ -991,7 +1070,170 @@ Deno.serve(async (req: Request) => {
           consignment_id: cid,
           tracking_status: liveStatus,
           mapped_status: mappedStatus,
-          replaced_from: oldConsignment || null,
+          replaced_from: replace ? (oldConsignment || null) : null,
+          previous_consignment_id: add_new ? (oldConsignment || null) : null,
+        };
+        break;
+      }
+
+      case "delete_courier_entry": {
+        const { order_id, shipment_id, consignment_id: reqCid, force } = params;
+
+        if (!order_id || (!shipment_id && !reqCid)) {
+          return new Response(
+            JSON.stringify({ error: "order_id and shipment_id (or consignment_id) are required" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // Load target shipment
+        let q = sb.from("courier_shipments").select("*").eq("order_id", order_id);
+        if (shipment_id) {
+          q = q.eq("id", shipment_id);
+        } else {
+          q = q.eq("consignment_id", reqCid);
+        }
+        const { data: shipment, error: shipErr } = await q.maybeSingle();
+
+        if (shipErr || !shipment) {
+          return new Response(
+            JSON.stringify({ error: `Courier entry not found: ${shipErr?.message || shipment_id || reqCid}` }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        if (shipment.cancelled_at) {
+          return new Response(
+            JSON.stringify({ error: `Courier entry ${shipment.consignment_id} is already cancelled` }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // Attempt Pathao cancellation via API
+        let cancelToken = token;
+        if (shipment.integration_id && shipment.integration_id !== creds.id) {
+          try {
+            const shipCreds = await loadIntegration(sb, shipment.integration_id);
+            cancelToken = await getAccessToken(shipCreds);
+          } catch (e) {
+            console.warn("Could not load creds for shipment integration:", e);
+          }
+        }
+
+        const cancelRes = await cancelPathaoOrder(cancelToken, shipment.consignment_id);
+        if (!cancelRes.success && !force) {
+          return new Response(
+            JSON.stringify({
+              error: `Failed to cancel parcel ${shipment.consignment_id} on Pathao: ${cancelRes.error}`,
+              pathao_failed: true,
+              reason: cancelRes.error,
+              consignment_id: shipment.consignment_id,
+            }),
+            { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        const now = new Date().toISOString();
+
+        // Soft-cancel the shipment row
+        const { error: updShipErr } = await sb.from("courier_shipments").update({
+          cancelled_at: now,
+          canonical_status: "cancelled",
+          raw_status: "Cancelled",
+        }).eq("id", shipment.id);
+
+        if (updShipErr) {
+          return new Response(
+            JSON.stringify({ error: `Failed to update shipment: ${updShipErr.message}` }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // Check if this was the active consignment on the order
+        const { data: order } = await sb
+          .from("orders")
+          .select("id, consignment_id, status, tracking_status")
+          .eq("id", order_id)
+          .single();
+
+        let nextActiveConsignment: string | null = null;
+        if (order && order.consignment_id === shipment.consignment_id) {
+          // Find next active (non-cancelled) shipment
+          const { data: nextActive } = await sb
+            .from("courier_shipments")
+            .select("consignment_id, raw_status, canonical_status, integration_id")
+            .eq("order_id", order_id)
+            .is("cancelled_at", null)
+            .neq("id", shipment.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (nextActive) {
+            nextActiveConsignment = nextActive.consignment_id;
+            const mapped = mapPathaoStatus(nextActive.raw_status) || "shipped";
+            await sb.from("orders").update({
+              consignment_id: nextActive.consignment_id,
+              tracking_status: nextActive.raw_status,
+              pathao_integration_id: nextActive.integration_id,
+              status: mapped,
+              last_tracked_at: now,
+            }).eq("id", order_id);
+          } else {
+            // No active shipments remaining
+            await sb.from("orders").update({
+              consignment_id: null,
+              tracking_status: null,
+              pathao_integration_id: null,
+              status: order.status === "shipped" ? "processing" : order.status,
+            }).eq("id", order_id);
+          }
+        }
+
+        // Order timeline
+        await sb.from("order_timeline").insert({
+          order_id,
+          event: "parcel_cancelled",
+          description: `Courier entry ${shipment.consignment_id} deleted/cancelled${cancelRes.success ? " on Pathao" : " locally (Pathao API cancel failed/forced)"}.${nextActiveConsignment ? ` Active parcel is now ${nextActiveConsignment}.` : " Order now has no active courier parcel."}`,
+          metadata: {
+            consignment_id: shipment.consignment_id,
+            shipment_id: shipment.id,
+            pathao_cancel_success: cancelRes.success,
+            pathao_cancel_error: cancelRes.error || null,
+            next_active_consignment: nextActiveConsignment,
+            user_id: callerId,
+            user_email: callerEmail,
+            user_name: callerName,
+          },
+        });
+
+        // Audit log
+        await sb.from("audit_log").insert({
+          user_id: callerId,
+          user_email: callerEmail,
+          action: "courier_entry_deleted",
+          entity_type: "order",
+          entity_id: order_id,
+          details: {
+            shipment_id: shipment.id,
+            consignment_id: shipment.consignment_id,
+            pathao_cancel_success: cancelRes.success,
+            pathao_cancel_error: cancelRes.error || null,
+            next_active_consignment: nextActiveConsignment,
+          },
+        });
+
+        // Woo note (best-effort)
+        await postWooOrderNote(
+          order_id,
+          `[DokanOS] Courier entry ${shipment.consignment_id} deleted by ${callerName || callerEmail || "system"}.`,
+        );
+
+        result = {
+          success: true,
+          consignment_id: shipment.consignment_id,
+          pathao_cancelled: cancelRes.success,
+          next_active_consignment: nextActiveConsignment,
         };
         break;
       }

@@ -398,6 +398,7 @@ export type Database = {
       }
       courier_shipments: {
         Row: {
+          cancelled_at: string | null
           canonical_status: string | null
           consignment_id: string
           created_at: string
@@ -411,6 +412,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cancelled_at?: string | null
           canonical_status?: string | null
           consignment_id: string
           created_at?: string
@@ -424,6 +426,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cancelled_at?: string | null
           canonical_status?: string | null
           consignment_id?: string
           created_at?: string

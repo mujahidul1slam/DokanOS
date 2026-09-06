@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw, Link2 } from "lucide-react";
+import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw, Link2, Truck, Copy, AlertTriangle, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
@@ -33,6 +33,16 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -115,6 +125,19 @@ interface EditableMeas {
   _sizeLabel?: string | null;
 }
 
+export interface CourierShipmentEntry {
+  id: string;
+  order_id: string;
+  provider: string;
+  consignment_id: string;
+  raw_status: string | null;
+  canonical_status: string | null;
+  dispatched_at: string;
+  last_tracked_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+}
+
 interface Props {
   orderId: string | null;
   open: boolean;
@@ -169,6 +192,76 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   // Attach / Replace Parcel dialog
   const [attachParcelOpen, setAttachParcelOpen] = useState(false);
 
+  // Courier shipments list & actions
+  const [courierShipments, setCourierShipments] = useState<CourierShipmentEntry[]>([]);
+  const [deletingShipment, setDeletingShipment] = useState<CourierShipmentEntry | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deletePathaoFail, setDeletePathaoFail] = useState<{
+    open: boolean;
+    reason: string;
+    shipment: CourierShipmentEntry;
+  } | null>(null);
+  const [copiedCid, setCopiedCid] = useState<string | null>(null);
+
+  const handleDeleteCourierEntry = async (shipment: CourierShipmentEntry, force = false) => {
+    if (!orderId) return;
+    setDeleteLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("pathao-courier", {
+        body: {
+          action: "delete_courier_entry",
+          order_id: orderId,
+          shipment_id: shipment.id.startsWith("legacy-") ? undefined : shipment.id,
+          consignment_id: shipment.consignment_id,
+          force,
+        },
+      });
+
+      if (error) {
+        try {
+          const body = JSON.parse(error.message);
+          if (body?.pathao_failed) {
+            setDeleteConfirmOpen(false);
+            setDeletePathaoFail({
+              open: true,
+              reason: body.reason || body.error || "Cancellation rejected by Pathao",
+              shipment,
+            });
+            return;
+          }
+        } catch {}
+        throw error;
+      }
+
+      if (data?.pathao_failed) {
+        setDeleteConfirmOpen(false);
+        setDeletePathaoFail({
+          open: true,
+          reason: data.reason || data.error || "Cancellation rejected by Pathao",
+          shipment,
+        });
+        return;
+      }
+
+      if (data?.error) throw new Error(data.error);
+
+      toast.success(
+        `Courier entry ${shipment.consignment_id} deleted${data?.pathao_cancelled ? " and cancelled on Pathao" : ""}.`
+      );
+
+      setDeleteConfirmOpen(false);
+      setDeletingShipment(null);
+      setDeletePathaoFail(null);
+      load();
+      onSaved?.();
+    } catch (err: any) {
+      toast.error(`Failed to delete courier entry: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const openExchange = useCallback(async () => {
     if (!order) return;
     const { data } = await supabase
@@ -206,7 +299,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const load = useCallback(async () => {
     if (!orderId) return;
     setLoading(true);
-    const [orderRes, itemsRes, timelineRes, paymentsRes, measRes] = await Promise.all([
+    const [orderRes, itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
       supabase
         .from("orders")
         .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, location_id, selling_point_id, stores(url, name)")
@@ -230,6 +323,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .from("order_item_measurements" as any)
         .select("id, order_item_id, group_name, display_format, unit, values, notes, source")
         .eq("order_id", orderId),
+      supabase
+        .from("courier_shipments")
+        .select("id, order_id, provider, consignment_id, raw_status, canonical_status, dispatched_at, last_tracked_at, cancelled_at, created_at")
+        .eq("order_id", orderId)
+        .order("created_at", { ascending: false }),
     ]);
 
     const o = orderRes.data as unknown as OrderDetail | null;
@@ -247,6 +345,23 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setFulfillmentType(o.fulfillment_type || "delivery");
       setPaymentMethod(o.payment_method || "");
       setLocationId((o as { location_id?: string | null }).location_id || "");
+
+      const shipments = (shipmentsRes.data as CourierShipmentEntry[]) || [];
+      if (o.consignment_id && !shipments.some(s => s.consignment_id === o.consignment_id)) {
+        shipments.unshift({
+          id: `legacy-${o.consignment_id}`,
+          order_id: orderId,
+          provider: "pathao",
+          consignment_id: o.consignment_id,
+          raw_status: o.tracking_status,
+          canonical_status: null,
+          dispatched_at: o.created_at,
+          last_tracked_at: null,
+          cancelled_at: null,
+          created_at: o.created_at,
+        });
+      }
+      setCourierShipments(shipments);
     }
 
     // Phase 3: locations for the order's brand (via store linkage) for the
@@ -1016,12 +1131,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     Pathao: {order.consignment_id}
                     <ExternalLink className="h-3 w-3" />
                   </a>
+                  {courierShipments.length > 1 && (
+                    <span className="ml-1 text-[11px] text-muted-foreground">
+                      ({courierShipments.filter(s => !s.cancelled_at).length} active, {courierShipments.length} total)
+                    </span>
+                  )}
                   {canAttachCourier && (
                     <button
                       onClick={() => setAttachParcelOpen(true)}
                       className="ml-2 text-xs text-muted-foreground hover:text-primary underline"
                     >
-                      Replace
+                      Add / Replace
                     </button>
                   )}
                 </>
@@ -1222,6 +1342,181 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       </div>
                     )}
                   </div>
+                </section>
+
+                <Separator />
+
+                {/* Courier Entries Section */}
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Truck className="h-4 w-4 text-primary" />
+                      <h3 className="text-sm font-semibold text-foreground">Courier Entries</h3>
+                      <Badge variant="outline" className="text-xs">
+                        {courierShipments.filter((s) => !s.cancelled_at).length} active
+                        {courierShipments.some((s) => s.cancelled_at) && ` · ${courierShipments.length} total`}
+                      </Badge>
+                    </div>
+                    {canAttachCourier && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAttachParcelOpen(true)}
+                        className="h-8 gap-1.5 text-xs"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {courierShipments.length > 0 ? "Add Courier Entry" : "Attach Parcel"}
+                      </Button>
+                    )}
+                  </div>
+
+                  {courierShipments.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border p-4 text-center space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        No courier entries attached to this order yet.
+                      </p>
+                      {canAttachCourier && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setAttachParcelOpen(true)}
+                          className="h-7 text-xs gap-1.5"
+                        >
+                          <Link2 className="h-3.5 w-3.5" />
+                          Attach Pathao Parcel
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {courierShipments.map((shipment) => {
+                        const isCancelled = !!shipment.cancelled_at;
+                        const isPrimary = order?.consignment_id === shipment.consignment_id && !isCancelled;
+                        const trackingUrl = `https://merchant.pathao.com/tracking?consignment_id=${shipment.consignment_id}`;
+
+                        return (
+                          <div
+                            key={shipment.id}
+                            className={`rounded-lg border p-3 transition-colors ${
+                              isCancelled
+                                ? "border-dashed border-border/70 bg-muted/20 opacity-75"
+                                : isPrimary
+                                ? "border-primary/40 bg-primary/[0.03] shadow-sm"
+                                : "border-border bg-card"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1.5 flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="secondary" className="capitalize text-[10px] font-medium h-5">
+                                    {shipment.provider || "Pathao"}
+                                  </Badge>
+
+                                  <div className="flex items-center gap-1.5 font-mono text-sm font-semibold">
+                                    <a
+                                      href={trackingUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-primary hover:underline"
+                                      title="Open Pathao Tracking"
+                                    >
+                                      {shipment.consignment_id}
+                                      <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(shipment.consignment_id);
+                                        setCopiedCid(shipment.consignment_id);
+                                        toast.success("Consignment ID copied");
+                                        setTimeout(() => setCopiedCid(null), 2000);
+                                      }}
+                                      className="text-muted-foreground hover:text-foreground p-0.5"
+                                      title="Copy Consignment ID"
+                                    >
+                                      {copiedCid === shipment.consignment_id ? (
+                                        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                                      ) : (
+                                        <Copy className="h-3 w-3" />
+                                      )}
+                                    </button>
+                                  </div>
+
+                                  {isPrimary && (
+                                    <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] h-5">
+                                      Active / Primary
+                                    </Badge>
+                                  )}
+
+                                  {isCancelled ? (
+                                    <Badge variant="destructive" className="text-[10px] h-5">
+                                      Cancelled
+                                    </Badge>
+                                  ) : (
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-[10px] h-5 ${
+                                        shipment.canonical_status === "delivered"
+                                          ? "border-emerald-500/30 text-emerald-500 bg-emerald-500/10"
+                                          : shipment.canonical_status === "in_transit" || shipment.canonical_status === "out_for_delivery"
+                                          ? "border-sky-500/30 text-sky-500 bg-sky-500/10"
+                                          : shipment.canonical_status === "returned" || shipment.canonical_status === "lost"
+                                          ? "border-rose-500/30 text-rose-500 bg-rose-500/10"
+                                          : "border-amber-500/30 text-amber-500 bg-amber-500/10"
+                                      }`}
+                                    >
+                                      {shipment.raw_status || shipment.canonical_status || "Pending"}
+                                    </Badge>
+                                  )}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                  <span>
+                                    Dispatched:{" "}
+                                    <strong className="text-foreground font-normal">
+                                      {format(new Date(shipment.dispatched_at || shipment.created_at), "MMM d, yyyy · h:mm a")}
+                                    </strong>
+                                  </span>
+                                  {shipment.last_tracked_at && (
+                                    <span>
+                                      Last tracked:{" "}
+                                      <strong className="text-foreground font-normal">
+                                        {format(new Date(shipment.last_tracked_at), "MMM d, h:mm a")}
+                                      </strong>
+                                    </span>
+                                  )}
+                                  {isCancelled && shipment.cancelled_at && (
+                                    <span className="text-destructive">
+                                      Cancelled: {format(new Date(shipment.cancelled_at), "MMM d, yyyy · h:mm a")}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {!isCancelled && canAttachCourier && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setDeletingShipment(shipment);
+                                    setDeleteConfirmOpen(true);
+                                  }}
+                                  className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                                  title="Delete or cancel this courier entry"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                                  <span className="text-xs">Delete</span>
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </section>
 
                 <Separator />
@@ -1698,9 +1993,80 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           orderId={order.id}
           orderNumber={order.order_number}
           existingConsignmentId={order.consignment_id}
+          existingEntryCount={courierShipments.filter((s) => !s.cancelled_at).length}
           onAttached={() => { load(); onSaved?.(); }}
         />
       )}
+
+      {/* Delete Courier Entry Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              <AlertDialogTitle>Delete Courier Entry</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="space-y-2 pt-2">
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to delete courier entry{" "}
+                <strong className="font-mono text-foreground">{deletingShipment?.consignment_id}</strong>?
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This will call the Pathao API to cancel the parcel and mark it as cancelled in DokanOS.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteLoading}
+              onClick={() => deletingShipment && handleDeleteCourierEntry(deletingShipment, false)}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {deleteLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              Cancel on Pathao & Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Pathao Cancellation Failed Dialog (with Force Cancel option) */}
+      <AlertDialog
+        open={!!deletePathaoFail?.open}
+        onOpenChange={(open) => !open && setDeletePathaoFail(null)}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              <AlertDialogTitle>Pathao Cancellation Failed</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="space-y-2 pt-2">
+              <p className="text-sm text-muted-foreground">
+                Pathao refused to cancel parcel{" "}
+                <strong className="font-mono text-foreground">{deletePathaoFail?.shipment.consignment_id}</strong>:
+              </p>
+              <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2.5 text-xs text-destructive font-mono">
+                {deletePathaoFail?.reason}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Do you want to mark this entry cancelled and detach it locally in DokanOS anyway?
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteLoading}>Abort</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteLoading}
+              onClick={() => deletePathaoFail?.shipment && handleDeleteCourierEntry(deletePathaoFail.shipment, true)}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {deleteLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              Force Delete Locally
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   );
 }
