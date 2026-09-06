@@ -11,12 +11,20 @@ import ProductCard from "../components/ProductCard";
  * Determine the homepage layout style based on the storefront's `theme` field.
  * - "editorial" or legacy "enveil" → light editorial magazine layout
  * - "cinematic" or legacy "vincent" → dark cinematic layout
+ * - "minimal" → stark typographic grid-first layout
+ * - "warm" → rounded glass banner layout with a story feel
  * - default → editorial layout
  */
-function getLayoutStyle(theme: string): "editorial" | "cinematic" {
+function getLayoutStyle(theme: string): "editorial" | "cinematic" | "minimal" | "warm" {
   const t = theme.toLowerCase();
   if (t === "cinematic" || t === "vincent" || t.includes("dark") || t.includes("cinematic")) {
     return "cinematic";
+  }
+  if (t === "minimal" || t.includes("minimal")) {
+    return "minimal";
+  }
+  if (t === "warm" || t.includes("warm")) {
+    return "warm";
   }
   return "editorial";
 }
@@ -134,6 +142,110 @@ export default function Home() {
             {grid.map((p) => <ProductCard key={p.id} p={p} />)}
           </div>
         </section>
+        )}
+      </div>
+    );
+  }
+
+  // Minimal layout — stark, typographic, grid-first (no glass / liquid bg)
+  if (layout === "minimal") {
+    return (
+      <div>
+        <section className="border-b border-border">
+          <div className="max-w-6xl mx-auto px-4 lg:px-8 py-20 text-center">
+            <p className="text-xs uppercase tracking-[0.35em] text-muted-foreground mb-6">{storefront.name}</p>
+            <h1 className="text-5xl md:text-6xl font-light tracking-tight mb-6">
+              {storefront.hero_title || `Welcome to ${storefront.name}`}
+            </h1>
+            <p className="text-muted-foreground max-w-xl mx-auto mb-10 leading-relaxed">
+              {storefront.hero_subtitle}
+            </p>
+            <Link
+              to={`${brandBasePath(brand)}/shop`}
+              className="text-sm underline underline-offset-8 hover:text-primary transition"
+            >
+              Shop the collection
+            </Link>
+          </div>
+        </section>
+
+        {products.length === 0 ? (
+          <section className="max-w-2xl mx-auto px-4 py-24 text-center">
+            <h2 className="text-xl font-medium mb-3">Coming soon</h2>
+            <p className="text-sm text-muted-foreground">The first pieces are being prepared.</p>
+          </section>
+        ) : (
+          <section className="max-w-6xl mx-auto px-4 lg:px-8 py-16">
+            <div className="flex items-baseline justify-between border-b border-border pb-4 mb-10">
+              <h2 className="text-lg font-medium">Latest</h2>
+              <Link
+                to={`${brandBasePath(brand)}/shop`}
+                className="text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition"
+              >
+                View all
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-10">
+              {grid.map((p) => <ProductCard key={p.id} p={p} />)}
+            </div>
+          </section>
+        )}
+      </div>
+    );
+  }
+
+  // Warm layout — rounded banner with side visual, story-forward
+  if (layout === "warm") {
+    return (
+      <div>
+        <section className="max-w-6xl mx-auto px-4 lg:px-8 pt-12 pb-20">
+          <div className="sf-glass overflow-hidden grid lg:grid-cols-2 rounded-3xl">
+            <div className="p-10 lg:p-14 flex flex-col justify-center">
+              <div className="text-xs uppercase tracking-[0.25em] text-primary mb-4">{storefront.name}</div>
+              <h1 className="sf-display text-5xl md:text-6xl mb-6">
+                {storefront.hero_title || `Welcome to ${storefront.name}`}
+              </h1>
+              <p className="text-lg text-muted-foreground mb-8 leading-relaxed">{storefront.hero_subtitle}</p>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  to={`${brandBasePath(brand)}/shop`}
+                  className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition text-sm"
+                >
+                  Shop new arrivals <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link
+                  to={`${brandBasePath(brand)}/about`}
+                  className="inline-flex items-center px-7 py-3.5 rounded-full border border-border hover:border-primary transition text-sm"
+                >
+                  Our story
+                </Link>
+              </div>
+            </div>
+            <div className="min-h-[320px] bg-muted">
+              {heroImg && (
+                <img src={heroImg} alt={storefront.name} className="h-full w-full object-cover" />
+              )}
+            </div>
+          </div>
+        </section>
+
+        {products.length === 0 ? (
+          <section className="max-w-2xl mx-auto px-4 py-24 text-center">
+            <h2 className="sf-display text-3xl mb-3">Collection coming soon</h2>
+            <p className="text-muted-foreground">New pieces are being prepared with care.</p>
+          </section>
+        ) : (
+          <section className="max-w-7xl mx-auto px-4 lg:px-8 pb-24">
+            <div className="flex items-end justify-between mb-10">
+              <h2 className="sf-display text-3xl md:text-4xl">Newly arrived</h2>
+              <Link to={`${brandBasePath(brand)}/shop`} className="text-sm underline underline-offset-4">
+                View all
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+              {grid.map((p) => <ProductCard key={p.id} p={p} />)}
+            </div>
+          </section>
         )}
       </div>
     );
