@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { type BrandSlug, type Storefront, loadStorefront } from "./lib/brand";
+import { computeAccentVars, activeBackgroundLightness } from "./lib/theme";
 
 interface Ctx {
   brand: BrandSlug;
@@ -29,6 +30,7 @@ export function BrandProvider({ brand, children }: { brand: BrandSlug; children:
 
   // Set data-theme attribute when storefront loads (drives CSS themes)
   useEffect(() => {
+    const applied: string[] = [];
     if (sf) {
       const theme = sf.theme || brand;
       document.documentElement.setAttribute("data-theme", theme);
@@ -36,9 +38,20 @@ export function BrandProvider({ brand, children }: { brand: BrandSlug; children:
         ? `${sf.name} — ${sf.hero_title}`
         : sf.name;
 
-      // Inject accent color as a CSS custom property
+      // Accent color: expose the raw hex AND recolor the HSL tokens so the
+      // operator's pick actually recolors the storefront (lib/theme.ts holds
+      // the visibility safety rules).
       if (sf.accent_hex) {
         document.documentElement.style.setProperty("--sf-accent-hex", sf.accent_hex);
+        applied.push("--sf-accent-hex");
+
+        const vars = computeAccentVars(sf.accent_hex, activeBackgroundLightness());
+        if (vars) {
+          for (const [name, value] of Object.entries(vars)) {
+            document.documentElement.style.setProperty(name, value);
+            applied.push(name);
+          }
+        }
       }
 
       // Set favicon if configured
@@ -54,7 +67,7 @@ export function BrandProvider({ brand, children }: { brand: BrandSlug; children:
     }
     return () => {
       document.documentElement.removeAttribute("data-theme");
-      document.documentElement.style.removeProperty("--sf-accent-hex");
+      applied.forEach((name) => document.documentElement.style.removeProperty(name));
     };
   }, [sf, brand]);
 

@@ -12,6 +12,11 @@
   --sf-shadow-glow: 0 20px 80px -20px hsl(var(--sf-accent) / 0.4);
 }
 
+/* Operator-picked accent colors (storefronts.accent_hex) are applied at runtime
+   as inline CSS vars on <html> — see src/storefront/lib/theme.ts. Inline vars
+   win over the per-theme blocks below, so the accent recolors --primary,
+   --ring, --sf-accent, etc. without touching this file. */
+
 /* ============ EDITORIAL THEME (default / enveil) ============ */
 /* Matches: data-theme="editorial" OR data-theme="enveil" OR data-brand="enveil" */
 [data-theme="editorial"],

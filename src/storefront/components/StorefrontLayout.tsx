@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
-import { ReactNode } from "react";
-import { ShoppingBag, Menu } from "lucide-react";
+import { ReactNode, useState } from "react";
+import { ShoppingBag, Menu, X } from "lucide-react";
 import { useBrand } from "../BrandContext";
 import { useCart } from "../lib/cart";
 import { brandBasePath } from "../lib/brand";
@@ -10,6 +10,7 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
   const { count } = useCart(brand);
   const base = brandBasePath(brand);
   const loc = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const nav = [
     { label: "Shop", to: `${base}/shop` },
@@ -22,8 +23,16 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
     <div className="min-h-screen bg-background text-foreground sf-body">
       <header className="sticky top-0 z-50 backdrop-blur-xl bg-background/70 border-b border-border">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-4 lg:px-8 py-4">
-          <Link to={base} className="sf-display text-2xl lg:text-3xl tracking-tight">
-            {storefront.name.toUpperCase()}
+          <Link to={base} className="sf-display text-2xl lg:text-3xl tracking-tight inline-flex items-center gap-2">
+            {storefront.logo_url ? (
+              <img
+                src={storefront.logo_url}
+                alt={storefront.name}
+                className="h-9 w-auto max-h-10 object-contain"
+              />
+            ) : (
+              storefront.name.toUpperCase()
+            )}
           </Link>
           <nav className="hidden md:flex items-center gap-8 text-sm">
             {nav.map((n) => (
@@ -48,7 +57,33 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
               </span>
             )}
           </Link>
+          <button
+            type="button"
+            className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-full border border-border hover:border-primary transition"
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+          >
+            {menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+          </button>
         </div>
+
+        {menuOpen && (
+          <nav className="md:hidden border-t border-border bg-background/95 backdrop-blur-xl">
+            <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col">
+              {nav.map((n) => (
+                <Link
+                  key={n.to}
+                  to={n.to}
+                  onClick={() => setMenuOpen(false)}
+                  className={`py-3 text-sm uppercase tracking-widest ${loc.pathname === n.to ? "text-primary" : "text-foreground/80"}`}
+                >
+                  {n.label}
+                </Link>
+              ))}
+            </div>
+          </nav>
+        )}
       </header>
 
       <main className="relative">{children}</main>

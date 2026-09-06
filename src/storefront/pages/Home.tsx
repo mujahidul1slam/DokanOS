@@ -32,6 +32,8 @@ export default function Home() {
   const hero = featured[0] || products[0];
   const grid = products.slice(0, 8);
   const layout = getLayoutStyle(storefront.theme);
+  // Hero visual: operator-set hero image wins over the featured product image
+  const heroImg = storefront.hero_image_url || hero?.image_urls?.[0] || hero?.image_url || null;
 
   if (layout === "editorial") {
     return (
@@ -59,28 +61,42 @@ export default function Home() {
               </Link>
             </div>
 
-            {hero && (
+            {storefront.hero_image_url ? (
               <div className="lg:col-span-5">
-                <Link
-                  to={`${brandBasePath(brand)}/product/${hero.slug}`}
-                  className="block sf-glass overflow-hidden group"
-                >
+                <div className="sf-glass overflow-hidden">
                   <div className="aspect-[3/4] overflow-hidden bg-muted">
-                    {(hero.image_urls?.[0] || hero.image_url) && (
-                      <img
-                        src={hero.image_urls?.[0] || hero.image_url!}
-                        alt={hero.name}
-                        className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-700"
-                      />
-                    )}
+                    <img
+                      src={storefront.hero_image_url}
+                      alt={storefront.name}
+                      className="h-full w-full object-cover"
+                    />
                   </div>
-                  <div className="p-6">
-                    <div className="text-xs uppercase tracking-widest text-primary mb-2">Featured</div>
-                    <div className="sf-display text-2xl mb-1">{hero.name}</div>
-                    <div className="text-sm text-muted-foreground">{fmtBDT(hero.price)}</div>
-                  </div>
-                </Link>
+                </div>
               </div>
+            ) : (
+              hero && (
+                <div className="lg:col-span-5">
+                  <Link
+                    to={`${brandBasePath(brand)}/product/${hero.slug}`}
+                    className="block sf-glass overflow-hidden group"
+                  >
+                    <div className="aspect-[3/4] overflow-hidden bg-muted">
+                      {(hero.image_urls?.[0] || hero.image_url) && (
+                        <img
+                          src={hero.image_urls?.[0] || hero.image_url!}
+                          alt={hero.name}
+                          className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-700"
+                        />
+                      )}
+                    </div>
+                    <div className="p-6">
+                      <div className="text-xs uppercase tracking-widest text-primary mb-2">Featured</div>
+                      <div className="sf-display text-2xl mb-1">{hero.name}</div>
+                      <div className="text-sm text-muted-foreground">{fmtBDT(hero.price)}</div>
+                    </div>
+                  </Link>
+                </div>
+              )
             )}
           </div>
         </section>
@@ -109,9 +125,9 @@ export default function Home() {
     <div>
       <section className="relative min-h-[92vh] flex items-center justify-center overflow-hidden">
         <div className="sf-liquid-bg" />
-        {hero && (hero.image_urls?.[0] || hero.image_url) && (
+        {heroImg && (
           <img
-            src={hero.image_urls?.[0] || hero.image_url!}
+            src={heroImg}
             alt=""
             className="absolute inset-0 h-full w-full object-cover opacity-40 mix-blend-luminosity"
           />
