@@ -15,6 +15,7 @@ const CheckoutSuccess = lazy(() => import("./pages/CheckoutSuccess"));
 const Track = lazy(() => import("./pages/Track"));
 const About = lazy(() => import("./pages/About"));
 const Contact = lazy(() => import("./pages/Contact"));
+const Policies = lazy(() => import("./pages/Policies"));
 
 const Fallback = () => (
   <div className="flex h-[60vh] items-center justify-center">
@@ -37,6 +38,7 @@ export default function StorefrontApp({ brand, basePath }: { brand: BrandSlug; b
             <Route path={`${basePath}/track`} element={<Track />} />
             <Route path={`${basePath}/about`} element={<About />} />
             <Route path={`${basePath}/contact`} element={<Contact />} />
+            <Route path={`${basePath}/policies`} element={<Policies />} />
             <Route path="*" element={<Navigate to={basePath} replace />} />
           </Routes>
         </Suspense>

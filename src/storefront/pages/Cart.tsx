@@ -2,11 +2,13 @@ import { Link } from "react-router-dom";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { useBrand } from "../BrandContext";
 import { useCart } from "../lib/cart";
-import { brandBasePath, fmtBDT } from "../lib/brand";
+import { brandBasePath } from "../lib/brand";
+import { useCurrency } from "../lib/useCurrency";
 
 export default function Cart() {
   const { brand } = useBrand();
   const { items, update, remove, subtotal } = useCart(brand);
+  const fmt = useCurrency();
 
   if (!items.length) {
     return (
@@ -33,14 +35,14 @@ export default function Cart() {
               <div className="flex-1 min-w-0">
                 <div className="sf-display text-lg truncate">{it.name}</div>
                 {it.variation_label && <div className="text-xs text-muted-foreground">{it.variation_label}</div>}
-                <div className="text-sm text-muted-foreground mt-1">{fmtBDT(it.price)}</div>
+                <div className="text-sm text-muted-foreground mt-1">{fmt(it.price)}</div>
               </div>
               <div className="inline-flex items-center border border-border rounded-full">
                 <button onClick={() => update(it.product_id, it.variation_id, it.quantity - 1)} className="p-2"><Minus className="h-3 w-3" /></button>
                 <span className="w-8 text-center text-sm">{it.quantity}</span>
                 <button onClick={() => update(it.product_id, it.variation_id, it.quantity + 1)} className="p-2"><Plus className="h-3 w-3" /></button>
               </div>
-              <div className="w-24 text-right font-medium">{fmtBDT(it.price * it.quantity)}</div>
+              <div className="w-24 text-right font-medium">{fmt(it.price * it.quantity)}</div>
               <button onClick={() => remove(it.product_id, it.variation_id)} className="p-2 text-muted-foreground hover:text-destructive">
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -51,7 +53,7 @@ export default function Cart() {
           <h2 className="sf-display text-2xl mb-6">Summary</h2>
           <div className="flex justify-between text-sm mb-2">
             <span className="text-muted-foreground">Subtotal</span>
-            <span>{fmtBDT(subtotal)}</span>
+            <span>{fmt(subtotal)}</span>
           </div>
           <div className="flex justify-between text-sm mb-6">
             <span className="text-muted-foreground">Shipping</span>
@@ -59,7 +61,7 @@ export default function Cart() {
           </div>
           <div className="border-t border-border pt-4 mb-6 flex justify-between text-lg">
             <span>Total</span>
-            <span className="font-medium">{fmtBDT(subtotal)}</span>
+            <span className="font-medium">{fmt(subtotal)}</span>
           </div>
           <Link to={`${brandBasePath(brand)}/checkout`} className="block w-full text-center py-4 rounded-full bg-primary text-primary-foreground text-sm uppercase tracking-widest hover:opacity-90 transition">
             Checkout

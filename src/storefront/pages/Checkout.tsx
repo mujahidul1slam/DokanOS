@@ -5,7 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useBrand } from "../BrandContext";
 import { useCart } from "../lib/cart";
-import { brandBasePath, fmtBDT } from "../lib/brand";
+import { brandBasePath } from "../lib/brand";
+import { useCurrency } from "../lib/useCurrency";
 
 interface City { city_id: number; city_name: string; }
 interface Zone { zone_id: number; zone_name: string; city_id: number; }
@@ -15,6 +16,7 @@ export default function Checkout() {
   const navigate = useNavigate();
   const { brand, storefront } = useBrand();
   const { items, subtotal, clear } = useCart(brand);
+  const fmt = useCurrency();
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -139,15 +141,15 @@ export default function Checkout() {
                   <div className="truncate">{it.name}</div>
                   <div className="text-muted-foreground text-xs">Qty {it.quantity}</div>
                 </div>
-                <div>{fmtBDT(it.price * it.quantity)}</div>
+                <div>{fmt(it.price * it.quantity)}</div>
               </div>
             ))}
           </div>
           <div className="space-y-2 text-sm border-t border-border pt-4">
-            <Row label="Subtotal" value={fmtBDT(subtotal)} />
-            <Row label="Shipping" value={fmtBDT(shipping)} />
+            <Row label="Subtotal" value={fmt(subtotal)} />
+            <Row label="Shipping" value={fmt(shipping)} />
             <div className="border-t border-border pt-2 flex justify-between text-lg">
-              <span>Total</span><span className="font-medium">{fmtBDT(total)}</span>
+              <span>Total</span><span className="font-medium">{fmt(total)}</span>
             </div>
           </div>
           <button disabled={submitting} className="w-full mt-6 py-4 rounded-full bg-primary text-primary-foreground text-sm uppercase tracking-widest hover:opacity-90 transition disabled:opacity-60 inline-flex items-center justify-center gap-2">

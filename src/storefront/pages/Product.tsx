@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useBrand } from "../BrandContext";
-import { brandBasePath, fmtBDT } from "../lib/brand";
+import { brandBasePath } from "../lib/brand";
+import { useCurrency } from "../lib/useCurrency";
 import { getStorefrontProductBySlug, type StorefrontProduct } from "../lib/catalog";
 import { useCart } from "../lib/cart";
 import { Loader2, Minus, Plus, ShoppingBag } from "lucide-react";
@@ -11,6 +12,7 @@ export default function Product() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { brand, storefront } = useBrand();
+  const fmt = useCurrency();
   const { add } = useCart(brand);
   const [p, setP] = useState<StorefrontProduct | null | undefined>(undefined);
   const [qty, setQty] = useState(1);
@@ -68,7 +70,7 @@ export default function Product() {
 
         <div className="lg:pt-8">
           <h1 className="sf-display text-4xl md:text-5xl mb-4">{p.name}</h1>
-          <div className="text-2xl mb-8">{fmtBDT(p.price)}</div>
+          <div className="text-2xl mb-8">{fmt(p.price)}</div>
           {p.description && (
             <div className="text-muted-foreground leading-relaxed mb-10 whitespace-pre-line">{p.description}</div>
           )}

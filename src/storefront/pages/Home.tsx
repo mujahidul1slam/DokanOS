@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { useBrand } from "../BrandContext";
-import { brandBasePath, fmtBDT } from "../lib/brand";
+import { brandBasePath } from "../lib/brand";
+import { useCurrency } from "../lib/useCurrency";
 import { listStorefrontProducts, type StorefrontProduct } from "../lib/catalog";
 import ProductCard from "../components/ProductCard";
 
@@ -22,6 +23,7 @@ function getLayoutStyle(theme: string): "editorial" | "cinematic" {
 
 export default function Home() {
   const { brand, storefront } = useBrand();
+  const fmt = useCurrency();
   const [products, setProducts] = useState<StorefrontProduct[]>([]);
 
   useEffect(() => {
@@ -92,7 +94,7 @@ export default function Home() {
                     <div className="p-6">
                       <div className="text-xs uppercase tracking-widest text-primary mb-2">Featured</div>
                       <div className="sf-display text-2xl mb-1">{hero.name}</div>
-                      <div className="text-sm text-muted-foreground">{fmtBDT(hero.price)}</div>
+                      <div className="text-sm text-muted-foreground">{fmt(hero.price)}</div>
                     </div>
                   </Link>
                 </div>
@@ -101,7 +103,23 @@ export default function Home() {
           </div>
         </section>
 
+        {products.length === 0 && (
+          <section className="max-w-2xl mx-auto px-4 py-24 text-center">
+            <h2 className="sf-display text-3xl md:text-4xl mb-4">Collection coming soon</h2>
+            <p className="text-muted-foreground mb-8">
+              New pieces are being prepared and will appear here first.
+            </p>
+            <Link
+              to={`${brandBasePath(brand)}/shop`}
+              className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full border border-border hover:border-primary transition text-sm uppercase tracking-widest"
+            >
+              Browse the shop <ArrowRight className="h-4 w-4" />
+            </Link>
+          </section>
+        )}
+
         {/* Editorial grid */}
+        {products.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 lg:px-8 py-20">
           <div className="flex items-end justify-between mb-12">
             <div>
@@ -116,6 +134,7 @@ export default function Home() {
             {grid.map((p) => <ProductCard key={p.id} p={p} />)}
           </div>
         </section>
+        )}
       </div>
     );
   }
@@ -165,7 +184,7 @@ export default function Home() {
               <div className="p-12 flex flex-col justify-center">
                 <div className="text-xs uppercase tracking-[0.3em] text-muted-foreground mb-4">Signature piece</div>
                 <h3 className="sf-display text-4xl md:text-5xl mb-6">{hero.name.toUpperCase()}</h3>
-                <div className="text-2xl mb-8">{fmtBDT(hero.price)}</div>
+                <div className="text-2xl mb-8">{fmt(hero.price)}</div>
                 <div className="inline-flex items-center gap-2 text-sm uppercase tracking-widest">
                   View piece <ArrowRight className="h-4 w-4" />
                 </div>
@@ -176,6 +195,15 @@ export default function Home() {
       )}
 
       <section className="max-w-7xl mx-auto px-4 lg:px-8 py-24">
+        {products.length === 0 ? (
+          <div className="max-w-2xl mx-auto text-center py-16">
+            <h2 className="sf-display text-3xl md:text-4xl mb-4">COMING SOON</h2>
+            <p className="text-muted-foreground uppercase tracking-wider text-sm">
+              The next drop is being prepared. Stay close.
+            </p>
+          </div>
+        ) : (
+          <>
         <div className="flex items-end justify-between mb-12">
           <h2 className="sf-display text-4xl md:text-5xl">THE COLLECTION</h2>
           <Link to={`${brandBasePath(brand)}/shop`} className="text-xs uppercase tracking-[0.3em] underline underline-offset-4">
@@ -185,6 +213,8 @@ export default function Home() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
           {grid.map((p) => <ProductCard key={p.id} p={p} />)}
         </div>
+          </>
+        )}
       </section>
     </div>
   );

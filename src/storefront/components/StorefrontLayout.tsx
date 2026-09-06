@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { ReactNode, useState } from "react";
-import { ShoppingBag, Menu, X } from "lucide-react";
+import { ShoppingBag, Menu, X, Camera, Share2, Music2, MessageCircle } from "lucide-react";
 import { useBrand } from "../BrandContext";
 import { useCart } from "../lib/cart";
 import { brandBasePath } from "../lib/brand";
@@ -18,6 +18,18 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
     { label: "Track", to: `${base}/track` },
     { label: "Contact", to: `${base}/contact` },
   ];
+
+  const social = (storefront.social || {}) as Record<string, string>;
+  const policies = (storefront.policies || {}) as Record<string, string>;
+  // Note: lucide no longer ships brand icons — neutral glyphs are used, with
+  // aria-labels carrying the network name for accessibility.
+  const socials = [
+    { key: "instagram", label: "Instagram", icon: Camera, href: (v: string) => (v.startsWith("http") ? v : `https://instagram.com/${v.replace("@", "")}`) },
+    { key: "facebook", label: "Facebook", icon: Share2, href: (v: string) => (v.startsWith("http") ? v : `https://facebook.com/${v}`) },
+    { key: "tiktok", label: "TikTok", icon: Music2, href: (v: string) => (v.startsWith("http") ? v : `https://tiktok.com/@${v.replace("@", "")}`) },
+    { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, href: (v: string) => `https://wa.me/${v.replace(/[^0-9]/g, "")}` },
+  ].filter((s) => (social[s.key] || "").trim());
+  const hasPolicies = ["shipping", "returns", "privacy"].some((k) => (policies[k] || "").trim());
 
   return (
     <div className="min-h-screen bg-background text-foreground sf-body">
@@ -93,6 +105,25 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
           <div>
             <div className="sf-display text-xl mb-3">{storefront.name.toUpperCase()}</div>
             <p className="text-sm text-muted-foreground max-w-xs">{storefront.hero_subtitle}</p>
+            {socials.length > 0 && (
+              <div className="flex gap-3 mt-5">
+                {socials.map((s) => {
+                  const Icon = s.icon;
+                  return (
+                    <a
+                      key={s.key}
+                      href={s.href(social[s.key])}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={s.label}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border hover:border-primary hover:text-primary transition"
+                    >
+                      <Icon className="h-4 w-4" />
+                    </a>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div className="text-sm space-y-2">
             <div className="font-medium mb-2">Shop</div>
@@ -101,6 +132,11 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
                 {n.label}
               </Link>
             ))}
+            {hasPolicies && (
+              <Link to={`${base}/policies`} className="block text-muted-foreground hover:text-foreground">
+                Policies
+              </Link>
+            )}
           </div>
           <div className="text-sm space-y-2">
             <div className="font-medium mb-2">Contact</div>

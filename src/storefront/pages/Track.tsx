@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
-import { fmtBDT } from "../lib/brand";
+import { useBrand } from "../BrandContext";
+import { useCurrency } from "../lib/useCurrency";
 
 export default function Track() {
+  const fmt = useCurrency();
   const [num, setNum] = useState("");
   const [loading, setLoading] = useState(false);
   const [order, setOrder] = useState<any | null | undefined>(undefined);
@@ -40,7 +42,7 @@ export default function Track() {
           <div className="flex justify-between"><span className="text-muted-foreground text-sm">Status</span><span className="uppercase tracking-wider text-xs">{order.status}</span></div>
           {order.tracking_status && <div className="flex justify-between"><span className="text-muted-foreground text-sm">Courier</span><span>{order.tracking_status}</span></div>}
           <div className="flex justify-between"><span className="text-muted-foreground text-sm">Payment</span><span className="uppercase tracking-wider text-xs">{order.payment_status}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground text-sm">Total</span><span>{fmtBDT(Number(order.total))}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground text-sm">Total</span><span>{fmt(Number(order.total))}</span></div>
         </div>
       )}
     </div>

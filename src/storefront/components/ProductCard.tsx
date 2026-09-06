@@ -1,10 +1,12 @@
 import { Link } from "react-router-dom";
-import { fmtBDT, brandBasePath } from "../lib/brand";
+import { brandBasePath } from "../lib/brand";
 import { useBrand } from "../BrandContext";
+import { useCurrency } from "../lib/useCurrency";
 import type { StorefrontProduct } from "../lib/catalog";
 
 export default function ProductCard({ p }: { p: StorefrontProduct }) {
   const { brand } = useBrand();
+  const fmt = useCurrency();
   const img = p.image_urls?.[0] || p.image_url || "";
   return (
     <Link
@@ -30,7 +32,7 @@ export default function ProductCard({ p }: { p: StorefrontProduct }) {
       </div>
       <div className="p-4">
         <h3 className="sf-display text-lg mb-1 line-clamp-1">{p.name}</h3>
-        <div className="text-sm text-muted-foreground">{fmtBDT(p.price)}</div>
+        <div className="text-sm text-muted-foreground">{fmt(p.price)}</div>
       </div>
     </Link>
   );
