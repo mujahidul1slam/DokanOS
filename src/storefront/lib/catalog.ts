@@ -1,5 +1,14 @@
 import { supabase } from "@/integrations/supabase/client";
 
+export interface StorefrontVariation {
+  id: string;
+  name: string;
+  price: number;
+  manage_stock: boolean;
+  stock_quantity: number;
+  attributes: any;
+}
+
 export interface StorefrontProduct {
   id: string;
   name: string;
@@ -14,6 +23,7 @@ export interface StorefrontProduct {
   is_featured: boolean;
   badge: string;
   position: number;
+  variations?: StorefrontVariation[];
 }
 
 function slugify(s: string, id: string): string {
@@ -32,7 +42,7 @@ function mapProduct(
   return {
     id: p.id,
     name: p.name,
-    slug: slugify(p.name, p.id),
+    slug: p.slug || slugify(p.name, p.id),
     price: Number(p.price),
     image_url: p.image_url,
     image_urls: (p.image_urls as string[]) || [],
@@ -57,7 +67,7 @@ export async function listStorefrontProducts(storefront_id: string): Promise<Sto
   if (sf?.store_id) {
     const { data: products } = await supabase
       .from("products")
-      .select("id,name,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_featured")
+      .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_featured")
       .eq("store_id", sf.store_id)
       .eq("is_active", true)
       .order("is_featured", { ascending: false })
@@ -76,7 +86,7 @@ export async function listStorefrontProducts(storefront_id: string): Promise<Sto
   const ids = links.map((l) => l.product_id);
   const { data: products } = await supabase
     .from("products")
-    .select("id,name,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_active")
+    .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_active")
     .in("id", ids)
     .eq("is_active", true);
   if (!products) return [];
@@ -95,5 +105,34 @@ export async function getStorefrontProductBySlug(
   slug: string,
 ): Promise<StorefrontProduct | null> {
   const all = await listStorefrontProducts(storefront_id);
-  return all.find((p) => p.slug === slug) || null;
+  const prod = all.find((p) => p.slug === slug) || null;
+  if (!prod) return null;
+
+  const { data: variations } = await supabase
+    .from("product_variations")
+    .select("id,name,price,manage_stock,stock_quantity,attributes")
+    .eq("product_id", prod.id);
+
+  return {
+    ...prod,
+    variations: (variations as any[]) || [],
+  };
+}
+
+/** Fetch specific active products by id (ProductGrid section). Anon-safe. */
+export async function getProductsByIds(ids: string[]): Promise<StorefrontProduct[]> {
+  if (!ids.length) return [];
+  const { data: products } = await supabase
+    .from("products")
+    .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_active")
+    .in("id", ids)
+    .eq("is_active", true);
+  if (!products) return [];
+  const map = new Map((products as any[]).map((p) => [p.id, p]));
+  // Preserve the curator's order; drop ids that no longer resolve (junction
+  // semantics without an FK).
+  return ids
+    .map((id) => map.get(id))
+    .filter(Boolean)
+    .map((p: any) => mapProduct(p));
 }

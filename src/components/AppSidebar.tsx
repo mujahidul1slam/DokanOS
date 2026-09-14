@@ -109,7 +109,7 @@ const AppSidebar = ({
     queryKey: ['product_categories', active?.id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('product_categories')
+        .from('categories')
         .select('id, name')
         .eq('store_id', active?.id)
         .order('name');

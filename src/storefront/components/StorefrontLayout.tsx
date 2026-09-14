@@ -5,6 +5,8 @@ import { useBrand } from "../BrandContext";
 import { useCart } from "../lib/cart";
 import { brandBasePath } from "../lib/brand";
 
+import { mergeSettings } from "../lib/settings";
+
 export default function StorefrontLayout({ children }: { children: ReactNode }) {
   const { brand, storefront } = useBrand();
   const { count } = useCart(brand);
@@ -12,15 +14,25 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const nav = [
-    { label: "Shop", to: `${base}/shop` },
-    { label: "About", to: `${base}/about` },
-    { label: "Track", to: `${base}/track` },
-    { label: "Contact", to: `${base}/contact` },
-  ];
-
+  const settings = mergeSettings(storefront.settings);
   const social = (storefront.social || {}) as Record<string, string>;
   const policies = (storefront.policies || {}) as Record<string, string>;
+
+  // Editable nav (Phase 1 builder): storefronts.nav rows win when non-empty;
+  // hrefs are path-relative to the storefront base ("/shop") or absolute URLs.
+  const navRows = Array.isArray(storefront.nav) ? storefront.nav : [];
+  const nav = navRows.length
+    ? navRows.map((n) => ({
+        label: n.label,
+        to: /^https?:\/\//i.test(n.href) ? n.href : `${base}${n.href.startsWith("/") ? n.href : `/${n.href}`}`,
+      }))
+    : [
+        { label: "Shop", to: `${base}/shop` },
+        { label: "About", to: `${base}/about` },
+        { label: "Track", to: `${base}/track` },
+        { label: "Contact", to: `${base}/contact` },
+      ];
+  const isExternal = (to: string) => /^https?:\/\//i.test(to);
   // Note: lucide no longer ships brand icons — neutral glyphs are used, with
   // aria-labels carrying the network name for accessibility.
   const socials = [
@@ -33,6 +45,20 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
 
   return (
     <div className="min-h-screen bg-background text-foreground sf-body">
+      {settings.announcement.enabled && settings.announcement.text && (
+        <aside
+          aria-label="Announcement"
+          className="bg-primary text-primary-foreground text-xs py-2 px-4 text-center font-medium transition-colors"
+        >
+          {settings.announcement.href ? (
+            <a href={settings.announcement.href} className="underline underline-offset-2 hover:opacity-90">
+              {settings.announcement.text}
+            </a>
+          ) : (
+            <span>{settings.announcement.text}</span>
+          )}
+        </aside>
+      )}
       <header className="sticky top-0 z-50 backdrop-blur-xl bg-background/70 border-b border-border">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-4 lg:px-8 py-4">
           <Link to={base} className="sf-display text-2xl lg:text-3xl tracking-tight inline-flex items-center gap-2">
@@ -47,15 +73,21 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
             )}
           </Link>
           <nav className="hidden md:flex items-center gap-8 text-sm">
-            {nav.map((n) => (
-              <Link
-                key={n.to}
-                to={n.to}
-                className={`hover:text-primary transition-colors ${loc.pathname === n.to ? "text-primary" : "text-foreground/80"}`}
-              >
-                {n.label}
-              </Link>
-            ))}
+            {nav.map((n) =>
+              isExternal(n.to) ? (
+                <a key={n.to} href={n.to} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors text-foreground/80">
+                  {n.label}
+                </a>
+              ) : (
+                <Link
+                  key={n.to}
+                  to={n.to}
+                  className={`hover:text-primary transition-colors ${loc.pathname === n.to ? "text-primary" : "text-foreground/80"}`}
+                >
+                  {n.label}
+                </Link>
+              ),
+            )}
           </nav>
           <Link
             to={`${base}/cart`}
@@ -83,16 +115,22 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
         {menuOpen && (
           <nav className="md:hidden border-t border-border bg-background/95 backdrop-blur-xl">
             <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col">
-              {nav.map((n) => (
-                <Link
-                  key={n.to}
-                  to={n.to}
-                  onClick={() => setMenuOpen(false)}
-                  className={`py-3 text-sm uppercase tracking-widest ${loc.pathname === n.to ? "text-primary" : "text-foreground/80"}`}
-                >
-                  {n.label}
-                </Link>
-              ))}
+              {nav.map((n) =>
+                isExternal(n.to) ? (
+                  <a key={n.to} href={n.to} target="_blank" rel="noreferrer" className="py-3 text-sm uppercase tracking-widest text-foreground/80">
+                    {n.label}
+                  </a>
+                ) : (
+                  <Link
+                    key={n.to}
+                    to={n.to}
+                    onClick={() => setMenuOpen(false)}
+                    className={`py-3 text-sm uppercase tracking-widest ${loc.pathname === n.to ? "text-primary" : "text-foreground/80"}`}
+                  >
+                    {n.label}
+                  </Link>
+                ),
+              )}
             </div>
           </nav>
         )}

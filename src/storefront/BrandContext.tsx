@@ -6,6 +6,8 @@ import { computeAccentVars, activeBackgroundLightness } from "./lib/theme";
 interface Ctx {
   brand: BrandSlug;
   storefront: Storefront;
+  /** Set only inside the admin preview route — the working-copy page slug being previewed. */
+  draftPageSlug?: string;
 }
 
 const BrandContext = createContext<Ctx | null>(null);
@@ -16,9 +18,28 @@ export function useBrand(): Ctx {
   return v;
 }
 
-export function BrandProvider({ brand, children }: { brand: BrandSlug; children: ReactNode }) {
-  const [sf, setSf] = useState<Storefront | null>(null);
+export function BrandProvider({
+  brand,
+  children,
+  storefrontOverride,
+  draftPageSlug,
+}: {
+  brand: BrandSlug;
+  children: ReactNode;
+  /** Admin preview: skip the anon fetch and use this row (staff-loaded). */
+  storefrontOverride?: Storefront | null;
+  /** Admin preview: render this page's working copy instead of published content. */
+  draftPageSlug?: string;
+}) {
+  const [sf, setSf] = useState<Storefront | null>(storefrontOverride ?? null);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (storefrontOverride !== undefined) {
+      setSf(storefrontOverride);
+      setErr(storefrontOverride ? null : "Storefront not found");
+    }
+  }, [storefrontOverride]);
 
   // Set data-brand attribute for CSS theming
   useEffect(() => {
@@ -72,13 +93,14 @@ export function BrandProvider({ brand, children }: { brand: BrandSlug; children:
   }, [sf, brand]);
 
   useEffect(() => {
+    if (storefrontOverride !== undefined) return; // preview mode: nothing to load
     loadStorefront(brand)
       .then((s) => {
         if (!s) setErr("Storefront not found");
         else setSf(s);
       })
       .catch(() => setErr("Could not load storefront"));
-  }, [brand]);
+  }, [brand, storefrontOverride]);
 
   if (err) {
     return (
@@ -94,5 +116,9 @@ export function BrandProvider({ brand, children }: { brand: BrandSlug; children:
       </div>
     );
   }
-  return <BrandContext.Provider value={{ brand, storefront: sf }}>{children}</BrandContext.Provider>;
+  return (
+    <BrandContext.Provider value={{ brand, storefront: sf, draftPageSlug }}>
+      {children}
+    </BrandContext.Provider>
+  );
 }

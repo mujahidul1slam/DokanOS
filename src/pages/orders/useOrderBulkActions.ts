@@ -74,8 +74,36 @@ export function useOrderBulkActions<T extends BulkOrder>({
   );
 
   const handleBulkCancel = useCallback(
-    () => runBulkStatus("cancelled", "Cancelled", "{n} order(s) cancelled", false),
-    [runBulkStatus],
+    async () => {
+      const ids = Array.from(selected);
+      // Phase 6 (§9.3): Bulk cancel - invoke storefront-restore-stock for storefront orders
+      if (ids.length > 0) {
+        try {
+          const { data: sfOrders } = await supabase
+            .from("orders")
+            .select("id")
+            .in("id", ids)
+            .not("storefront_id", "is", null)
+            .is("stock_restored_at", null);
+
+          if (sfOrders && sfOrders.length > 0) {
+            for (const sfo of sfOrders) {
+              try {
+                await supabase.functions.invoke("storefront-restore-stock", {
+                  body: { order_id: sfo.id },
+                });
+              } catch (err) {
+                console.error("Bulk restore error for order", sfo.id, err);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Bulk restore query error", err);
+        }
+      }
+      return runBulkStatus("cancelled", "Cancelled", "{n} order(s) cancelled", false);
+    },
+    [selected, runBulkStatus],
   );
 
   const handleBulkStatusChange = useCallback(

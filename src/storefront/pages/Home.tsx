@@ -5,7 +5,11 @@ import { useBrand } from "../BrandContext";
 import { brandBasePath } from "../lib/brand";
 import { useCurrency } from "../lib/useCurrency";
 import { listStorefrontProducts, type StorefrontProduct } from "../lib/catalog";
+import { getDraftPage, getPublishedPage, type PublishedPage } from "../lib/pages";
+import PublishedPageView from "../sections/PublishedPageView";
 import ProductCard from "../components/ProductCard";
+import { usePageMeta } from "../lib/seo";
+import { OrganizationJsonLd } from "../lib/jsonld";
 
 /**
  * Determine the homepage layout style based on the storefront's `theme` field.
@@ -30,13 +34,29 @@ function getLayoutStyle(theme: string): "editorial" | "cinematic" | "minimal" | 
 }
 
 export default function Home() {
-  const { brand, storefront } = useBrand();
+  const { brand, storefront, draftPageSlug } = useBrand();
   const fmt = useCurrency();
   const [products, setProducts] = useState<StorefrontProduct[]>([]);
+  // Builder: published home page (undefined = still loading, null = none → legacy layout)
+  const [publishedHome, setPublishedHome] = useState<PublishedPage | null | undefined>(draftPageSlug ? null : undefined);
+  // Builder: working-copy draft (admin preview only)
+  const [draftPage, setDraftPage] = useState<PublishedPage | null>(null);
 
   useEffect(() => {
     listStorefrontProducts(storefront.id).then(setProducts);
   }, [storefront.id]);
+
+  useEffect(() => {
+    let alive = true;
+    if (draftPageSlug) {
+      getDraftPage(storefront.id, draftPageSlug).then((d) => alive && setDraftPage(d));
+    } else {
+      getPublishedPage(storefront.id, "home").then((d) => alive && setPublishedHome(d));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [storefront.id, draftPageSlug]);
 
   const featured = products.filter((p) => p.is_featured).slice(0, 4);
   const hero = featured[0] || products[0];
@@ -45,9 +65,45 @@ export default function Home() {
   // Hero visual: operator-set hero image wins over the featured product image
   const heroImg = storefront.hero_image_url || hero?.image_urls?.[0] || hero?.image_url || null;
 
+  usePageMeta({
+    title: publishedHome?.seo?.title || `${storefront.name} — Official Store`,
+    description: publishedHome?.seo?.description || storefront.hero_subtitle || undefined,
+    canonicalPath: "/",
+    ogImageUrl: heroImg || storefront.logo_url,
+  });
+
+  const orgJsonLd = (
+    <OrganizationJsonLd
+      name={storefront.name}
+      url={typeof window !== "undefined" ? window.location.origin : "/"}
+      logo={storefront.logo_url}
+    />
+  );
+
+  // Builder (Phase 1): a published home page renders its sections; otherwise
+  // the legacy 4-theme layout below stays (built-in rollback, zero visual
+  // change until an operator publishes). Draft preview wins in admin preview.
+  if (draftPage && draftPage.sections.length) {
+    return (
+      <>
+        {orgJsonLd}
+        <PublishedPageView sections={draftPage.sections} />
+      </>
+    );
+  }
+  if (publishedHome && publishedHome.sections.length) {
+    return (
+      <>
+        {orgJsonLd}
+        <PublishedPageView sections={publishedHome.sections} />
+      </>
+    );
+  }
+
   if (layout === "editorial") {
     return (
       <div>
+        {orgJsonLd}
         {/* Editorial Magazine hero */}
         <section className="relative max-w-7xl mx-auto px-4 lg:px-8 pt-16 pb-24">
           <div className="sf-liquid-bg" />

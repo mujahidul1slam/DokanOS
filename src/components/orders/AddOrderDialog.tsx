@@ -6,6 +6,7 @@ import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, 
 
 
 import { supabase } from "@/integrations/supabase/client";
+import { parseVariationAttributes as parseVariationAttributesShared } from "@/lib/variations";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
@@ -94,17 +95,10 @@ interface Props {
 }
 
 interface ParsedAttr { key: string; value: string; }
+// Legacy local alias kept so the call sites below (which use `a.key`/`a.value`)
+// continue to work; the parsing itself is the shared implementation (Phase 3 §6.2).
 function parseVariationAttributes(attrs: any): ParsedAttr[] {
-  if (typeof attrs === "string") return [];
-  if (!Array.isArray(attrs)) return [];
-  return attrs.map((a: any) => {
-    if (a && typeof a === "object") {
-      if (a.key && a.value) return { key: String(a.key), value: String(a.value) };
-      const k = Object.keys(a).find((k) => k !== "key" && k !== "value");
-      if (k) return { key: k, value: String(a[k]) };
-    }
-    return null;
-  }).filter(Boolean) as ParsedAttr[];
+  return parseVariationAttributesShared(attrs).map((a) => ({ key: a.name, value: a.option }));
 }
 
 interface ProductSearchResultRowProps {

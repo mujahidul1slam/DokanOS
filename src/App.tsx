@@ -34,6 +34,7 @@ const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
+const StorefrontPreviewPage = lazy(() => import("./pages/StorefrontPreviewPage"));
 const StoresHub = lazy(() => import("./pages/StoresHub"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -99,7 +100,8 @@ const AppRoutes = () => {
           <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
           <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
           <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
-          <Route path="/storefronts" element={<PermissionGuard permission="integrations.view"><StorefrontsPage /></PermissionGuard>} />
+          <Route path="/storefronts" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
+          <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreviewPage /></PermissionGuard>} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFound />} />

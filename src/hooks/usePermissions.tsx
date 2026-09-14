@@ -148,6 +148,10 @@ export const PERMISSION_GROUPS: { group: string; items: { key: AppPermission; la
     ],
   },
   {
+    group: "Storefronts",
+    items: [{ key: "storefronts.view", label: "View storefronts" }],
+  },
+  {
     group: "Settings & Team",
     items: [
       { key: "settings.view", label: "View settings" },

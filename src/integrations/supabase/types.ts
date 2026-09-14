@@ -1151,7 +1151,9 @@ export type Database = {
           product_id: string | null
           product_name: string
           quantity: number
+          stock_ledger: Json | null
           unit_price: number
+          variation_id: string | null
         }
         Insert: {
           created_at?: string
@@ -1162,7 +1164,9 @@ export type Database = {
           product_id?: string | null
           product_name: string
           quantity?: number
+          stock_ledger?: Json | null
           unit_price?: number
+          variation_id?: string | null
         }
         Update: {
           created_at?: string
@@ -1173,7 +1177,9 @@ export type Database = {
           product_id?: string | null
           product_name?: string
           quantity?: number
+          stock_ledger?: Json | null
           unit_price?: number
+          variation_id?: string | null
         }
         Relationships: [
           {
@@ -1188,6 +1194,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_variation_id_fkey"
+            columns: ["variation_id"]
+            isOneToOne: false
+            referencedRelation: "product_variations"
             referencedColumns: ["id"]
           },
         ]
@@ -1305,6 +1318,7 @@ export type Database = {
           discount: number | null
           fulfillment_type: string
           id: string
+          idempotency_key: string | null
           is_exchange: boolean
           item_qty: number | null
           item_type: number | null
@@ -1331,7 +1345,9 @@ export type Database = {
           source: string
           special_instruction: string | null
           status: string
+          stock_restored_at: string | null
           store_id: string | null
+          storefront_id: string | null
           subtotal: number
           tax_amount: number | null
           total: number
@@ -1355,6 +1371,7 @@ export type Database = {
           discount?: number | null
           fulfillment_type?: string
           id?: string
+          idempotency_key?: string | null
           is_exchange?: boolean
           item_qty?: number | null
           item_type?: number | null
@@ -1381,7 +1398,9 @@ export type Database = {
           source?: string
           special_instruction?: string | null
           status?: string
+          stock_restored_at?: string | null
           store_id?: string | null
+          storefront_id?: string | null
           subtotal?: number
           tax_amount?: number | null
           total?: number
@@ -1405,6 +1424,7 @@ export type Database = {
           discount?: number | null
           fulfillment_type?: string
           id?: string
+          idempotency_key?: string | null
           is_exchange?: boolean
           item_qty?: number | null
           item_type?: number | null
@@ -1431,7 +1451,9 @@ export type Database = {
           source?: string
           special_instruction?: string | null
           status?: string
+          stock_restored_at?: string | null
           store_id?: string | null
+          storefront_id?: string | null
           subtotal?: number
           tax_amount?: number | null
           total?: number
@@ -1488,6 +1510,13 @@ export type Database = {
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_storefront_id_fkey"
+            columns: ["storefront_id"]
+            isOneToOne: false
+            referencedRelation: "storefronts"
             referencedColumns: ["id"]
           },
         ]
@@ -2140,6 +2169,7 @@ export type Database = {
           sales_count: number
           short_description: string | null
           sku: string | null
+          slug: string | null
           stock_quantity: number
           stock_status: string
           store_id: string | null
@@ -2173,6 +2203,7 @@ export type Database = {
           sales_count?: number
           short_description?: string | null
           sku?: string | null
+          slug?: string | null
           stock_quantity?: number
           stock_status?: string
           store_id?: string | null
@@ -2206,6 +2237,7 @@ export type Database = {
           sales_count?: number
           short_description?: string | null
           sku?: string | null
+          slug?: string | null
           stock_quantity?: number
           stock_status?: string
           store_id?: string | null
@@ -2505,9 +2537,14 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          published_at: string | null
+          published_snapshot: Json | null
+          seo: Json
           slug: string
+          status: string
           storefront_id: string
           title: string
+          type: string
           updated_at: string
         }
         Insert: {
@@ -2515,9 +2552,14 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          published_at?: string | null
+          published_snapshot?: Json | null
+          seo?: Json
           slug: string
+          status?: string
           storefront_id: string
           title: string
+          type?: string
           updated_at?: string
         }
         Update: {
@@ -2525,9 +2567,14 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          published_at?: string | null
+          published_snapshot?: Json | null
+          seo?: Json
           slug?: string
+          status?: string
           storefront_id?: string
           title?: string
+          type?: string
           updated_at?: string
         }
         Relationships: [
@@ -2536,6 +2583,47 @@ export type Database = {
             columns: ["storefront_id"]
             isOneToOne: false
             referencedRelation: "storefronts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      storefront_page_sections: {
+        Row: {
+          created_at: string
+          id: string
+          is_visible: boolean
+          page_id: string
+          position: number
+          props: Json
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_visible?: boolean
+          page_id: string
+          position?: number
+          props?: Json
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_visible?: boolean
+          page_id?: string
+          position?: number
+          props?: Json
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_page_sections_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "storefront_pages"
             referencedColumns: ["id"]
           },
         ]
@@ -2594,7 +2682,9 @@ export type Database = {
           is_active: boolean
           logo_url: string | null
           name: string
+          nav: Json
           policies: Json
+          settings: Json
           slug: string
           social: Json
           store_id: string | null
@@ -2616,7 +2706,9 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name: string
+          nav?: Json
           policies?: Json
+          settings?: Json
           slug: string
           social?: Json
           store_id?: string | null
@@ -2638,7 +2730,9 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name?: string
+          nav?: Json
           policies?: Json
+          settings?: Json
           slug?: string
           social?: Json
           store_id?: string | null
@@ -3275,6 +3369,14 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      storefront_place_order: {
+        Args: { p_payload: Json }
+        Returns: Json
+      }
+      storefront_restore_stock: {
+        Args: { p_order_id: string }
+        Returns: undefined
+      }
       user_has_store_access: {
         Args: { _store_id: string; _user_id: string }
         Returns: boolean
@@ -3351,6 +3453,7 @@ export type Database = {
         | "team.manage"
         | "audit.view"
         | "orders.attach_courier"
+        | "storefronts.view"
       app_role: "admin" | "staff" | "viewer"
     }
     CompositeTypes: {
@@ -3520,6 +3623,7 @@ export const Constants = {
         "team.manage",
         "audit.view",
         "orders.attach_courier",
+        "storefronts.view",
       ],
       app_role: ["admin", "staff", "viewer"],
     },

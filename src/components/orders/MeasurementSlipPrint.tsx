@@ -4,6 +4,7 @@ import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import { PRINT_BOOTSTRAP, openPrintWindow } from "@/lib/printWindow";
+import { parseVariationAttributes } from "@/lib/variations";
 
 /**
  * If the order is currently in pre_order_pending status, promote it to
@@ -194,12 +195,12 @@ export async function printMeasurementSlip(orderId: string) {
             // Score each variation by number of matched attrs; pick the best.
             let best: { row: any; score: number } | null = null;
             for (const v of vars as any[]) {
-              const attrs = Array.isArray(v.attributes) ? v.attributes : [];
+              const attrs = parseVariationAttributes(v.attributes);
               if (attrs.length === 0) continue;
               let score = 0;
               let allMatch = true;
               for (const a of attrs) {
-                const val = String(a?.value || a?.option || "");
+                const val = a.option;
                 if (valueMatchesName(val)) score++;
                 else { allMatch = false; break; }
               }

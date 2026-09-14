@@ -1,7 +1,14 @@
 import { useBrand } from "../BrandContext";
+import { usePageMeta } from "../lib/seo";
 
 export default function Contact() {
   const { storefront } = useBrand();
+
+  usePageMeta({
+    title: `Contact — ${storefront.name}`,
+    description: `Contact details for ${storefront.name}`,
+    canonicalPath: "/contact",
+  });
   return (
     <div className="max-w-xl mx-auto px-4 py-24">
       <div className="text-xs uppercase tracking-[0.25em] text-primary mb-4">Contact</div>

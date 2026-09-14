@@ -1,0 +1,5 @@
+﻿src/components/AppSidebar.tsx(114,13): error TS2345: Argument of type '"store_id"' is not assignable to parameter of type '"id" | "category_id" | "product_id"'.
+src/components/AppSidebar.tsx(143,22): error TS2339: Property 'name' does not exist on type 'SelectQueryError<"column 'name' does not exist on 'product_categories'.">'.
+src/components/AppSidebar.tsx(144,43): error TS2339: Property 'id' does not exist on type 'SelectQueryError<"column 'name' does not exist on 'product_categories'.">'.
+src/pages/StorefrontsPage.tsx(184,28): error TS2339: Property 'id' does not exist on type 'SelectQueryError<"column 'store_currency' does not exist on 'stores'.">'.
+src/pages/StorefrontsPage.tsx(185,28): error TS2339: Property 'store_currency' does not exist on type 'SelectQueryError<"column 'store_currency' does not exist on 'stores'.">'.

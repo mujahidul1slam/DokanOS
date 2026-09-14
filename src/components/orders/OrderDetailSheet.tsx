@@ -74,6 +74,8 @@ interface OrderDetail {
   fulfillment_type: string;
   woo_order_id: number | null;
   store_id: string | null;
+  storefront_id?: string | null;
+  stock_restored_at?: string | null;
   stores: { url: string | null; name?: string | null } | null;
 }
 
@@ -304,7 +306,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, location_id, selling_point_id, stores(url, name)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, stores(url, name)")
         .eq("id", orderId)
         .single(),
       supabase
@@ -634,6 +636,22 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           metadata: { from: order.status, to: status },
         });
         await logAction("update", "order_status", order.id, { order_number: order.order_number, changes: { status: { from: order.status, to: status } }, before: { status: order.status }, after: { status } });
+
+        // Phase 6 (§9.3): Cancel storefront order -> invoke storefront-restore-stock edge function
+        if (status === "cancelled" && (order as any).storefront_id && !(order as any).stock_restored_at) {
+          try {
+            const { error: restErr } = await supabase.functions.invoke("storefront-restore-stock", {
+              body: { order_id: order.id },
+            });
+            if (restErr) {
+              toast.error(`Inventory restore failed: ${restErr.message}`);
+            } else {
+              toast.success("Inventory restored");
+            }
+          } catch (e: any) {
+            toast.error(`Inventory restore error: ${e.message}`);
+          }
+        }
       }
 
       if (paymentStatus !== order.payment_status) {
