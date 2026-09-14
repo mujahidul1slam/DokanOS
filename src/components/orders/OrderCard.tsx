@@ -8,6 +8,7 @@ import {
   SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
 import { ReactNode } from "react";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface OrderCardProps {
   order: {
@@ -38,6 +39,7 @@ interface OrderCardProps {
 }
 
 const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProps) => {
+  const { symbol } = useCurrency();
   return (
     <div
       className={cn(
@@ -52,7 +54,7 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
         <button onClick={onOpen} className="flex-1 text-left min-w-0">
           <div className="flex items-center justify-between gap-2">
             <div className="font-semibold text-foreground truncate">#{order.order_number}</div>
-            <div className="font-semibold text-foreground whitespace-nowrap">৳{Number(order.total).toLocaleString()}</div>
+            <div className="font-semibold text-foreground whitespace-nowrap">{symbol}{Number(order.total).toLocaleString()}</div>
           </div>
           <div className="text-[11px] text-muted-foreground">
             {format(new Date(order.created_at), "MMM d, h:mm a")}
@@ -95,7 +97,7 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
           </div>
 
           {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (
-            <div className="mt-1 text-xs text-amber-500">Due: ৳{Number(order.amount_to_collect).toLocaleString()}</div>
+            <div className="mt-1 text-xs text-amber-500">Due: {symbol}{Number(order.amount_to_collect).toLocaleString()}</div>
           )}
 
           {order.consignment_id && (

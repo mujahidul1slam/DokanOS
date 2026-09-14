@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { printInvoice } from "./InvoicePrint";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import type { Cart, CartItem, Payment } from "./types";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   open: boolean;
@@ -31,6 +32,7 @@ interface RecentOrder {
 }
 
 const RecentOrdersDialog = ({ open, onClose }: Props) => {
+  const { symbol } = useCurrency();
   const { settings: invoiceSettings } = useInvoiceSettings();
   const [orders, setOrders] = useState<RecentOrder[]>([]);
   const [search, setSearch] = useState("");
@@ -145,7 +147,7 @@ const RecentOrdersDialog = ({ open, onClose }: Props) => {
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-sm font-semibold">৳{Number(order.total).toLocaleString()}</span>
+                      <span className="text-sm font-semibold">{symbol}{Number(order.total).toLocaleString()}</span>
                       <span className="text-[10px] text-muted-foreground">
                         {new Date(order.created_at).toLocaleString()}
                       </span>

@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ExternalLink, Loader2, Plus, Trash2, Star, ChevronUp, ChevronDown, Store as StoreIcon, Globe, Sparkles } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { invalidateSlugCache } from "@/storefront/lib/brand";
+import { useCurrency } from "@/hooks/useCurrency";
 
 /** Available theme presets for new storefronts */
 const THEME_PRESETS = [
@@ -261,6 +262,7 @@ function Field({ label, value, onChange, className = "", placeholder }: { label:
 }
 
 function ProductCuration({ storefrontId }: { storefrontId: string }) {
+  const { symbol } = useCurrency();
   const [items, setItems] = useState<SfProduct[]>([]);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<any[]>([]);
@@ -339,7 +341,7 @@ function ProductCuration({ storefrontId }: { storefrontId: string }) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate">{p.name}</div>
-                  <div className="text-xs text-muted-foreground">৳{p.price} · stock {p.stock_quantity}</div>
+                  <div className="text-xs text-muted-foreground">{symbol}{p.price} · stock {p.stock_quantity}</div>
                 </div>
                 <Button size="sm" onClick={() => add(p.id)} className="gap-1"><Plus className="h-3 w-3" /> Add</Button>
               </div>
@@ -364,7 +366,7 @@ function ProductCuration({ storefrontId }: { storefrontId: string }) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate">{it.product?.name || "(deleted product)"}</div>
-                  <div className="text-xs text-muted-foreground">৳{it.product?.price ?? "—"}</div>
+                  <div className="text-xs text-muted-foreground">{symbol}{it.product?.price ?? "—"}</div>
                 </div>
                 <Button size="icon" variant="ghost" onClick={() => move(it, -1)} disabled={idx === 0} aria-label="Move up"><ChevronUp className="h-4 w-4" /></Button>
                 <Button size="icon" variant="ghost" onClick={() => move(it, 1)} disabled={idx === items.length - 1} aria-label="Move down"><ChevronDown className="h-4 w-4" /></Button>

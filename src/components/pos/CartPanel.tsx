@@ -14,6 +14,7 @@ import { printInvoice } from "./InvoicePrint";
 import type { Cart, CartItem, Payment, CustomerData } from "./types";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import { supabase } from "@/integrations/supabase/client";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface PathaoZone {
   zone_id: number;
@@ -58,6 +59,7 @@ const CartPanel = ({
   onUpdateCart, onUpdateItem, onRemoveItem, onCompleteOrder,
   customers, onSearchCustomers,
 }: Props) => {
+  const { symbol } = useCurrency();
   const { settings: invoiceSettings } = useInvoiceSettings();
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
@@ -609,7 +611,7 @@ const CartPanel = ({
                           </button>
                         </PopoverTrigger>
                         <PopoverContent className="w-52 p-3 space-y-2" align="end">
-                          <Label className="text-xs">Unit Price (৳)</Label>
+                          <Label className="text-xs">Unit Price ({symbol})</Label>
                           <Input
                             type="number"
                             defaultValue={item.price}
@@ -640,14 +642,14 @@ const CartPanel = ({
                               >
                                 <SelectTrigger className="h-8 w-16 text-xs"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="flat">৳</SelectItem>
+                                  <SelectItem value="flat">{symbol}</SelectItem>
                                   <SelectItem value="percent">%</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
                           </div>
                           {item.originalPrice && item.price !== item.originalPrice && (
-                            <p className="text-[10px] text-muted-foreground">Original: ৳{item.originalPrice.toLocaleString()}</p>
+                            <p className="text-[10px] text-muted-foreground">Original: {symbol}{item.originalPrice.toLocaleString()}</p>
                           )}
                         </PopoverContent>
                       </Popover>
@@ -667,9 +669,9 @@ const CartPanel = ({
                       </button>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-semibold font-heading">৳{getItemLineTotal(item).toLocaleString()}</p>
+                      <p className="text-sm font-semibold font-heading">{symbol}{getItemLineTotal(item).toLocaleString()}</p>
                       {(item.discountValue || 0) > 0 && (
-                        <p className="text-[10px] text-destructive">-{item.discountType === "percent" ? `${item.discountValue}%` : `৳${item.discountValue}`}</p>
+                        <p className="text-[10px] text-destructive">-{item.discountType === "percent" ? `${item.discountValue}%` : `${symbol}${item.discountValue}`}</p>
                       )}
                     </div>
                   </div>
@@ -684,7 +686,7 @@ const CartPanel = ({
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subtotal</span>
-              <span>৳{subtotal.toLocaleString()}</span>
+              <span>{symbol}{subtotal.toLocaleString()}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">Discount</span>
@@ -697,7 +699,7 @@ const CartPanel = ({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="flat">৳</SelectItem>
+                    <SelectItem value="flat">{symbol}</SelectItem>
                     <SelectItem value="percent">%</SelectItem>
                   </SelectContent>
                 </Select>
@@ -713,7 +715,7 @@ const CartPanel = ({
             {cartDiscount > 0 && cart.discountType === "percent" && (
               <div className="flex justify-between text-xs text-destructive">
                 <span></span>
-                <span>-৳{cartDiscount.toLocaleString()}</span>
+                <span>-{symbol}{cartDiscount.toLocaleString()}</span>
               </div>
             )}
 
@@ -731,7 +733,7 @@ const CartPanel = ({
             {taxAmount > 0 && (
               <div className="flex justify-between text-xs">
                 <span></span>
-                <span>+৳{taxAmount.toLocaleString()}</span>
+                <span>+{symbol}{taxAmount.toLocaleString()}</span>
               </div>
             )}
 
@@ -748,7 +750,7 @@ const CartPanel = ({
                         className="h-7 text-xs px-2"
                         onClick={() => onUpdateCart(cart.id, { shippingFee: amt })}
                       >
-                        ৳{amt}
+                        {symbol}{amt}
                       </Button>
                     ))}
                     <Input
@@ -764,7 +766,7 @@ const CartPanel = ({
             )}
             <div className="flex justify-between font-semibold text-base pt-1 border-t border-border">
               <span>Total</span>
-              <span className="font-heading">৳{total.toLocaleString()}</span>
+              <span className="font-heading">{symbol}{total.toLocaleString()}</span>
             </div>
           </div>
 
@@ -778,7 +780,7 @@ const CartPanel = ({
                 className="h-8 text-xs flex-1 min-w-0"
                 onClick={() => addQuickCash(amt)}
               >
-                ৳{amt.toLocaleString()}
+                {symbol}{amt.toLocaleString()}
               </Button>
             ))}
             <Button
@@ -803,7 +805,7 @@ const CartPanel = ({
                       <span className="capitalize">{p.method}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">৳{p.amount.toLocaleString()}</span>
+                      <span className="font-medium">{symbol}{p.amount.toLocaleString()}</span>
                       <button onClick={() => removePayment(p.id)} className="text-muted-foreground hover:text-destructive">
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -842,16 +844,16 @@ const CartPanel = ({
             <div className="grid grid-cols-3 gap-2 text-center text-xs">
               <div className="rounded-md bg-secondary p-2">
                 <p className="text-muted-foreground">Due</p>
-                <p className="font-semibold font-heading text-sm">৳{total.toLocaleString()}</p>
+                <p className="font-semibold font-heading text-sm">{symbol}{total.toLocaleString()}</p>
               </div>
               <div className="rounded-md bg-secondary p-2">
                 <p className="text-muted-foreground">Paid</p>
-                <p className="font-semibold font-heading text-sm text-primary">৳{totalPaid.toLocaleString()}</p>
+                <p className="font-semibold font-heading text-sm text-primary">{symbol}{totalPaid.toLocaleString()}</p>
               </div>
               <div className="rounded-md bg-secondary p-2">
                 <p className="text-muted-foreground">{balance > 0 ? "Balance" : "Change"}</p>
                 <p className={`font-semibold font-heading text-sm ${balance > 0 ? "text-destructive" : "text-primary"}`}>
-                  ৳{Math.abs(balance).toLocaleString()}
+                  {symbol}{Math.abs(balance).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -872,8 +874,8 @@ const CartPanel = ({
             className="w-full h-14 text-lg font-semibold gap-2"
           >
             <Check className="h-5 w-5" />
-            {balance > 0 ? `Complete with ৳${balance.toLocaleString()} Due` : `Complete — ৳${total.toLocaleString()}`}
-            {balance < 0 && <span className="text-sm opacity-80">(Change: ৳{Math.abs(balance).toLocaleString()})</span>}
+            {balance > 0 ? `Complete with ${symbol}${balance.toLocaleString()} Due` : `Complete — ${symbol}${total.toLocaleString()}`}
+            {balance < 0 && <span className="text-sm opacity-80">(Change: {symbol}{Math.abs(balance).toLocaleString()})</span>}
           </Button>
         </div>
       </div>

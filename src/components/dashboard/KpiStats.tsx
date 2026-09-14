@@ -9,6 +9,7 @@ import {
   Package,
 } from "lucide-react";
 import StatCardDelta from "@/components/dashboard/StatCardDelta";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface KpiStatsProps {
   cur: { revenue: number; orderCount: number; aov: number; discount: number; shipping: number };
@@ -32,13 +33,15 @@ const KpiStats = ({
   productsCount,
   lowStockCount,
   outOfStockCount,
-}: KpiStatsProps) => (
+}: KpiStatsProps) => {
+  const { symbol } = useCurrency();
+  return (
   <>
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <StatCardDelta
         icon={DollarSign}
         title="Revenue"
-        value={`৳${cur.revenue.toLocaleString()}`}
+        value={`${symbol}${cur.revenue.toLocaleString()}`}
         prevValue={prev.revenue}
         currentValue={cur.revenue}
         subtitle="vs prior"
@@ -54,7 +57,7 @@ const KpiStats = ({
       <StatCardDelta
         icon={Receipt}
         title="Avg Order Value"
-        value={`৳${cur.aov.toFixed(0)}`}
+        value={`${symbol}${cur.aov.toFixed(0)}`}
         prevValue={prev.aov}
         currentValue={cur.aov}
         subtitle="vs prior"
@@ -73,13 +76,13 @@ const KpiStats = ({
       <StatCardDelta
         icon={TrendingUp}
         title="Gross Profit"
-        value={`৳${profit.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+        value={`${symbol}${profit.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
         subtitle={`${profit.margin.toFixed(1)}% margin`}
       />
       <StatCardDelta
         icon={PercentCircle}
         title="Discounts Given"
-        value={`৳${cur.discount.toLocaleString()}`}
+        value={`${symbol}${cur.discount.toLocaleString()}`}
         prevValue={prev.discount}
         currentValue={cur.discount}
         subtitle="vs prior"
@@ -88,7 +91,7 @@ const KpiStats = ({
       <StatCardDelta
         icon={Truck}
         title="Shipping Collected"
-        value={`৳${cur.shipping.toLocaleString()}`}
+        value={`${symbol}${cur.shipping.toLocaleString()}`}
         prevValue={prev.shipping}
         currentValue={cur.shipping}
         subtitle="vs prior"
@@ -106,5 +109,6 @@ const KpiStats = ({
     </div>
   </>
 );
+};
 
 export default KpiStats;

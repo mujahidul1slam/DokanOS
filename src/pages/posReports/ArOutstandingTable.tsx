@@ -2,6 +2,7 @@ import { format, differenceInDays } from "date-fns";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface ArOrder {
   id: string;
@@ -25,6 +26,7 @@ interface Props {
 }
 
 const ArOutstandingTable = ({ out, onOpen }: Props) => {
+  const { symbol } = useCurrency();
   if (out.length === 0) return null;
   return (
     <div className="rounded-lg border border-border bg-card">
@@ -59,9 +61,9 @@ const ArOutstandingTable = ({ out, onOpen }: Props) => {
                     {r.order.customer_phone && <div className="text-[11px] text-muted-foreground">{r.order.customer_phone}</div>}
                   </TableCell>
                   <TableCell className="capitalize text-muted-foreground">{r.order.fulfillment_type || "walkin"}</TableCell>
-                  <TableCell className="text-right">৳{Number(r.order.total).toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-success">৳{r.paid.toLocaleString()}</TableCell>
-                  <TableCell className="text-right font-semibold text-destructive">৳{r.outstanding.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">{symbol}{Number(r.order.total).toLocaleString()}</TableCell>
+                  <TableCell className="text-right text-success">{symbol}{r.paid.toLocaleString()}</TableCell>
+                  <TableCell className="text-right font-semibold text-destructive">{symbol}{r.outstanding.toLocaleString()}</TableCell>
                   <TableCell className={`text-right tabular-nums ${tone}`}>{days}d</TableCell>
                 </TableRow>
               );

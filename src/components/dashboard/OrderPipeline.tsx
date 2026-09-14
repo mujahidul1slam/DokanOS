@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Clock, PackageCheck, Truck, Send, CheckCircle2, ArrowRight } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface OrderLite {
   id: string;
@@ -82,6 +83,7 @@ interface Props {
 }
 
 export default function OrderPipeline({ orders }: Props) {
+  const { symbol } = useCurrency();
   const navigate = useNavigate();
 
   const buckets = useMemo(() => {
@@ -150,7 +152,7 @@ export default function OrderPipeline({ orders }: Props) {
                   <span className="text-[10px] text-muted-foreground">orders</span>
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  ৳{b.value.toLocaleString()}
+                  {symbol}{b.value.toLocaleString()}
                 </div>
 
                 {/* Mini bar */}
@@ -175,7 +177,7 @@ export default function OrderPipeline({ orders }: Props) {
                           {o.order_number}
                         </span>
                         <span className="text-muted-foreground">
-                          ৳{Number(o.total).toLocaleString()}
+                          {symbol}{Number(o.total).toLocaleString()}
                         </span>
                       </div>
                     ))
@@ -199,7 +201,7 @@ export default function OrderPipeline({ orders }: Props) {
         </span></span>
         <span>·</span>
         <span>Value in flight: <span className="text-foreground font-medium">
-          ৳{buckets.slice(0, 4).reduce((s, b) => s + b.value, 0).toLocaleString()}
+          {symbol}{buckets.slice(0, 4).reduce((s, b) => s + b.value, 0).toLocaleString()}
         </span></span>
         <span>·</span>
         <span>Delivered: <span className="text-emerald-400 font-medium">{buckets[4].count}</span></span>

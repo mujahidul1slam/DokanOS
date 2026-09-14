@@ -10,6 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMe
 import CategoryFilter from "@/components/CategoryFilter";
 import type { Product } from "./types";
 import { useGlobalStockEnabled, getEffectiveStock } from "@/lib/stockSettings";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   products: Product[];
@@ -24,6 +25,7 @@ interface Props {
 const PER_PAGE_OPTIONS = [12, 24, 48, 96];
 
 const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectProduct, onAddCustomItem, searchInputRef }: Props) => {
+  const { symbol } = useCurrency();
   const globalStockEnabled = useGlobalStockEnabled();
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all"); // category id or "all"
@@ -256,7 +258,7 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
                 <p className="text-sm font-medium text-card-foreground line-clamp-2 leading-snug">{p.name}</p>
                 <p className="font-mono text-[11px] text-muted-foreground">{p.sku || "—"}</p>
                 <p className="font-heading text-base font-semibold text-card-foreground mt-auto pt-1">
-                  ৳{Number(p.price).toLocaleString()}
+                  {symbol}{Number(p.price).toLocaleString()}
                 </p>
               </div>
             </button>

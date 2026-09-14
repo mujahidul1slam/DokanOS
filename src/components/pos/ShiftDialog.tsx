@@ -9,6 +9,7 @@ import { Clock, DollarSign, TrendingUp, CreditCard, Smartphone, Building2, Bankn
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   open: boolean;
@@ -18,6 +19,7 @@ interface Props {
 }
 
 const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
+  const { symbol } = useCurrency();
   const { user } = useAuth();
   const { toast } = useToast();
   const [openingFloat, setOpeningFloat] = useState("");
@@ -40,7 +42,7 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
       .single();
     if (data) {
       onShiftChange(data);
-      toast({ title: "Shift opened", description: `Float: ৳${parseFloat(openingFloat) || 0}` });
+      toast({ title: "Shift opened", description: `Float: ${symbol}${parseFloat(openingFloat) || 0}` });
     }
     setLoading(false);
     setOpeningFloat("");
@@ -65,7 +67,7 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
       .eq("id", currentShift.id);
 
     onShiftChange(null);
-    toast({ title: "Shift closed", description: `Closing: ৳${closing} | Expected: ৳${expected}` });
+    toast({ title: "Shift closed", description: `Closing: ${symbol}${closing} | Expected: ${symbol}${expected}` });
     setLoading(false);
     setClosingBalance("");
     setClosingNotes("");
@@ -89,7 +91,7 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
         {!currentShift ? (
           <div className="space-y-4">
             <div>
-              <Label className="text-xs">Opening Float (৳)</Label>
+              <Label className="text-xs">Opening Float ({symbol})</Label>
               <Input
                 type="number"
                 value={openingFloat}
@@ -108,7 +110,7 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-md bg-secondary p-3 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Total Sales</p>
-                <p className="text-lg font-heading font-semibold">৳{Number(currentShift.total_sales).toLocaleString()}</p>
+                <p className="text-lg font-heading font-semibold">{symbol}{Number(currentShift.total_sales).toLocaleString()}</p>
               </div>
               <div className="rounded-md bg-secondary p-3 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Transactions</p>
@@ -119,22 +121,22 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
             <div className="grid grid-cols-4 gap-2 text-center text-xs">
               <div className="rounded-md bg-secondary p-2">
                 <Banknote className="h-3.5 w-3.5 mx-auto mb-1 text-green-500" />
-                <p className="font-semibold">৳{Number(currentShift.cash_sales).toLocaleString()}</p>
+                <p className="font-semibold">{symbol}{Number(currentShift.cash_sales).toLocaleString()}</p>
                 <p className="text-muted-foreground">Cash</p>
               </div>
               <div className="rounded-md bg-secondary p-2">
                 <CreditCard className="h-3.5 w-3.5 mx-auto mb-1 text-blue-500" />
-                <p className="font-semibold">৳{Number(currentShift.card_sales).toLocaleString()}</p>
+                <p className="font-semibold">{symbol}{Number(currentShift.card_sales).toLocaleString()}</p>
                 <p className="text-muted-foreground">Card</p>
               </div>
               <div className="rounded-md bg-secondary p-2">
                 <Smartphone className="h-3.5 w-3.5 mx-auto mb-1 text-pink-500" />
-                <p className="font-semibold">৳{Number(currentShift.bkash_sales).toLocaleString()}</p>
+                <p className="font-semibold">{symbol}{Number(currentShift.bkash_sales).toLocaleString()}</p>
                 <p className="text-muted-foreground">bKash</p>
               </div>
               <div className="rounded-md bg-secondary p-2">
                 <Building2 className="h-3.5 w-3.5 mx-auto mb-1 text-orange-500" />
-                <p className="font-semibold">৳{Number(currentShift.bank_sales).toLocaleString()}</p>
+                <p className="font-semibold">{symbol}{Number(currentShift.bank_sales).toLocaleString()}</p>
                 <p className="text-muted-foreground">Bank</p>
               </div>
             </div>
@@ -142,15 +144,15 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
             <div className="rounded-md border border-border p-3">
               <p className="text-xs text-muted-foreground mb-1">Expected Cash in Drawer</p>
               <p className="text-lg font-heading font-semibold">
-                ৳{(currentShift.opening_float + currentShift.cash_sales - currentShift.total_returns).toLocaleString()}
+                {symbol}{(currentShift.opening_float + currentShift.cash_sales - currentShift.total_returns).toLocaleString()}
               </p>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Float ৳{Number(currentShift.opening_float).toLocaleString()} + Cash Sales ৳{Number(currentShift.cash_sales).toLocaleString()} - Returns ৳{Number(currentShift.total_returns).toLocaleString()}
+                Float {symbol}{Number(currentShift.opening_float).toLocaleString()} + Cash Sales {symbol}{Number(currentShift.cash_sales).toLocaleString()} - Returns {symbol}{Number(currentShift.total_returns).toLocaleString()}
               </p>
             </div>
 
             <div>
-              <Label className="text-xs">Actual Closing Balance (৳)</Label>
+              <Label className="text-xs">Actual Closing Balance ({symbol})</Label>
               <Input
                 type="number"
                 value={closingBalance}
@@ -163,7 +165,7 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
                 const diff = parseFloat(closingBalance) - expected;
                 return (
                   <p className={`text-xs mt-1 ${Math.abs(diff) < 1 ? "text-green-500" : "text-destructive"}`}>
-                    {Math.abs(diff) < 1 ? "✓ Balanced" : diff > 0 ? `+৳${diff.toLocaleString()} over` : `-৳${Math.abs(diff).toLocaleString()} short`}
+                    {Math.abs(diff) < 1 ? "✓ Balanced" : diff > 0 ? `+${symbol}${diff.toLocaleString()} over` : `-${symbol}${Math.abs(diff).toLocaleString()} short`}
                   </p>
                 );
               })()}

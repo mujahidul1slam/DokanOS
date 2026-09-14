@@ -31,6 +31,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { useCurrency } from "@/hooks/useCurrency";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
@@ -113,6 +114,7 @@ interface ProductSearchResultRowProps {
 }
 
 function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchResultRowProps) {
+  const { symbol } = useCurrency();
   const productVars = useMemo(
     () => variations.filter((v) => v.product_id === product.productId),
     [variations, product.productId],
@@ -209,7 +211,7 @@ function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchRes
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">৳{effectivePrice.toLocaleString()}</span>
+          <span className="text-sm text-muted-foreground whitespace-nowrap">{symbol}{effectivePrice.toLocaleString()}</span>
           <Button
             type="button"
             size="sm"
@@ -228,6 +230,7 @@ function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchRes
 }
 
 export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props) {
+  const { symbol } = useCurrency();
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [productCatMap, setProductCatMap] = useState<Map<string, Set<string>>>(new Map());
@@ -696,7 +699,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         filled.push("notes");
       }
       if (typeof p.due_amount === "number") {
-        const dueLine = `Due: ৳${p.due_amount.toLocaleString()}`;
+        const dueLine = `Due: ${symbol}${p.due_amount.toLocaleString()}`;
         setNotes((prev) => prev ? `${prev}\n${dueLine}` : dueLine);
         filled.push("due");
       }
@@ -1035,7 +1038,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium leading-tight truncate">{item.name}</div>
                         {item.variationLabel && <div className="text-[11px] text-muted-foreground mt-0.5">{item.variationLabel}</div>}
-                        <div className="text-[11px] text-primary mt-1 font-semibold">৳{item.price.toLocaleString()}</div>
+                        <div className="text-[11px] text-primary mt-1 font-semibold">{symbol}{item.price.toLocaleString()}</div>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="flex items-center border border-border rounded-md bg-background">
@@ -1206,13 +1209,13 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
           <div className="rounded-md border border-primary/20 bg-primary/5 p-3 space-y-2">
             <div className="flex justify-between text-xs text-muted-foreground">
-               <span>Subtotal: ৳{subtotal.toLocaleString()}</span>
-               {discount > 0 && <span>Discount: -৳{discount.toLocaleString()}</span>}
-               {shippingCost > 0 && <span>Shipping: ৳{shippingCost.toLocaleString()}</span>}
+               <span>Subtotal: {symbol}{subtotal.toLocaleString()}</span>
+               {discount > 0 && <span>Discount: -{symbol}{discount.toLocaleString()}</span>}
+               {shippingCost > 0 && <span>Shipping: {symbol}{shippingCost.toLocaleString()}</span>}
             </div>
             <div className="flex justify-between items-center">
                <span className="text-sm font-semibold">Total to Collect</span>
-               <span className="text-lg font-bold text-primary">৳{Math.max(0, total - paidAmount).toLocaleString()}</span>
+               <span className="text-lg font-bold text-primary">{symbol}{Math.max(0, total - paidAmount).toLocaleString()}</span>
             </div>
           </div>
 
@@ -1284,7 +1287,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 }}
               >
                 <span className="text-sm font-medium">{v.name}</span>
-                <span className="text-xs text-primary font-semibold">৳{Number(v.price).toLocaleString()}</span>
+                <span className="text-xs text-primary font-semibold">{symbol}{Number(v.price).toLocaleString()}</span>
               </Button>
             ))}
           </div>

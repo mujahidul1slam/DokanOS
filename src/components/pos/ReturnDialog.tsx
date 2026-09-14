@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { logAction } from "@/lib/auditLog";
 import { useGlobalStockEnabled } from "@/lib/stockSettings";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   open: boolean;
@@ -36,6 +37,7 @@ interface OrderItem {
 }
 
 const ReturnDialog = ({ open, onClose }: Props) => {
+  const { symbol } = useCurrency();
   const { toast } = useToast();
   const globalStockEnabled = useGlobalStockEnabled();
   const [searchQuery, setSearchQuery] = useState("");
@@ -144,14 +146,14 @@ const ReturnDialog = ({ open, onClose }: Props) => {
       await supabase.from("order_timeline").insert({
         order_id: selectedOrder.id,
         event: "return_processed",
-        description: `Return ${returnNumber}: ৳${refundTotal.toLocaleString()} refunded via ${refundMethod}`,
+        description: `Return ${returnNumber}: ${symbol}${refundTotal.toLocaleString()} refunded via ${refundMethod}`,
       });
 
       await logAction("create", "pos_return", selectedOrder.id, {
         return_number: returnNumber, refund_amount: refundTotal, refund_method: refundMethod, restock,
       });
 
-      toast({ title: "Return processed", description: `${returnNumber} — ৳${refundTotal.toLocaleString()} refunded` });
+      toast({ title: "Return processed", description: `${returnNumber} — ${symbol}${refundTotal.toLocaleString()} refunded` });
       
       // Reset
       setSelectedOrder(null);
@@ -200,7 +202,7 @@ const ReturnDialog = ({ open, onClose }: Props) => {
                     <span className="font-mono text-sm font-medium">{o.order_number}</span>
                     {o.customer_name && <span className="text-muted-foreground text-sm ml-2">{o.customer_name}</span>}
                   </div>
-                  <span className="text-sm font-semibold">৳{Number(o.total).toLocaleString()}</span>
+                  <span className="text-sm font-semibold">{symbol}{Number(o.total).toLocaleString()}</span>
                 </button>
               ))}
             </ScrollArea>
@@ -210,7 +212,7 @@ const ReturnDialog = ({ open, onClose }: Props) => {
             <div className="flex items-center justify-between">
               <div>
                 <span className="font-mono text-sm">{selectedOrder.order_number}</span>
-                <span className="text-muted-foreground text-sm ml-2">৳{Number(selectedOrder.total).toLocaleString()}</span>
+                <span className="text-muted-foreground text-sm ml-2">{symbol}{Number(selectedOrder.total).toLocaleString()}</span>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setSelectedOrder(null)}>Change</Button>
             </div>
@@ -227,7 +229,7 @@ const ReturnDialog = ({ open, onClose }: Props) => {
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm truncate">{item.product_name}</p>
-                    <p className="text-xs text-muted-foreground">৳{Number(item.unit_price).toLocaleString()} × {item.quantity}</p>
+                    <p className="text-xs text-muted-foreground">{symbol}{Number(item.unit_price).toLocaleString()} × {item.quantity}</p>
                   </div>
                   {returnItems[item.id] && (
                     <Input
@@ -288,7 +290,7 @@ const ReturnDialog = ({ open, onClose }: Props) => {
 
             <div className="flex justify-between items-center pt-2 border-t border-border">
               <span className="text-sm text-muted-foreground">Refund Total</span>
-              <span className="text-lg font-heading font-semibold">৳{refundTotal.toLocaleString()}</span>
+              <span className="text-lg font-heading font-semibold">{symbol}{refundTotal.toLocaleString()}</span>
             </div>
 
             <Button
@@ -296,7 +298,7 @@ const ReturnDialog = ({ open, onClose }: Props) => {
               disabled={Object.keys(returnItems).length === 0 || processing}
               className="w-full h-12"
             >
-              {processing ? "Processing..." : `Process Return — ৳${refundTotal.toLocaleString()}`}
+              {processing ? "Processing..." : `Process Return — ${symbol}${refundTotal.toLocaleString()}`}
             </Button>
           </div>
         )}

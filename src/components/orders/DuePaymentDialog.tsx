@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useCurrency } from "@/hooks/useCurrency";
 
 export interface DuePaymentResult {
   method: string;
@@ -45,6 +46,7 @@ const DuePaymentDialog = ({
   title,
   onConfirm,
 }: DuePaymentDialogProps) => {
+  const { symbol } = useCurrency();
   const [method, setMethod] = useState("cash");
   const [amount, setAmount] = useState<string>("");
   const [trxId, setTrxId] = useState("");
@@ -87,7 +89,7 @@ const DuePaymentDialog = ({
           <DialogDescription>
             {bulkMode
               ? `Apply this payment method to the full outstanding balance of ${bulkCount} order(s).`
-              : `Record how the customer paid the outstanding ৳${defaultAmount.toLocaleString()}.`}
+              : `Record how the customer paid the outstanding ${symbol}${defaultAmount.toLocaleString()}.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -106,7 +108,7 @@ const DuePaymentDialog = ({
 
           {!bulkMode && (
             <div className="space-y-1.5">
-              <Label className="text-xs">Amount Received (৳)</Label>
+              <Label className="text-xs">Amount Received ({symbol})</Label>
               <Input
                 type="number"
                 min={0}
@@ -117,7 +119,7 @@ const DuePaymentDialog = ({
               />
               {amount && parseFloat(amount) > 0 && parseFloat(amount) < defaultAmount && (
                 <p className="text-[11px] text-muted-foreground">
-                  ৳{(defaultAmount - parseFloat(amount)).toLocaleString()} will remain due.
+                  {symbol}{(defaultAmount - parseFloat(amount)).toLocaleString()} will remain due.
                 </p>
               )}
             </div>

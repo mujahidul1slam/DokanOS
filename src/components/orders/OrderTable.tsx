@@ -12,6 +12,7 @@ import {
 } from "@/components/orders/OrderBadges";
 import { cn } from "@/lib/utils";
 import type { TabKey } from "@/pages/orders/tabFilters";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface OrderRowLike {
   id: string;
@@ -77,6 +78,7 @@ function ProductsList({ items }: { items: { name: string; qty: number }[] }) {
 function OrderTable<T extends OrderRowLike>({
   orders, selected, tab, onToggleSelect, onToggleAll, renderActions,
 }: Props<T>) {
+  const { symbol } = useCurrency();
   const allChecked = orders.length > 0 && orders.every((o) => selected.has(o.id));
   return (
     <div className="hidden xl:block rounded-lg border border-border overflow-hidden mt-4">
@@ -135,9 +137,9 @@ function OrderTable<T extends OrderRowLike>({
               </TableCell>
               <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} /></TableCell>
               <TableCell className="text-right">
-                <div className="font-medium text-foreground">৳{Number(order.total).toLocaleString()}</div>
+                <div className="font-medium text-foreground">{symbol}{Number(order.total).toLocaleString()}</div>
                 {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (
-                  <div className="text-xs text-amber-400">Due: ৳{Number(order.amount_to_collect).toLocaleString()}</div>
+                  <div className="text-xs text-amber-400">Due: {symbol}{Number(order.amount_to_collect).toLocaleString()}</div>
                 )}
                 <div className="mt-0.5 flex flex-col items-end gap-0.5">
                   <PaymentBadge status={order.payment_status} />

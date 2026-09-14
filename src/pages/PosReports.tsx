@@ -29,6 +29,7 @@ import SalesSection from "@/pages/posReports/SalesSection";
 import CashSection from "@/pages/posReports/CashSection";
 import FulfillmentSection from "@/pages/posReports/FulfillmentSection";
 import { AgingCard } from "@/pages/posReports/cards";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface PosOrder {
   id: string;
@@ -95,6 +96,7 @@ const METHOD_ICON: Record<string, any> = {
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const PosReports = () => {
+  const { symbol } = useCurrency();
   // ---- filters ----
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
@@ -626,10 +628,10 @@ const PosReports = () => {
           </Button>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCardDelta icon={Wallet} title="Opening AR" value={`৳${arStats.openingAR.toLocaleString()}`} subtitle="At start of period (approx)" />
-          <StatCardDelta icon={TrendingUp} title="New Credit Issued" value={`৳${arStats.newCredit.toLocaleString()}`} subtitle="Dues created in period" />
-          <StatCardDelta icon={TrendingDown} title="Collections" value={`৳${arStats.collections.toLocaleString()}`} subtitle="Payments received in period" />
-          <StatCardDelta icon={AlertTriangle} title="Closing AR" value={`৳${arStats.closingAR.toLocaleString()}`} subtitle={`${arStats.out.length} orders outstanding`} invertDelta />
+          <StatCardDelta icon={Wallet} title="Opening AR" value={`${symbol}${arStats.openingAR.toLocaleString()}`} subtitle="At start of period (approx)" />
+          <StatCardDelta icon={TrendingUp} title="New Credit Issued" value={`${symbol}${arStats.newCredit.toLocaleString()}`} subtitle="Dues created in period" />
+          <StatCardDelta icon={TrendingDown} title="Collections" value={`${symbol}${arStats.collections.toLocaleString()}`} subtitle="Payments received in period" />
+          <StatCardDelta icon={AlertTriangle} title="Closing AR" value={`${symbol}${arStats.closingAR.toLocaleString()}`} subtitle={`${arStats.out.length} orders outstanding`} invertDelta />
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

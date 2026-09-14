@@ -7,6 +7,7 @@ import { PauseCircle, Play, Trash2, ShoppingBag } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { Cart } from "./types";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   open: boolean;
@@ -25,6 +26,7 @@ interface HeldCartRow {
 }
 
 const HeldCartsDialog = ({ open, onClose, onRecall }: Props) => {
+  const { symbol } = useCurrency();
   const { toast } = useToast();
   const [heldCarts, setHeldCarts] = useState<HeldCartRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -89,7 +91,7 @@ const HeldCartsDialog = ({ open, onClose, onRecall }: Props) => {
                       <p className="text-sm font-medium">{held.label}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant="secondary" className="text-[10px]">{itemCount} items</Badge>
-                        <span className="text-xs text-muted-foreground">৳{total.toLocaleString()}</span>
+                        <span className="text-xs text-muted-foreground">{symbol}{total.toLocaleString()}</span>
                         {held.customer_name && (
                           <span className="text-xs text-muted-foreground">• {held.customer_name}</span>
                         )}

@@ -2,6 +2,7 @@ import {
   Truck, CheckCircle2, Clock, AlertTriangle,
 } from "lucide-react";
 import { FulfillCard } from "./cards";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface FulfillStats {
   walkinDelivered: number;
@@ -20,7 +21,9 @@ interface Props {
   shippingCollected: number;
 }
 
-const FulfillmentSection = ({ fulfillStats, shippingCollected }: Props) => (
+const FulfillmentSection = ({ fulfillStats, shippingCollected }: Props) => {
+  const { symbol } = useCurrency();
+  return (
   <section className="space-y-3">
     <div>
       <h2 className="font-heading text-lg font-semibold flex items-center gap-2">
@@ -47,22 +50,23 @@ const FulfillmentSection = ({ fulfillStats, shippingCollected }: Props) => (
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
         <div className="rounded-md bg-secondary/40 px-3 py-2">
           <div className="text-muted-foreground text-[11px]">Shipping Billed</div>
-          <div className="font-semibold tabular-nums text-foreground">৳{fulfillStats.deliveryShippingBilled.toLocaleString()}</div>
+          <div className="font-semibold tabular-nums text-foreground">{symbol}{fulfillStats.deliveryShippingBilled.toLocaleString()}</div>
           <div className="text-[10px] text-muted-foreground">on delivery orders in period</div>
         </div>
         <div className="rounded-md bg-secondary/40 px-3 py-2">
           <div className="text-muted-foreground text-[11px]">Shipping Collected (period)</div>
-          <div className="font-semibold tabular-nums text-foreground">৳{Math.round(shippingCollected).toLocaleString()}</div>
+          <div className="font-semibold tabular-nums text-foreground">{symbol}{Math.round(shippingCollected).toLocaleString()}</div>
           <div className="text-[10px] text-muted-foreground">allocated from all cash received</div>
         </div>
         <div className="rounded-md bg-secondary/40 px-3 py-2">
           <div className="text-muted-foreground text-[11px]">Shipping Outstanding</div>
-          <div className="font-semibold tabular-nums text-foreground">৳{Math.round(fulfillStats.deliveryShippingOutstanding).toLocaleString()}</div>
+          <div className="font-semibold tabular-nums text-foreground">{symbol}{Math.round(fulfillStats.deliveryShippingOutstanding).toLocaleString()}</div>
           <div className="text-[10px] text-muted-foreground">unpaid portion attributable to shipping</div>
         </div>
       </div>
     </div>
   </section>
 );
+};
 
 export default FulfillmentSection;

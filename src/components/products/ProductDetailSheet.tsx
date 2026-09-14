@@ -18,6 +18,7 @@ import { logAction } from "@/lib/auditLog";
 import { usePermissions } from "@/hooks/usePermissions";
 import SizePresetsEditor from "@/components/measurements/SizePresetsEditor";
 import { getGroupsForProduct, type MeasurementGroup } from "@/lib/measurements";
+import { useCurrency } from "@/hooks/useCurrency";
 
 /* ---------- types ---------- */
 interface Variation {
@@ -92,6 +93,7 @@ interface Props {
 
 /* ========== Component ========== */
 const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) => {
+  const { symbol } = useCurrency();
   const { can } = usePermissions();
   const canViewCost = can("products.view_cost");
   const canEditCost = can("products.edit_cost");
@@ -580,8 +582,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
             {(form.regular_price > 0 || form.sale_price > 0) && (
               <p className="text-xs text-muted-foreground">
                 {form.sale_price > 0
-                  ? `On sale: ৳${form.regular_price.toLocaleString()} → ৳${form.sale_price.toLocaleString()} (pushed to Woo as a scheduled sale; Price ৳${form.price.toLocaleString()} stays the effective/POS price)`
-                  : `Regular price ৳${form.regular_price.toLocaleString()} — pushes to Woo's regular_price`}
+                  ? `On sale: ${symbol}${form.regular_price.toLocaleString()} → ${symbol}${form.sale_price.toLocaleString()} (pushed to Woo as a scheduled sale; Price ${symbol}${form.price.toLocaleString()} stays the effective/POS price)`
+                  : `Regular price ${symbol}${form.regular_price.toLocaleString()} — pushes to Woo's regular_price`}
               </p>
             )}
             <div className="space-y-2">

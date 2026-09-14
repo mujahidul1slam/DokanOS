@@ -22,6 +22,7 @@ import InventoryHealth from "@/components/analytics/InventoryHealth";
 import GeoBreakdown from "@/components/analytics/GeoBreakdown";
 import OperationalMetrics from "@/components/analytics/OperationalMetrics";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface OrderRow {
   id: string;
@@ -73,6 +74,7 @@ const COLORS = [
 ];
 
 const Analytics = () => {
+  const { symbol } = useCurrency();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [prevOrders, setPrevOrders] = useState<OrderRow[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([]);
@@ -375,7 +377,7 @@ const Analytics = () => {
         <StatCardDelta
           icon={DollarSign}
           title="Revenue"
-          value={`৳${stats.revenue.toLocaleString()}`}
+          value={`${symbol}${stats.revenue.toLocaleString()}`}
           currentValue={stats.revenue}
           prevValue={stats.prevRevenue}
         />
@@ -389,20 +391,20 @@ const Analytics = () => {
         <StatCardDelta
           icon={TrendingUp}
           title="Avg Order Value"
-          value={`৳${Math.round(stats.avgOrder).toLocaleString()}`}
+          value={`${symbol}${Math.round(stats.avgOrder).toLocaleString()}`}
           currentValue={stats.avgOrder}
           prevValue={stats.prevAvg}
         />
         <StatCardDelta
           icon={Users}
           title="Net Profit"
-          value={`৳${Math.round(stats.netProfit).toLocaleString()}`}
+          value={`${symbol}${Math.round(stats.netProfit).toLocaleString()}`}
           subtitle={stats.revenue > 0 ? `${Math.round((stats.netProfit / stats.revenue) * 100)}% margin` : ""}
         />
         <StatCardDelta
           icon={Package}
           title="COGS"
-          value={`৳${Math.round(stats.totalCost).toLocaleString()}`}
+          value={`${symbol}${Math.round(stats.totalCost).toLocaleString()}`}
         />
       </div>
 
@@ -428,8 +430,8 @@ const Analytics = () => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="date" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} formatter={(v: number) => `৳${v.toLocaleString()}`} />
+                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${symbol}${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} formatter={(v: number) => `${symbol}${v.toLocaleString()}`} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Area type="monotone" dataKey="online" stackId="1" name="Online" stroke="hsl(217,91%,60%)" fill="url(#revOnline)" strokeWidth={2} />
                   <Area type="monotone" dataKey="pos" stackId="1" name="POS" stroke="hsl(142,71%,45%)" fill="url(#revPos)" strokeWidth={2} />
@@ -452,7 +454,7 @@ const Analytics = () => {
                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} formatter={(v: number) => `৳${v.toLocaleString()}`} />
+                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} formatter={(v: number) => `${symbol}${v.toLocaleString()}`} />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -480,9 +482,9 @@ const Analytics = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={topProducts.slice(0, 8)} layout="vertical" margin={{ left: 100 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
+                  <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${symbol}${(v / 1000).toFixed(0)}k`} />
                   <YAxis type="category" dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} width={95} />
-                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} formatter={(v: number) => `৳${v.toLocaleString()}`} />
+                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} formatter={(v: number) => `${symbol}${v.toLocaleString()}`} />
                   <Bar dataKey="revenue" fill="hsl(217,91%,60%)" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>

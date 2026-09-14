@@ -9,6 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import StatCardDelta from "@/components/dashboard/StatCardDelta";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface SalesStats {
   gross: number;
@@ -29,7 +30,9 @@ interface Props {
   salesByStore: { name: string; sales: number; qty: number; orders: number }[];
 }
 
-const SalesSection = ({ salesStats, trendData, topProducts, salesByStore }: Props) => (
+const SalesSection = ({ salesStats, trendData, topProducts, salesByStore }: Props) => {
+  const { symbol } = useCurrency();
+  return (
   <section className="space-y-3">
     <div className="flex items-baseline justify-between">
       <div>
@@ -40,16 +43,16 @@ const SalesSection = ({ salesStats, trendData, topProducts, salesByStore }: Prop
       </div>
     </div>
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <StatCardDelta icon={DollarSign} title="Gross Sales" value={`৳${salesStats.gross.toLocaleString()}`} subtitle={`${salesStats.orderCount} orders · before discounts`} />
-      <StatCardDelta icon={TrendingDown} title="Discounts" value={`-৳${salesStats.discounts.toLocaleString()}`} subtitle="Order & line discounts" />
-      <StatCardDelta icon={RotateCcw} title="Returns" value={`-৳${salesStats.returnsTotal.toLocaleString()}`} subtitle="Refunded in period (by return date)" />
-      <StatCardDelta icon={TrendingUp} title="Net Sales" value={`৳${salesStats.net.toLocaleString()}`} currentValue={salesStats.net} prevValue={salesStats.prevNet} subtitle="Gross − Discounts − Returns (products only)" />
+      <StatCardDelta icon={DollarSign} title="Gross Sales" value={`${symbol}${salesStats.gross.toLocaleString()}`} subtitle={`${salesStats.orderCount} orders · before discounts`} />
+      <StatCardDelta icon={TrendingDown} title="Discounts" value={`-${symbol}${salesStats.discounts.toLocaleString()}`} subtitle="Order & line discounts" />
+      <StatCardDelta icon={RotateCcw} title="Returns" value={`-${symbol}${salesStats.returnsTotal.toLocaleString()}`} subtitle="Refunded in period (by return date)" />
+      <StatCardDelta icon={TrendingUp} title="Net Sales" value={`${symbol}${salesStats.net.toLocaleString()}`} currentValue={salesStats.net} prevValue={salesStats.prevNet} subtitle="Gross − Discounts − Returns (products only)" />
     </div>
 
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <StatCardDelta icon={Truck} title="Shipping Charged" value={`৳${salesStats.shipping.toLocaleString()}`} subtitle="Delivery fees billed to customers" />
-      <StatCardDelta icon={Receipt} title="Tax" value={`৳${salesStats.tax.toLocaleString()}`} subtitle="Tax applied on orders" />
-      <StatCardDelta icon={DollarSign} title="Total Invoiced" value={`৳${salesStats.totalInvoiced.toLocaleString()}`} subtitle="Net Sales + Shipping + Tax (− Returns)" />
+      <StatCardDelta icon={Truck} title="Shipping Charged" value={`${symbol}${salesStats.shipping.toLocaleString()}`} subtitle="Delivery fees billed to customers" />
+      <StatCardDelta icon={Receipt} title="Tax" value={`${symbol}${salesStats.tax.toLocaleString()}`} subtitle="Tax applied on orders" />
+      <StatCardDelta icon={DollarSign} title="Total Invoiced" value={`${symbol}${salesStats.totalInvoiced.toLocaleString()}`} subtitle="Net Sales + Shipping + Tax (− Returns)" />
     </div>
 
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -69,8 +72,8 @@ const SalesSection = ({ salesStats, trendData, topProducts, salesByStore }: Prop
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} formatter={(v: number) => `৳${v.toLocaleString()}`} />
+                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${symbol}${(v / 1000).toFixed(0)}k`} />
+                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} formatter={(v: number) => `${symbol}${v.toLocaleString()}`} />
                 <Area type="monotone" dataKey="sales" name="Net Sales" stroke="hsl(142,71%,45%)" fill="url(#posRev)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
@@ -98,7 +101,7 @@ const SalesSection = ({ salesStats, trendData, topProducts, salesByStore }: Prop
                       <span className="text-muted-foreground tabular-nums mr-1.5">#{idx + 1}</span>
                       {p.name}
                     </span>
-                    <span className="text-muted-foreground shrink-0 tabular-nums">৳{p.revenue.toLocaleString()}</span>
+                    <span className="text-muted-foreground shrink-0 tabular-nums">{symbol}{p.revenue.toLocaleString()}</span>
                   </div>
                   <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                     <div className="h-full bg-primary/70 rounded-full" style={{ width: `${(p.revenue / max) * 100}%` }} />
@@ -147,7 +150,7 @@ const SalesSection = ({ salesStats, trendData, topProducts, salesByStore }: Prop
                     </TableCell>
                     <TableCell className="text-right">{s.orders}</TableCell>
                     <TableCell className="text-right">{s.qty}</TableCell>
-                    <TableCell className="text-right font-semibold">৳{s.sales.toLocaleString()}</TableCell>
+                    <TableCell className="text-right font-semibold">{symbol}{s.sales.toLocaleString()}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{share.toFixed(1)}%</TableCell>
                   </TableRow>
                 );
@@ -159,5 +162,6 @@ const SalesSection = ({ salesStats, trendData, topProducts, salesByStore }: Prop
     )}
   </section>
 );
+};
 
 export default SalesSection;

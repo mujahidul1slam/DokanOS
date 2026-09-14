@@ -1,4 +1,5 @@
 import { MapPin } from "lucide-react";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Row {
   city: string;
@@ -7,6 +8,7 @@ interface Row {
 }
 
 const GeoBreakdown = ({ data }: { data: Row[] }) => {
+  const { symbol } = useCurrency();
   const max = Math.max(1, ...data.map((d) => d.revenue));
 
   return (
@@ -28,7 +30,7 @@ const GeoBreakdown = ({ data }: { data: Row[] }) => {
                 </div>
                 <div className="flex items-center gap-3 shrink-0 text-xs">
                   <span className="text-muted-foreground">{row.orders}</span>
-                  <span className="font-semibold text-foreground">৳{row.revenue.toLocaleString()}</span>
+                  <span className="font-semibold text-foreground">{symbol}{row.revenue.toLocaleString()}</span>
                 </div>
               </div>
               <div className="h-1.5 rounded-full bg-muted overflow-hidden">

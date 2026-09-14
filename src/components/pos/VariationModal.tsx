@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getGroupsForProduct, type MeasurementGroup } from "@/lib/measurements";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 import type { Product, Variation, CartItem, MeasurementGroupCapture } from "./types";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   product: Product | null;
@@ -32,6 +33,7 @@ function parseAttributes(attrs: any): ParsedAttr[] {
 }
 
 const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
+  const { symbol } = useCurrency();
   const [variations, setVariations] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedVar, setSelectedVar] = useState<Variation | null>(null);
@@ -299,7 +301,7 @@ const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {
               <button onClick={() => setQty(qty + 1)} className="px-3 py-1.5 text-sm hover:bg-muted">+</button>
             </div>
           </div>
-          <p className="font-heading text-xl font-semibold">৳{(finalPrice * qty).toLocaleString()}</p>
+          <p className="font-heading text-xl font-semibold">{symbol}{(finalPrice * qty).toLocaleString()}</p>
         </div>
 
         <Button

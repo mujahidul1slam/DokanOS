@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { postWooOrderNote } from "@/lib/wooNotes";
+import { getActiveCurrency, symbolFor } from "@/lib/currency";
 
 export interface TimelineMetadata {
   [key: string]: unknown;
@@ -19,7 +20,8 @@ export interface TimelineMetadata {
 export async function addOrderTimeline(
   entries:
     | { order_id: string; event: string; description: string; metadata?: TimelineMetadata }
-    | Array<{ order_id: string; event: string; description: string; metadata?: TimelineMetadata }>
+    | Array<{ order_id: string; event: string; description: string; metadata?: TimelineMetadata }>,
+  currency?: string
 ) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -55,7 +57,7 @@ export async function addOrderTimeline(
       if (Array.isArray(meta.changes) && meta.changes.length > 0) {
         extras.push(String((meta.changes as unknown[]).join("; ")));
       } else if (meta.new_total != null) {
-        extras.push(`New total: ৳${Number(meta.new_total).toLocaleString()}`);
+        extras.push(`New total: ${symbolFor(currency ?? getActiveCurrency())}${Number(meta.new_total).toLocaleString()}`);
       }
       if (meta.consignment_id) extras.push(`Consignment: ${String(meta.consignment_id)}`);
       if (meta.tracking_status) extras.push(`Courier status: ${String(meta.tracking_status)}`);
@@ -63,7 +65,7 @@ export async function addOrderTimeline(
         extras.push((meta.items as Array<Record<string, unknown>>).map((it) =>
           `${it.product_name ?? it.name ?? "item"} ×${it.quantity ?? 1}`).join(", "));
       }
-      if (typeof meta.amount === "number") extras.push(`Amount: ৳${meta.amount.toLocaleString()}`);
+      if (typeof meta.amount === "number") extras.push(`Amount: ${symbolFor(currency ?? getActiveCurrency())}${meta.amount.toLocaleString()}`);
 
       const detail = extras.length > 0 ? ` (${extras.join(" · ")})` : "";
       const note = `[DokanOS] ${e.description}${detail}${userLabel}`;

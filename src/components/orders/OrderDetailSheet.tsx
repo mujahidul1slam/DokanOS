@@ -43,6 +43,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useCurrency } from "@/hooks/useCurrency";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -150,6 +151,7 @@ interface Props {
 /* ------------------------------------------------------------------ */
 
 export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved }: Props) {
+  const { symbol } = useCurrency();
   const { can } = usePermissions();
   const canEdit = can("orders.edit");
   const canChangeStatus = can("orders.change_status");
@@ -672,11 +674,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           itemChangeNotes.push(`${item.product_name}: qty ${orig.quantity} → ${item.quantity}`);
         }
         if (orig && Number(orig.unit_price) !== Number(item.unit_price)) {
-          itemChangeNotes.push(`${item.product_name}: price ৳${orig.unit_price} → ৳${item.unit_price}`);
+          itemChangeNotes.push(`${item.product_name}: price ${symbol}${orig.unit_price} → ${symbol}${item.unit_price}`);
         }
       }
       if (newItems.length > 0) {
-        itemChangeNotes.push(`added: ${newItems.map((i) => `${i.product_name} ×${i.quantity} @ ৳${i.unit_price}`).join(", ")}`);
+        itemChangeNotes.push(`added: ${newItems.map((i) => `${i.product_name} ×${i.quantity} @ ${symbol}${i.unit_price}`).join(", ")}`);
       }
       if (itemChangeNotes.length > 0) {
         await addOrderTimeline({
@@ -705,8 +707,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
       // Totals / fulfillment changes
       const totalsChanges: string[] = [];
-      if ((order.discount || 0) !== discount) totalsChanges.push(`discount ৳${order.discount || 0} → ৳${discount}`);
-      if ((order.shipping_cost || 0) !== shippingCost) totalsChanges.push(`shipping ৳${order.shipping_cost || 0} → ৳${shippingCost}`);
+      if ((order.discount || 0) !== discount) totalsChanges.push(`discount ${symbol}${order.discount || 0} → ${symbol}${discount}`);
+      if ((order.shipping_cost || 0) !== shippingCost) totalsChanges.push(`shipping ${symbol}${order.shipping_cost || 0} → ${symbol}${shippingCost}`);
       if ((order.fulfillment_type || "delivery") !== fulfillmentType) totalsChanges.push(`delivery type: ${order.fulfillment_type} → ${fulfillmentType}`);
       if ((order.notes || "") !== notes) totalsChanges.push(`notes updated`);
       if (totalsChanges.length > 0) {
@@ -860,7 +862,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     await addOrderTimeline({
       order_id: order.id,
       event: "payment_logged",
-      description: `Payment of ৳${amt.toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}${recomputed ? ` — ${recomputed.newStatus}, ৳${recomputed.remaining.toLocaleString()} due` : ""}`,
+      description: `Payment of ${symbol}${amt.toLocaleString()} via ${payMethod}${payTrxId ? ` (TrxID: ${payTrxId})` : ""}${recomputed ? ` — ${recomputed.newStatus}, ${symbol}${recomputed.remaining.toLocaleString()} due` : ""}`,
       metadata: { method: payMethod, amount: amt, trx_id: payTrxId || null, ...(recomputed || {}) },
     });
     await logAction("create", "order_payment", order.id, {
@@ -907,13 +909,13 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const recomputed = await recomputePaymentStatus(order);
     const changes: string[] = [];
     if (before.method !== after.method) changes.push(`method ${before.method} → ${after.method}`);
-    if (before.amount !== after.amount) changes.push(`amount ৳${before.amount.toLocaleString()} → ৳${after.amount.toLocaleString()}`);
+    if (before.amount !== after.amount) changes.push(`amount ${symbol}${before.amount.toLocaleString()} → ${symbol}${after.amount.toLocaleString()}`);
     if ((before.trx_id || "") !== (after.trx_id || "")) changes.push(`trx ${before.trx_id || "—"} → ${after.trx_id || "—"}`);
     if ((before.notes || "") !== (after.notes || "")) changes.push(`notes updated`);
     await addOrderTimeline({
       order_id: order.id,
       event: "payment_updated",
-      description: `Payment edited — ${changes.join(", ") || "no changes"}${recomputed ? ` (${recomputed.newStatus}, ৳${recomputed.remaining.toLocaleString()} due)` : ""}`,
+      description: `Payment edited — ${changes.join(", ") || "no changes"}${recomputed ? ` (${recomputed.newStatus}, ${symbol}${recomputed.remaining.toLocaleString()} due)` : ""}`,
       metadata: { before, after, ...(recomputed || {}) },
     });
     await logAction("update", "order_payment", order.id, {
@@ -927,13 +929,13 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
   const deletePayment = async (p: PaymentEntry) => {
     if (!order) return;
-    if (!confirm(`Delete this ৳${Number(p.amount).toLocaleString()} ${p.method} payment?`)) return;
+    if (!confirm(`Delete this ${symbol}${Number(p.amount).toLocaleString()} ${p.method} payment?`)) return;
     await supabase.from("order_payments").delete().eq("id", p.id);
     const recomputed = await recomputePaymentStatus(order);
     await addOrderTimeline({
       order_id: order.id,
       event: "payment_deleted",
-      description: `Payment of ৳${Number(p.amount).toLocaleString()} via ${p.method} removed${recomputed ? ` — ${recomputed.newStatus}, ৳${recomputed.remaining.toLocaleString()} due` : ""}`,
+      description: `Payment of ${symbol}${Number(p.amount).toLocaleString()} via ${p.method} removed${recomputed ? ` — ${recomputed.newStatus}, ${symbol}${recomputed.remaining.toLocaleString()} due` : ""}`,
       metadata: { method: p.method, amount: Number(p.amount), trx_id: p.trx_id, ...(recomputed || {}) },
     });
     await logAction("delete", "order_payment", order.id, {
@@ -991,7 +993,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       await addOrderTimeline({
         order_id: order.id,
         event: "payment_confirmed",
-        description: `Payment of ৳${amt.toLocaleString()} via ${confirmPayMethod} confirmed${confirmPayTrxId ? ` (TrxID: ${confirmPayTrxId})` : ""}. ${remaining <= 0.0001 ? "Order fully paid." : `৳${remaining.toLocaleString()} due — to be collected on delivery.`}`,
+        description: `Payment of ${symbol}${amt.toLocaleString()} via ${confirmPayMethod} confirmed${confirmPayTrxId ? ` (TrxID: ${confirmPayTrxId})` : ""}. ${remaining <= 0.0001 ? "Order fully paid." : `${symbol}${remaining.toLocaleString()} due — to be collected on delivery.`}`,
         metadata: { method: confirmPayMethod, amount: amt, trx_id: confirmPayTrxId || null, total_paid: totalPaid, remaining },
       });
       await addOrderTimeline({
@@ -1020,7 +1022,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
       setConfirmPayAmount("");
       setConfirmPayTrxId("");
-      toast.success(remaining <= 0.0001 ? "Payment confirmed — order marked Paid" : `Payment confirmed — ৳${remaining.toLocaleString()} due`);
+      toast.success(remaining <= 0.0001 ? "Payment confirmed — order marked Paid" : `Payment confirmed — ${symbol}${remaining.toLocaleString()} due`);
       onSaved?.();
       load();
     } catch (e) {
@@ -1191,9 +1193,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       ? "Partial Payment Received"
                       : "Payment Awaiting Confirmation";
                   const subtext = isFailed
-                    ? `The online payment via ${order.payment_method || "the gateway"} did not complete. Log a new payment attempt or collect the full ৳${orderTotal.toLocaleString()} on delivery.`
+                    ? `The online payment via ${order.payment_method || "the gateway"} did not complete. Log a new payment attempt or collect the full ${symbol}${orderTotal.toLocaleString()} on delivery.`
                     : isPartial
-                      ? `৳${totalPaidSoFar.toLocaleString()} received so far. Log any additional payment — the remaining ৳${dueSoFar.toLocaleString()} will be set as the COD amount for dispatch.`
+                      ? `${symbol}${totalPaidSoFar.toLocaleString()} received so far. Log any additional payment — the remaining ${symbol}${dueSoFar.toLocaleString()} will be set as the COD amount for dispatch.`
                       : `This order is on hold pending payment via ${order.payment_method || "non-COD method"}. Confirm the amount received — any remaining balance will be set as the COD amount for Pathao dispatch.`;
                   return (
                   <section className={`rounded-lg border ${tone.border} ${tone.bg} p-4 space-y-3`}>
@@ -1204,9 +1206,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         <p className="text-xs text-muted-foreground mt-0.5">{subtext}</p>
                         {isPartial && (
                           <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                            <span className="text-muted-foreground">Paid: <strong className="text-foreground">৳{totalPaidSoFar.toLocaleString()}</strong></span>
-                            <span className="text-muted-foreground">Due: <strong className="text-foreground">৳{dueSoFar.toLocaleString()}</strong></span>
-                            <span className="text-muted-foreground">Total: <strong className="text-foreground">৳{orderTotal.toLocaleString()}</strong></span>
+                            <span className="text-muted-foreground">Paid: <strong className="text-foreground">{symbol}{totalPaidSoFar.toLocaleString()}</strong></span>
+                            <span className="text-muted-foreground">Due: <strong className="text-foreground">{symbol}{dueSoFar.toLocaleString()}</strong></span>
+                            <span className="text-muted-foreground">Total: <strong className="text-foreground">{symbol}{orderTotal.toLocaleString()}</strong></span>
                           </div>
                         )}
                       </div>
@@ -1227,7 +1229,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         </Select>
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Amount Received (৳)</Label>
+                        <Label className="text-xs">Amount Received ({symbol})</Label>
                         <Input
                           type="number"
                           min={0}
@@ -1255,7 +1257,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                           const remaining = Math.max(Number(order.total) - prev - amt, 0);
                           return remaining <= 0.0001
                             ? <span className="text-emerald-400">Order will be marked <strong>Paid</strong>.</span>
-                            : <>৳{remaining.toLocaleString()} will remain due (collected on delivery).</>;
+                            : <>{symbol}{remaining.toLocaleString()} will remain due (collected on delivery).</>;
                         })()}
                       </div>
                     )}
@@ -1616,7 +1618,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                 />
                               </TableCell>
                               <TableCell className="text-sm text-right font-medium">
-                                ৳{(item.quantity * item.unit_price).toLocaleString()}
+                                {symbol}{(item.quantity * item.unit_price).toLocaleString()}
                               </TableCell>
                               <TableCell>
                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeItem(item.id)} disabled={!canEdit} aria-label="Remove item">
@@ -1638,7 +1640,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         <SearchableSelect
                           options={productOptions.map((p) => ({
                             value: p.id,
-                            label: `${p.name}${p.sku ? ` (${p.sku})` : ""} — ৳${Number(p.price).toLocaleString()}`,
+                            label: `${p.name}${p.sku ? ` (${p.sku})` : ""} — ${symbol}${Number(p.price).toLocaleString()}`,
                           }))}
                           value={addProductId}
                           onChange={(v) => addProductToOrder(v)}
@@ -1654,7 +1656,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   <div className="mt-4 space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Subtotal</span>
-                      <span className="font-medium">৳{computedSubtotal.toLocaleString()}</span>
+                      <span className="font-medium">{symbol}{computedSubtotal.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Discount</span>
@@ -1679,18 +1681,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     <Separator />
                     <div className="flex justify-between text-base font-semibold">
                       <span>Total</span>
-                      <span>৳{computedTotal.toLocaleString()}</span>
+                      <span>{symbol}{computedTotal.toLocaleString()}</span>
                     </div>
                     {order && (order.amount_to_collect ?? 0) > 0 && (
                       <div className="flex justify-between text-sm text-amber-400 font-medium">
                         <span>Due Amount</span>
-                        <span>৳{Number(order.amount_to_collect).toLocaleString()}</span>
+                        <span>{symbol}{Number(order.amount_to_collect).toLocaleString()}</span>
                       </div>
                     )}
                     {payments.length > 0 && (
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>Total Paid</span>
-                        <span>৳{payments.reduce((s, p) => s + Number(p.amount), 0).toLocaleString()}</span>
+                        <span>{symbol}{payments.reduce((s, p) => s + Number(p.amount), 0).toLocaleString()}</span>
                       </div>
                     )}
                   </div>
@@ -1822,7 +1824,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                   </Select>
                                 </div>
                                 <div className="space-y-1">
-                                  <Label className="text-xs">Amount (৳)</Label>
+                                  <Label className="text-xs">Amount ({symbol})</Label>
                                   <Input type="number" min={0} value={editPayAmount} onChange={(e) => setEditPayAmount(e.target.value)} className="h-9" />
                                 </div>
                                 <div className="space-y-1">
@@ -1844,7 +1846,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         return (
                           <div key={p.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                             <div className="min-w-0">
-                              <div className="text-sm font-medium">৳{Number(p.amount).toLocaleString()} via {p.method}</div>
+                              <div className="text-sm font-medium">{symbol}{Number(p.amount).toLocaleString()} via {p.method}</div>
                               {p.trx_id && <div className="text-xs text-muted-foreground">TrxID: {p.trx_id}</div>}
                               {p.notes && <div className="text-xs text-muted-foreground">{p.notes}</div>}
                             </div>
@@ -1886,7 +1888,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Amount (৳)</Label>
+                      <Label className="text-xs">Amount ({symbol})</Label>
                       <Input type="number" min={0} value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="0" />
                     </div>
                     <div className="space-y-1.5">

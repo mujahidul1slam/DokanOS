@@ -7,6 +7,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Upload, X, FileText } from "lucide-react";
 import { logChange } from "@/lib/auditLog";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { useRegisterDirty } from "@/hooks/useSettingsDirty";
 import { SettingsSection, SaveButton } from "./SettingsSection";
 
 interface BusinessProfile {
@@ -20,11 +22,20 @@ interface BusinessProfile {
 }
 
 export default function BusinessProfileTab() {
+  const { active } = useBusinessContext();
+  const setDirty = useRegisterDirty();
   const [data, setData] = useState<BusinessProfile | null>(null);
   const [original, setOriginal] = useState<BusinessProfile | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // W6: report unsaved edits to the settings tab-switch guard
+  const isDirty = !!data && !!original && JSON.stringify(data) !== JSON.stringify(original);
+  useEffect(() => {
+    setDirty(isDirty);
+    return () => setDirty(false);
+  }, [isDirty, setDirty]);
 
   useEffect(() => {
     supabase
@@ -40,6 +51,21 @@ export default function BusinessProfileTab() {
   const update = (key: keyof BusinessProfile, value: string) => {
     if (!data) return;
     setData({ ...data, [key]: value });
+  };
+
+  // W2b: one-way, explicit copy from the real business record. The draft is
+  // NOT auto-saved — the user still presses Save to persist to invoice_settings.
+  const handleSyncFromBusiness = () => {
+    if (!active || !data) return;
+    setData({
+      ...data,
+      business_name: active.name,
+      logo_url: active.logo_url || "",
+      address: active.address || "",
+      phone: active.phone || "",
+      email: active.email || "",
+    });
+    toast.success("Copied from Business Account — remember to save");
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,10 +121,16 @@ export default function BusinessProfileTab() {
 
   return (
     <SettingsSection
-      title="Business Profile"
-      description="Appears on invoices, pickup slips and measurement slips."
+      title="Invoice & Print Header"
+      description="Name, logo and contact block printed on invoices and pickup slips. This is print copy — your business account details live in Business Account."
       footer={<SaveButton saving={saving} onClick={handleSave} label="Save Profile" />}
     >
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={handleSyncFromBusiness} disabled={!active} className="gap-1.5">
+          <FileText className="h-3.5 w-3.5" />
+          Sync from Business Account
+        </Button>
+      </div>
       {/* Logo */}
       <div className="space-y-2">
         <Label>Business Logo</Label>

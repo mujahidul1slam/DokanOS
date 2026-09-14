@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import StatusBadge from "@/components/StatusBadge";
+import { useCurrency } from "@/hooks/useCurrency";
 
 /* ─── Types ─── */
 interface DispatchOrder {
@@ -71,6 +72,7 @@ interface Area { area_id: number; area_name: string }
 
 /* ─── Component ─── */
 const Dispatch = () => {
+  const { symbol } = useCurrency();
   const { can } = usePermissions();
   const canDispatch = can("orders.dispatch");
   const [tab, setTab] = useState("pending");
@@ -621,7 +623,7 @@ const Dispatch = () => {
                       </TableCell>
                       <TableCell>{order.itemCount}</TableCell>
                       <TableCell className="text-right font-medium">
-                        ৳{Number(order.total).toLocaleString()}
+                        {symbol}{Number(order.total).toLocaleString()}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -693,7 +695,7 @@ const Dispatch = () => {
                         <StatusBadge status={order.status} />
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        ৳{Number(order.amount_to_collect ?? order.total).toLocaleString()}
+                        {symbol}{Number(order.amount_to_collect ?? order.total).toLocaleString()}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -751,7 +753,7 @@ const Dispatch = () => {
                         #{order.order_number}
                       </span>
                       <span className="ml-2 text-sm text-muted-foreground">
-                        — ৳{Number(order.total).toLocaleString()}
+                        — {symbol}{Number(order.total).toLocaleString()}
                       </span>
                     </div>
                     <Badge variant="outline">{order.itemCount} item(s)</Badge>

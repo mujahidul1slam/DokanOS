@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Store as StoreIcon, CheckCircle2, AlertCircle, ExternalLink, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface StoreRow {
   id: string;
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export default function StoreHealthGrid({ orders }: Props) {
+  const { symbol } = useCurrency();
   const navigate = useNavigate();
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,7 +142,7 @@ export default function StoreHealthGrid({ orders }: Props) {
                   <span className="text-foreground font-medium">{m.orders}</span>
                   <span className="text-muted-foreground"> orders</span>
                 </div>
-                <div className="text-foreground font-medium">৳{m.revenue.toLocaleString()}</div>
+                <div className="text-foreground font-medium">{symbol}{m.revenue.toLocaleString()}</div>
               </div>
 
               <div className="mt-2 flex items-center justify-between border-t border-border/50 pt-2">

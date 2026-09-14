@@ -20,6 +20,7 @@ import { FulfillmentBadge, PaymentBadge, SourceBadge } from "@/components/orders
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface AliasRow { id?: string; type: "name" | "email" | "address"; value: string; source_store_id: string | null; }
 
@@ -50,6 +51,7 @@ interface StoreOption { id: string; name: string }
 const PAGE_SIZE = 200;
 
 const Customers = () => {
+  const { symbol } = useCurrency();
   const [customers, setCustomers] = useState<UnifiedCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -275,7 +277,7 @@ const Customers = () => {
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="font-medium text-foreground truncate">{c.primaryName}</div>
-                  <div className="font-semibold text-foreground whitespace-nowrap">৳{c.total_spent.toLocaleString()}</div>
+                  <div className="font-semibold text-foreground whitespace-nowrap">{symbol}{c.total_spent.toLocaleString()}</div>
                 </div>
                 {c.phone && (
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
@@ -366,7 +368,7 @@ const Customers = () => {
                   ) : <span className="text-sm text-muted-foreground">0</span>}
                 </TableCell>
                 <TableCell className="text-right font-medium text-foreground">
-                  ৳{c.total_spent.toLocaleString()}
+                  {symbol}{c.total_spent.toLocaleString()}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {format(new Date(c.created_at), "MMM d, yyyy")}
@@ -476,7 +478,7 @@ const Customers = () => {
                     <div className="text-xs text-muted-foreground">Total Orders</div>
                   </div>
                   <div className="rounded-lg border border-border p-3 text-center">
-                    <div className="text-2xl font-semibold">৳{selected.total_spent.toLocaleString()}</div>
+                    <div className="text-2xl font-semibold">{symbol}{selected.total_spent.toLocaleString()}</div>
                     <div className="text-xs text-muted-foreground">Total Spent</div>
                   </div>
                 </div>
@@ -505,7 +507,7 @@ const Customers = () => {
                               </div>
                             </div>
                             <div className="text-right space-y-1">
-                              <div className="font-medium text-sm">৳{Number(o.total).toLocaleString()}</div>
+                              <div className="font-medium text-sm">{symbol}{Number(o.total).toLocaleString()}</div>
                               <div className="flex items-center gap-1.5 justify-end">
                                 <FulfillmentBadge status={o.status} />
                                 <PaymentBadge status={o.payment_status} />

@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMe
 import CategoryFilter from "@/components/CategoryFilter";
 import Fuse from "fuse.js";
 import { useGlobalStockEnabled, getEffectiveStock } from "@/lib/stockSettings";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Product {
   id: string;
@@ -41,6 +42,7 @@ interface Props {
 const PER_PAGE_OPTIONS = [12, 24, 48, 96];
 
 const MiniProductCatalog = ({ products, categories, productCatMap, stores, onSelectProduct, onAddCustomItem, className }: Props) => {
+  const { symbol } = useCurrency();
   const globalStockEnabled = useGlobalStockEnabled();
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
@@ -214,7 +216,7 @@ const MiniProductCatalog = ({ products, categories, productCatMap, stores, onSel
               </div>
               <div className="p-2 flex flex-col gap-0.5">
                 <p className="text-[11px] font-medium line-clamp-1 leading-tight">{p.name}</p>
-                <p className="text-[11px] font-semibold text-primary">৳{Number(p.price).toLocaleString()}</p>
+                <p className="text-[11px] font-semibold text-primary">{symbol}{Number(p.price).toLocaleString()}</p>
               </div>
             </button>
           ))}

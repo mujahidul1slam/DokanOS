@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
+import { getActiveCurrency, symbolFor } from "@/lib/currency";
 
 export interface RecordDuePaymentInput {
   orderId: string;
@@ -9,6 +10,8 @@ export interface RecordDuePaymentInput {
   amount: number;
   trxId?: string | null;
   notes?: string | null;
+  /** Active business currency — symbol is frozen into the timeline row at write time. */
+  currency?: string;
 }
 
 /**
@@ -26,6 +29,7 @@ export async function recordDuePayment({
   amount,
   trxId,
   notes,
+  currency,
 }: RecordDuePaymentInput): Promise<"paid" | "partial" | "unpaid"> {
   // 1. Insert payment row
   await supabase.from("order_payments").insert({
@@ -57,11 +61,11 @@ export async function recordDuePayment({
   await addOrderTimeline({
     order_id: orderId,
     event: "payment_logged",
-    description: `Due payment of ৳${amount.toLocaleString()} via ${method}${
+    description: `Due payment of ${symbolFor(currency ?? getActiveCurrency())}${amount.toLocaleString()} via ${method}${
       trxId ? ` (TrxID: ${trxId})` : ""
-    } — ${newStatus}, ৳${remaining.toLocaleString()} remaining`,
+    } — ${newStatus}, ${symbolFor(currency ?? getActiveCurrency())}${remaining.toLocaleString()} remaining`,
     metadata: { method, amount, trx_id: trxId || null, total_paid: totalPaid, remaining, new_status: newStatus },
-  });
+  }, currency ?? getActiveCurrency());
   await logAction("create", "order_payment", orderId, {
     order_number: orderNumber,
     method,

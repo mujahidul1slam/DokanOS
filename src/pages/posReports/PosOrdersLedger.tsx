@@ -6,6 +6,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import StatusBadge from "@/components/StatusBadge";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface LedgerOrder {
   id: string;
@@ -36,7 +37,9 @@ interface Props {
 
 const PosOrdersLedger = ({
   orders, search, onSearchChange, paidByOrder, methodsByOrder, itemsByOrder, onOpen,
-}: Props) => (
+}: Props) => {
+  const { symbol } = useCurrency();
+  return (
   <section className="space-y-3">
     <div className="rounded-lg border border-border bg-card">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border-b border-border">
@@ -68,7 +71,7 @@ const PosOrdersLedger = ({
               className="rounded-lg border border-border bg-card p-3 active:bg-accent/50 transition-colors">
               <div className="flex items-center justify-between gap-2">
                 <div className="font-semibold text-foreground truncate">#{o.order_number}</div>
-                <div className="font-semibold text-foreground whitespace-nowrap">৳{Number(o.total).toLocaleString()}</div>
+                <div className="font-semibold text-foreground whitespace-nowrap">{symbol}{Number(o.total).toLocaleString()}</div>
               </div>
               <div className="text-[11px] text-muted-foreground">
                 {format(new Date(o.created_at), "MMM d, h:mm a")}{o.salesperson_name ? ` · ${o.salesperson_name}` : ""}
@@ -82,10 +85,10 @@ const PosOrdersLedger = ({
               </div>
               <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
                 <div><div className="text-muted-foreground">Items</div><div className="font-medium">{itemsByOrder.get(o.id) || 0}</div></div>
-                <div><div className="text-muted-foreground">Paid</div><div className="font-medium text-success">৳{paid.toLocaleString()}</div></div>
+                <div><div className="text-muted-foreground">Paid</div><div className="font-medium text-success">{symbol}{paid.toLocaleString()}</div></div>
                 <div><div className="text-muted-foreground">Due</div>
                   <div className={`font-medium ${due > 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                    {due > 0 ? `৳${due.toLocaleString()}` : "—"}
+                    {due > 0 ? `${symbol}${due.toLocaleString()}` : "—"}
                   </div>
                 </div>
               </div>
@@ -131,13 +134,13 @@ const PosOrdersLedger = ({
                   </TableCell>
                   <TableCell className="max-w-[140px] truncate text-muted-foreground">{o.salesperson_name || "—"}</TableCell>
                   <TableCell className="text-right">{itemsByOrder.get(o.id) || 0}</TableCell>
-                  <TableCell className="text-right">৳{Number(o.subtotal || 0).toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{o.discount ? `-৳${Number(o.discount).toLocaleString()}` : "—"}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{o.shipping_cost ? `৳${Number(o.shipping_cost).toLocaleString()}` : "—"}</TableCell>
-                  <TableCell className="text-right font-semibold">৳{Number(o.total).toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-success">৳{paid.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">{symbol}{Number(o.subtotal || 0).toLocaleString()}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{o.discount ? `-${symbol}${Number(o.discount).toLocaleString()}` : "—"}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{o.shipping_cost ? `${symbol}${Number(o.shipping_cost).toLocaleString()}` : "—"}</TableCell>
+                  <TableCell className="text-right font-semibold">{symbol}{Number(o.total).toLocaleString()}</TableCell>
+                  <TableCell className="text-right text-success">{symbol}{paid.toLocaleString()}</TableCell>
                   <TableCell className={`text-right font-medium ${due > 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                    {due > 0 ? `৳${due.toLocaleString()}` : "—"}
+                    {due > 0 ? `${symbol}${due.toLocaleString()}` : "—"}
                   </TableCell>
                   <TableCell>
                     {ms.length === 0 ? <Badge variant="outline" className="text-[10px]">—</Badge> : (
@@ -156,5 +159,6 @@ const PosOrdersLedger = ({
     </div>
   </section>
 );
+};
 
 export default PosOrdersLedger;

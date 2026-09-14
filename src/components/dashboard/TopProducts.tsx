@@ -1,3 +1,5 @@
+import { useCurrency } from "@/hooks/useCurrency";
+
 interface ProductStat {
   name: string;
   qty: number;
@@ -9,6 +11,7 @@ interface Props {
 }
 
 const TopProducts = ({ items }: Props) => {
+  const { symbol } = useCurrency();
   const max = Math.max(...items.map((i) => i.revenue), 1);
 
   return (
@@ -26,7 +29,7 @@ const TopProducts = ({ items }: Props) => {
                   {item.name}
                 </span>
                 <span className="text-muted-foreground shrink-0 tabular-nums">
-                  {item.qty} sold · ৳{item.revenue.toLocaleString()}
+                  {item.qty} sold · {symbol}{item.revenue.toLocaleString()}
                 </span>
               </div>
               <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">

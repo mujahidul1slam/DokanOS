@@ -1,4 +1,5 @@
 import { Users, UserPlus, Repeat, Star } from "lucide-react";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   newCustomers: number;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 const CustomerInsights = ({ newCustomers, returningCustomers, repeatRate, avgLtv, topCustomers }: Props) => {
+  const { symbol } = useCurrency();
   const total = newCustomers + returningCustomers;
 
   return (
@@ -37,7 +39,7 @@ const CustomerInsights = ({ newCustomers, returningCustomers, repeatRate, avgLtv
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Users className="h-3.5 w-3.5" /> Avg LTV
           </div>
-          <p className="mt-1 font-heading text-xl font-semibold text-foreground">৳{Math.round(avgLtv).toLocaleString()}</p>
+          <p className="mt-1 font-heading text-xl font-semibold text-foreground">{symbol}{Math.round(avgLtv).toLocaleString()}</p>
         </div>
         <div className="rounded-md bg-muted/40 p-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -58,7 +60,7 @@ const CustomerInsights = ({ newCustomers, returningCustomers, repeatRate, avgLtv
                 <span className="truncate text-foreground">{c.name}</span>
                 <div className="flex items-center gap-3 shrink-0 text-muted-foreground">
                   <span>{c.orders}x</span>
-                  <span className="font-medium text-foreground">৳{c.revenue.toLocaleString()}</span>
+                  <span className="font-medium text-foreground">{symbol}{c.revenue.toLocaleString()}</span>
                 </div>
               </div>
             ))

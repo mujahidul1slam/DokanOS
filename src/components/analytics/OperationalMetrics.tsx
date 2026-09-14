@@ -1,4 +1,5 @@
 import { Clock, Truck, RotateCcw, XCircle } from "lucide-react";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   avgDispatchHours: number;
@@ -8,7 +9,9 @@ interface Props {
   totalRefunds: number;
 }
 
-const OperationalMetrics = ({ avgDispatchHours, refundRate, refundAmount, cancellationRate, totalRefunds }: Props) => (
+const OperationalMetrics = ({ avgDispatchHours, refundRate, refundAmount, cancellationRate, totalRefunds }: Props) => {
+  const { symbol } = useCurrency();
+  return (
   <div className="rounded-lg border border-border bg-card p-5">
     <div className="mb-4">
       <h2 className="font-heading text-sm font-medium text-card-foreground">Operations</h2>
@@ -25,7 +28,7 @@ const OperationalMetrics = ({ avgDispatchHours, refundRate, refundAmount, cancel
       <div className="rounded-md bg-muted/40 p-3">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><RotateCcw className="h-3.5 w-3.5" /> Refund Rate</div>
         <p className="mt-1 font-heading text-xl font-semibold text-foreground">{refundRate.toFixed(1)}%</p>
-        <p className="text-[10px] text-muted-foreground">{totalRefunds} returns · ৳{Math.round(refundAmount).toLocaleString()}</p>
+        <p className="text-[10px] text-muted-foreground">{totalRefunds} returns · {symbol}{Math.round(refundAmount).toLocaleString()}</p>
       </div>
       <div className="rounded-md bg-muted/40 p-3">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><XCircle className="h-3.5 w-3.5" /> Cancel Rate</div>
@@ -39,5 +42,6 @@ const OperationalMetrics = ({ avgDispatchHours, refundRate, refundAmount, cancel
     </div>
   </div>
 );
+};
 
 export default OperationalMetrics;

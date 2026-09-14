@@ -4,6 +4,7 @@ import {
   Banknote, CreditCard,
 } from "lucide-react";
 import StatCardDelta from "@/components/dashboard/StatCardDelta";
+import { useCurrency } from "@/hooks/useCurrency";
 
 const COLORS = ["hsl(217,91%,60%)", "hsl(142,71%,45%)", "hsl(38,92%,50%)", "hsl(291,64%,42%)", "hsl(0,84%,60%)", "hsl(180,60%,45%)"];
 const METHOD_ICON: Record<string, any> = {
@@ -29,7 +30,9 @@ interface Props {
   cashByMethod: { name: string; key: string; value: number }[];
 }
 
-const CashSection = ({ cashStats, paymentsCount, cashByMethod }: Props) => (
+const CashSection = ({ cashStats, paymentsCount, cashByMethod }: Props) => {
+  const { symbol } = useCurrency();
+  return (
   <section className="space-y-3">
     <div>
       <h2 className="font-heading text-lg font-semibold flex items-center gap-2">
@@ -39,16 +42,16 @@ const CashSection = ({ cashStats, paymentsCount, cashByMethod }: Props) => (
     </div>
 
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <StatCardDelta icon={Wallet} title="Total Collected" value={`৳${cashStats.collectedTotal.toLocaleString()}`} subtitle={`${paymentsCount} payment${paymentsCount === 1 ? "" : "s"}`} />
-      <StatCardDelta icon={Clock} title="On Prior Orders" value={`৳${cashStats.onPriorOrders.toLocaleString()}`} subtitle="Dues paid for orders from before this period" />
-      <StatCardDelta icon={RotateCcw} title="Refunds Paid Out" value={`-৳${cashStats.refundsTotal.toLocaleString()}`} subtitle="Returned to customers" />
-      <StatCardDelta icon={Coins} title="Net Cash In" value={`৳${cashStats.netCash.toLocaleString()}`} subtitle="Collections − Refunds" />
+      <StatCardDelta icon={Wallet} title="Total Collected" value={`${symbol}${cashStats.collectedTotal.toLocaleString()}`} subtitle={`${paymentsCount} payment${paymentsCount === 1 ? "" : "s"}`} />
+      <StatCardDelta icon={Clock} title="On Prior Orders" value={`${symbol}${cashStats.onPriorOrders.toLocaleString()}`} subtitle="Dues paid for orders from before this period" />
+      <StatCardDelta icon={RotateCcw} title="Refunds Paid Out" value={`-${symbol}${cashStats.refundsTotal.toLocaleString()}`} subtitle="Returned to customers" />
+      <StatCardDelta icon={Coins} title="Net Cash In" value={`${symbol}${cashStats.netCash.toLocaleString()}`} subtitle="Collections − Refunds" />
     </div>
 
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <StatCardDelta icon={Package} title="Product Revenue Collected" value={`৳${cashStats.productCollected.toLocaleString()}`} subtitle="Allocated share of collections" />
-      <StatCardDelta icon={Truck} title="Shipping Collected" value={`৳${cashStats.shippingCollected.toLocaleString()}`} subtitle="Delivery fees received (incl. COD remittance)" />
-      <StatCardDelta icon={AlertTriangle} title="Unallocated" value={`৳${cashStats.unallocated.toLocaleString()}`} subtitle="Payments on orders outside the 12-mo window" />
+      <StatCardDelta icon={Package} title="Product Revenue Collected" value={`${symbol}${cashStats.productCollected.toLocaleString()}`} subtitle="Allocated share of collections" />
+      <StatCardDelta icon={Truck} title="Shipping Collected" value={`${symbol}${cashStats.shippingCollected.toLocaleString()}`} subtitle="Delivery fees received (incl. COD remittance)" />
+      <StatCardDelta icon={AlertTriangle} title="Unallocated" value={`${symbol}${cashStats.unallocated.toLocaleString()}`} subtitle="Payments on orders outside the 12-mo window" />
     </div>
 
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -63,7 +66,7 @@ const CashSection = ({ cashStats, paymentsCount, cashByMethod }: Props) => (
                 <Pie data={cashByMethod} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
                   {cashByMethod.map((_, i) => (<Cell key={i} fill={COLORS[i % COLORS.length]} />))}
                 </Pie>
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} formatter={(v: number) => `৳${v.toLocaleString()}`} />
+                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} formatter={(v: number) => `${symbol}${v.toLocaleString()}`} />
               </PieChart>
             </ResponsiveContainer>
           )}
@@ -90,13 +93,13 @@ const CashSection = ({ cashStats, paymentsCount, cashByMethod }: Props) => (
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between text-xs mb-1">
                       <span className="font-medium text-foreground">{p.name}</span>
-                      <span className="tabular-nums font-semibold">৳{p.value.toLocaleString()}</span>
+                      <span className="tabular-nums font-semibold">{symbol}{p.value.toLocaleString()}</span>
                     </div>
                     <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                       <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: COLORS[i % COLORS.length] }} />
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-1 tabular-nums">
-                      Product ৳{Math.round(prod).toLocaleString()} · Shipping ৳{Math.round(ship).toLocaleString()}
+                      Product {symbol}{Math.round(prod).toLocaleString()} · Shipping {symbol}{Math.round(ship).toLocaleString()}
                     </div>
                   </div>
                   <span className="text-[11px] text-muted-foreground tabular-nums w-12 text-right">{pct.toFixed(1)}%</span>
@@ -109,5 +112,6 @@ const CashSection = ({ cashStats, paymentsCount, cashByMethod }: Props) => (
     </div>
   </section>
 );
+};
 
 export default CashSection;

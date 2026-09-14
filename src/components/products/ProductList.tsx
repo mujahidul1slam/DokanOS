@@ -15,6 +15,7 @@ import { downloadCsv } from "@/lib/exportCsv";
 import { format } from "date-fns";
 import CategoryFilter from "@/components/CategoryFilter";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface ProductRow {
   id: string;
@@ -100,6 +101,7 @@ function flattenCategoryTree(nodes: CategoryNode[], depth = 0): { id: string; na
 }
 
 const ProductList = () => {
+  const { symbol } = useCurrency();
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -506,7 +508,7 @@ const ProductList = () => {
                     {p.name}
                     {p.is_featured && <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 shrink-0" />}
                   </div>
-                  <div className="font-semibold text-foreground whitespace-nowrap">৳{Number(p.price).toLocaleString()}</div>
+                  <div className="font-semibold text-foreground whitespace-nowrap">{symbol}{Number(p.price).toLocaleString()}</div>
                 </div>
                 <div className="text-[11px] font-mono text-muted-foreground">{p.sku || "—"} · {p.storeName}</div>
                 <div className="mt-1.5 flex items-center justify-between gap-2">
@@ -610,7 +612,7 @@ const ProductList = () => {
                 <td className="px-4 py-3 text-foreground">{p.storeName}</td>
                 <td className="px-4 py-3">{stockBadge(p.stock_status)}</td>
                 <td className="px-4 py-3 text-right font-mono text-foreground">{p.manage_stock ? p.stock_quantity : "∞"}</td>
-                <td className="px-4 py-3 text-right font-medium text-foreground">৳{Number(p.price).toLocaleString()}</td>
+                <td className="px-4 py-3 text-right font-medium text-foreground">{symbol}{Number(p.price).toLocaleString()}</td>
                 <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>

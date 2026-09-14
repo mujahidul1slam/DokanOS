@@ -5,6 +5,8 @@ export const toneClasses = {
   default: "border-border bg-card text-foreground",
 } as const;
 
+import { useCurrency } from "@/hooks/useCurrency";
+
 export type Tone = keyof typeof toneClasses;
 
 export const FulfillCard = ({
@@ -21,10 +23,13 @@ export const FulfillCard = ({
 
 export const AgingCard = ({
   label, amount, count, tone = "default",
-}: { label: string; amount: number; count: number; tone?: Tone }) => (
-  <div className={`rounded-lg border p-4 ${toneClasses[tone]}`}>
-    <div className="text-[11px] uppercase tracking-wide opacity-80 mb-1.5">{label}</div>
-    <div className="text-xl font-semibold tabular-nums">৳{amount.toLocaleString()}</div>
-    <div className="text-xs opacity-70 mt-0.5">{count} order{count === 1 ? "" : "s"}</div>
-  </div>
-);
+}: { label: string; amount: number; count: number; tone?: Tone }) => {
+  const { symbol } = useCurrency();
+  return (
+    <div className={`rounded-lg border p-4 ${toneClasses[tone]}`}>
+      <div className="text-[11px] uppercase tracking-wide opacity-80 mb-1.5">{label}</div>
+      <div className="text-xl font-semibold tabular-nums">{symbol}{amount.toLocaleString()}</div>
+      <div className="text-xs opacity-70 mt-0.5">{count} order{count === 1 ? "" : "s"}</div>
+    </div>
+  );
+};

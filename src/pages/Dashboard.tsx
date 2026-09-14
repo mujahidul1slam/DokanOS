@@ -18,8 +18,10 @@ import type { DateRange } from "react-day-picker";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { useStoresList } from "@/hooks/useStoresList";
 import { exportOrdersToCSV } from "@/lib/exportOrdersCSV";
+import { useCurrency } from "@/hooks/useCurrency";
 
 const Dashboard = () => {
+  const { symbol } = useCurrency();
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const [storeId, setStoreId] = useState<string>("all");
@@ -99,12 +101,12 @@ const Dashboard = () => {
         <SourceMix
           title="Revenue by Source"
           items={data.sourceMix}
-          formatValue={(v) => `৳${v.toLocaleString()}`}
+          formatValue={(v) => `${symbol}${v.toLocaleString()}`}
         />
         <SourceMix
           title="Revenue by Payment Method"
           items={data.paymentMix}
-          formatValue={(v) => `৳${v.toLocaleString()}`}
+          formatValue={(v) => `${symbol}${v.toLocaleString()}`}
         />
       </div>
 

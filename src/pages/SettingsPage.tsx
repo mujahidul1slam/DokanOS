@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler,
   Building2, Hash, Hourglass, Search, ChevronRight, ArrowLeft, X,
-  Palette, User,
+  Palette, User, Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { logAction, logChange } from "@/lib/auditLog";
+import { logChange } from "@/lib/auditLog";
 import { SettingsSection, SaveButton } from "@/components/settings/SettingsSection";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
@@ -27,10 +27,16 @@ import ProfileSettingsTab from "@/components/settings/ProfileSettingsTab";
 import PreOrdersSettingsTab from "@/components/settings/PreOrdersSettingsTab";
 import InstallAppButton from "@/components/InstallAppButton";
 import { setGlobalStockEnabled, useGlobalStockEnabled } from "@/lib/stockSettings";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { SettingsDirtyContext, useSettingsDirty } from "@/hooks/useSettingsDirty";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type TabId =
   | "profile" | "account" | "brands"
-  | "general" | "inventory" | "pos" | "orders"
+  | "general" | "printheader" | "inventory" | "pos" | "orders"
   | "preorders" | "measurements" | "invoice" | "sources" | "audit";
 
 type TabDef = {
@@ -62,7 +68,7 @@ const groups: GroupDef[] = [
     id: "business",
     label: "Business",
     tabs: [
-      { id: "general", label: "General & Business Profile", icon: Settings, description: "Name, branding, logo, currency, timezone, theme", keywords: "appearance dark light mode currency timezone install business profile logo contact branding tagline address phone email" },
+      { id: "general", label: "General", icon: Settings, description: "Theme and install preferences", keywords: "appearance dark light mode theme install pwa" },
     ],
   },
   {
@@ -80,6 +86,7 @@ const groups: GroupDef[] = [
     id: "documents",
     label: "Documents & Sources",
     tabs: [
+      { id: "printheader", label: "Print Header", icon: Printer, description: "Business name/logo/contact on invoices", keywords: "invoice header logo print brand tagline contact" },
       { id: "invoice", label: "Invoice / Pickup Slip", icon: FileText, description: "Print layouts and content" },
       { id: "sources", label: "Order Sources", icon: Tags, description: "Channels orders come from" },
     ],
@@ -100,6 +107,19 @@ const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState<TabId | null>(null);
   const [search, setSearch] = useState("");
 
+  // W6: dirty-state guard — chokepoint + discard dialog + beforeunload
+  const { registerDirty, isDirty } = useSettingsDirty();
+  const activeTabRef = useRef<TabId | null>(null);
+  activeTabRef.current = activeTab;
+  const [pendingTab, setPendingTab] = useState<TabId | null>(null);
+  const setTabDirty = useCallback((dirty: boolean) => {
+    if (activeTabRef.current) registerDirty(activeTabRef.current, dirty);
+  }, [registerDirty]);
+  const handleTabChange = useCallback((next: TabId | null) => {
+    if (isDirty) { setPendingTab(next); return; }
+    setActiveTab(next);
+  }, [isDirty]);
+
   const persistedGlobalStock = useGlobalStockEnabled();
   const [globalStock, setGlobalStock] = useState<boolean>(persistedGlobalStock);
   const [saving, setSaving] = useState(false);
@@ -113,24 +133,6 @@ const SettingsPage = () => {
   useEffect(() => {
     if (!isMobile && activeTab === null) setActiveTab(groups[0].tabs[0].id);
   }, [isMobile, activeTab]);
-
-  // Business settings
-  const [businessName, setBusinessName] = useState(() => localStorage.getItem("omnisync-business-name") || "DokanOS");
-  const [currency, setCurrency] = useState(() => localStorage.getItem("omnisync-currency") || "৳");
-  const [timezone, setTimezone] = useState(() => localStorage.getItem("omnisync-timezone") || "Asia/Dhaka");
-
-  const handleSaveGeneral = async () => {
-    const before = {
-      businessName: localStorage.getItem("omnisync-business-name") || "DokanOS",
-      currency: localStorage.getItem("omnisync-currency") || "৳",
-      timezone: localStorage.getItem("omnisync-timezone") || "Asia/Dhaka",
-    };
-    localStorage.setItem("omnisync-business-name", businessName);
-    localStorage.setItem("omnisync-currency", currency);
-    localStorage.setItem("omnisync-timezone", timezone);
-    await logChange("settings_general", undefined, before, { businessName, currency, timezone });
-    toast.success("Settings saved");
-  };
 
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -151,34 +153,31 @@ const SettingsPage = () => {
       case "profile": return <ProfileSettingsTab />;
       case "account": return <BusinessAccountTab />;
       case "brands": return <BrandSettingsTab />;
+      case "printheader": return <BusinessProfileTab />;
       case "general":
         return (
           <div className="space-y-4">
             <SettingsSection
               title="General Settings"
               description="Basic system preferences and defaults."
-              footer={<SaveButton onClick={handleSaveGeneral} />}
             >
               <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label>Business Name</Label>
-                  <Input value={businessName} onChange={(e) => setBusinessName(e.target.value)} />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label>Currency Symbol</Label>
-                    <Input value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-24" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Timezone</Label>
-                    <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} />
+                <div className="rounded-lg border border-border p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="space-y-0.5 min-w-0">
+                      <Label className="text-sm font-medium">Dark mode</Label>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Switch between light and dark appearance. Also available in the sidebar.
+                      </p>
+                    </div>
+                    <Switch checked={theme === "dark"} onCheckedChange={() => toggleTheme()} />
                   </div>
                 </div>
 
                 <InstallAppButton />
               </div>
             </SettingsSection>
-            <BusinessProfileTab />
+            <GeneralRedirectCard onGoToAccount={() => handleTabChange("account")} />
           </div>
         );
       case "inventory":
@@ -240,9 +239,10 @@ const SettingsPage = () => {
   if (isMobile) {
     if (activeTab && currentTab) {
       return (
+        <SettingsDirtyContext.Provider value={setTabDirty}>
         <div className="space-y-4">
           <button
-            onClick={() => setActiveTab(null)}
+            onClick={() => handleTabChange(null)}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground -ml-1"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -257,7 +257,18 @@ const SettingsPage = () => {
           <div className={cn(currentTab.id !== "audit" && "max-w-2xl")}>
             {renderContent(currentTab.id)}
           </div>
+          <DiscardEditsDialog
+            open={pendingTab !== null}
+            onDiscard={() => {
+              registerDirty(activeTab, false);
+              const next = pendingTab;
+              setPendingTab(null);
+              setActiveTab(next);
+            }}
+            onStay={() => setPendingTab(null)}
+          />
         </div>
+        </SettingsDirtyContext.Provider>
       );
     }
 
@@ -300,7 +311,7 @@ const SettingsPage = () => {
                 {g.tabs.map((t) => (
                   <button
                     key={t.id}
-                    onClick={() => setActiveTab(t.id)}
+                    onClick={() => handleTabChange(t.id)}
                     className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-secondary/40 transition-colors min-h-[56px]"
                   >
                     <div className="h-9 w-9 rounded-md bg-secondary/60 flex items-center justify-center shrink-0">
@@ -323,6 +334,7 @@ const SettingsPage = () => {
 
   // ============== DESKTOP: grouped left rail ==============
   return (
+    <SettingsDirtyContext.Provider value={setTabDirty}>
     <div className="space-y-6">
       <div>
         <h1 className="font-heading text-2xl font-semibold">Settings</h1>
@@ -353,7 +365,7 @@ const SettingsPage = () => {
               {g.tabs.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => setActiveTab(t.id)}
+                  onClick={() => handleTabChange(t.id)}
                   className={cn(
                     "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
                     activeTab === t.id
@@ -373,7 +385,75 @@ const SettingsPage = () => {
           {activeTab && renderContent(activeTab)}
         </div>
       </div>
+      <DiscardEditsDialog
+        open={pendingTab !== null}
+        onDiscard={() => {
+          if (activeTab) registerDirty(activeTab, false);
+          const next = pendingTab;
+          setPendingTab(null);
+          setActiveTab(next);
+        }}
+        onStay={() => setPendingTab(null)}
+      />
     </div>
+    </SettingsDirtyContext.Provider>
+  );
+};
+
+/**
+ * W6: prompts before discarding unsaved edits on tab switch. Discard drops the
+ * dirty state and switches; Stay keeps the user on the current tab.
+ */
+const DiscardEditsDialog = ({ open, onDiscard, onStay }: { open: boolean; onDiscard: () => void; onStay: () => void }) => (
+  <AlertDialog open={open}>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>You have unsaved changes</AlertDialogTitle>
+        <AlertDialogDescription>
+          Leaving this tab now will discard your edits. Save first, or discard to continue.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel onClick={onStay}>Stay</AlertDialogCancel>
+        <AlertDialogAction onClick={onDiscard}>Discard</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+);
+
+/**
+ * W2a: the old General tab's business fields (name/currency/timezone) wrote to
+ * localStorage only — a per-device, invisible surface. This card shows the LIVE
+ * values from the active business and routes edits to Business Account.
+ */
+const GeneralRedirectCard = ({ onGoToAccount }: { onGoToAccount: () => void }) => {
+  const { active } = useBusinessContext();
+  return (
+    <SettingsSection
+      title="Business basics"
+      description="Name, currency and timezone are managed with the business account."
+      icon={Building2}
+    >
+      <div className="space-y-2 text-sm">
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-muted-foreground">Business name</span>
+          <span className="font-medium truncate">{active?.name || "—"}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-muted-foreground">Currency</span>
+          <span className="font-medium">{active?.currency || "BDT"}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-muted-foreground">Timezone</span>
+          <span className="font-medium">{active?.timezone || "Asia/Dhaka"}</span>
+        </div>
+        <div className="pt-2">
+          <Button size="sm" variant="outline" onClick={onGoToAccount}>
+            Edit in Business Account
+          </Button>
+        </div>
+      </div>
+    </SettingsSection>
   );
 };
 

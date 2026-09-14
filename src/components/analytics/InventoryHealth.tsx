@@ -1,4 +1,5 @@
 import { AlertTriangle, Package, TrendingDown, Archive } from "lucide-react";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   totalSkus: number;
@@ -10,7 +11,9 @@ interface Props {
   topSlowMovers: { name: string; stock: number; lastSold?: string | null }[];
 }
 
-const InventoryHealth = ({ totalSkus, lowStock, outOfStock, deadStock, inventoryValue, turnoverRatio, topSlowMovers }: Props) => (
+const InventoryHealth = ({ totalSkus, lowStock, outOfStock, deadStock, inventoryValue, turnoverRatio, topSlowMovers }: Props) => {
+  const { symbol } = useCurrency();
+  return (
   <div className="rounded-lg border border-border bg-card p-5">
     <div className="mb-4">
       <h2 className="font-heading text-sm font-medium text-card-foreground">Inventory Health</h2>
@@ -24,7 +27,7 @@ const InventoryHealth = ({ totalSkus, lowStock, outOfStock, deadStock, inventory
       </div>
       <div className="rounded-md bg-muted/40 p-3">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">Stock Value</div>
-        <p className="mt-1 font-heading text-xl font-semibold text-foreground">৳{Math.round(inventoryValue).toLocaleString()}</p>
+        <p className="mt-1 font-heading text-xl font-semibold text-foreground">{symbol}{Math.round(inventoryValue).toLocaleString()}</p>
       </div>
       <div className="rounded-md bg-muted/40 p-3">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><TrendingDown className="h-3.5 w-3.5" /> Turnover</div>
@@ -61,5 +64,6 @@ const InventoryHealth = ({ totalSkus, lowStock, outOfStock, deadStock, inventory
     </div>
   </div>
 );
+};
 
 export default InventoryHealth;

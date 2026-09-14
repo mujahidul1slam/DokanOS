@@ -2,6 +2,7 @@ import type { Cart } from "@/components/pos/types";
 import type { InvoiceTemplateConfig } from "@/hooks/useInvoiceSettings";
 import { makeBarcodeSvg } from "./barcodeSvg";
 import { PRINT_BOOTSTRAP } from "./printWindow";
+import { getActiveCurrency, symbolFor } from "./currency";
 
 /*
  * Shared invoice layout builder — the single source of truth for the printed
@@ -31,7 +32,7 @@ export interface InvoiceData {
   total: number;
 }
 
-const taka = (n: number) => `৳${Number(n).toLocaleString()}`;
+const taka = (n: number, sym: string) => `${sym}${Number(n).toLocaleString()}`;
 
 /**
  * The invoice body — everything inside <div class="invoice">. All sizing lives
@@ -43,7 +44,9 @@ export function buildInvoiceInnerHtml(
   tpl: InvoiceTemplateConfig,
   biz: InvoiceBizInfo,
   date: Date = new Date(),
+  currency: string = "BDT",
 ): string {
+  const sym = symbolFor(currency);
   const { orderNumber, cart, subtotal, total } = data;
   const discount = cart.discount || 0;
   const shipping = cart.fulfillment === "delivery" ? cart.shippingFee : 0;
@@ -93,8 +96,8 @@ export function buildInvoiceInnerHtml(
       (i) => `<tr>
         <td>${i.name}${i.variationLabel ? ` <span class="variation">- ${i.variationLabel}</span>` : ""}${i.customTailoring ? ` <span class="custom-tag">[Custom]</span>` : ""}</td>
         ${tpl.show_item_qty ? `<td class="qty">${i.qty}</td>` : ""}
-        ${tpl.show_item_price ? `<td class="price">${taka(i.price)}</td>` : ""}
-        ${tpl.show_item_total ? `<td class="price">${taka(i.price * i.qty)}</td>` : ""}
+        ${tpl.show_item_price ? `<td class="price">${taka(i.price, sym)}</td>` : ""}
+        ${tpl.show_item_total ? `<td class="price">${taka(i.price * i.qty, sym)}</td>` : ""}
       </tr>`,
     )
     .join("");
@@ -107,17 +110,17 @@ export function buildInvoiceInnerHtml(
   </tr></thead><tbody>${itemsRows}</tbody></table>`;
 
   const totalsHtml = `<div class="totals">
-    ${tpl.show_subtotal ? `<div>Subtotal: ${taka(subtotal)}</div>` : ""}
-    ${tpl.show_discount && discount > 0 ? `<div>Discount: -${taka(discount)}</div>` : ""}
-    ${tpl.show_shipping && shipping > 0 ? `<div>Shipping: ${taka(shipping)}</div>` : ""}
-    ${tpl.show_total ? `<div class="total-row">Total: ${taka(total)}</div>` : ""}
+    ${tpl.show_subtotal ? `<div>Subtotal: ${taka(subtotal, sym)}</div>` : ""}
+    ${tpl.show_discount && discount > 0 ? `<div>Discount: -${taka(discount, sym)}</div>` : ""}
+    ${tpl.show_shipping && shipping > 0 ? `<div>Shipping: ${taka(shipping, sym)}</div>` : ""}
+    ${tpl.show_total ? `<div class="total-row">Total: ${taka(total, sym)}</div>` : ""}
   </div>`;
 
   const paymentsHtml = tpl.show_payments && cart.payments.length > 0
-    ? `<div class="payments"><strong>Payments:</strong><br/>${cart.payments.map((p) => `${p.method.toUpperCase()}: ${taka(p.amount)}`).join("<br/>")}</div>`
+    ? `<div class="payments"><strong>Payments:</strong><br/>${cart.payments.map((p) => `${p.method.toUpperCase()}: ${taka(p.amount, sym)}`).join("<br/>")}</div>`
     : "";
 
-  const dueHtml = tpl.show_due && dueAmount > 0 ? `<div class="due-row">Due Amount: ${taka(dueAmount)}</div>` : "";
+  const dueHtml = tpl.show_due && dueAmount > 0 ? `<div class="due-row">Due Amount: ${taka(dueAmount, sym)}</div>` : "";
   const notesHtml = tpl.show_notes && cart.notes ? `<div class="notes"><strong>Notes:</strong> ${cart.notes}</div>` : "";
   const termsHtml = tpl.show_terms && biz.terms_text ? `<div class="terms"><strong>Terms:</strong><br/>${biz.terms_text}</div>` : "";
   const footerHtml = tpl.show_footer ? `<div class="footer">${biz.footer_text || "Thank you for shopping with us!"}</div>` : "";
@@ -178,10 +181,11 @@ export function buildInvoicePrintDocument(
   tpl: InvoiceTemplateConfig,
   biz: InvoiceBizInfo,
   format: "thermal" | "a4",
+  currency: string = "BDT",
 ): string {
   const css = buildInvoiceCss(tpl, format);
   const s = tpl.sizing;
-  const inner = buildInvoiceInnerHtml(data, tpl, biz);
+  const inner = buildInvoiceInnerHtml(data, tpl, biz, new Date(), currency);
 
   if (format === "a4") {
     return `<!DOCTYPE html><html><head><title>Invoice - ${data.orderNumber}</title><style>

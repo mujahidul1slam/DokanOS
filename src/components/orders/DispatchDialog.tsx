@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface DispatchOrder {
   id: string;
@@ -72,6 +73,7 @@ interface DispatchDialogProps {
 }
 
 export default function DispatchDialog({ open, onOpenChange, orders, onDispatched }: DispatchDialogProps) {
+  const { symbol } = useCurrency();
   const [dispatching, setDispatching] = useState(false);
   const [pathaoStores, setPathaoStores] = useState<PathaoStore[]>([]);
   const [selectedPathaoStore, setSelectedPathaoStore] = useState("");
@@ -500,7 +502,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="font-medium text-foreground">#{order.order_number}</span>
-                    <span className="ml-2 text-sm text-muted-foreground">— ৳{Number(order.total).toLocaleString()}</span>
+                    <span className="ml-2 text-sm text-muted-foreground">— {symbol}{Number(order.total).toLocaleString()}</span>
                   </div>
                   <Badge variant="outline">{order.itemCount} item(s)</Badge>
                 </div>

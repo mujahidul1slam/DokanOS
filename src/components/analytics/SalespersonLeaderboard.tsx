@@ -1,4 +1,5 @@
 import { Trophy, Medal, Award } from "lucide-react";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Row {
   name: string;
@@ -8,6 +9,7 @@ interface Row {
 }
 
 const SalespersonLeaderboard = ({ data }: { data: Row[] }) => {
+  const { symbol } = useCurrency();
   const max = Math.max(1, ...data.map((d) => d.revenue));
 
   const trophy = (i: number) => {
@@ -36,8 +38,8 @@ const SalespersonLeaderboard = ({ data }: { data: Row[] }) => {
                 </div>
                 <div className="flex items-center gap-3 shrink-0 text-xs">
                   <span className="text-muted-foreground">{row.orders} orders</span>
-                  <span className="text-muted-foreground">avg ৳{Math.round(row.avgOrder).toLocaleString()}</span>
-                  <span className="font-semibold text-foreground">৳{row.revenue.toLocaleString()}</span>
+                  <span className="text-muted-foreground">avg {symbol}{Math.round(row.avgOrder).toLocaleString()}</span>
+                  <span className="font-semibold text-foreground">{symbol}{row.revenue.toLocaleString()}</span>
                 </div>
               </div>
               <div className="h-1.5 rounded-full bg-muted overflow-hidden">

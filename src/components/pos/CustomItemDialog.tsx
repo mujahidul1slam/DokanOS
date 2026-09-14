@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import type { CartItem } from "./types";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   open: boolean;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 const CustomItemDialog = ({ open, onClose, onAdd }: Props) => {
+  const { symbol } = useCurrency();
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [qty, setQty] = useState(1);
@@ -47,7 +49,7 @@ const CustomItemDialog = ({ open, onClose, onAdd }: Props) => {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">Price (৳)</Label>
+              <Label className="text-xs">Price ({symbol})</Label>
               <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0" className="mt-1 bg-secondary" />
             </div>
             <div>

@@ -1,6 +1,7 @@
 import type { PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
 import { makeBarcodeSvg } from "./barcodeSvg";
 import { PRINT_BOOTSTRAP } from "./printWindow";
+import { getActiveCurrency, symbolFor } from "./currency";
 
 export interface SlipOrderData {
   order_number: string;
@@ -85,13 +86,14 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export function buildSlipInnerHtml(order: SlipOrderData, tpl: PickupSlipTemplateConfig): string {
+export function buildSlipInnerHtml(order: SlipOrderData, tpl: PickupSlipTemplateConfig, currency: string = getActiveCurrency()): string {
   // Single-page render (used by preview for first page)
-  return buildSlipPagesHtml(order, tpl).join("");
+  return buildSlipPagesHtml(order, tpl, currency).join("");
 }
 
 /** Returns one HTML string per physical slip (paginated when items > ITEMS_PER_SLIP). */
-export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplateConfig): string[] {
+export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplateConfig, currency: string = getActiveCurrency()): string[] {
+  const sym = symbolFor(currency);
   const s = tpl.sizing;
   const dueAmount = order.amount_to_collect || 0;
   const customFieldsHtml = tpl.custom_fields.filter(f => f.label && f.value).map(f =>
@@ -131,8 +133,8 @@ export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplate
       : "";
 
     const footer = isLast ? `${customFieldsHtml}${noteHtml}
-      ${tpl.show_total ? `<div class="total-row">Total: ৳${Number(order.total).toLocaleString()}</div>` : ""}
-      ${tpl.show_due && dueAmount > 0 ? `<div class="due-row">Due: ৳${dueAmount.toLocaleString()}</div>` : ""}` : `<div class="continued-row">Continued on next slip →</div>`;
+${tpl.show_total ? `<div class="total-row">Total: ${sym}${Number(order.total).toLocaleString()}</div>` : ""}
+${tpl.show_due && dueAmount > 0 ? `<div class="due-row">Due: ${sym}${dueAmount.toLocaleString()}</div>` : ""}` : `<div class="continued-row">Continued on next slip →</div>`;
 
     return `${header}${customer}${items}${footer}`;
   });
@@ -180,7 +182,7 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
   `;
 }
 
-export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTemplateConfig, format: "thermal" | "a4"): string {
+export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTemplateConfig, format: "thermal" | "a4", currency: string = getActiveCurrency()): string {
   const css = buildSlipCss(tpl, format);
   const s = tpl.sizing;
 
@@ -208,11 +210,11 @@ export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTempl
            remaining space on the sheet, the whole slip moves to the next page. */
       }
       @media print { body { margin: 0; } .slip { border: none; } }
-    </style></head><body><div class="grid">${orders.flatMap(o => buildSlipPagesHtml(o, tpl).map(html => `<div class="slip">${html}</div>`)).join("")}</div>
+    </style></head><body><div class="grid">${orders.flatMap(o => buildSlipPagesHtml(o, tpl, currency).map(html => `<div class="slip">${html}</div>`)).join("")}</div>
     ${PRINT_BOOTSTRAP}</body></html>`;
   }
 
-  const allSlips = orders.flatMap(o => buildSlipPagesHtml(o, tpl).map(html => `<div class="slip">${html}</div>`));
+  const allSlips = orders.flatMap(o => buildSlipPagesHtml(o, tpl, currency).map(html => `<div class="slip">${html}</div>`));
   return `<html><head><title>Pickup Slips</title><style>
     @page { size: ${s.thermal_width_mm}mm ${s.thermal_height_mm > 0 ? `${s.thermal_height_mm}mm` : "auto"}; margin: 0; }
     .slip { ${s.thermal_height_mm > 0 ? `height: ${s.thermal_height_mm}mm;` : ""} }

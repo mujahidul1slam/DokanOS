@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Truck, Send, Zap, ArrowRight } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface OrderLite {
   id: string;
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function CourierDispatchStation({ orders }: Props) {
+  const { symbol } = useCurrency();
   const navigate = useNavigate();
 
   const { ready, inTransit, todayDispatched } = useMemo(() => {
@@ -57,7 +59,7 @@ export default function CourierDispatchStation({ orders }: Props) {
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Ready to ship</div>
           <div className="mt-1 text-2xl font-semibold text-amber-400">{ready.length}</div>
           <div className="text-[10px] text-muted-foreground">
-            ৳{ready.reduce((s, o) => s + Number(o.total || 0), 0).toLocaleString()}
+            {symbol}{ready.reduce((s, o) => s + Number(o.total || 0), 0).toLocaleString()}
           </div>
         </div>
         <div className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3">
@@ -103,7 +105,7 @@ export default function CourierDispatchStation({ orders }: Props) {
                   </div>
                 </div>
                 <span className="text-xs font-medium text-foreground">
-                  ৳{Number(o.total).toLocaleString()}
+                  {symbol}{Number(o.total).toLocaleString()}
                 </span>
               </li>
             ))}

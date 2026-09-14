@@ -15,6 +15,7 @@ import PickupSlipPreview from "./PickupSlipPreview";
 import InvoicePreview from "./InvoicePreview";
 import { defaultInvoiceSizing, defaultPickupSlipSizing, type InvoiceTemplateConfig, type PickupSlipTemplateConfig, type PickupSlipSizing, type InvoiceSizing } from "@/hooks/useInvoiceSettings";
 import { A4_MAX_SLIP_H_MM, A4_MAX_SLIP_W_MM, a4SlipsPerSheet } from "@/lib/pickupSlipHtml";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface InvoiceSettings {
   id: string;
@@ -66,6 +67,7 @@ const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
 };
 
 const InvoiceSettingsTab = () => {
+  const { symbol } = useCurrency();
   const [settings, setSettings] = useState<InvoiceSettings | null>(null);
   const [original, setOriginal] = useState<InvoiceSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -642,7 +644,7 @@ const InvoiceSettingsTab = () => {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Inside Dhaka (৳)</Label>
+            <Label>Inside Dhaka ({symbol})</Label>
             <Input
               type="number"
               value={settings.shipping_inside_dhaka}
@@ -650,7 +652,7 @@ const InvoiceSettingsTab = () => {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Outside Dhaka (৳)</Label>
+            <Label>Outside Dhaka ({symbol})</Label>
             <Input
               type="number"
               value={settings.shipping_outside_dhaka}

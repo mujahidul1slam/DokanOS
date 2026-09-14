@@ -25,6 +25,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ShoppingCart, X } from "lucide-react";
+import { useCurrency } from "@/hooks/useCurrency";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
@@ -52,6 +53,7 @@ const createEmptyCart = (label: string): Cart => ({
 });
 
 const POS = () => {
+  const { symbol } = useCurrency();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -440,7 +442,7 @@ const POS = () => {
       await addOrderTimeline({
         order_id: order.id,
         event: "created",
-        description: `Order placed via POS — Total ৳${total.toLocaleString()}`,
+        description: `Order placed via POS — Total ${symbol}${total.toLocaleString()}`,
         metadata: { source: "pos", total, item_count: cart.items.length, payment_status: paymentStatus },
       });
       await logAction("create", "order", order.id, {
@@ -508,7 +510,7 @@ const POS = () => {
           cart.payments.map((p) => ({
             order_id: order.id,
             event: "payment_logged",
-            description: `Payment of ৳${p.amount.toLocaleString()} via ${p.method}`,
+            description: `Payment of ${symbol}${p.amount.toLocaleString()} via ${p.method}`,
             metadata: { method: p.method, amount: p.amount },
           }))
         );
@@ -699,7 +701,7 @@ const POS = () => {
             <span className="flex-1 text-left">
               {mobileCartCount === 0 ? "Cart Empty" : `${mobileCartCount} ${mobileCartCount === 1 ? "item" : "items"}`}
             </span>
-            <span className="font-heading text-base">৳{mobileCartTotal.toLocaleString()}</span>
+            <span className="font-heading text-base">{symbol}{mobileCartTotal.toLocaleString()}</span>
           </Button>
         </div>
       )}
