@@ -16,6 +16,8 @@ import { toast } from "sonner";
 import { logChange } from "@/lib/auditLog";
 import { slugify } from "@/lib/slug";
 import { useBusinessContext, type Business } from "@/hooks/useBusinessContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useRegisterDirty } from "@/hooks/useSettingsDirty";
 import { SettingsSection, SaveButton, LabelWithHint } from "./SettingsSection";
 
 const CURRENCIES = ["BDT", "USD", "EUR", "GBP", "INR", "MYR", "SAR", "AED"];
@@ -53,7 +55,12 @@ const draftFromBusiness = (b: Business): BusinessDraft => ({
 });
 
 export default function BusinessAccountTab() {
-  const { active, loading, refresh } = useBusinessContext();
+  const { active, loading, refresh, myRole } = useBusinessContext();
+  const { isAdmin } = useAuth();
+  const setDirty = useRegisterDirty();
+  // W1d: members/viewers cannot write the businesses row (RLS) — show read-only.
+  // Platform admins (user_roles) bypass RLS and always can edit.
+  const canEdit = !!isAdmin || myRole === "owner" || myRole === "admin";
   const [draft, setDraft] = useState<BusinessDraft | null>(null);
   const [original, setOriginal] = useState<BusinessDraft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -75,8 +82,17 @@ export default function BusinessAccountTab() {
   }, [active?.id]);
 
   const update = (key: keyof BusinessDraft, value: string) => {
+    if (!canEdit) return;
     setDraft((d) => (d ? { ...d, [key]: value } : d));
   };
+
+  // W6: report unsaved edits to the settings tab-switch guard
+  const isDraftDirty =
+    !!draft && !!original && JSON.stringify(draft) !== JSON.stringify(original);
+  useEffect(() => {
+    setDirty(isDraftDirty);
+    return () => setDirty(false);
+  }, [isDraftDirty, setDirty]);
 
   const handleLogoUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -105,7 +121,7 @@ export default function BusinessAccountTab() {
   };
 
   const handleSave = async () => {
-    if (!active || !draft) return;
+    if (!active || !draft || !canEdit) return;
     const name = draft.name.trim();
     if (!name) {
       toast.error("Business name is required");
@@ -118,7 +134,7 @@ export default function BusinessAccountTab() {
     }
     setSaving(true);
     const next: BusinessDraft = { ...draft, name, slug };
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("businesses")
       .update({
         name: next.name,
@@ -130,7 +146,8 @@ export default function BusinessAccountTab() {
         phone: next.phone || null,
         logo_url: next.logo_url || null,
       })
-      .eq("id", active.id);
+      .eq("id", active.id)
+      .select("id");
     setSaving(false);
     if (error) {
       toast.error(
@@ -138,6 +155,12 @@ export default function BusinessAccountTab() {
           ? "That slug is already taken by another business"
           : "Failed to save business account",
       );
+      return;
+    }
+    // W1d 0-row guard: under the tightened UPDATE policy a denied write is a
+    // silent 0-row no-op (error: null). Never log a false audit row.
+    if (!data || data.length === 0) {
+      toast.error("Your changes could not be saved — you may not have permission to edit this business.");
       return;
     }
     await logChange("business_account", active.id, original, next);
@@ -167,8 +190,15 @@ export default function BusinessAccountTab() {
       title="Business Account"
       description="Details for the business selected in the sidebar switcher. Used across DokanOS."
       icon={Building2}
-      footer={<SaveButton saving={saving} onClick={handleSave} label="Save Business" />}
+      footer={<SaveButton saving={saving} disabled={!canEdit} onClick={handleSave} label="Save Business" />}
     >
+      {!canEdit && (
+        <div className="rounded-md bg-muted/40 border border-border px-3 py-2">
+          <p className="text-xs text-muted-foreground">
+            Business details are managed by the business owner or an admin.
+          </p>
+        </div>
+      )}
       {/* Logo */}
       <div className="space-y-2">
         <Label>Business Logo</Label>
@@ -203,20 +233,20 @@ export default function BusinessAccountTab() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label>Business Name</Label>
-          <Input value={draft?.name ?? ""} onChange={(e) => update("name", e.target.value)} />
+          <Input value={draft?.name ?? ""} disabled={!canEdit} onChange={(e) => update("name", e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <LabelWithHint hint="Platform identifier. Lowercase letters, numbers and hyphens — must be unique across businesses.">
             Slug
           </LabelWithHint>
-          <Input value={draft?.slug ?? ""} onChange={(e) => update("slug", e.target.value)} />
+          <Input value={draft?.slug ?? ""} disabled={!canEdit} onChange={(e) => update("slug", e.target.value)} />
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label>Currency</Label>
-          <Select value={draft?.currency ?? ""} onValueChange={(v) => update("currency", v)}>
+          <Select value={draft?.currency ?? ""} onValueChange={(v) => update("currency", v)} disabled={!canEdit}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select currency" />
             </SelectTrigger>
@@ -229,7 +259,7 @@ export default function BusinessAccountTab() {
         </div>
         <div className="space-y-1.5">
           <Label>Timezone</Label>
-          <Select value={draft?.timezone ?? ""} onValueChange={(v) => update("timezone", v)}>
+          <Select value={draft?.timezone ?? ""} onValueChange={(v) => update("timezone", v)} disabled={!canEdit}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select timezone" />
             </SelectTrigger>
@@ -244,17 +274,17 @@ export default function BusinessAccountTab() {
 
       <div className="space-y-1.5">
         <Label>Address</Label>
-        <Textarea value={draft?.address ?? ""} onChange={(e) => update("address", e.target.value)} rows={2} />
+        <Textarea value={draft?.address ?? ""} disabled={!canEdit} onChange={(e) => update("address", e.target.value)} rows={2} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label>Phone</Label>
-          <Input value={draft?.phone ?? ""} onChange={(e) => update("phone", e.target.value)} />
+          <Input value={draft?.phone ?? ""} disabled={!canEdit} onChange={(e) => update("phone", e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <Label>Email</Label>
-          <Input type="email" value={draft?.email ?? ""} onChange={(e) => update("email", e.target.value)} />
+          <Input type="email" value={draft?.email ?? ""} disabled={!canEdit} onChange={(e) => update("email", e.target.value)} />
         </div>
       </div>
     </SettingsSection>
@@ -285,37 +315,28 @@ function CreateBusinessForm() {
       return;
     }
     setCreating(true);
-    const { data: biz, error: bizErr } = await supabase
-      .from("businesses")
-      .insert({ name: trimmed, slug: finalSlug, currency: "BDT", timezone: "Asia/Dhaka" })
-      .select("id")
+    // W1c: atomic server-side creation via RPC (business + founder-owner row in
+    // one transaction) — replaces the old two-step client-side insert.
+    const { data: bizData, error: rpcErr } = await supabase
+      .rpc("create_business_with_owner", {
+        p_name: trimmed,
+        p_slug: finalSlug,
+      })
       .single();
-    if (bizErr || !biz) {
-      setCreating(false);
+    const biz = bizData as unknown as { id: string } | null;
+    setCreating(false);
+    if (rpcErr || !biz) {
+      const code = (rpcErr as { code?: string } | null)?.code;
+      const msg = (rpcErr as { message?: string } | null)?.message ?? "";
       toast.error(
-        bizErr?.code === "23505"
+        code === "23505" || msg.includes("duplicate key")
           ? "That slug is already taken"
-          : "Could not create the business — only account admins can provision new businesses",
+          : code === "42501" || msg.includes("Admin access required")
+            ? "Could not create the business — only account admins can provision new businesses"
+            : "Could not create the business — please try again",
       );
       return;
     }
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setCreating(false);
-      toast.error("Session expired — please sign in again");
-      return;
-    }
-    const { error: accessErr } = await supabase.from("user_business_access").insert({
-      user_id: user.id,
-      business_id: biz.id,
-      role: "owner",
-    });
-    if (accessErr) {
-      setCreating(false);
-      toast.error("Business created, but linking your membership failed: " + accessErr.message);
-      return;
-    }
-    setCreating(false);
     await logChange("business_account", biz.id, null, { name: trimmed, slug: finalSlug }, undefined, { action: "create" });
     await refresh();
     toast.success(`Business "${trimmed}" created`);

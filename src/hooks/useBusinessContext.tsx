@@ -46,6 +46,8 @@ interface BusinessContextValue {
   brands: Brand[];
   /** The active brand (persisted per business; null = all brands). */
   activeBrand: Brand | null;
+  /** The caller's role in the active business (user_business_access.role). */
+  myRole: string | null;
   loading: boolean;
   setActive: (id: string) => void;
   setActiveBrand: (id: string | null) => void;
@@ -59,6 +61,7 @@ const BRAND_STORAGE_PREFIX = "dokanos-active-brand-";
 
 export const BusinessContextProvider = ({ children }: { children: ReactNode }) => {
   const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [rolesByBusiness, setRolesByBusiness] = useState<Record<string, string>>({});
   const [brands, setBrands] = useState<Brand[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() =>
     localStorage.getItem(STORAGE_KEY)
@@ -70,7 +73,12 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     // user_business_access RLS: users see their own rows. Join to businesses.
     const { data: memberships } = await supabase
       .from("user_business_access")
-      .select("business_id, businesses(*)");
+      .select("role, business_id, businesses(*)");
+    const roles: Record<string, string> = {};
+    (memberships || []).forEach((m: { role: string | null; business_id: string }) => {
+      if (m.role) roles[m.business_id] = m.role;
+    });
+    setRolesByBusiness(roles);
     const rows = (memberships || [])
       .map((m: { businesses: Business | null }) => m.businesses)
       .filter((b: Business | null): b is Business => !!b);
@@ -142,6 +150,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   const active = businesses.find((b) => b.id === activeId) || businesses[0] || null;
   const activeBrand =
     brands.find((b) => b.id === activeBrandId) || null;
+  const myRole = active ? rolesByBusiness[active.id] ?? null : null;
 
   return (
     <Ctx.Provider
@@ -150,6 +159,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
         businesses,
         brands,
         activeBrand,
+        myRole,
         loading,
         setActive,
         setActiveBrand,

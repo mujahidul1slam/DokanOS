@@ -3279,6 +3279,37 @@ export type Database = {
         Args: { _store_id: string; _user_id: string }
         Returns: boolean
       }
+      get_my_managed_businesses: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
+          slug: string
+          logo_url: string | null
+        }[]
+      }
+      get_member_access: {
+        Args: { p_user: string; p_business: string }
+        Returns: {
+          business_role: string | null
+          store_ids: string[] | null
+          effective_perms: string[] | null
+        }[]
+      }
+      set_member_business_role: {
+        Args: { p_user: string; p_business: string; p_role: string }
+        Returns: undefined
+      }
+      create_business_with_owner: {
+        Args: {
+          p_name: string
+          p_slug: string
+          p_logo_url?: string
+          p_currency?: string
+          p_timezone?: string
+        }
+        Returns: Json
+      }
       verify_multi_business_foundation: { Args: never; Returns: Json }
     }
     Enums: {
