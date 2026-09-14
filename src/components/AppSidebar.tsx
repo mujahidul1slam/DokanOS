@@ -63,7 +63,7 @@ const BASE_NAV_GROUPS: NavGroup[] = [
     items: [
       { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin"] },
       { icon: Store, label: "Stores", path: "/stores", roles: ["admin", "staff"] },
-      { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin", "staff"] },
+      { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin"] },
       { icon: Plug, label: "Integrations", path: "/integrations", roles: ["admin"] },
       { icon: UsersRound, label: "Team", path: "/team", roles: ["admin"] },
       { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },

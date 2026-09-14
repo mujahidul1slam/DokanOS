@@ -23,6 +23,7 @@ interface Props {
 
 interface CustomRole { id: string; name: string; permissions: AppPermission[] }
 interface Store { id: string; name: string }
+interface ManagedBiz { id: string; name: string; slug: string; logo_url: string | null }
 
 const UserAccessDialog = ({ open, onOpenChange, userId, userName, currentRole, onSaved }: Props) => {
   const [loading, setLoading] = useState(true);
@@ -34,6 +35,12 @@ const UserAccessDialog = ({ open, onOpenChange, userId, userName, currentRole, o
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [stores, setStores] = useState<Store[]>([]);
   const [storeAccess, setStoreAccess] = useState<string[]>([]);
+  // W7: per-business access (user_business_access.role), managed via RPC
+  const [managedBiz, setManagedBiz] = useState<ManagedBiz[]>([]);
+  const [bizId, setBizId] = useState<string>("");
+  const [bizRole, setBizRole] = useState<string>("member");
+  const [bizLoading, setBizLoading] = useState(false);
+  const [bizSaving, setBizSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -57,6 +64,49 @@ const UserAccessDialog = ({ open, onOpenChange, userId, userName, currentRole, o
       setLoading(false);
     })();
   }, [open, userId, currentRole]);
+
+  // W7: businesses the caller manages (owner/admin or platform admin)
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const { data } = await supabase.rpc("get_my_managed_businesses");
+      const list = (data as ManagedBiz[] | null) || [];
+      setManagedBiz(list);
+      if (list.length > 0) setBizId((prev) => (prev && list.some((b) => b.id === prev) ? prev : list[0].id));
+    })();
+  }, [open]);
+
+  // Load the member's current business role when the selected business changes
+  useEffect(() => {
+    if (!open || !bizId) return;
+    (async () => {
+      setBizLoading(true);
+      const { data } = await supabase.rpc("get_member_access", { p_user: userId, p_business: bizId });
+      const row = (data as { business_role: string | null }[] | null)?.[0];
+      setBizRole(row?.business_role || "member");
+      setBizLoading(false);
+    })();
+  }, [open, bizId, userId]);
+
+  // W7: apply the member's business role via the guarded RPC (elevation +
+  // last-owner protection enforced server-side, mirroring the W1a RLS guards)
+  const applyBizRole = async () => {
+    if (!bizId) return;
+    setBizSaving(true);
+    try {
+      const { error } = await supabase.rpc("set_member_business_role", {
+        p_user: userId,
+        p_business: bizId,
+        p_role: bizRole,
+      });
+      if (error) throw error;
+      toast.success("Business role updated");
+      onSaved?.();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update business role");
+    }
+    setBizSaving(false);
+  };
 
   const toggleRole = (id: string) => {
     setAssignedRoleIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -126,13 +176,51 @@ const UserAccessDialog = ({ open, onOpenChange, userId, userName, currentRole, o
         {loading ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : (
-          <Tabs defaultValue="role" className="flex-1 overflow-hidden flex flex-col">
-            <TabsList className="grid w-full grid-cols-4">
+          <Tabs defaultValue="business" className="flex-1 overflow-hidden flex flex-col">
+            <TabsList className="grid w-full grid-cols-5">
+              <TabsTrigger value="business">Business</TabsTrigger>
               <TabsTrigger value="role">Role</TabsTrigger>
               <TabsTrigger value="custom">Custom Roles</TabsTrigger>
               <TabsTrigger value="overrides">Overrides</TabsTrigger>
               <TabsTrigger value="stores">Stores</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="business" className="space-y-3 mt-4">
+              {managedBiz.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-6 text-center">
+                  You do not manage any businesses. Business roles are set by business owners or admins.
+                </p>
+              ) : (
+                <>
+                  <Label>Business</Label>
+                  <Select value={bizId} onValueChange={setBizId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {managedBiz.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Label>Role in this business</Label>
+                  <Select value={bizRole} onValueChange={setBizRole} disabled={bizLoading}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="owner">Owner</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" onClick={applyBizRole} disabled={bizSaving || bizLoading}>
+                    {bizSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Apply Business Role
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Separate from the platform preset role. Only business owners or platform admins can grant
+                    owner/admin here, and the last owner of a business cannot be demoted.
+                  </p>
+                </>
+              )}
+            </TabsContent>
 
             <TabsContent value="role" className="space-y-3 mt-4">
               <Label>Preset Role</Label>

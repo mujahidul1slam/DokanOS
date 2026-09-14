@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { KeyRound, LogOut, Upload, X } from "lucide-react";
+import { KeyRound, Loader2, LogOut, Mail, ShieldCheck, Upload, X } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logChange } from "@/lib/auditLog";
 import { useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useRegisterDirty } from "@/hooks/useSettingsDirty";
 import { SettingsSection, SaveButton } from "./SettingsSection";
 
 interface ProfileDraft {
@@ -17,7 +19,9 @@ interface ProfileDraft {
 }
 
 export default function ProfileSettingsTab() {
-  const { user, role, signOut } = useAuth();
+  const { user, role, signOut, isAdmin } = useAuth();
+  const { canAny } = usePermissions();
+  const setDirty = useRegisterDirty();
   const userId = user?.id ?? null;
   const [profileId, setProfileId] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileDraft | null>(null);
@@ -27,6 +31,19 @@ export default function ProfileSettingsTab() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
+  // W8: email change (re-auth → updateUser → double-opt-in per project config)
+  const [newEmail, setNewEmail] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [changingEmail, setChangingEmail] = useState(false);
+  // W9: TOTP 2FA (enroll → verify → AAL2; disable with re-auth → unenroll)
+  const [aal, setAal] = useState<{ current: string | null; next: string | null } | null>(null);
+  const [totpFactors, setTotpFactors] = useState<{ id: string; friendly_name?: string }[]>([]);
+  const [enrolledFactor, setEnrolledFactor] = useState<{ factorId: string; secret: string } | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [mfaPassword, setMfaPassword] = useState("");
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [mfaBusy, setMfaBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -55,6 +72,13 @@ export default function ProfileSettingsTab() {
   const update = (key: keyof ProfileDraft, value: string) => {
     setProfile((p) => (p ? { ...p, [key]: value } : p));
   };
+
+  // W6: report unsaved edits to the settings tab-switch guard
+  const isDirty = !!profile && !!original && JSON.stringify(profile) !== JSON.stringify(original);
+  useEffect(() => {
+    setDirty(isDirty);
+    return () => setDirty(false);
+  }, [isDirty, setDirty]);
 
   const handleAvatar = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -134,6 +158,131 @@ export default function ProfileSettingsTab() {
     toast.success("Password updated");
   };
 
+  // W8: email change — client-side re-auth (UX hardening, not a security
+  // boundary; documented residual risk) → updateUser({ email }) → the project's
+  // confirmation flow (both inboxes when "Secure email change" is ON).
+  const maskEmail = (e: string) => {
+    const [local, domain] = e.split("@");
+    if (!domain) return "***";
+    return `${local.slice(0, 1)}***@${domain}`;
+  };
+
+  // W9: load AAL + verified factors when the user signs in / changes
+  const refreshMfa = async () => {
+    if (!user) return;
+    try {
+      const mfa = await import("@/lib/mfa");
+      const a = await mfa.getAal();
+      setAal(a);
+      if (a.next === "aal2") {
+        const factors = await mfa.listVerifiedTotpFactors();
+        setTotpFactors(factors.map((f) => ({ id: f.id, friendly_name: f.friendly_name })));
+      } else {
+        setTotpFactors([]);
+      }
+    } catch {
+      // MFA API unavailable — leave the section inert
+    }
+  };
+
+  useEffect(() => {
+    if (user) void refreshMfa();
+  }, [user?.id]);
+
+  // W9: enroll a new TOTP factor (secret shown for manual entry — no QR lib)
+  const handleEnrollTotp = async () => {
+    setMfaBusy(true);
+    setMfaError(null);
+    try {
+      const mfa = await import("@/lib/mfa");
+      const enrolled = await mfa.enrollTotp("DokanOS");
+      setEnrolledFactor({ factorId: enrolled.factorId, secret: enrolled.secret });
+    } catch (err: any) {
+      setMfaError(err?.message || "Enrollment failed");
+    }
+    setMfaBusy(false);
+  };
+
+  // W9: verify the code → factor becomes verified → AAL2 on next sign-in
+  const handleVerifyTotp = async () => {
+    if (!enrolledFactor || totpCode.length < 6) return;
+    setMfaBusy(true);
+    setMfaError(null);
+    try {
+      const mfa = await import("@/lib/mfa");
+      await mfa.challengeAndVerify(enrolledFactor.factorId, totpCode);
+      setEnrolledFactor(null);
+      setTotpCode("");
+      await refreshMfa();
+      toast.success("Two-factor authentication enabled");
+    } catch (err: any) {
+      const msg = err?.message ?? "";
+      setMfaError(
+        msg.toLowerCase().includes("expired") ? "Code expired — try again"
+        : "Invalid code — check your authenticator and retry",
+      );
+    }
+    setMfaBusy(false);
+  };
+
+  // W9: disable 2FA — requires password re-auth (client-side hardening), then unenroll
+  const handleDisableTotp = async () => {
+    if (!user || !mfaPassword || totpFactors.length === 0) return;
+    setMfaBusy(true);
+    setMfaError(null);
+    try {
+      const { error: reauthErr } = await supabase.auth.signInWithPassword({
+        email: user.email ?? "",
+        password: mfaPassword,
+      });
+      if (reauthErr) {
+        setMfaError("Current password is incorrect");
+        setMfaBusy(false);
+        return;
+      }
+      const mfa = await import("@/lib/mfa");
+      for (const f of totpFactors) await mfa.unenrollFactor(f.id);
+      setMfaPassword("");
+      await refreshMfa();
+      toast.success("Two-factor authentication disabled");
+    } catch (err: any) {
+      setMfaError(err?.message || "Failed to disable 2FA");
+    }
+    setMfaBusy(false);
+  };
+
+  // W9: the section is offered to platform admins or team.manage holders (small audience)
+  const canManage2fa = !!user && (isAdmin || canAny(["team.manage"]));
+
+  const handleChangeEmail = async () => {
+    if (!user || !newEmail || !emailPassword) return;
+    setEmailError(null);
+    setChangingEmail(true);
+    // Step 1: explicit re-auth. Wrong password → inline error under the field.
+    const { error: reauthErr } = await supabase.auth.signInWithPassword({
+      email: user.email ?? "",
+      password: emailPassword,
+    });
+    if (reauthErr) {
+      setChangingEmail(false);
+      setEmailError("Current password is incorrect");
+      return;
+    }
+    // Step 2: request the email change.
+    const { error } = await supabase.auth.updateUser({ email: newEmail });
+    setChangingEmail(false);
+    if (error) {
+      toast.error(error.message.toLowerCase().includes("already")
+        ? "That email is already in use"
+        : error.message);
+      return;
+    }
+    setEmailPassword("");
+    setNewEmail("");
+    await logChange("profile_email", profileId ?? undefined, { email: maskEmail(user.email ?? "") }, { email: maskEmail(newEmail) });
+    toast.success("Check both inboxes — confirm the link to finish changing your email");
+  };
+
   if (!user) return null;
 
   const initials = (profile?.full_name || user.email || "?")
@@ -192,7 +341,7 @@ export default function ProfileSettingsTab() {
           <div className="space-y-1.5">
             <Label>Email</Label>
             <Input value={user.email ?? ""} disabled />
-            <p className="text-xs text-muted-foreground">Sign-in email can't be changed here.</p>
+            <p className="text-xs text-muted-foreground">Change your sign-in email in the "Change Email" section below.</p>
           </div>
         </div>
 
@@ -245,6 +394,125 @@ export default function ProfileSettingsTab() {
           </div>
         </div>
       </SettingsSection>
+
+      <SettingsSection
+        title="Change Email"
+        description="Confirm your current password, then enter the new address. Both inboxes receive a confirmation link."
+        icon={Mail}
+        footer={
+          <SaveButton
+            saving={changingEmail}
+            disabled={!newEmail || !emailPassword}
+            onClick={handleChangeEmail}
+            label="Update Email"
+          />
+        }
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Current Email</Label>
+            <Input value={user.email ?? ""} disabled />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="new-email">New Email</Label>
+            <Input
+              id="new-email"
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              placeholder="new@example.com"
+              autoComplete="email"
+            />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="email-password">Current Password</Label>
+          <Input
+            id="email-password"
+            type="password"
+            value={emailPassword}
+            onChange={(e) => setEmailPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+          {emailError && (
+            <p role="alert" className="text-xs text-destructive">{emailError}</p>
+          )}
+        </div>
+      </SettingsSection>
+
+      {canManage2fa && (
+        <SettingsSection
+          title="Two-Factor Authentication"
+          description="Extra protection at sign-in: a 6-digit code from your authenticator app. Optional."
+          icon={ShieldCheck}
+        >
+          {enrolledFactor ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>1. Add this secret to your authenticator app</Label>
+                <Input value={enrolledFactor.secret} readOnly className="font-mono text-sm" />
+                <p className="text-xs text-muted-foreground">Manual entry — paste the secret into Google Authenticator, Authy, or 1Password.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>2. Enter the 6-digit code to confirm</Label>
+                <Input
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="123456"
+                  inputMode="numeric"
+                  className="w-40 font-mono"
+                />
+                {mfaError && <p role="alert" className="text-xs text-destructive">{mfaError}</p>}
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleVerifyTotp} disabled={mfaBusy || totpCode.length < 6}>
+                    {mfaBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Confirm & Enable
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => { setEnrolledFactor(null); setTotpCode(""); setMfaError(null); }}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : aal?.next === "aal2" ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm">
+                <Badge className="bg-success/20 text-success">Enabled</Badge>
+                <span className="text-muted-foreground">
+                  {totpFactors.length} factor{totpFactors.length === 1 ? "" : "s"} active. A code is required at sign-in.
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mfa-password">Current password (to disable)</Label>
+                <Input
+                  id="mfa-password"
+                  type="password"
+                  value={mfaPassword}
+                  onChange={(e) => setMfaPassword(e.target.value)}
+                  autoComplete="current-password"
+                  className="max-w-xs"
+                />
+                {mfaError && <p role="alert" className="text-xs text-destructive">{mfaError}</p>}
+                <Button size="sm" variant="destructive" onClick={handleDisableTotp} disabled={mfaBusy || !mfaPassword}>
+                  {mfaBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Disable 2FA
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Not enabled. When enabled, signing in requires your password plus a rotating 6-digit code.
+              </p>
+              <Button size="sm" variant="outline" onClick={handleEnrollTotp} disabled={mfaBusy}>
+                {mfaBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Enable 2FA
+              </Button>
+              {mfaError && <p role="alert" className="text-xs text-destructive">{mfaError}</p>}
+            </div>
+          )}
+        </SettingsSection>
+      )}
 
       <SettingsSection
         title="Session"
