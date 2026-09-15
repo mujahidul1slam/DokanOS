@@ -70,7 +70,14 @@ const PageFallback = () => (
 const AppRoutes = () => {
   const { user, loading } = useAuth();
 
-  markAppLoaded();
+  // Clear the chunk-recovery guard only AFTER the app has rendered for a few
+  // seconds without a chunk failure. Clearing during render — before lazy
+  // chunks resolve — resets the guard too early and causes an infinite
+  // reload loop when a chunk keeps failing.
+  useEffect(() => {
+    const t = setTimeout(() => markAppLoaded(), 5_000);
+    return () => clearTimeout(t);
+  }, []);
 
   if (loading) return <FullScreenLoader label="Loading DokanOS..." />;
 
