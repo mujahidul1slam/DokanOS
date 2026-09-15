@@ -28,7 +28,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .select("role")
       .eq("user_id", userId)
       .single();
-    setRole((data?.role as AppRole) || null);
+    const next = (data?.role as AppRole) || null;
+    setRole((prev) => (prev === next ? prev : next));
   };
 
   useEffect(() => {
@@ -42,7 +43,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
-        setUser(session?.user ?? null);
+        // Stabilize identity: only replace the user object when the actual
+        // identity fields changed. Supabase re-emits events (channel joins,
+        // token refreshes) with fresh-but-equivalent user objects; without
+        // this guard every event creates a new `user` reference, which
+        // re-fires every [user]-dependent effect (permissions fetch,
+        // sync-indicator subscribe) — the resulting re-subscribe emits more
+        // auth events → infinite refetch loop.
+        setUser((prev) => {
+          const next = session?.user ?? null;
+          if (!prev && !next) return prev;
+          if (!prev || !next) return next;
+          return prev.id === next.id && prev.updated_at === next.updated_at ? prev : next;
+        });
         if (session?.user) {
           setTimeout(() => fetchRole(session.user.id), 0);
         } else {
@@ -54,7 +67,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setUser(session?.user ?? null);
+      setUser((prev) => {
+        const next = session?.user ?? null;
+        if (!prev && !next) return prev;
+        if (!prev || !next) return next;
+        return prev.id === next.id && prev.updated_at === next.updated_at ? prev : next;
+      });
       if (session?.user) {
         fetchRole(session.user.id);
       }
