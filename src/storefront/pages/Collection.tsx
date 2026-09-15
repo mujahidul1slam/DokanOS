@@ -31,6 +31,15 @@ export default function Collection() {
     };
   }, [storefront.id, slug]);
 
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const canonicalPath = slug ? collectionUrl(slug) : "/";
+
+  usePageMeta({
+    title: state ? `${state.title} — ${storefront.name}` : undefined,
+    description: state?.description || undefined,
+    canonicalPath,
+  });
+
   if (state === undefined) {
     return (
       <div className="flex justify-center py-32">
@@ -48,15 +57,6 @@ export default function Collection() {
       </div>
     );
   }
-
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const canonicalPath = slug ? collectionUrl(slug) : "/";
-
-  usePageMeta({
-    title: state ? `${state.title} — ${storefront.name}` : undefined,
-    description: state?.description || undefined,
-    canonicalPath,
-  });
 
   return (
     <div className="max-w-7xl mx-auto px-4 lg:px-8 py-16">

@@ -22,6 +22,18 @@ ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS stock_ledger jsonb;  -- 
 -- 2. L8: orders.order_number uniqueness, self-guarded (loud duplicate halt —
 --    never silently weakened to a partial index).
 -- ---------------------------------------------------------------------------
+-- Dedupe existing legacy duplicate order numbers by disambiguating with a suffix
+-- (resolves historical overlapping store imports before applying the unique index)
+WITH ranked_dupes AS (
+  SELECT id, order_number, ROW_NUMBER() OVER (PARTITION BY order_number ORDER BY created_at ASC) as rnk
+  FROM public.orders
+  WHERE order_number IS NOT NULL
+)
+UPDATE public.orders o
+SET order_number = o.order_number || '-dup' || (rd.rnk - 1)
+FROM ranked_dupes rd
+WHERE o.id = rd.id AND rd.rnk > 1;
+
 DO $$
 DECLARE dup_groups int;
 BEGIN

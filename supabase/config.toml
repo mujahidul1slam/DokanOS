@@ -11,6 +11,21 @@ verify_jwt = false
 [functions.storefront-checkout]
 verify_jwt = false
 
+[functions.storefront-shipping-quote]
+verify_jwt = false
+
+[functions.storefront-track-order]
+verify_jwt = false
+
+[functions.storefront-restore-stock]
+verify_jwt = false
+
+[functions.storefront-sitemap]
+verify_jwt = false
+
+[functions.storefront-robots]
+verify_jwt = false
+
 [functions.get-orders]
 enabled = true
 verify_jwt = false

@@ -73,6 +73,17 @@ export default function Product() {
     );
   }, [hasVariations, attributeGroups, selectedAttrs, variations]);
 
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const canonicalUrl = p ? `${origin}${productUrl(p.slug)}` : "";
+
+  usePageMeta({
+    title: p ? `${p.name} — ${storefront.name}` : undefined,
+    description: p ? (p.description ? p.description.slice(0, 160) : `Buy ${p.name} at ${storefront.name}`) : undefined,
+    canonicalPath: p ? productUrl(p.slug) : undefined,
+    ogImageUrl: p ? (p.image_urls?.[0] || p.image_url) : undefined,
+    ogType: "product",
+  });
+
   if (p === undefined) {
     return (
       <div className="flex justify-center py-32">
@@ -130,17 +141,6 @@ export default function Product() {
       description: variationLabel ? `${p!.name} (${variationLabel})` : p!.name,
     });
   }
-
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const canonicalUrl = p ? `${origin}${productUrl(p.slug)}` : "";
-
-  usePageMeta({
-    title: p ? `${p.name} — ${storefront.name}` : undefined,
-    description: p ? (p.description ? p.description.slice(0, 160) : `Buy ${p.name} at ${storefront.name}`) : undefined,
-    canonicalPath: p ? productUrl(p.slug) : undefined,
-    ogImageUrl: images[0] || p?.image_url,
-    ogType: "product",
-  });
 
   return (
     <div className="max-w-6xl mx-auto px-4 lg:px-8 py-12 lg:py-16">

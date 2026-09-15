@@ -37,6 +37,13 @@ ALTER TABLE public.storefront_pages
 CREATE UNIQUE INDEX IF NOT EXISTS uq_storefront_pages_one_home
   ON public.storefront_pages(storefront_id) WHERE type = 'home';
 
+-- Replace legacy open SELECT policy with published-gated policy (draft protection)
+DROP POLICY IF EXISTS "Public can read storefront_pages" ON public.storefront_pages;
+DROP POLICY IF EXISTS "Public can read published storefront pages" ON public.storefront_pages;
+CREATE POLICY "Public can read published storefront pages"
+  ON public.storefront_pages FOR SELECT TO anon, authenticated
+  USING (status = 'published' OR has_role(auth.uid(), 'admin'::app_role) OR has_role(auth.uid(), 'staff'::app_role));
+
 -- ---------------------------------------------------------------------------
 -- 2. storefront_page_sections — the working copy (staff/admin only, H4)
 -- ---------------------------------------------------------------------------

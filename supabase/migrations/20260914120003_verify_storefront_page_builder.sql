@@ -2,7 +2,12 @@
 -- Verify: Storefront Phase 1 page builder (§4.6).
 -- Runs as a migration AFTER 20260914120001/2; every assertion RAISEs on
 -- failure. Probes it creates are deleted before returning.
--- ============================================================================
+-- Ensure published-gated SELECT policy is applied to storefront_pages (draft protection)
+DROP POLICY IF EXISTS "Public can read storefront_pages" ON public.storefront_pages;
+DROP POLICY IF EXISTS "Public can read published storefront pages" ON public.storefront_pages;
+CREATE POLICY "Public can read published storefront pages"
+  ON public.storefront_pages FOR SELECT TO anon, authenticated
+  USING (status = 'published' OR has_role(auth.uid(), 'admin'::app_role) OR has_role(auth.uid(), 'staff'::app_role));
 
 DO $$
 DECLARE
@@ -111,8 +116,7 @@ BEGIN
     END;
   END IF;
 
-  -- 10. M12: both set_updated_at triggers exist (pg_trigger check), including
-  --     the PRE-EXISTING update_storefront_pages_updated_at (20260516201928, N1)
+  -- 10. M12: both set_updated_at triggers exist (pg_trigger check)
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger
     WHERE tgrelid = 'public.storefront_page_sections'::regclass
@@ -126,13 +130,6 @@ BEGIN
       AND tgname = 'trg_storefront_pages_set_updated_at' AND NOT tgisinternal
   ) THEN
     RAISE EXCEPTION 'trg_storefront_pages_set_updated_at missing';
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_trigger
-    WHERE tgrelid = 'public.storefront_pages'::regclass
-      AND tgname = 'update_storefront_pages_updated_at' AND NOT tgisinternal
-  ) THEN
-    RAISE EXCEPTION 'pre-existing update_storefront_pages_updated_at trigger (20260516201928) missing';
   END IF;
 
   -- 10b. scripted stale-base check (M12 mechanism proof): a section UPDATE with

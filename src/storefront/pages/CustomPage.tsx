@@ -32,6 +32,12 @@ export default function CustomPage() {
     };
   }, [storefront.id, slug, draftPageSlug]);
 
+  usePageMeta({
+    title: data?.seo?.title || (data ? `${data.page.title} — ${storefront.name}` : undefined),
+    description: data?.seo?.description || undefined,
+    canonicalPath: slug ? pageUrl(slug) : undefined,
+  });
+
   if (data === undefined) {
     return (
       <div className="flex justify-center py-32">
@@ -49,12 +55,6 @@ export default function CustomPage() {
       </div>
     );
   }
-
-  usePageMeta({
-    title: data?.seo?.title || (data ? `${data.page.title} — ${storefront.name}` : undefined),
-    description: data?.seo?.description || undefined,
-    canonicalPath: slug ? pageUrl(slug) : undefined,
-  });
 
   return (
     <div>

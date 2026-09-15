@@ -14,7 +14,7 @@ DECLARE
   v_suffix int;
 BEGIN
   FOR r IN SELECT id, name FROM public.products WHERE slug IS NULL OR slug = '' ORDER BY created_at ASC LOOP
-    v_base := lower(regexp_replace(COALESCE(r.name, ''), '[^a-z0-9]+', '-', 'g'));
+    v_base := regexp_replace(lower(COALESCE(r.name, '')), '[^a-z0-9]+', '-', 'g');
     v_base := regexp_replace(v_base, '^-+|-+$', '', 'g');
     IF length(v_base) > 60 THEN
       v_base := substring(v_base from 1 for 60);
@@ -50,7 +50,7 @@ DECLARE
   v_suffix int := 1;
 BEGIN
   IF NEW.slug IS NULL OR NEW.slug = '' THEN
-    v_base := lower(regexp_replace(COALESCE(NEW.name, ''), '[^a-z0-9]+', '-', 'g'));
+    v_base := regexp_replace(lower(COALESCE(NEW.name, '')), '[^a-z0-9]+', '-', 'g');
     v_base := regexp_replace(v_base, '^-+|-+$', '', 'g');
     IF length(v_base) > 60 THEN
       v_base := substring(v_base from 1 for 60);

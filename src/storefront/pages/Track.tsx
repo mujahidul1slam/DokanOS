@@ -36,8 +36,17 @@ export default function Track() {
       });
 
       if (error || !data || data.error) {
+        let msg = "No order found matching the provided details.";
+        if (data?.error) {
+          msg = data.error;
+        } else if (error && (error as any).context) {
+          try {
+            const body = await (error as any).context.json();
+            if (body?.error) msg = body.error;
+          } catch {}
+        }
         setOrder(null);
-        setErrorMsg(data?.error || error?.message || "No order found matching the provided details.");
+        setErrorMsg(msg);
       } else {
         setOrder(data as TrackedOrder);
       }
