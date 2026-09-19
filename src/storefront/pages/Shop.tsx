@@ -37,9 +37,12 @@ export default function Shop() {
 
   useEffect(() => {
     setPage(1);
-    setActivePriceBand(null);
     setSort("featured");
   }, [activeCollectionId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activePriceBand]);
 
   async function handleSelectCollection(collectionId: string | null) {
     setActiveCollectionId(collectionId);
@@ -62,27 +65,26 @@ export default function Shop() {
       if (allowed) list = list.filter((p) => allowed.has(p.id));
       else list = [];
     }
+    // Price band: band i covers [bands[i], bands[i+1] ?? Infinity)
     if (activePriceBand != null && shop.price_bands.length > 0) {
-      const i = activePriceBand;
-      const low = i === 0 ? Number(shop.price_bands[0]) : Number(shop.price_bands[i - 1]) + 0.01;
-      const high = Number(shop.price_bands[i]);
-      list = list.filter((p) => p.price >= low && p.price <= high);
+      const lo = shop.price_bands[activePriceBand];
+      const hi = activePriceBand + 1 < shop.price_bands.length ? shop.price_bands[activePriceBand + 1] : Infinity;
+      list = list.filter((p) => p.price >= lo && p.price < hi);
     }
     return list;
   }, [products, activeCollectionId, collectionProductIdsMap, activePriceBand, shop.price_bands]);
 
-  const totalPages = filtered ? Math.max(1, Math.ceil(filtered.length / shop.per_page)) : 1;
-  const paged = filtered ? filtered.slice((page - 1) * shop.per_page, page * shop.per_page) : null;
-
-  const sorted = useMemo(() => {
-    if (!paged) return null;
-    if (sort === "featured" || !shop.show_sorting) return paged;
-    const list = [...paged];
+  const sortedFiltered = useMemo(() => {
+    if (!filtered) return null;
+    const list = [...filtered];
     if (sort === "price-asc") list.sort((a, b) => a.price - b.price);
     else if (sort === "price-desc") list.sort((a, b) => b.price - a.price);
     else if (sort === "newest") list.sort((a, b) => (b.position ?? 0) - (a.position ?? 0));
     return list;
-  }, [paged, sort, shop.show_sorting]);
+  }, [filtered, sort]);
+
+  const totalPages = sortedFiltered ? Math.max(1, Math.ceil(sortedFiltered.length / shop.per_page)) : 1;
+  const paged = sortedFiltered ? sortedFiltered.slice((page - 1) * shop.per_page, page * shop.per_page) : null;
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -92,20 +94,17 @@ export default function Shop() {
     canonicalPath: "/shop",
   });
 
-  // Price band labels like "৳0–৳500"
+  // Price band labels like "৳0–৳500", "৳500+", derived from bands
   const bandLabels = useMemo(() => {
-    const out: string[] = [];
-    for (let i = 0; i <= shop.price_bands.length; i++) {
-      const lo = i === 0 ? 0 : shop.price_bands[i - 1];
-      const hi = shop.price_bands[i];
-      out.push(`৳${lo}–${hi}`);
-    }
-    return out;
+    return shop.price_bands.map((band, i) => {
+      if (i + 1 >= shop.price_bands.length) return `৳${band}+`;
+      return `৳${band}–৳${shop.price_bands[i + 1]}`;
+    });
   }, [shop.price_bands]);
 
-  const showCounter = shop.result_count && paged && filtered;
-  const from = showCounter && filtered!.length ? (page - 1) * shop.per_page + 1 : 0;
-  const to = showCounter && filtered ? Math.min(page * shop.per_page, filtered.length) : 0;
+  const showCounter = shop.result_count && paged && sortedFiltered;
+  const from = showCounter && sortedFiltered!.length ? (page - 1) * shop.per_page + 1 : 0;
+  const to = showCounter && sortedFiltered ? Math.min(page * shop.per_page, sortedFiltered.length) : 0;
 
   return (
     <div className="max-w-7xl mx-auto px-4 lg:px-8 py-16">
@@ -122,7 +121,7 @@ export default function Shop() {
         </div>
         {showCounter && (
           <p className="text-xs text-muted-foreground pb-2">
-            Showing {from} to {to} of {filtered!.length} products
+            Showing {from} to {to} of {sortedFiltered!.length} products
           </p>
         )}
       </div>
@@ -185,11 +184,11 @@ export default function Shop() {
         </div>
       )}
 
-      {!sorted || loadingCollection ? (
+      {!paged || loadingCollection ? (
         <div className="flex justify-center py-20">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
-      ) : sorted.length === 0 ? (
+      ) : paged.length === 0 ? (
         <p className="text-muted-foreground py-12">No products match these filters.</p>
       ) : (
         <>
@@ -200,7 +199,7 @@ export default function Shop() {
             }}
           >
             <style>{`@media (min-width: 1024px) { .grid { grid-template-columns: repeat(${shop.columns_pc}, minmax(0, 1fr)) !important; } }`}</style>
-            {sorted.map((p) => (
+            {paged.map((p) => (
               <ProductCard key={p.id} p={p} />
             ))}
           </div>

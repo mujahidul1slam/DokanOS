@@ -119,7 +119,6 @@ export default function CardStyleTab({ sf, onUpdate }: { sf: Storefront; onUpdat
             <Row label="Wishlist"><Switch checked={card.show_wishlist} onCheckedChange={(v) => set("show_wishlist", v)} /></Row>
             <Row label="Category"><Switch checked={card.show_category} onCheckedChange={(v) => set("show_category", v)} /></Row>
             <Row label="Price"><Switch checked={card.show_price} onCheckedChange={(v) => set("show_price", v)} /></Row>
-            <Row label="Rating"><Switch checked={card.show_rating} onCheckedChange={(v) => set("show_rating", v)} /></Row>
             <Row label="Add to Cart button"><Switch checked={card.show_add_to_cart} onCheckedChange={(v) => set("show_add_to_cart", v)} /></Row>
             <Row label="Buy Now button"><Switch checked={card.show_buy_now} onCheckedChange={(v) => set("show_buy_now", v)} /></Row>
           </CardContent>

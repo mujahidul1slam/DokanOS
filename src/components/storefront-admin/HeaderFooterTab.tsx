@@ -44,22 +44,7 @@ export default function HeaderFooterTab({ sf, onUpdate }: { sf: Storefront; onUp
       <Card>
         <CardContent className="pt-6 space-y-3">
           <h3 className="text-sm font-medium">Announcement bar</h3>
-          <label className="inline-flex items-center gap-2 text-sm">
-            <Switch checked={h.show_announcement} onCheckedChange={(v) => set("show_announcement", v)} />
-            Turn it on to announce offers at the very top of every page.
-          </label>
-          {h.show_announcement && (
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Announcement text</Label>
-                <Input value={h.announcement_text} onChange={(e) => set("announcement_text", e.target.value)} />
-              </div>
-              <div>
-                <Label className="text-xs">Link (optional)</Label>
-                <Input value={h.announcement_href} onChange={(e) => set("announcement_href", e.target.value)} placeholder="/storefront/your-brand/sale or https://…" />
-              </div>
-            </div>
-          )}
+          <p className="text-xs text-muted-foreground mt-0.5">Control: Settings → Announcement. This editor covers header/footer content only.</p>
         </CardContent>
       </Card>
 
@@ -68,17 +53,10 @@ export default function HeaderFooterTab({ sf, onUpdate }: { sf: Storefront; onUp
           <h3 className="text-sm font-medium mb-2">Header</h3>
           <div className="flex items-center justify-between py-2">
             <div>
-              <Label className="text-sm">Store search</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Show a search icon in the header</p>
-            </div>
-            <Switch checked={h.show_search} onCheckedChange={(v) => set("show_search", v)} />
-          </div>
-          <div className="flex items-center justify-between py-2">
-            <div>
               <Label className="text-sm">Dark mode toggle</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Let shoppers switch light/dark</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Skip for now — storefront dark theme adoption is theme-dependent (P1). Not rendered yet.</p>
             </div>
-            <Switch checked={h.show_dark_toggle} onCheckedChange={(v) => set("show_dark_toggle", v)} />
+            <Switch checked={false} disabled />
           </div>
         </CardContent>
       </Card>

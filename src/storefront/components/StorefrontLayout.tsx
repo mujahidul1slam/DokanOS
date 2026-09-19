@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
-import { ReactNode, useState } from "react";
-import { ShoppingBag, Menu, X, Camera, Share2, Music2, MessageCircle, Search, Sun, Moon, Phone, Plus } from "lucide-react";
+import { ReactNode, useMemo, useState } from "react";
+import { ShoppingBag, Menu, X, Camera, Share2, Music2, MessageCircle, Phone } from "lucide-react";
 import { useBrand } from "../BrandContext";
 import { useCart } from "../lib/cart";
 import { brandBasePath } from "../lib/brand";
@@ -16,8 +16,9 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const settings = mergeSettings(storefront.settings);
+  const settings = useMemo(() => mergeSettings(storefront.settings), [storefront.settings]);
   useScrollAnimations(settings.animations);
+  const announcement = settings.announcement;
   const h = settings.header;
   const social = (storefront.social || {}) as Record<string, string>;
   const policies = (storefront.policies || {}) as Record<string, string>;
@@ -52,13 +53,12 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
   ].filter((s) => (social[s.key] || "").trim());
 
   const hasPolicies = ["shipping", "returns", "privacy"].some((k) => (policies[k] || "").trim());
-  const effectiveAnnouncement =
-    (h.show_announcement && h.announcement_text) || settings.announcement.enabled && settings.announcement.text
-      ? {
-          text: h.show_announcement ? h.announcement_text : settings.announcement.text,
-          href: h.show_announcement ? h.announcement_href : settings.announcement.href,
-        }
-      : null;
+  const effectiveAnnouncement = announcement.enabled && announcement.text
+    ? {
+        text: announcement.text,
+        href: announcement.href,
+      }
+    : null;
 
   return (
     <div className="min-h-screen bg-background text-foreground sf-body">
@@ -109,25 +109,6 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
 
           {/* Right cluster */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {h.show_search && (
-              <Link to={`${base}/shop`} className={ICON_STYLE} aria-label="Search">
-                <Search className="h-4 w-4" />
-              </Link>
-            )}
-            {h.show_dark_toggle && (
-              <button
-                type="button"
-                className={ICON_STYLE}
-                aria-label="Toggle dark mode"
-                onClick={() => {
-                  const r = document.documentElement;
-                  r.classList.toggle("dark");
-                }}
-              >
-                <Sun className="h-4 w-4 dark:hidden" />
-                <Moon className="h-4 w-4 hidden dark:block" />
-              </button>
-            )}
             {h.custom_icons.filter((c) => c.href).map((ic, i) => (
               <a key={i} href={ic.href} target="_blank" rel="noreferrer" className={ICON_STYLE} aria-label={ic.icon}>
                 {ic.icon === "Phone" ? <Phone className="h-4 w-4" /> : <MessageCircle className="h-4 w-4" />}

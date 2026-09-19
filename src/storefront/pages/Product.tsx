@@ -188,7 +188,7 @@ export default function Product() {
           {/* Category label */}
           {sp.show_category_label && (
             <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2 inline-flex items-center gap-1">
-              <Tag className="h-3 w-3" /> {(p as any).category || "Product"}
+              <Tag className="h-3 w-3" /> Product
             </p>
           )}
 
@@ -212,9 +212,7 @@ export default function Product() {
             {sp.show_stock_status && (
               <p className={`text-xs ${outOfStock ? "text-destructive" : "text-emerald-600"}`}>{outOfStock ? "Out of stock" : "In stock"}</p>
             )}
-            {sp.show_sold_count && (p as any).sold_count != null && (
-              <p className="text-xs text-muted-foreground">{(p as any).sold_count} sold</p>
-            )}            {sp.show_sku && <p className="text-xs text-muted-foreground">SKU: {p.id.slice(0, 8)}</p>}
+            {(p as any).sku && sp.show_sku && <p className="text-xs text-muted-foreground">SKU: {(p as any).sku}</p>}
           </div>
 
           {hasVariations && (
@@ -293,18 +291,11 @@ export default function Product() {
             </div>
           )}
 
-          {(sp.show_share || sp.show_wishlist) && (
+          {sp.show_share && (
             <div className="flex gap-3 mt-4">
-              {sp.show_share && (
-                <button type="button" onClick={handleShare} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-                  <Share2 className="h-4 w-4" /> Share
-                </button>
-              )}
-              {sp.show_wishlist && (
-                <Link to="#" onClick={(e) => e.preventDefault()} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-                  ♡ Wishlist
-                </Link>
-              )}
+              <button type="button" onClick={handleShare} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+                <Share2 className="h-4 w-4" /> Share
+              </button>
             </div>
           )}
         </div>
@@ -330,12 +321,13 @@ function RelatedProducts({ storefront, currentId, sp, brandBase, fmt }: {
 
   if (!items || items.length === 0) return null;
 
-  const colsCls = sp.related_per_row_pc === 3 ? "md:grid-cols-3" : sp.related_per_row_pc === 5 ? "md:grid-cols-5" : "md:grid-cols-4";
+  const PHONE_COLS: Record<number, string> = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3" };
+  const PC_COLS: Record<number, string> = { 3: "md:grid-cols-3", 4: "md:grid-cols-4", 5: "md:grid-cols-5" };
 
   return (
     <div className="mt-16">
       <h2 className="sf-display text-3xl mb-6">You Might Also Like</h2>
-      <div className={`grid grid-cols-${sp.related_per_row_phone} ${colsCls} gap-4`}>
+      <div className={`grid ${PHONE_COLS[sp.related_per_row_phone] || "grid-cols-2"} ${PC_COLS[sp.related_per_row_pc] || "md:grid-cols-4"} gap-4`}>
         {items.map((it) => (
           <Link key={it.id} to={`${brandBase}/product/${it.slug}`} className="group block">
             <div className="aspect-square overflow-hidden rounded-md bg-muted mb-2">

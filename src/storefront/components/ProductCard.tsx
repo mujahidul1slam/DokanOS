@@ -86,22 +86,13 @@ export default function ProductCard({ p }: { p: StorefrontProduct }) {
           ) : (
             <div className="h-full w-full flex items-center justify-center text-muted-foreground text-xs">No image</div>
           )}
-          {p.badge && (
-            <span className="absolute top-3 left-3 bg-primary text-primary-foreground text-[10px] uppercase tracking-wider px-2 py-1 rounded-full">
-              {p.badge}
-            </span>
-          )}
-          {c.show_wishlist && (
-            <button
-              aria-label="Add to wishlist"
-              className="absolute top-3 right-3 h-8 w-8 rounded-full bg-background/80 backdrop-blur flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => { e.preventDefault(); /* wishlist persists client-side — P0 ships UI shell only */ }}
-            >
-              <Heart className="h-4 w-4" />
-            </button>
-          )}
-          {/* On-image-hover button variant */}
-          {hasBtns && c.button_position === "overlay" && (
+        {p.badge && (
+          <span className="absolute top-3 left-3 bg-primary text-primary-foreground text-[10px] uppercase tracking-wider px-2 py-1 rounded-full">
+            {p.badge}
+          </span>
+        )}
+        {/* On-image-hover button variant */}
+        {hasBtns && c.button_position === "overlay" && (
             <div className="absolute inset-x-3 bottom-3 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
               <div className={`flex gap-1.5 ${c.button_layout === "stacked" ? "flex-col" : ""}`}>
                 {c.show_add_to_cart && (
@@ -132,12 +123,6 @@ export default function ProductCard({ p }: { p: StorefrontProduct }) {
         <Link to={`${brandBasePath(brand)}/product/${p.slug}`} className="block">
           <h3 className="text-sm font-medium line-clamp-1 group-hover:text-primary transition-colors">{p.name}</h3>
         </Link>
-        {c.show_rating && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="text-amber-500">★★★★☆</span>
-            <span>(0)</span>
-          </div>
-        )}
         {c.show_price && (
           <p className="text-sm font-medium" style={{ color: c.price_color || undefined }}>{fmt(p.price)}</p>
         )}

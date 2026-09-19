@@ -159,15 +159,16 @@ export default function Checkout() {
       .then(({ data }) => setAreas(data || []));
   }, [zoneId]);
 
-  const freeThreshold = delivery.free_threshold > 0 ? delivery.free_threshold : shippingQuote?.free_threshold ?? settings.shipping.free_threshold ?? 0;
+  const freeThreshold = shippingQuote?.free_threshold || settings.shipping.free_threshold || 0;
   const isFreeShipping = freeThreshold > 0 && subtotal >= freeThreshold;
   const effectiveShipping = isFreeShipping ? 0 : (shippingQuote?.rate ?? 150);
   const total = subtotal + effectiveShipping;
 
   // Advance payment (settings-driven): customer pays X% online, rest COD
-  const advanceEnabled = delivery.advance_payment_enabled && payment !== "cod";
-  const advanceAmount = advanceEnabled && delivery.advance_percent > 0 ? Math.round((total * delivery.advance_percent) / 100) : 0;
-  const amountDueOnDelivery = advanceAmount > 0 ? total - advanceAmount : total;
+  const advanceEnabled = delivery.advance_payment_enabled && delivery.advance_percent > 0;
+  const advanceAmount = advanceEnabled ? Math.round((total * delivery.advance_percent) / 100) : 0;
+  const amountDueOnDelivery = advanceEnabled ? total - advanceAmount : total;
+  const advanceAllowed = advanceEnabled && payment !== "cod" && (payment === "bkash" || payment === "nagad" || payment === "rocket" || payment === "upay" || payment === "mcash");
 
   const minOrderAmount = settings.checkout.min_order_amount || 0;
   const isBelowMinOrder = minOrderAmount > 0 && subtotal < minOrderAmount;
@@ -191,6 +192,14 @@ export default function Checkout() {
       toast({
         title: "Terms agreement required",
         description: "Please agree to the terms to proceed.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (advanceEnabled && payment === "cod") {
+      toast({
+        title: "Advance payment required",
+        description: "This store requires an online advance. Please choose a wallet method (bKash / Nagad / Rocket / Upay / mCash).",
         variant: "destructive",
       });
       return;
@@ -220,7 +229,13 @@ export default function Checkout() {
             variation_label: i.variation_label || null,
             quantity: i.quantity,
           })),
-          payment: { method: payment, trx_id: trxId || null, sender: sender || null },
+          payment: {
+            method: payment,
+            trx_id: trxId || null,
+            sender: sender || null,
+            advance_amount: advanceAmount > 0 ? advanceAmount : undefined,
+            advance_due_on_delivery: advanceAmount > 0 ? amountDueOnDelivery : undefined,
+          },
           special_instruction: special || null,
         },
       });
@@ -412,6 +427,14 @@ export default function Checkout() {
               <span className="font-medium">{fmt(total)}</span>
             </div>
           </div>
+
+          {advanceAmount > 0 && (
+            <div className="mt-3 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs space-y-1">
+              <p className="font-medium text-primary">Advance payment required</p>
+              <div className="flex justify-between"><span className="text-muted-foreground">Pay now ({payment.toUpperCase()})</span><span>{fmt(advanceAmount)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">On delivery</span><span>{fmt(amountDueOnDelivery)}</span></div>
+            </div>
+          )}
 
           <button
             type="submit"

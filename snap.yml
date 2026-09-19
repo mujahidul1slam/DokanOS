@@ -1,0 +1,149 @@
+- generic [active] [ref=f7e1]:
+  - main [ref=f7e946]:
+    - generic [ref=f7e1317]:
+      - generic [ref=f7e1318]:
+        - button "Back" [ref=f7e1319] [cursor=pointer]
+        - generic [ref=f7e1322]:
+          - generic [ref=f7e1323]: Header & Footer
+          - generic [ref=f7e1324]: Saved
+        - generic [ref=f7e1327]:
+          - button "Desktop" [ref=f7e1328] [cursor=pointer]
+          - button "Mobile" [ref=f7e1331] [cursor=pointer]
+        - generic [ref=f7e1334]:
+          - button "Zoom out" [ref=f7e1335] [cursor=pointer]
+          - button "83%" [ref=f7e1337] [cursor=pointer]
+          - button "Zoom in" [ref=f7e1338] [cursor=pointer]
+        - button "Reload preview" [ref=f7e1341] [cursor=pointer]
+        - link "Open preview in a new tab" [ref=f7e1345] [cursor=pointer]:
+          - /url: /header-footer-preview?slug=enveil
+        - button "Hide settings" [ref=f7e1350] [cursor=pointer]
+        - button "Save" [ref=f7e1352] [cursor=pointer]
+      - generic [ref=f7e1357]:
+        - generic [ref=f7e1358]: enveil
+        - iframe [ref=f7e1364]:
+          - generic [ref=f14e1]:
+            - generic [ref=f14e2]:
+              - banner [ref=f14e3]:
+                - generic [ref=f14e5]:
+                  - generic [ref=f14e6]:
+                    - link "Nimbus" [ref=f14e8] [cursor=pointer]:
+                      - /url: /store/gadgetprev
+                    - navigation [ref=f14e10]:
+                      - link "All Products" [ref=f14e11] [cursor=pointer]:
+                        - /url: /store/gadgetprev/products
+                      - link "Track Order" [ref=f14e12] [cursor=pointer]:
+                        - /url: /store/gadgetprev/tracking
+                      - button "Headphones" [ref=f14e14] [cursor=pointer]
+                      - button "Smartwatches" [ref=f14e17] [cursor=pointer]
+                      - button "Speakers" [ref=f14e20] [cursor=pointer]
+                      - button "More categories" [ref=f14e23] [cursor=pointer]
+                  - generic [ref=f14e28]:
+                    - searchbox "Search products..." [ref=f14e34]
+                    - navigation [ref=f14e35]:
+                      - button "EN Change language" [ref=f14e36] [cursor=pointer]:
+                        - generic [ref=f14e37]: EN
+                        - generic [ref=f14e40]: Change language
+                      - button "Account menu" [ref=f14e41] [cursor=pointer]
+                      - link [ref=f14e46] [cursor=pointer]:
+                        - /url: /wishlist
+                        - button "Wishlist" [ref=f14e47]
+              - main [ref=f14e51]:
+                - generic [ref=f14e52]:
+                  - generic [ref=f14e53]: Your store content
+                  - generic [ref=f14e57]:
+                    - generic [ref=f14e58]:
+                      - img "ANC Wireless Headphones" [ref=f14e59]
+                      - paragraph [ref=f14e60]: ANC Wireless Headphones
+                      - paragraph [ref=f14e61]: ৳6900
+                    - generic [ref=f14e62]:
+                      - img "Portable Bass Speaker" [ref=f14e63]
+                      - paragraph [ref=f14e64]: Portable Bass Speaker
+                      - paragraph [ref=f14e65]: ৳3200
+                    - generic [ref=f14e66]:
+                      - img "Wireless Earbuds Pro" [ref=f14e67]
+                      - paragraph [ref=f14e68]: Wireless Earbuds Pro
+                      - paragraph [ref=f14e69]: ৳2900
+              - contentinfo [ref=f14e70]:
+                - generic [ref=f14e71]:
+                  - generic [ref=f14e72]:
+                    - generic [ref=f14e73]:
+                      - generic [ref=f14e74]: Nimbus
+                      - generic [ref=f14e75]:
+                        - link "facebook" [ref=f14e76] [cursor=pointer]:
+                          - /url: https://facebook.com
+                        - link "instagram" [ref=f14e79] [cursor=pointer]:
+                          - /url: https://instagram.com
+                        - link "twitter" [ref=f14e83] [cursor=pointer]:
+                          - /url: https://twitter.com
+                        - link "youtube" [ref=f14e86] [cursor=pointer]:
+                          - /url: https://youtube.com
+                    - generic [ref=f14e90]:
+                      - link "About Us" [ref=f14e91] [cursor=pointer]:
+                        - /url: /about
+                      - link "Privacy Policy" [ref=f14e92] [cursor=pointer]:
+                        - /url: /privacy
+                      - link "Terms & Conditions" [ref=f14e93] [cursor=pointer]:
+                        - /url: /terms
+                      - link "Return & Refund Policy" [ref=f14e94] [cursor=pointer]:
+                        - /url: /returns
+                  - paragraph [ref=f14e96]: © 2026 Nimbus. All rights reserved.
+            - alert [ref=f14e97]
+            - region "Notifications (F8)":
+              - list
+      - generic [ref=f7e1365]:
+        - generic [ref=f7e1366]:
+          - paragraph [ref=f7e1375]: Header
+          - button "Roll up" [ref=f7e1376] [cursor=pointer]
+          - button "Hide panel" [ref=f7e1379] [cursor=pointer]
+        - generic [ref=f7e1383]:
+          - generic [ref=f7e1385]:
+            - button "Header" [ref=f7e1386] [cursor=pointer]
+            - button "Footer" [ref=f7e1389] [cursor=pointer]
+            - button "Mobile Bar" [ref=f7e1392] [cursor=pointer]
+            - button "Sidebar" [ref=f7e1395] [cursor=pointer]
+          - generic [ref=f7e1399]:
+            - generic [ref=f7e1400]:
+              - button "Announcement Bar" [expanded] [ref=f7e1401] [cursor=pointer]
+              - switch [ref=f7e1411] [cursor=pointer]
+            - paragraph [ref=f7e1414]: Turn it on to announce offers at the very top of every page.
+          - button "Layout & Style Size, spacing and behaviour" [ref=f7e1417] [cursor=pointer]:
+            - generic [ref=f7e1423]:
+              - generic [ref=f7e1424]: Layout & Style
+              - generic [ref=f7e1426]: Size, spacing and behaviour
+          - button "Colors Override your theme colors for the header" [ref=f7e1431] [cursor=pointer]:
+            - generic [ref=f7e1439]:
+              - generic [ref=f7e1440]: Colors
+              - generic [ref=f7e1442]: Override your theme colors for the header
+          - button "Typography Navigation menu font" [ref=f7e1447] [cursor=pointer]:
+            - generic [ref=f7e1451]:
+              - generic [ref=f7e1452]: Typography
+              - generic [ref=f7e1454]: Navigation menu font
+          - button "Header Content What appears in the navigation bar" [ref=f7e1459] [cursor=pointer]:
+            - generic [ref=f7e1464]:
+              - generic [ref=f7e1465]: Header Content
+              - generic [ref=f7e1467]: What appears in the navigation bar
+          - button "Light & Dark Mode How your storefront looks, and whether shoppers can switch" [ref=f7e1472] [cursor=pointer]:
+            - generic [ref=f7e1478]:
+              - generic [ref=f7e1479]: Light & Dark Mode
+              - generic [ref=f7e1481]: How your storefront looks, and whether shoppers can switch
+          - button "Categories in Header ALL Pick exactly which categories show" [ref=f7e1486] [cursor=pointer]:
+            - generic [ref=f7e1493]:
+              - generic [ref=f7e1494]:
+                - generic [ref=f7e1495]: Categories in Header
+                - generic [ref=f7e1496]: ALL
+              - generic [ref=f7e1497]: Pick exactly which categories show
+          - generic [ref=f7e1501]:
+            - button "Custom Menu Links Extra links like About, Blog, Contact" [ref=f7e1502] [cursor=pointer]:
+              - generic [ref=f7e1507]:
+                - generic [ref=f7e1508]: Custom Menu Links
+                - generic [ref=f7e1510]: Extra links like About, Blog, Contact
+            - button "Add" [ref=f7e1513] [cursor=pointer]
+          - generic [ref=f7e1516]:
+            - button "Custom Icons Icon buttons — phone, WhatsApp, socials…" [ref=f7e1517] [cursor=pointer]:
+              - generic [ref=f7e1521]:
+                - generic [ref=f7e1522]: Custom Icons
+                - generic [ref=f7e1524]: Icon buttons — phone, WhatsApp, socials…
+            - button "Add" [ref=f7e1527] [cursor=pointer]
+  - alert [ref=f7e1316]
+  - region "Notifications (F8)":
+    - list

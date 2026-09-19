@@ -55,54 +55,9 @@ export default function DeliveryTab({ sf, onUpdate }: { sf: Storefront; onUpdate
       <Card>
         <CardContent className="pt-6 space-y-3">
           <h3 className="text-sm font-medium">Cash on Delivery</h3>
-          <div className="flex items-center justify-between">
-            <div className="pr-4">
-              <Label className="text-sm">Allow COD</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Customers pay when the order is delivered</p>
-            </div>
-            <Switch checked={d.cod_enabled} onCheckedChange={(v) => set("cod_enabled", v)} />
-          </div>
-          {d.cod_enabled && (
-            <div>
-              <Label className="text-xs">COD instructions</Label>
-              <Input value={d.cod_instructions} onChange={(e) => set("cod_instructions", e.target.value)} placeholder="Optional message shown to COD customers" />
-            </div>
-          )}
-          <div className="flex items-center justify-between">
-            <div className="pr-4">
-              <Label className="text-sm">Delivery charge is non-refundable</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Shown on policy pages</p>
-            </div>
-            <Switch checked={d.non_refundable} onCheckedChange={(v) => set("non_refundable", v)} />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="pt-6 space-y-3">
-          <h3 className="text-sm font-medium">Charge per product</h3>
-          <div className="flex items-center justify-between">
-            <div className="pr-4">
-              <Label className="text-sm">Each item pays its own charge</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">When on and no product sets its own charge: every item pays the store/zone charge. When products set their own charge, those replace the store charge entirely.</p>
-            </div>
-            <Switch checked={d.per_product} onCheckedChange={(v) => set("per_product", v)} />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="pt-6 space-y-3">
-          <h3 className="text-sm font-medium">Free shipping</h3>
-          <div className="flex items-center justify-between">
-            <div className="pr-4">
-              <Label className="text-sm">Free shipping threshold</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Customers see a progress bar in cart. 0 = off.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Slider value={[d.free_threshold]} min={0} max={10000} step={100} onValueChange={([v]) => set("free_threshold", v)} className="flex-1" />
-            <span className="text-sm tabular-nums w-20 text-right">৳{d.free_threshold}</span>
+          <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground space-y-1.5">
+            <p>COD is controlled from the <b>Payments</b> tab (checkout.methods.cod).</p>
+            <p>Free-shipping threshold lives in <b>Settings → Shipping</b>.</p>
           </div>
         </CardContent>
       </Card>
@@ -113,16 +68,9 @@ export default function DeliveryTab({ sf, onUpdate }: { sf: Storefront; onUpdate
           <div className="flex items-center justify-between py-1.5">
             <div className="pr-4">
               <Label className="text-sm">Show upazila field</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Upazila dropdown appears at checkout</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Upazila dropdown appears at checkout. Turning this off collapses checkout to city + zone.</p>
             </div>
             <Switch checked={d.show_upazila} onCheckedChange={(v) => set("show_upazila", v)} />
-          </div>
-          <div className="flex items-center justify-between py-1.5">
-            <div className="pr-4">
-              <Label className="text-sm">Simple address</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Customers can enter one line instead of district/division</p>
-            </div>
-            <Switch checked={d.simple_address} onCheckedChange={(v) => set("simple_address", v)} />
           </div>
         </CardContent>
       </Card>

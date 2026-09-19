@@ -19,7 +19,6 @@ export interface StorefrontCardSettings {
   show_wishlist: boolean;
   show_category: boolean;
   show_price: boolean;
-  show_rating: boolean;
   show_add_to_cart: boolean;
   show_buy_now: boolean;
   card_bg: string;
@@ -84,14 +83,8 @@ export interface StorefrontShopPageSettings {
 }
 
 export interface StorefrontHeaderFooterSettings {
-  show_announcement: boolean;
-  announcement_text: string;
-  announcement_href: string;
-  show_search: boolean;
   show_dark_toggle: boolean;
-  // custom_icons: quick action icons shown in header (phone, whatsapp…)
   custom_icons: { icon: string; href: string }[];
-  // custom_menu_links: extra nav links under /storefront/... handled by nav JSON; kept here as a fallback
   custom_links: { label: string; href: string }[];
   show_footer_cta: boolean;
 }
@@ -117,7 +110,6 @@ export interface StorefrontDeliverySettings {
   cod_instructions: string;
   non_refundable: boolean;
   per_product: boolean;
-  free_threshold: number;      // duplicated with shipping.free_threshold; kept in sync there
   show_upazila: boolean;
   simple_address: boolean;
   advance_payment_enabled: boolean;
@@ -171,7 +163,6 @@ export const DEFAULT_CARD: StorefrontCardSettings = {
   show_wishlist: false,
   show_category: false,
   show_price: true,
-  show_rating: false,
   show_add_to_cart: false,
   show_buy_now: false,
   card_bg: "",
@@ -236,10 +227,6 @@ export const DEFAULT_SHOP: StorefrontShopPageSettings = {
 };
 
 export const DEFAULT_HEADER: StorefrontHeaderFooterSettings = {
-  show_announcement: false,
-  announcement_text: "",
-  announcement_href: "",
-  show_search: false,
   show_dark_toggle: false,
   custom_icons: [],
   custom_links: [],
@@ -265,7 +252,6 @@ export const DEFAULT_DELIVERY: StorefrontDeliverySettings = {
   cod_instructions: "",
   non_refundable: false,
   per_product: false,
-  free_threshold: 0,
   show_upazila: true,
   simple_address: false,
   advance_payment_enabled: false,
