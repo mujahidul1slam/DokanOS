@@ -109,11 +109,14 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
 
           {/* Right cluster */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {h.custom_icons.filter((c) => c.href).map((ic, i) => (
-              <a key={i} href={ic.href} target="_blank" rel="noreferrer" className={ICON_STYLE} aria-label={ic.icon}>
+            {h.custom_icons.filter((c) => c.href).map((ic, i) => {
+              const isTel = ic.href.startsWith("tel:");
+              return (
+              <a key={i} href={ic.href} {...(isTel ? {} : { target: "_blank", rel: "noreferrer" })} className={ICON_STYLE} aria-label={ic.icon}>
                 {ic.icon === "Phone" ? <Phone className="h-4 w-4" /> : <MessageCircle className="h-4 w-4" />}
               </a>
-            ))}
+              );
+            })}
             <Link
               to={`${base}/cart`}
               className="relative inline-flex items-center gap-2 px-3 py-2 rounded-full border border-border hover:border-primary transition"
@@ -201,11 +204,17 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
           </div>
           <div className="text-sm space-y-2">
             <div className="font-medium mb-2">Shop</div>
-            {nav.map((n) => (
-              <Link key={n.to} to={n.to} className="block text-muted-foreground hover:text-foreground">
-                {n.label}
-              </Link>
-            ))}
+            {nav.map((n) =>
+              isExternal(n.to) ? (
+                <a key={n.to} href={n.to} target="_blank" rel="noreferrer" className="block text-muted-foreground hover:text-foreground">
+                  {n.label}
+                </a>
+              ) : (
+                <Link key={n.to} to={n.to} className="block text-muted-foreground hover:text-foreground">
+                  {n.label}
+                </Link>
+              ),
+            )}
             {hasPolicies && (
               <Link to={`${base}/policies`} className="block text-muted-foreground hover:text-foreground">
                 Policies

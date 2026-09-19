@@ -140,7 +140,9 @@ export default function Product() {
   const btnCorners = sp.atc_corners === "pill" ? "rounded-full" : sp.atc_corners === "square" ? "rounded-none" : "rounded-xl";
   const btnHeight = sp.atc_height === "compact" ? "h-10 px-4" : sp.atc_height === "large" ? "h-14 px-7" : "h-12 px-6";
   const fillCls = (f: "solid" | "outline" | "tinted") =>
-    f === "solid" ? "bg-primary text-primary-foreground hover:opacity-90" : f === "outline" ? "border border-border hover:border-primary" : "bg-primary/10 text-primary hover:bg-primary/20";
+    f === "solid" ? "bg-primary text-primary-foreground hover:opacity-90"
+    : f === "outline" ? "border border-primary text-primary hover:bg-primary/5"
+    : "bg-primary/10 text-primary hover:bg-primary/20";
 
   return (
     <div className="max-w-6xl mx-auto px-4 lg:px-8 py-12 lg:py-16">
@@ -274,8 +276,8 @@ export default function Product() {
 
           {canAddToCart && (
             <button type="button" onClick={handleBuyNow}
-              className={`${btnBase} ${btnCorners} ${btnHeight} w-full ${sp.buy_fill === "solid" ? "" : sp.buy_fill === "tinted" ? "bg-primary/10 text-primary" : "border border-border hover:border-primary"}`}
-              style={sp.buy_fill === "solid" ? { background: sp.buy_color || undefined, color: sp.buy_text_color || undefined } : undefined}
+              className={`${btnBase} ${btnCorners} ${btnHeight} w-full ${fillCls(sp.buy_fill)}`}
+              style={sp.buy_color || sp.buy_text_color ? { background: sp.buy_color || undefined, color: sp.buy_text_color || undefined } : undefined}
             >
               <span>{priceLabel ? `Buy now — ${priceLabel}` : "Buy now"}</span>
             </button>

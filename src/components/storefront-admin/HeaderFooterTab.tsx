@@ -10,7 +10,22 @@ import { Plus, Trash2, Save, Loader2, Phone, MessageCircle } from "lucide-react"
 import type { Storefront } from "./shared";
 import { mergeSettings, DEFAULT_HEADER, type StorefrontHeaderFooterSettings } from "@/storefront/lib/settings";
 
-const ICON_CHOICES = ["Phone", "WhatsApp", "Messenger", "Mail"] as const;
+const ICON_DEFS: Record<string, React.ReactNode> = {
+  Phone: <Phone className="h-4 w-4" />,
+  WhatsApp: <MessageCircle className="h-4 w-4" />,
+  Messenger: <MessageCircle className="h-4 w-4" />,
+  Mail: <MessageCircle className="h-4 w-4" />,
+};
+const ICON_CHOICES = Object.keys(ICON_DEFS);
+
+function iconFor(kind: string) {
+  return ICON_DEFS[kind] || <Phone className="h-4 w-4" />;
+}
+
+function iconClassName(href: string) {
+  // tel: links should open inline dialer on phone, not a new tab
+  return { target: href.startsWith("tel:") ? undefined : "_blank" as const };
+}
 
 export default function HeaderFooterTab({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Storefront) => void }) {
   const [h, setH] = useState<StorefrontHeaderFooterSettings>(() => mergeSettings((sf as any).settings).header);
@@ -32,11 +47,6 @@ export default function HeaderFooterTab({ sf, onUpdate }: { sf: Storefront; onUp
     if (error) return toast({ title: "Save failed", description: error.message, variant: "destructive" });
     onUpdate(data as any);
     toast({ title: "Header & footer saved" });
-  }
-
-  function iconFor(kind: string) {
-    if (kind === "Phone") return <Phone className="h-4 w-4" />;
-    return <MessageCircle className="h-4 w-4" />;
   }
 
   return (

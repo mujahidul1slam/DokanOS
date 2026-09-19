@@ -78,8 +78,8 @@ export interface StorefrontShopPageSettings {
   result_count: boolean;
   show_sorting: boolean;
   show_filters: boolean;
-  price_bands: number[]; // ascending band edges in ৳, e.g. [0, 500, 1000, 2000, 5000]
-  pagination: "numbers" | "load-more" | "buttons";
+  price_bands: number[];
+  pagination: "buttons" | "numbers";
 }
 
 export interface StorefrontHeaderFooterSettings {

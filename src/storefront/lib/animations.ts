@@ -51,17 +51,21 @@ export function useScrollAnimations(a: StorefrontAnimationSettings) {
     );
 
     const scan = () => {
-      document.querySelectorAll<HTMLElement>("[data-sf-anim]:not([data-sf-observed])").forEach((el) => {
-        el.setAttribute("data-sf-observed", "1");
-        if (a.animate_on_load) {
-          io.observe(el);
-        } else {
-          // Off-page only: elements already in viewport at load render normally.
-          const rect = el.getBoundingClientRect();
-          if (rect.top < window.innerHeight) el.classList.add("sf-anim-in");
-          else io.observe(el);
-        }
-      });
+      // Sections use data-sf-anim; card grids use data-sf-anim-cascade.
+      // Both get .sf-anim-in when they enter view; cascade children stagger via CSS delay ladder.
+      document
+        .querySelectorAll<HTMLElement>("[data-sf-anim]:not([data-sf-observed]), [data-sf-anim-cascade]:not([data-sf-observed])")
+        .forEach((el) => {
+          el.setAttribute("data-sf-observed", "1");
+          if (a.animate_on_load) {
+            io.observe(el);
+          } else {
+            // Off-page only: elements already in viewport at load render normally.
+            const rect = el.getBoundingClientRect();
+            if (rect.top < window.innerHeight) el.classList.add("sf-anim-in");
+            else io.observe(el);
+          }
+        });
     };
 
     scan();

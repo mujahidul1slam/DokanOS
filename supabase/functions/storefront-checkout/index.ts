@@ -30,9 +30,12 @@ interface CheckoutBody {
   };
   items: CheckoutItem[];
   payment: {
-    method: "cod" | "bkash" | "nagad" | string;
+    method: "cod" | "bkash" | "nagad" | "rocket" | "upay" | "mcash";
     trx_id?: string | null;
     sender?: string | null;
+    /** Parity advance-payment: collected amount online, rest due on delivery */
+    advance_amount?: number | null;
+    advance_due_on_delivery?: number | null;
   };
   special_instruction?: string | null;
 }
@@ -202,7 +205,21 @@ const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_pay
     let orderNumber = numData as unknown as string;
 
     const paymentMethod = body.payment.method;
-    const paymentStatus = paymentMethod === "cod" ? "unpaid" : "pending_verification";
+    // Advance payment (from client; server re-validates against settings.delivery)
+    const advanceEnabled = !!(sfSettings?.delivery?.advance_payment_enabled) && Number(sfSettings?.delivery?.advance_percent) > 0;
+    const advancePct = advanceEnabled ? Number(sfSettings.delivery.advance_percent) : 0;
+    const serverAdvanceAmount = advanceEnabled ? Math.round((total * advancePct) / 100) : 0;
+    const clientAdvance = Number(body.payment?.advance_amount || 0);
+
+    if (advanceEnabled && paymentMethod === "cod") {
+      return json({ error: "This store requires an online advance payment." }, 400);
+    }
+    if (advanceEnabled && paymentMethod !== "cod" && Math.abs(clientAdvance - serverAdvanceAmount) > 1) {
+      return json({ error: "Advance payment amount mismatch. Expected " + serverAdvanceAmount + "." }, 400);
+    }
+
+    const amountDueOnDelivery = advanceEnabled ? total - serverAdvanceAmount : total;
+    const paymentStatus = advanceEnabled ? "partially_paid" : paymentMethod === "cod" ? "unpaid" : "pending_verification";
     const paymentMeta =
       paymentMethod === "cod"
         ? { method: "cod" }
@@ -210,6 +227,8 @@ const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_pay
             method: paymentMethod,
             trx_id: body.payment.trx_id || null,
             sender: body.payment.sender || null,
+            advance_amount: advanceEnabled ? serverAdvanceAmount : undefined,
+            advance_due_on_delivery: advanceEnabled ? amountDueOnDelivery : undefined,
           };
 
     // Prepare atomic RPC payload
@@ -239,7 +258,7 @@ const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_pay
         subtotal,
         shipping_cost: shipping,
         total,
-        amount_to_collect: paymentMethod === "cod" ? total : 0,
+        amount_to_collect: amountDueOnDelivery,
         item_qty: orderItems.reduce((s, i) => s + i.quantity, 0),
         pathao_recipient_city: c.city_id,
         pathao_recipient_zone: c.zone_id,

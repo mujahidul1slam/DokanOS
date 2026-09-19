@@ -27,27 +27,20 @@ const EFFECTS: { value: StorefrontAnimationSettings["effect"]; label: string }[]
   { value: "bounce", label: "Bounce Up" },
 ];
 
-function Tile({ label, active, effect, speed, strength, onClick }: { label: string; active: boolean; effect: StorefrontAnimationSettings["effect"]; speed: number; strength: StorefrontAnimationSettings["strength"]; onClick: () => void }) {
-  const [replay, setReplay] = useState(0);
+function PreviewTile({ label, effect, speedMs, active, onClick }: { label: string; effect: StorefrontAnimationSettings["effect"]; speedMs: number; active: boolean; onClick: () => void }) {
+  const KEY = `${effect}-${speedMs}-${Date.now()}`;
   return (
-    <button
-      type="button"
-      onClick={() => { onClick(); setReplay((r) => r + 1); }}
-      className={`group relative h-28 rounded-lg border text-sm font-medium transition-all overflow-hidden text-left ${
-        active ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border bg-card hover:border-primary/50"
-      }`}
-    >
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2">
+    <button type="button" onClick={onClick} className={`group relative rounded-md border p-3 text-left transition-colors ${
+      active ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/50 bg-card"
+    }`}>
+      <div className="h-12 overflow-hidden mb-2 relative">
         <div
-          key={replay}
-          className={`h-8 w-16 rounded bg-muted-foreground/20 sf-anim-bg`}
-          data-effect={effect}
-          data-speed={speed}
-          data-strength={strength}
-          data-replay={replay}
+          key={KEY}
+          className="demo-card"
+          style={{ animationName: `pre-${effect}`, animationDuration: `${speedMs}ms`, animationFillMode: "both" }}
         />
-        <span className="text-xs">{label}</span>
       </div>
+      <p className="text-xs font-medium text-foreground">{label}</p>
     </button>
   );
 }
@@ -88,21 +81,42 @@ export default function AnimationsTab({ sf, onUpdate }: { sf: Storefront; onUpda
       {a.enabled && (
         <>
           <Card>
-            <CardContent className="pt-6 space-y-3">
+              <CardContent className="pt-6 space-y-3">
               <h3 className="text-sm font-medium">Effect</h3>
               <p className="text-xs text-muted-foreground">Click a tile to select it and replay the preview.</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {EFFECTS.map((e) => (
-                  <Tile
-                    key={e.value}
-                    label={e.label}
-                    active={a.effect === e.value}
-                    effect={e.value}
-                    speed={a.speed_ms}
-                    strength={a.strength}
-                    onClick={() => setA({ ...a, effect: e.value })}
-                  />
-                ))}
+              <style>{`
+                .anim-preview [data-effect][data-replay-key] { animation: var(--anim-duration, 700ms) both; }
+                .anim-preview .demo-card {
+                  background: hsl(var(--muted)); height: 3.5rem; border-radius: 0.375rem;
+                  transition: opacity var(--anim-duration) cubic-bezier(0.22,1,0.36,1), transform var(--anim-duration) cubic-bezier(0.22,1,0.36,1), filter var(--anim-duration) cubic-bezier(0.22,1,0.36,1);
+                }
+                .anim-preview .demo-card:not(.played) { opacity: 0; }
+                @keyframes pre-fade { to { opacity: 1; filter: blur(0); } }
+                @keyframes pre-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+                @keyframes pre-drop { from { opacity: 0; transform: translateY(-24px); } to { opacity: 1; transform: none; } }
+                @keyframes pre-slide-l { from { opacity: 0; transform: translateX(-36px); } to { opacity: 1; transform: none; } }
+                @keyframes pre-slide-r { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
+                @keyframes pre-zoom-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+                @keyframes pre-zoom-out { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
+                @keyframes pre-blur { from { opacity: 0; filter: blur(14px); } to { opacity: 1; filter: none; } }
+                @keyframes pre-flip { from { opacity: 0; transform: rotateX(12deg) translateY(16px); } to { opacity: 1; transform: none; } }
+                @keyframes pre-tilt { from { opacity: 0; transform: rotate(-2deg) translateY(24px); } to { opacity: 1; transform: none; } }
+                @keyframes pre-bounce { from { opacity: 0; transform: translateY(30px) scale(.98); } 40% { transform: translateY(-4px); opacity: 1; } to { opacity: 1; transform: none; } }
+              `}</style>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 anim-preview" style={{ ["--anim-duration" as any]: `${a.speed_ms}ms` }}>
+                {EFFECTS.map((e) => {
+                  const isActive = a.effect === e.value;
+                  return (
+                    <PreviewTile
+                      key={e.value + previewTick}
+                      label={e.label}
+                      effect={e.value}
+                      speedMs={a.speed_ms}
+                      active={isActive}
+                      onClick={() => { setA({ ...a, effect: e.value }); setPreviewTick((t) => t + 1); }}
+                    />
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -186,13 +200,11 @@ export default function AnimationsTab({ sf, onUpdate }: { sf: Storefront; onUpda
                   <Play className="h-3 w-3" /> Replay
                 </Button>
               </div>
-              <div className="border border-border rounded-md p-6 space-y-3 bg-muted/30">
+              <div className="border border-border rounded-md p-6 space-y-3 bg-muted/30 anim-preview" style={{ ["--anim-duration" as any]: `${a.speed_ms}ms` }}>
                 <div
                   key={previewTick}
-                  className="sf-anim-demo h-20 rounded-md border border-border bg-background flex items-center justify-center text-sm"
-                  data-effect={a.effect}
-                  data-speed={a.speed_ms}
-                  data-strength={a.strength}
+                  className="demo-card h-20 rounded-md border border-border bg-background flex items-center justify-center text-sm"
+                  style={{ animationName: `pre-${a.effect}`, animationDuration: `${a.speed_ms}ms`, animationFillMode: "both" }}
                 >
                   A section of your store.
                 </div>

@@ -192,19 +192,17 @@ export default function Shop() {
         <p className="text-muted-foreground py-12">No products match these filters.</p>
       ) : (
         <>
-          <div
-            className="grid gap-4 lg:gap-6"
-            style={{
-              gridTemplateColumns: `repeat(${shop.columns_phone}, minmax(0, 1fr))`,
-            }}
-          >
-            <style>{`@media (min-width: 1024px) { .grid { grid-template-columns: repeat(${shop.columns_pc}, minmax(0, 1fr)) !important; } }`}</style>
-            {paged.map((p) => (
-              <ProductCard key={p.id} p={p} />
-            ))}
-          </div>
+        <div className="sf-shop-grid" data-sf-anim-cascade>
+          <style>{`
+            .sf-shop-grid { display: grid; gap: 1rem; grid-template-columns: repeat(${shop.columns_phone}, minmax(0, 1fr)); }
+            @media (min-width: 1024px) { .sf-shop-grid { grid-template-columns: repeat(${shop.columns_pc}, minmax(0, 1fr)); gap: 1.5rem; } }
+          `}</style>
+          {paged.map((p) => (
+            <ProductCard key={p.id} p={p} />
+          ))}
+        </div>
 
-          {/* Pagination */}
+        {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 mt-10">
               <button

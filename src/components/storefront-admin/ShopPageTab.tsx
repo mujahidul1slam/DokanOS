@@ -111,7 +111,8 @@ export default function ShopPageTab({ sf, onUpdate }: { sf: Storefront; onUpdate
                 value={s.price_bands.join(", ")}
                 onChange={(e) => {
                   const bands = e.target.value.split(",").map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n >= 0);
-                  set("price_bands", bands.length ? bands : s.price_bands);
+                  const sorted = [...new Set(bands)].sort((a, b) => a - b);
+                  set("price_bands", sorted.length ? sorted : s.price_bands);
                 }}
                 placeholder="0, 500, 1000, 2000, 5000"
               />
@@ -129,7 +130,6 @@ export default function ShopPageTab({ sf, onUpdate }: { sf: Storefront; onUpdate
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="buttons">Numbered pages</SelectItem>
-                <SelectItem value="load-more">Load more button</SelectItem>
                 <SelectItem value="numbers">Compact numbers</SelectItem>
               </SelectContent>
             </Select>
