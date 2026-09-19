@@ -19,6 +19,13 @@ import ProductsTab from "@/components/storefront-admin/ProductsTab";
 import PagesTab from "@/components/storefront-admin/PagesTab";
 import CollectionsTab from "@/components/storefront-admin/CollectionsTab";
 import SettingsTab from "@/components/storefront-admin/SettingsTab";
+import CardStyleTab from "@/components/storefront-admin/CardStyleTab";
+import ProductPageTab from "@/components/storefront-admin/ProductPageTab";
+import ShopPageTab from "@/components/storefront-admin/ShopPageTab";
+import HeaderFooterTab from "@/components/storefront-admin/HeaderFooterTab";
+import AnimationsTab from "@/components/storefront-admin/AnimationsTab";
+import DeliveryTab from "@/components/storefront-admin/DeliveryTab";
+import PaymentsTab from "@/components/storefront-admin/PaymentsTab";
 import { THEME_PRESETS } from "@/components/storefront-admin/shared";
 
 /** Storefronts admin shell — the former 818-line page, split into tabs (Phase 1 refactor). */
@@ -109,6 +116,13 @@ function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Stor
             <TabsTrigger value="pages">Pages</TabsTrigger>
             <TabsTrigger value="collections">Collections</TabsTrigger>
             <TabsTrigger value="profile">Brand profile</TabsTrigger>
+            <TabsTrigger value="cardstyle">Card style</TabsTrigger>
+            <TabsTrigger value="productpage">Product page</TabsTrigger>
+            <TabsTrigger value="shoppage">Shop page</TabsTrigger>
+            <TabsTrigger value="headerfooter">Header &amp; Footer</TabsTrigger>
+            <TabsTrigger value="animations">Animations</TabsTrigger>
+            <TabsTrigger value="delivery">Delivery</TabsTrigger>
+            <TabsTrigger value="payments">Payments</TabsTrigger>
             <TabsTrigger value="content">Social &amp; policies</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
             <TabsTrigger value="domains">Domains</TabsTrigger>
@@ -122,6 +136,27 @@ function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Stor
           </TabsContent>
           <TabsContent value="profile" className="pt-4 space-y-4">
             <BrandProfileTab sf={sf} onUpdate={onUpdate} />
+          </TabsContent>
+          <TabsContent value="cardstyle" className="pt-4 space-y-6">
+            <CardStyleTab sf={sf} onUpdate={onUpdate} />
+          </TabsContent>
+          <TabsContent value="productpage" className="pt-4 space-y-6">
+            <ProductPageTab sf={sf} onUpdate={onUpdate} />
+          </TabsContent>
+          <TabsContent value="shoppage" className="pt-4 space-y-6">
+            <ShopPageTab sf={sf} onUpdate={onUpdate} />
+          </TabsContent>
+          <TabsContent value="headerfooter" className="pt-4 space-y-6">
+            <HeaderFooterTab sf={sf} onUpdate={onUpdate} />
+          </TabsContent>
+          <TabsContent value="animations" className="pt-4 space-y-6">
+            <AnimationsTab sf={sf} onUpdate={onUpdate} />
+          </TabsContent>
+          <TabsContent value="delivery" className="pt-4 space-y-6">
+            <DeliveryTab sf={sf} onUpdate={onUpdate} />
+          </TabsContent>
+          <TabsContent value="payments" className="pt-4 space-y-6">
+            <PaymentsTab sf={sf} onUpdate={onUpdate} />
           </TabsContent>
           <TabsContent value="content" className="pt-4 space-y-6">
             <SocialPoliciesTab sf={sf} onUpdate={onUpdate} />

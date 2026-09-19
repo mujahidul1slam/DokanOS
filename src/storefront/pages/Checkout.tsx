@@ -7,7 +7,7 @@ import { useBrand } from "../BrandContext";
 import { useCart } from "../lib/cart";
 import { brandBasePath } from "../lib/brand";
 import { useCurrency } from "../lib/useCurrency";
-import { mergeSettings } from "../lib/settings";
+import { mergeSettings, type StorefrontPaymentMethod } from "../lib/settings";
 
 interface City { city_id: number; city_name: string; }
 interface Zone { zone_id: number; zone_name: string; city_id: number; }
@@ -30,6 +30,8 @@ export default function Checkout() {
 
   const settings = useMemo(() => mergeSettings(storefront.settings), [storefront.settings]);
   const enabledMethods = settings.checkout.methods;
+  const payConf = settings.payments;
+  const delivery = settings.delivery;
 
   // Determine initial payment method from enabled methods
   const initialPaymentMethod = enabledMethods.cod
@@ -38,6 +40,12 @@ export default function Checkout() {
     ? "bkash"
     : enabledMethods.nagad
     ? "nagad"
+    : enabledMethods.rocket
+    ? "rocket"
+    : enabledMethods.upay
+    ? "upay"
+    : enabledMethods.mcash
+    ? "mcash"
     : "cod";
 
   const [name, setName] = useState("");
@@ -45,7 +53,7 @@ export default function Checkout() {
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
   const [special, setSpecial] = useState("");
-  const [payment, setPayment] = useState<"cod" | "bkash" | "nagad">(initialPaymentMethod);
+  const [payment, setPayment] = useState<string>(initialPaymentMethod);
   const [trxId, setTrxId] = useState("");
   const [sender, setSender] = useState("");
   const [agreedTerms, setAgreedTerms] = useState(false);
@@ -151,10 +159,15 @@ export default function Checkout() {
       .then(({ data }) => setAreas(data || []));
   }, [zoneId]);
 
-  const freeThreshold = shippingQuote?.free_threshold || settings.shipping.free_threshold || 0;
+  const freeThreshold = delivery.free_threshold > 0 ? delivery.free_threshold : shippingQuote?.free_threshold ?? settings.shipping.free_threshold ?? 0;
   const isFreeShipping = freeThreshold > 0 && subtotal >= freeThreshold;
   const effectiveShipping = isFreeShipping ? 0 : (shippingQuote?.rate ?? 150);
   const total = subtotal + effectiveShipping;
+
+  // Advance payment (settings-driven): customer pays X% online, rest COD
+  const advanceEnabled = delivery.advance_payment_enabled && payment !== "cod";
+  const advanceAmount = advanceEnabled && delivery.advance_percent > 0 ? Math.round((total * delivery.advance_percent) / 100) : 0;
+  const amountDueOnDelivery = advanceAmount > 0 ? total - advanceAmount : total;
 
   const minOrderAmount = settings.checkout.min_order_amount || 0;
   const isBelowMinOrder = minOrderAmount > 0 && subtotal < minOrderAmount;
@@ -276,14 +289,16 @@ export default function Checkout() {
                 options={zones.map((z) => ({ value: z.zone_id, label: z.zone_name }))}
                 disabled={!cityId}
               />
-              <Select
-                label="Area"
-                value={areaId}
-                onChange={setAreaId}
-                options={areas.map((a) => ({ value: a.area_id, label: a.area_name }))}
-                disabled={!zoneId}
-                className="sm:col-span-2"
-              />
+              {delivery.show_upazila && (
+                <Select
+                  label="Area"
+                  value={areaId}
+                  onChange={setAreaId}
+                  options={areas.map((a) => ({ value: a.area_id, label: a.area_name }))}
+                  disabled={!zoneId}
+                  className="sm:col-span-2"
+                />
+              )}
               <Input
                 label="Address (house, road, landmark) *"
                 value={address}
@@ -308,31 +323,30 @@ export default function Checkout() {
                   current={payment}
                   onChange={setPayment}
                   title="Cash on Delivery"
-                  subtitle="Pay when your order arrives"
+                  subtitle={payConf.cod.instructions || "Pay when your order arrives"}
                 />
               )}
               {enabledMethods.bkash && (
-                <PayOption
-                  value="bkash"
-                  current={payment}
-                  onChange={setPayment}
-                  title="bKash (manual)"
-                  subtitle="Send payment and enter TrxID below"
-                />
+                <WalletOption value={payConf.bkash} payKey="bkash" current={payment} onChange={setPayment} />
               )}
               {enabledMethods.nagad && (
-                <PayOption
-                  value="nagad"
-                  current={payment}
-                  onChange={setPayment}
-                  title="Nagad (manual)"
-                  subtitle="Send payment and enter TrxID below"
-                />
+                <WalletOption value={payConf.nagad} payKey="nagad" current={payment} onChange={setPayment} />
               )}
-              {(payment === "bkash" || payment === "nagad") && (
+              {enabledMethods.rocket && (
+                <WalletOption value={payConf.rocket} payKey="rocket" current={payment} onChange={setPayment} />
+              )}
+              {enabledMethods.upay && (
+                <WalletOption value={payConf.upay} payKey="upay" current={payment} onChange={setPayment} />
+              )}
+              {enabledMethods.mcash && (
+                <WalletOption value={payConf.mcash} payKey="mcash" current={payment} onChange={setPayment} />
+              )}
+              {(payment === "bkash" || payment === "nagad" || payment === "rocket" || payment === "upay" || payment === "mcash") && (
                 <div className="grid sm:grid-cols-2 gap-3 pt-2">
                   <Input label="Transaction ID *" value={trxId} onChange={setTrxId} />
-                  <Input label="Sender number" value={sender} onChange={setSender} />
+                  {(payConf as any)[payment]?.ask_for_phone && (
+                    <Input label="Sender number" value={sender} onChange={setSender} />
+                  )}
                 </div>
               )}
             </div>
@@ -449,6 +463,19 @@ function Select({ label, value, onChange, options, disabled, className = "" }: a
         ))}
       </select>
     </label>
+  );
+}
+
+function WalletOption({ value, payKey, current, onChange }: {
+  value: StorefrontPaymentMethod;
+  payKey: string;
+  current: string;
+  onChange: (v: string) => void;
+}) {
+  const pretty = { bkash: "bKash", nagad: "Nagad", rocket: "Rocket", upay: "Upay", mcash: "mCash" }[payKey] ?? payKey;
+  const sub = [value.account_number && `Send to ${value.account_number}`, value.instructions].filter(Boolean).join(" · ") || "Pay with mobile banking — enter TrxID below";
+  return (
+    <PayOption value={payKey} current={current} onChange={onChange} title={pretty} subtitle={sub} />
   );
 }
 

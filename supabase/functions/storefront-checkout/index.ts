@@ -73,10 +73,13 @@ Deno.serve(async (req: Request) => {
 
     const sfSettings = (sf.settings || {}) as any;
 
-    // Phase 5: Payment method enforcement
-    const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_payment_methods)
-      ? sfSettings.checkout.enabled_payment_methods
-      : ["cod", "bkash", "nagad"];
+// Phase 5: Payment method enforcement
+// Prefer the explicit array if a caller saved one; otherwise derive from the
+// boolean map the storefront admin writes (checkout.methods.<key> = true/false).
+const methodsMap = (sfSettings as any)?.checkout?.methods || {};
+const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_payment_methods)
+? sfSettings.checkout.enabled_payment_methods
+: Object.entries(methodsMap).filter(([, v]) => !!v).map(([k]) => k);
     if (enabledMethods.length > 0 && !enabledMethods.includes(body.payment?.method)) {
       return json({ error: `Payment method ${body.payment?.method || ""} is not accepted` }, 400);
     }

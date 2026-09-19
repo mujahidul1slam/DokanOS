@@ -216,3 +216,72 @@
 [data-brand="vincent"] .sf-display,
 [data-theme="cinematic"] .sf-display,
 [data-theme="vincent"] .sf-display { text-transform: uppercase; letter-spacing: -0.01em; }
+
+/* ============================================================
+   Scroll animations (Bonik parity) — entrance effects.
+   Only active when [data-sf-anim-root] is set on <html>
+   by the useScrollAnimations hook (runtime gates motion):
+   never on checkout-critical routes, respects reduced-motion.
+   ============================================================ */
+html[data-sf-anim-root] [data-sf-anim] {
+  opacity: 0;
+  transition-duration: var(--sf-anim-speed, 700ms);
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-property: opacity, transform, filter;
+  will-change: opacity, transform;
+}
+html[data-sf-anim-root] [data-sf-anim].sf-anim-in {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+/* Effect variants — the "before" (out) state per effect */
+html[data-sf-anim-root][data-sf-anim-effect="fade"] [data-sf-anim] { transform: none; filter: blur(8px); }
+html[data-sf-anim-root][data-sf-anim-effect="rise"] [data-sf-anim] { transform: translateY(24px); }
+html[data-sf-anim-root][data-sf-anim-effect="drop"] [data-sf-anim] { transform: translateY(-24px); }
+html[data-sf-anim-root][data-sf-anim-effect="slide-l"] [data-sf-anim] { transform: translateX(-36px); }
+html[data-sf-anim-root][data-sf-anim-effect="slide-r"] [data-sf-anim] { transform: translateX(36px); }
+html[data-sf-anim-root][data-sf-anim-effect="zoom-in"] [data-sf-anim] { transform: scale(0.94); }
+html[data-sf-anim-root][data-sf-anim-effect="zoom-out"] [data-sf-anim] { transform: scale(1.06); }
+html[data-sf-anim-root][data-sf-anim-effect="blur"] [data-sf-anim] { filter: blur(14px); }
+html[data-sf-anim-root][data-sf-anim-effect="flip"] [data-sf-anim] { transform: rotateX(12deg) translateY(16px); transform-origin: center top; }
+html[data-sf-anim-root][data-sf-anim-effect="tilt"] [data-sf-anim] { transform: rotate(-2deg) translateY(24px); }
+html[data-sf-anim-root][data-sf-anim-effect="bounce"] [data-sf-anim] { transform: translateY(30px) scale(0.98); transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* Strength multiplies travel distance */
+html[data-sf-anim-root][data-sf-anim-effect][data-sf-anim-strength="strong"] [data-sf-anim]:not([data-sf-anim-effect="fade"]) { --sf-strength: 1.6; }
+html[data-sf-anim-root][data-sf-anim-effect][data-sf-anim-strength="subtle"] [data-sf-anim]:not([data-sf-anim-effect="fade"]) { --sf-strength: 0.55; }
+html[data-sf-anim-root] [data-sf-anim] { transition-duration: calc(var(--sf-anim-speed, 700ms) / var(--sf-strength, 1)); }
+
+/* Product-grid cascade: direct children stagger in */
+html[data-sf-anim-root] [data-sf-anim-cascade] > * {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity var(--sf-anim-speed, 700ms) ease, transform var(--sf-anim-speed, 700ms) cubic-bezier(0.22,1,0.36,1);
+}
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > * {
+  opacity: 1;
+  transform: none;
+}
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(1)  { transition-delay: calc(var(--sf-anim-cascade-gap, 70ms) * 0); }
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(2)  { transition-delay: calc(var(--sf-anim-cascade-gap, 70ms) * 1); }
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(3)  { transition-delay: calc(var(--sf-anim-cascade-gap, 70ms) * 2); }
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(4)  { transition-delay: calc(var(--sf-anim-cascade-gap, 70ms) * 3); }
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(5)  { transition-delay: calc(var(--sf-anim-cascade-gap, 70ms) * 4); }
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(6)  { transition-delay: calc(var(--sf-anim-cascade-gap, 70ms) * 5); }
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(7)  { transition-delay: calc(var(--sf-anim-cascade-gap, 70ms) * 6); }
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(8)  { transition-delay: calc(var(--sf-anim-cascade-gap, 70ms) * 7); }
+html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(n+9) { transition-delay: calc(var(--sf-anim-cascade-gap, 70ms) * 8); }
+
+/* Reduced motion hard-stop */
+@media (prefers-reduced-motion: reduce) {
+  html[data-sf-anim-root] [data-sf-anim],
+  html[data-sf-anim-root] [data-sf-anim-cascade] > * {
+    transition: none !important;
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}

@@ -52,7 +52,7 @@ describe("Phase 5: Storefront Settings Object (§8 / §8.5)", () => {
         ...DEFAULT_STOREFRONT_SETTINGS,
         checkout: {
           ...DEFAULT_STOREFRONT_SETTINGS.checkout,
-          methods: { cod: false, bkash: false, nagad: false },
+          methods: { cod: false, bkash: false, nagad: false, rocket: false, upay: false, mcash: false },
         },
       };
       expect(validateSettings(invalid)).toContain("At least one payment method must stay enabled");

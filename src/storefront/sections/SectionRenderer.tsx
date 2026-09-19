@@ -28,5 +28,9 @@ export default function SectionRenderer({ section }: { section: SectionSnapshot 
   if (errors.length) return null;
 
   const Component = def.component;
-  return <Component props={props} />;
+  return (
+    <section data-sf-anim>
+      <Component props={props} />
+    </section>
+  );
 }

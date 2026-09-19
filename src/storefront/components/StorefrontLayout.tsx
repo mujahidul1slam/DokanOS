@@ -1,11 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
 import { ReactNode, useState } from "react";
-import { ShoppingBag, Menu, X, Camera, Share2, Music2, MessageCircle } from "lucide-react";
+import { ShoppingBag, Menu, X, Camera, Share2, Music2, MessageCircle, Search, Sun, Moon, Phone, Plus } from "lucide-react";
 import { useBrand } from "../BrandContext";
 import { useCart } from "../lib/cart";
 import { brandBasePath } from "../lib/brand";
-
 import { mergeSettings } from "../lib/settings";
+import { useScrollAnimations } from "../lib/animations";
+
+const ICON_STYLE = "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border hover:border-primary hover:text-primary transition";
 
 export default function StorefrontLayout({ children }: { children: ReactNode }) {
   const { brand, storefront } = useBrand();
@@ -15,11 +17,13 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
   const [menuOpen, setMenuOpen] = useState(false);
 
   const settings = mergeSettings(storefront.settings);
+  useScrollAnimations(settings.animations);
+  const h = settings.header;
   const social = (storefront.social || {}) as Record<string, string>;
   const policies = (storefront.policies || {}) as Record<string, string>;
 
   // Editable nav (Phase 1 builder): storefronts.nav rows win when non-empty;
-  // hrefs are path-relative to the storefront base ("/shop") or absolute URLs.
+  // custom menu links from settings append BOTH there or replace defaults when alone.
   const navRows = Array.isArray(storefront.nav) ? storefront.nav : [];
   const nav = navRows.length
     ? navRows.map((n) => ({
@@ -31,48 +35,61 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
         { label: "About", to: `${base}/about` },
         { label: "Track", to: `${base}/track` },
         { label: "Contact", to: `${base}/contact` },
+        ...h.custom_links
+          .filter((l) => l.label && l.href)
+          .map((l) => ({
+            label: l.label,
+            to: /^https?:\/\//i.test(l.href) ? l.href : l.href.startsWith("/") ? l.href : `/${l.href}`,
+          })),
       ];
   const isExternal = (to: string) => /^https?:\/\//i.test(to);
-  // Note: lucide no longer ships brand icons — neutral glyphs are used, with
-  // aria-labels carrying the network name for accessibility.
+
   const socials = [
     { key: "instagram", label: "Instagram", icon: Camera, href: (v: string) => (v.startsWith("http") ? v : `https://instagram.com/${v.replace("@", "")}`) },
     { key: "facebook", label: "Facebook", icon: Share2, href: (v: string) => (v.startsWith("http") ? v : `https://facebook.com/${v}`) },
     { key: "tiktok", label: "TikTok", icon: Music2, href: (v: string) => (v.startsWith("http") ? v : `https://tiktok.com/@${v.replace("@", "")}`) },
     { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, href: (v: string) => `https://wa.me/${v.replace(/[^0-9]/g, "")}` },
   ].filter((s) => (social[s.key] || "").trim());
+
   const hasPolicies = ["shipping", "returns", "privacy"].some((k) => (policies[k] || "").trim());
+  const effectiveAnnouncement =
+    (h.show_announcement && h.announcement_text) || settings.announcement.enabled && settings.announcement.text
+      ? {
+          text: h.show_announcement ? h.announcement_text : settings.announcement.text,
+          href: h.show_announcement ? h.announcement_href : settings.announcement.href,
+        }
+      : null;
 
   return (
     <div className="min-h-screen bg-background text-foreground sf-body">
-      {settings.announcement.enabled && settings.announcement.text && (
+      {effectiveAnnouncement?.text && (
         <aside
           aria-label="Announcement"
           className="bg-primary text-primary-foreground text-xs py-2 px-4 text-center font-medium transition-colors"
         >
-          {settings.announcement.href ? (
-            <a href={settings.announcement.href} className="underline underline-offset-2 hover:opacity-90">
-              {settings.announcement.text}
+          {effectiveAnnouncement.href ? (
+            <a href={effectiveAnnouncement.href} className="underline underline-offset-2 hover:opacity-90">
+              {effectiveAnnouncement.text}
             </a>
           ) : (
-            <span>{settings.announcement.text}</span>
+            <span>{effectiveAnnouncement.text}</span>
           )}
         </aside>
       )}
+
       <header className="sticky top-0 z-50 backdrop-blur-xl bg-background/70 border-b border-border">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 lg:px-8 py-4">
-          <Link to={base} className="sf-display text-2xl lg:text-3xl tracking-tight inline-flex items-center gap-2">
+        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 lg:px-8 py-4 gap-3">
+          {/* Logo / brand */}
+          <Link to={base} className="sf-display text-2xl lg:text-3xl tracking-tight inline-flex items-center gap-2 shrink-0">
             {storefront.logo_url ? (
-              <img
-                src={storefront.logo_url}
-                alt={storefront.name}
-                className="h-9 w-auto max-h-10 object-contain"
-              />
+              <img src={storefront.logo_url} alt={storefront.name} className="h-9 w-auto max-h-10 object-contain" />
             ) : (
               storefront.name.toUpperCase()
             )}
           </Link>
-          <nav className="hidden md:flex items-center gap-8 text-sm">
+
+          {/* Desktop nav */}
+          <nav className="hidden md:flex items-center gap-6 text-sm flex-1 justify-center">
             {nav.map((n) =>
               isExternal(n.to) ? (
                 <a key={n.to} href={n.to} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors text-foreground/80">
@@ -89,29 +106,58 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
               ),
             )}
           </nav>
-          <Link
-            to={`${base}/cart`}
-            className="relative inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border hover:border-primary transition"
-          >
-            <ShoppingBag className="h-4 w-4" />
-            <span className="text-sm">Cart</span>
-            {count > 0 && (
-              <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center">
-                {count}
-              </span>
+
+          {/* Right cluster */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {h.show_search && (
+              <Link to={`${base}/shop`} className={ICON_STYLE} aria-label="Search">
+                <Search className="h-4 w-4" />
+              </Link>
             )}
-          </Link>
-          <button
-            type="button"
-            className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-full border border-border hover:border-primary transition"
-            onClick={() => setMenuOpen((o) => !o)}
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            aria-expanded={menuOpen}
-          >
-            {menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-          </button>
+            {h.show_dark_toggle && (
+              <button
+                type="button"
+                className={ICON_STYLE}
+                aria-label="Toggle dark mode"
+                onClick={() => {
+                  const r = document.documentElement;
+                  r.classList.toggle("dark");
+                }}
+              >
+                <Sun className="h-4 w-4 dark:hidden" />
+                <Moon className="h-4 w-4 hidden dark:block" />
+              </button>
+            )}
+            {h.custom_icons.filter((c) => c.href).map((ic, i) => (
+              <a key={i} href={ic.href} target="_blank" rel="noreferrer" className={ICON_STYLE} aria-label={ic.icon}>
+                {ic.icon === "Phone" ? <Phone className="h-4 w-4" /> : <MessageCircle className="h-4 w-4" />}
+              </a>
+            ))}
+            <Link
+              to={`${base}/cart`}
+              className="relative inline-flex items-center gap-2 px-3 py-2 rounded-full border border-border hover:border-primary transition"
+            >
+              <ShoppingBag className="h-4 w-4" />
+              <span className="text-sm hidden sm:inline">Cart</span>
+              {count > 0 && (
+                <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center">
+                  {count}
+                </span>
+              )}
+            </Link>
+            <button
+              type="button"
+              className={`${ICON_STYLE} md:hidden`}
+              onClick={() => setMenuOpen((o) => !o)}
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
+            >
+              {menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
 
+        {/* Mobile menu */}
         {menuOpen && (
           <nav className="md:hidden border-t border-border bg-background/95 backdrop-blur-xl">
             <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col">
@@ -130,6 +176,15 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
                     {n.label}
                   </Link>
                 ),
+              )}
+              {hasPolicies && (
+                <Link
+                  to={`${base}/policies`}
+                  onClick={() => setMenuOpen(false)}
+                  className="py-3 text-sm uppercase tracking-widest text-foreground/80"
+                >
+                  Policies
+                </Link>
               )}
             </div>
           </nav>
@@ -154,7 +209,7 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
                       target="_blank"
                       rel="noreferrer"
                       aria-label={s.label}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border hover:border-primary hover:text-primary transition"
+                      className={ICON_STYLE}
                     >
                       <Icon className="h-4 w-4" />
                     </a>
@@ -182,6 +237,16 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
             {storefront.contact_phone && <div className="text-muted-foreground">{storefront.contact_phone}</div>}
           </div>
         </div>
+
+        {h.show_footer_cta && (
+          <div className="border-t border-border">
+            <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8 text-center">
+              <p className="text-sm mb-2">Need help or want to chat before ordering?</p>
+              <a href={`${base}/contact`} className="text-sm text-primary underline underline-offset-2">Contact us →</a>
+            </div>
+          </div>
+        )}
+
         <div className="border-t border-border py-6 text-center text-xs text-muted-foreground">
           © {new Date().getFullYear()} {storefront.name}. All rights reserved.
         </div>
