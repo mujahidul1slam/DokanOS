@@ -17,6 +17,13 @@ const SORTS: { value: SortKey; label: string }[] = [
   { value: "newest", label: "Newest" },
 ];
 
+const sortFns: Record<SortKey, (a: StorefrontProduct, b: StorefrontProduct) => number> = {
+  "featured": () => 0,
+  "price-asc": (a, b) => a.price - b.price,
+  "price-desc": (a, b) => b.price - a.price,
+  "newest": (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+};
+
 export default function Shop() {
   const { storefront } = useBrand();
   const [products, setProducts] = useState<StorefrontProduct[] | null>(null);
@@ -77,9 +84,7 @@ export default function Shop() {
   const sortedFiltered = useMemo(() => {
     if (!filtered) return null;
     const list = [...filtered];
-    if (sort === "price-asc") list.sort((a, b) => a.price - b.price);
-    else if (sort === "price-desc") list.sort((a, b) => b.price - a.price);
-    else if (sort === "newest") list.sort((a, b) => (b.position ?? 0) - (a.position ?? 0));
+    if (sort !== "featured") list.sort(sortFns[sort]);
     return list;
   }, [filtered, sort]);
 

@@ -16,6 +16,7 @@ export interface StorefrontProduct {
   price: number;
   image_url: string | null;
   image_urls: string[];
+  created_at: string;
   description: string | null;
   stock_quantity: number;
   manage_stock: boolean;
@@ -53,6 +54,7 @@ function mapProduct(
     is_featured: !!(opts.is_featured ?? p.is_featured),
     badge: opts.badge || "",
     position: opts.position ?? 0,
+    created_at: p.created_at || "",
   };
 }
 
@@ -67,7 +69,7 @@ export async function listStorefrontProducts(storefront_id: string): Promise<Sto
   if (sf?.store_id) {
     const { data: products } = await supabase
       .from("products")
-      .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_featured")
+      .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_featured,created_at")
       .eq("store_id", sf.store_id)
       .eq("is_active", true)
       .order("is_featured", { ascending: false })
@@ -86,7 +88,7 @@ export async function listStorefrontProducts(storefront_id: string): Promise<Sto
   const ids = links.map((l) => l.product_id);
   const { data: products } = await supabase
     .from("products")
-    .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_active")
+    .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_active,created_at")
     .in("id", ids)
     .eq("is_active", true);
   if (!products) return [];
@@ -124,7 +126,7 @@ export async function getProductsByIds(ids: string[]): Promise<StorefrontProduct
   if (!ids.length) return [];
   const { data: products } = await supabase
     .from("products")
-    .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_active")
+    .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_active,created_at")
     .in("id", ids)
     .eq("is_active", true);
   if (!products) return [];

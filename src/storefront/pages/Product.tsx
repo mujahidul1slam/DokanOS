@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useBrand } from "../BrandContext";
 import { brandBasePath } from "../lib/brand";
 import { useCurrency } from "../lib/useCurrency";
 import { getStorefrontProductBySlug, type StorefrontProduct, type StorefrontVariation } from "../lib/catalog";
 import { useCart } from "../lib/cart";
-import { parseVariationAttributes, formatVariationLabel, type ParsedAttr } from "@/lib/variations";
+import { parseVariationAttributes, formatVariationLabel } from "@/lib/variations";
 import { mergeSettings } from "../lib/settings";
 import { Loader2, Minus, Plus, ShoppingBag, Share2, Ruler, Tag } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
@@ -22,7 +22,6 @@ export default function Product() {
   const [p, setP] = useState<StorefrontProduct | null | undefined>(undefined);
   const [qty, setQty] = useState(1);
   const [imgIdx, setImgIdx] = useState(0);
-  const loc = useLocation();
 
   // Selected variation attributes: { [attributeName]: selectedOption }
   const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>({});
@@ -129,7 +128,7 @@ export default function Product() {
 
   async function handleShare() {
     const url = window.location.href;
-    (await navigator.clipboard?.writeText(url).catch(() => undefined)) || undefined;
+    await navigator.clipboard?.writeText(url).catch(() => undefined);
     toast({ title: "Link copied", description: "Share this product." });
   }
 

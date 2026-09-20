@@ -282,7 +282,6 @@ function pick(inb: any, def: any): any {
 }
 
 export function mergeSettings(raw: any): StorefrontSettings {
-  const base = DEFAULT_STOREFRONT_SETTINGS;
   const c = raw?.checkout || {};
   return {
     checkout: {

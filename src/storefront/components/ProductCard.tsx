@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ShoppingBag, Zap, ArrowRight, Plus, Heart } from "lucide-react";
+import { ShoppingBag, Zap, ArrowRight, Plus } from "lucide-react";
 import { brandBasePath } from "../lib/brand";
 import { useBrand } from "../BrandContext";
 import { useCurrency } from "../lib/useCurrency";

@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
-import { Slider } from "@/components/ui/slider";
 import { toast } from "@/hooks/use-toast";
 import { Save, Loader2 } from "lucide-react";
 import type { Storefront } from "./shared";

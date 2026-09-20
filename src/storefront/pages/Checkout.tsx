@@ -166,7 +166,7 @@ export default function Checkout() {
 
   // Advance payment (settings-driven): customer pays X% online, rest COD
   const advanceEnabled = delivery.advance_payment_enabled && delivery.advance_percent > 0;
-  const advanceAmount = advanceEnabled ? Math.round((total * delivery.advance_percent) / 100) : 0;
+  const advanceAmount = advanceEnabled ? Math.round((total * Math.min(delivery.advance_percent, 100)) / 100) : 0;
   const amountDueOnDelivery = advanceEnabled ? total - advanceAmount : total;
   const advanceAllowed = advanceEnabled && payment !== "cod" && (payment === "bkash" || payment === "nagad" || payment === "rocket" || payment === "upay" || payment === "mcash");
 

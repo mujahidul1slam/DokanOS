@@ -207,7 +207,7 @@ const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_pay
     const paymentMethod = body.payment.method;
     // Advance payment (from client; server re-validates against settings.delivery)
     const advanceEnabled = !!(sfSettings?.delivery?.advance_payment_enabled) && Number(sfSettings?.delivery?.advance_percent) > 0;
-    const advancePct = advanceEnabled ? Number(sfSettings.delivery.advance_percent) : 0;
+    const advancePct = advanceEnabled ? Math.min(100, Math.max(0, Number(sfSettings.delivery.advance_percent))) : 0;
     const serverAdvanceAmount = advanceEnabled ? Math.round((total * advancePct) / 100) : 0;
     const clientAdvance = Number(body.payment?.advance_amount || 0);
 
