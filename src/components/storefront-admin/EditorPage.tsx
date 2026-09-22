@@ -13,9 +13,12 @@ export default function EditorPage({ children, previewUrl, previewKey, device = 
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Save-then-reload: bump the src ONLY after a save (previewKey > 0).
+  // The iframe's own src prop handles the initial load; rewriting it on mount
+  // would double-load the page.
   useEffect(() => {
-    if (iframeRef.current && previewKey !== undefined) {
-      iframeRef.current.src = previewUrl ? `${previewUrl}${previewUrl.includes("?") ? "&" : "?"}_k=${previewKey}` : "";
+    if (iframeRef.current && previewUrl && previewKey !== undefined && previewKey > 0) {
+      iframeRef.current.src = `${previewUrl}${previewUrl.includes("?") ? "&" : "?"}_k=${previewKey}`;
     }
   }, [previewKey, previewUrl]);
 

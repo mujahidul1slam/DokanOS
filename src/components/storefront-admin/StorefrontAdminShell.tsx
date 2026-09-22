@@ -96,6 +96,27 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
     return () => { alive = false; };
   }, [slug]);
 
+  // Hooks-order rule: ALL hooks must run before any early return.
+  const paletteItems = useMemo(() => {
+    const all = GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })));
+    if (!search.trim()) return all;
+    const q = search.toLowerCase();
+    return all.filter((i) => i.label.toLowerCase().includes(q) || i.group.toLowerCase().includes(q));
+  }, [search]);
+
+  // ⌘K opens the palette; Escape closes it
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+      if (e.key === "Escape") setPaletteOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   if (sf === undefined) {
     return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
@@ -104,14 +125,6 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
   }
 
   const base = `/storefronts/${slug}/admin`;
-
-  // Jump-to-surface command palette: filter group items by search text
-  const paletteItems = useMemo(() => {
-    const all = GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })));
-    if (!search.trim()) return all;
-    const q = search.toLowerCase();
-    return all.filter((i) => i.label.toLowerCase().includes(q) || i.group.toLowerCase().includes(q));
-  }, [search]);
 
   const surfacePages: Record<string, boolean> = {
     "header-footer": true, "product-page": true, "product-card": true, "shop-page": true,

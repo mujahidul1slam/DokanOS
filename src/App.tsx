@@ -36,6 +36,20 @@ const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
 const StorefrontPreviewPage = lazy(() => import("./pages/StorefrontPreviewPage"));
 const StorefrontPreviewSurface = lazy(() => import("./pages/StorefrontPreviewSurface"));
+
+// Preview router: `_`-prefixed surfaces (product/shop/identity previews) go to
+// the direct-render StorefrontPreviewSurface; plain pageSlugs (home, about…)
+// go through the existing StorefrontPreviewPage.
+const StorefrontPreview = lazy(() =>
+  Promise.all([import("./pages/StorefrontPreviewPage"), import("./pages/StorefrontPreviewSurface")]).then(
+    ([Page, Surface]) => ({
+      default: function StorefrontPreviewRouter() {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("surface") ? <Surface.default /> : <Page.default />;
+      },
+    }),
+  ),
+);
 const StorefrontAdminShell = lazy(() => import("@/components/storefront-admin/StorefrontAdminShell"));
 const StorefrontOverview = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.StorefrontOverview })));
 const ThemeGallery = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.ThemeGallery })));
@@ -98,49 +112,57 @@ const AppRoutes = () => {
   }
 
   return (
-    <DashboardLayout>
-      <CommandPalette />
-      <Suspense fallback={<PageFallback />}>
-        <Routes>
-          <Route path="/" element={<PermissionGuard permission="dashboard.view"><Dashboard /></PermissionGuard>} />
-          <Route path="/orders" element={<PermissionGuard permission="orders.view"><Orders /></PermissionGuard>} />
-          <Route path="/customers" element={<PermissionGuard permission="customers.view"><Customers /></PermissionGuard>} />
-          <Route path="/products" element={<PermissionGuard permission="products.view"><Products /></PermissionGuard>} />
-          <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />
-          <Route path="/pos/reports" element={<PermissionGuard permission="analytics.view"><PosReports /></PermissionGuard>} />
-          <Route path="/analytics" element={<PermissionGuard permission="analytics.view"><Analytics /></PermissionGuard>} />
-          <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
-          <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
-          <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
-          <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
-          <Route path="/storefronts" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
-          <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreviewPage /></PermissionGuard>} />
-          <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreviewPage /></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><Navigate to="dashboard" replace /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/dashboard" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontOverview /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/theme" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><ThemeGallery /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/builder" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="builder" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/pages" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="pages" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/collections" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="collections" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/products" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="products" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/identity" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="identity" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/header-footer" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="header-footer" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/product-page" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="product-page" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/product-card" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="product-card" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/shop-page" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="shop-page" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/animations" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="animations" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/delivery" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="delivery" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/payments" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="payments" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/domains" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="domains" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/policies" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="policies" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/settings" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="settings" /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/storefronts/:slug/admin/help" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><AdminHelp /></StorefrontAdminShell></PermissionGuard>} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/login" element={<Navigate to="/" replace />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Suspense>
-    </DashboardLayout>
+    <Routes>
+      {/* Storefront admin shell routes — FULL-BLEED, outside DashboardLayout.
+          StorefrontAdminShell renders its own sidebar; AppSidebar never shows here. */}
+      <Route path="/storefronts/:slug/admin" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><Navigate to="dashboard" replace /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/dashboard" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontOverview /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/theme" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><ThemeGallery /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/builder" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="builder" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/pages" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="pages" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/collections" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="collections" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/products" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="products" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/identity" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="identity" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/header-footer" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="header-footer" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/product-page" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="product-page" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/product-card" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="product-card" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/shop-page" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="shop-page" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/animations" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="animations" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/delivery" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="delivery" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/payments" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="payments" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/domains" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="domains" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/policies" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="policies" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/settings" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="settings" /></StorefrontAdminShell></PermissionGuard>} />
+      <Route path="/storefronts/:slug/admin/help" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><AdminHelp /></StorefrontAdminShell></PermissionGuard>} />
+
+      {/* Standard dashboard routes */}
+      <Route path="*" element={
+        <DashboardLayout>
+          <CommandPalette />
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              <Route path="/" element={<PermissionGuard permission="dashboard.view"><Dashboard /></PermissionGuard>} />
+              <Route path="/orders" element={<PermissionGuard permission="orders.view"><Orders /></PermissionGuard>} />
+              <Route path="/customers" element={<PermissionGuard permission="customers.view"><Customers /></PermissionGuard>} />
+              <Route path="/products" element={<PermissionGuard permission="products.view"><Products /></PermissionGuard>} />
+              <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />
+              <Route path="/pos/reports" element={<PermissionGuard permission="analytics.view"><PosReports /></PermissionGuard>} />
+              <Route path="/analytics" element={<PermissionGuard permission="analytics.view"><Analytics /></PermissionGuard>} />
+              <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
+              <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
+              <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
+              <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
+              <Route path="/storefronts" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
+              <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreview /></PermissionGuard>} />
+              <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreview /></PermissionGuard>} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/login" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </DashboardLayout>
+      } />
+    </Routes>
   );
 };
 

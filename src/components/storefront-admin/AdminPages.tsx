@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, ExternalLink, Palette, LayoutTemplate, Square, Grid3X3, List, Truck, CreditCard, Building2, Plus } from "lucide-react";
-import { mergeSettings } from "@/storefront/lib/settings";
 import { THEME_PRESETS } from "@/components/storefront-admin/shared";
 import EditorPage from "@/components/storefront-admin/EditorPage";
 import type { Storefront } from "@/storefront/lib/brand";
@@ -15,7 +14,7 @@ import type { Storefront } from "@/storefront/lib/brand";
 export function StorefrontOverview() {
   const { slug } = useParams();
   const [sf, setSf] = useState<Storefront | null>(null);
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<{ total: number; rows: any[]; recent: any[] }>({ total: 0, rows: [], recent: [] });
   const [productCount, setProductCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,12 +25,16 @@ export function StorefrontOverview() {
       if (!alive) return;
       setSf((sfRow as unknown as Storefront) || null);
       if (sfRow) {
-        const [{ data: ord }, { count: pc }] = await Promise.all([
-          supabase.from("orders").select("id, order_number, status, total, created_at, customer_name").eq("storefront_id", (sfRow as any).id).order("created_at", { ascending: false }).limit(8),
-          supabase.from("storefront_products").select("id", { count: "exact", head: true }).eq("storefront_id", (sfRow as any).id),
+        const sfId = (sfRow as any).id;
+        const [{ count: totalOrders }, { data: agg }, { count: pc }, { data: recent }] = await Promise.all([
+          supabase.from("orders").select("id", { count: "exact", head: true }).eq("storefront_id", sfId),
+          supabase.from("orders").select("total, status, created_at").eq("storefront_id", sfId).order("created_at", { ascending: false }).limit(500),
+          supabase.from("storefront_products").select("id", { count: "exact", head: true }).eq("storefront_id", sfId),
+          supabase.from("orders").select("id, order_number, status, total, created_at, customer_name").eq("storefront_id", sfId).order("created_at", { ascending: false }).limit(8),
         ]);
         if (!alive) return;
-        setOrders((ord as any) || []);
+        const rows = (agg as any[]) || [];
+        setOrders({ total: totalOrders ?? 0, rows, recent: (recent as any[]) || [] });
         setProductCount(pc ?? 0);
       }
       if (alive) setLoading(false);
@@ -43,11 +46,13 @@ export function StorefrontOverview() {
   if (!sf) return <div className="text-center py-20 text-muted-foreground">Storefront not found.</div>;
 
   const today = new Date().toDateString();
-  const todayOrders = orders.filter((o) => new Date(o.created_at).toDateString() === today);
+  const allRows = orders.rows;
+  const recentRows = orders.recent;
+  const todayOrders = allRows.filter((o) => new Date(o.created_at).toDateString() === today);
   const revenueToday = todayOrders.reduce((s, o) => s + Number(o.total || 0), 0);
-  const revenue7 = orders.reduce((s, o) => s + Number(o.total || 0), 0);
+  const revenueTotal = allRows.reduce((s, o) => s + Number(o.total || 0), 0);
 
-  const statusCount = (st: string) => orders.filter((o) => o.status === st).length;
+  const statusCount = (st: string) => allRows.filter((o) => o.status === st).length;
 
   const quickActions = [
     { label: "Edit theme", to: `/storefronts/${slug}/admin/theme`, icon: <Palette className="h-4 w-4" /> },
@@ -63,8 +68,8 @@ export function StorefrontOverview() {
     <div className="space-y-6">
       {/* KPI row */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Total Revenue" value={`৳${revenue7.toLocaleString()}`} sub={`Today: ৳${revenueToday.toLocaleString()}`} />
-        <KpiCard label="Total Orders" value={String(orders.length)} sub={`Today: ${todayOrders.length}`} />
+        <KpiCard label="Total Revenue" value={`৳${revenueTotal.toLocaleString()}`} sub={`Today: ৳${revenueToday.toLocaleString()}`} />
+        <KpiCard label="Total Orders" value={String(orders.total)} sub={`Today: ${todayOrders.length}`} />
         <KpiCard label="Products live" value={String(productCount ?? "—")} />
         <KpiCard label="Pageviews" value="—" sub="Traffic analytics: on the roadmap" muted />
       </div>
@@ -87,11 +92,11 @@ export function StorefrontOverview() {
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-sm font-medium mb-4">Recent orders</h3>
-            {orders.length === 0 ? (
+            {recentRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">No orders yet. Share your store link to start getting orders.</p>
             ) : (
               <div className="divide-y divide-border">
-                {orders.map((o) => (
+                {recentRows.map((o) => (
                   <div key={o.id} className="flex items-center justify-between py-2.5 text-sm">
                     <div className="min-w-0">
                       <p className="font-medium truncate">{o.order_number}</p>
@@ -203,7 +208,7 @@ export function ThemeGallery() {
                   <p className="text-xs text-muted-foreground mt-0.5">{labels[t.value] || t.description}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <a href={`/storefronts/preview/${slug}/home?theme_override=${t.value}`} target="_blank" rel="noreferrer">
+                  <a href={`/storefronts/preview/${slug}/home?surface=home&theme_override=${t.value}`} target="_blank" rel="noreferrer">
                     <Button variant="outline" size="sm">Preview</Button>
                   </a>
                   <Button size="sm" disabled={active || saving === t.value} onClick={() => useTheme(t.value, sw[0])}>

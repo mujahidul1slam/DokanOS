@@ -20,6 +20,8 @@ export const THEME_PRESETS = [
   { value: "cinematic", label: "Cinematic (Dark)", description: "Bold, dark immersive layout" },
   { value: "minimal", label: "Minimal (Clean)", description: "Clean, modern, black & white" },
   { value: "warm", label: "Warm (Earthy)", description: "Earthy, warm-toned and inviting" },
+  { value: "nimbus", label: "Nimbus (Tech)", description: "Crisp blues for tech & gadgets" },
+  { value: "saffron", label: "Saffron (Food)", description: "Warm, appetizing food & beverage tones" },
 ] as const;
 
 /** Content returned by the generate-storefront-content edge function */

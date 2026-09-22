@@ -285,3 +285,34 @@ html[data-sf-anim-root] [data-sf-anim-cascade].sf-anim-in > *:nth-child(n+9) { t
     filter: none !important;
   }
 }
+
+/* ============================================================
+   Nimbus (tech) + Saffron (food) — Bonik-parity theme presets.
+   Derived variants: base token swap over the existing theme engine.
+   ============================================================ */
+[data-theme="nimbus"] {
+  --sf-accent: 221 83% 53%;            /* blue-600 */
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --muted: 210 40% 94%;
+  --card: 0 0% 100%;
+  --border: 214 32% 88%;
+  --sf-radius: 0.5rem;
+  --font-display: "Inter", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+[data-theme="saffron"] {
+  --sf-accent: 24 95% 45%;             /* orange-600 */
+  --primary: 24 95% 45%;
+  --primary-foreground: 0 0% 100%;
+  --background: 33 100% 97%;
+  --foreground: 20 14% 12%;
+  --muted: 30 60% 93%;
+  --card: 0 0% 100%;
+  --border: 33 40% 88%;
+  --sf-radius: 0.75rem;
+  --font-display: "Poppins", sans-serif;
+  --font-body: "Poppins", sans-serif;
+}
