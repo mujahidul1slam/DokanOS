@@ -35,6 +35,12 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
 const StorefrontPreviewPage = lazy(() => import("./pages/StorefrontPreviewPage"));
+const StorefrontPreviewSurface = lazy(() => import("./pages/StorefrontPreviewSurface"));
+const StorefrontAdminShell = lazy(() => import("@/components/storefront-admin/StorefrontAdminShell"));
+const StorefrontOverview = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.StorefrontOverview })));
+const ThemeGallery = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.ThemeGallery })));
+const AdminHelp = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.AdminHelp })));
+const StorefrontAdminEditor = lazy(() => import("@/components/storefront-admin/StorefrontAdminEditor"));
 const StoresHub = lazy(() => import("./pages/StoresHub"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -109,6 +115,26 @@ const AppRoutes = () => {
           <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
           <Route path="/storefronts" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
           <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreviewPage /></PermissionGuard>} />
+          <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreviewPage /></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><Navigate to="dashboard" replace /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/dashboard" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontOverview /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/theme" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><ThemeGallery /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/builder" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="builder" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/pages" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="pages" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/collections" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="collections" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/products" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="products" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/identity" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="identity" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/header-footer" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="header-footer" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/product-page" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="product-page" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/product-card" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="product-card" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/shop-page" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="shop-page" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/animations" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="animations" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/delivery" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="delivery" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/payments" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="payments" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/domains" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="domains" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/policies" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="policies" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/settings" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><StorefrontAdminEditor surface="settings" /></StorefrontAdminShell></PermissionGuard>} />
+          <Route path="/storefronts/:slug/admin/help" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><AdminHelp /></StorefrontAdminShell></PermissionGuard>} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFound />} />

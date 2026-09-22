@@ -13,8 +13,9 @@ import { usePageMeta } from "../lib/seo";
 import { ProductJsonLd, BreadcrumbListJsonLd } from "../lib/jsonld";
 import { productUrl } from "../lib/routes";
 
-export default function Product() {
-  const { slug } = useParams();
+export default function Product({ slugOverride }: { slugOverride?: string }) {
+  const params = useParams();
+  const slug = slugOverride || params.slug;
   const navigate = useNavigate();
   const { brand, storefront } = useBrand();
   const fmt = useCurrency();
