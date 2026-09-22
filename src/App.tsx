@@ -114,6 +114,10 @@ const AppRoutes = () => {
 
   return (
     <Routes>
+      {/* Preview routes — FULL-BLEED (no DashboardLayout chrome around the storefront page) */}
+      <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreview /></PermissionGuard>} />
+      <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreview /></PermissionGuard>} />
+
       {/* Storefront admin shell routes — FULL-BLEED, outside DashboardLayout.
           StorefrontAdminShell renders its own sidebar; AppSidebar never shows here. */}
       <Route path="/storefronts/:slug/admin" element={<PermissionGuard permission="storefronts.view"><StorefrontAdminShell><Navigate to="dashboard" replace /></StorefrontAdminShell></PermissionGuard>} />
@@ -154,8 +158,6 @@ const AppRoutes = () => {
               <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
               <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
               <Route path="/storefronts" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
-              <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreview /></PermissionGuard>} />
-              <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><StorefrontPreview /></PermissionGuard>} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFound />} />

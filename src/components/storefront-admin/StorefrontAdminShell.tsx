@@ -111,7 +111,7 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
         e.preventDefault();
         setPaletteOpen((o) => !o);
       }
-      if (e.key === "Escape") setPaletteOpen(false);
+      if (e.key === "Escape") { setPaletteOpen(false); setSearch(""); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -220,7 +220,7 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
 
       {/* Command palette overlay */}
       {paletteOpen && (
-        <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-start justify-center pt-24" onClick={() => setPaletteOpen(false)}>
+        <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-start justify-center pt-24" onClick={() => { setPaletteOpen(false); setSearch(""); }}>
           <div className="w-full max-w-md rounded-xl border border-border bg-card shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <Search className="h-4 w-4 text-muted-foreground" />
@@ -231,7 +231,7 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
                 placeholder="Jump to a surface…"
                 className="flex-1 bg-transparent text-sm outline-none"
               />
-              <button onClick={() => setPaletteOpen(false)} aria-label="Close">
+              <button onClick={() => { setPaletteOpen(false); setSearch(""); }} aria-label="Close">
                 <X className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
