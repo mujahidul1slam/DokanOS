@@ -4,12 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import { ExternalLink, Loader2, Plus } from "lucide-react";
+import { ExternalLink, Loader2, Plus, Files, FolderOpen, List, Building2, Grid3X3, Square, LayoutTemplate, PanelsTopLeft, Sparkles, Truck, CreditCard, FileText, Settings, Globe } from "lucide-react";
 import { invalidateSlugCache } from "@/storefront/lib/brand";
 import type { Storefront } from "@/storefront/lib/brand";
 import BrandProfileTab from "@/components/storefront-admin/BrandProfileTab";
@@ -96,6 +95,65 @@ export default function StorefrontsPage() {
 }
 
 function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Storefront) => void }) {
+  const [tab, setTab] = useState("pages");
+
+  const GROUPS: { label: string; tabs: { id: string; label: string; icon: React.ReactNode }[] }[] = [
+    {
+      label: "Content",
+      tabs: [
+        { id: "pages", label: "Pages", icon: <Files className="h-4 w-4" /> },
+        { id: "collections", label: "Collections", icon: <FolderOpen className="h-4 w-4" /> },
+        { id: "products", label: "Products", icon: <List className="h-4 w-4" /> },
+      ],
+    },
+    {
+      label: "Design",
+      tabs: [
+        { id: "profile", label: "Brand profile", icon: <Building2 className="h-4 w-4" /> },
+        { id: "cardstyle", label: "Card style", icon: <Grid3X3 className="h-4 w-4" /> },
+        { id: "productpage", label: "Product page", icon: <Square className="h-4 w-4" /> },
+        { id: "shoppage", label: "Shop page", icon: <LayoutTemplate className="h-4 w-4" /> },
+        { id: "headerfooter", label: "Header & Footer", icon: <PanelsTopLeft className="h-4 w-4" /> },
+        { id: "animations", label: "Animations", icon: <Sparkles className="h-4 w-4" /> },
+      ],
+    },
+    {
+      label: "Commerce",
+      tabs: [
+        { id: "delivery", label: "Delivery", icon: <Truck className="h-4 w-4" /> },
+        { id: "payments", label: "Payments", icon: <CreditCard className="h-4 w-4" /> },
+      ],
+    },
+    {
+      label: "Configuration",
+      tabs: [
+        { id: "content", label: "Social & policies", icon: <FileText className="h-4 w-4" /> },
+        { id: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
+        { id: "domains", label: "Domains", icon: <Globe className="h-4 w-4" /> },
+      ],
+    },
+  ];
+
+  const content = (() => {
+    switch (tab) {
+      case "pages": return <PagesTab sf={sf} />;
+      case "collections": return <CollectionsTab sf={sf} />;
+      case "products": return <ProductsTab sf={sf} />;
+      case "profile": return <BrandProfileTab sf={sf} onUpdate={onUpdate} />;
+      case "cardstyle": return <CardStyleTab sf={sf} onUpdate={onUpdate} />;
+      case "productpage": return <ProductPageTab sf={sf} onUpdate={onUpdate} />;
+      case "shoppage": return <ShopPageTab sf={sf} onUpdate={onUpdate} />;
+      case "headerfooter": return <HeaderFooterTab sf={sf} onUpdate={onUpdate} />;
+      case "animations": return <AnimationsTab sf={sf} onUpdate={onUpdate} />;
+      case "delivery": return <DeliveryTab sf={sf} onUpdate={onUpdate} />;
+      case "payments": return <PaymentsTab sf={sf} onUpdate={onUpdate} />;
+      case "content": return <SocialPoliciesTab sf={sf} onUpdate={onUpdate} />;
+      case "settings": return <SettingsTab sf={sf} onUpdate={onUpdate} />;
+      case "domains": return <DomainsTab sf={sf} onUpdate={onUpdate} />;
+      default: return null;
+    }
+  })();
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -111,66 +169,34 @@ function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Stor
         </a>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="pages">
-          <TabsList>
-            <TabsTrigger value="pages">Pages</TabsTrigger>
-            <TabsTrigger value="collections">Collections</TabsTrigger>
-            <TabsTrigger value="profile">Brand profile</TabsTrigger>
-            <TabsTrigger value="cardstyle">Card style</TabsTrigger>
-            <TabsTrigger value="productpage">Product page</TabsTrigger>
-            <TabsTrigger value="shoppage">Shop page</TabsTrigger>
-            <TabsTrigger value="headerfooter">Header &amp; Footer</TabsTrigger>
-            <TabsTrigger value="animations">Animations</TabsTrigger>
-            <TabsTrigger value="delivery">Delivery</TabsTrigger>
-            <TabsTrigger value="payments">Payments</TabsTrigger>
-            <TabsTrigger value="content">Social &amp; policies</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
-            <TabsTrigger value="domains">Domains</TabsTrigger>
-            <TabsTrigger value="products">Products</TabsTrigger>
-          </TabsList>
-          <TabsContent value="pages" className="pt-4 space-y-6">
-            <PagesTab sf={sf} />
-          </TabsContent>
-          <TabsContent value="collections" className="pt-4 space-y-6">
-            <CollectionsTab sf={sf} />
-          </TabsContent>
-          <TabsContent value="profile" className="pt-4 space-y-4">
-            <BrandProfileTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="cardstyle" className="pt-4 space-y-6">
-            <CardStyleTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="productpage" className="pt-4 space-y-6">
-            <ProductPageTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="shoppage" className="pt-4 space-y-6">
-            <ShopPageTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="headerfooter" className="pt-4 space-y-6">
-            <HeaderFooterTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="animations" className="pt-4 space-y-6">
-            <AnimationsTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="delivery" className="pt-4 space-y-6">
-            <DeliveryTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="payments" className="pt-4 space-y-6">
-            <PaymentsTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="content" className="pt-4 space-y-6">
-            <SocialPoliciesTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="settings" className="pt-4 space-y-6">
-            <SettingsTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="domains" className="pt-4 space-y-6">
-            <DomainsTab sf={sf} onUpdate={onUpdate} />
-          </TabsContent>
-          <TabsContent value="products" className="pt-4 space-y-6">
-            <ProductsTab sf={sf} />
-          </TabsContent>
-        </Tabs>
+        <div className="flex gap-6">
+          {/* Vertical tab rail (Settings-page pattern): grouped, icons, active highlight */}
+          <nav className="w-52 shrink-0 space-y-4">
+            {GROUPS.map((g) => (
+              <div key={g.label} className="space-y-0.5">
+                <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-3 mb-1.5">
+                  {g.label}
+                </h2>
+                {g.tabs.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTab(t.id)}
+                    className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+                      tab === t.id
+                        ? "bg-secondary text-foreground font-medium"
+                        : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                    }`}
+                  >
+                    {t.icon}
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+
+          <div className="flex-1 min-w-0">{content}</div>
+        </div>
       </CardContent>
     </Card>
   );
