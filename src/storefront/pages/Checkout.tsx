@@ -269,8 +269,8 @@ export default function Checkout() {
     <div className="max-w-6xl mx-auto px-4 lg:px-8 py-12">
       <h1 className="sf-display text-5xl mb-6">Checkout</h1>
 
-      {/* Step indicator */}
-      <CheckoutStepper current={2} />
+      {/* Step indicator — user is on the Details step while filling the form */}
+      <CheckoutStepper current={1} />
 
       {/* Order Instructions from Settings */}
       {settings.checkout.order_instructions && (
