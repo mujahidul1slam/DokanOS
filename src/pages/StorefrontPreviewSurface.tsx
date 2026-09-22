@@ -22,7 +22,11 @@ import { Loader2 } from "lucide-react";
  * the iframe reloads (same URL, new settings read) — no live typing.
  */
 export default function StorefrontPreviewSurface() {
-  const { slug, surface } = useParams();
+  const { slug, pageSlug } = useParams();
+  // Route param is :pageSlug (App.tsx); surfaces are passed as _-prefixed slugs
+  // or via ?surface= — read both.
+  const params = new URLSearchParams(window.location.search);
+  const surface = params.get("surface") || pageSlug || "home";
 
   const [sf, setSf] = useState<Storefront | null | undefined>(undefined);
 
@@ -42,13 +46,12 @@ export default function StorefrontPreviewSurface() {
   }
 
   // Theme override (from ?theme_override= in the preview URL — BrandContext-level swap)
-  const params = new URLSearchParams(window.location.search);
   const themeOverride = params.get("theme_override");
   const effectiveSf = themeOverride ? { ...sf, theme: themeOverride } : sf;
 
   return (
     <BrandProvider brand={sf.slug} storefrontOverride={effectiveSf}>
-      <SurfaceFrame surface={surface || "home"} brand={sf.slug} />
+      <SurfaceFrame surface={surface} brand={sf.slug} />
     </BrandProvider>
   );
 }

@@ -148,15 +148,17 @@ function KpiCard({ label, value, sub, muted }: { label: string; value: string; s
 
 export function ThemeGallery() {
   const { slug } = useParams();
-  const [sf, setSf] = useState<Storefront | null>(null);
+  const [sf, setSf] = useState<Storefront | null | undefined>(undefined);
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
+    let alive = true;
     supabase.from("storefronts").select("*").eq("slug", slug).maybeSingle()
-      .then(({ data }) => setSf((data as unknown as Storefront) || null));
+      .then(({ data }) => { if (alive) setSf((data as unknown as Storefront) || null); });
+    return () => { alive = false; };
   }, [slug]);
 
-  async function useTheme(themeKey: string, accentHex: string) {
+  async function applyTheme(themeKey: string, accentHex: string) {
     if (!sf) return;
     setSaving(themeKey);
     const { data, error } = await supabase
@@ -170,6 +172,7 @@ export function ThemeGallery() {
     setSf(data as unknown as Storefront);
   }
 
+  if (sf === undefined) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!sf) return <div className="text-center py-20 text-muted-foreground">Storefront not found.</div>;
 
   // Swatch strip per preset — fast, honest, no screenshot infra
@@ -211,7 +214,7 @@ export function ThemeGallery() {
                   <a href={`/storefronts/preview/${slug}/home?surface=home&theme_override=${t.value}`} target="_blank" rel="noreferrer">
                     <Button variant="outline" size="sm">Preview</Button>
                   </a>
-                  <Button size="sm" disabled={active || saving === t.value} onClick={() => useTheme(t.value, sw[0])}>
+                  <Button size="sm" disabled={active || saving === t.value} onClick={() => applyTheme(t.value, sw[0])}>
                     {saving === t.value ? "Applying…" : active ? "Active" : "Use this theme"}
                   </Button>
                 </div>

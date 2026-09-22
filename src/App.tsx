@@ -37,15 +37,16 @@ const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
 const StorefrontPreviewPage = lazy(() => import("./pages/StorefrontPreviewPage"));
 const StorefrontPreviewSurface = lazy(() => import("./pages/StorefrontPreviewSurface"));
 
-// Preview router: `_`-prefixed surfaces (product/shop/identity previews) go to
-// the direct-render StorefrontPreviewSurface; plain pageSlugs (home, about…)
-// go through the existing StorefrontPreviewPage.
+// Preview router: `?surface=` param or `_`-prefixed pageSlugs go to the
+// direct-render StorefrontPreviewSurface (no StorefrontApp catch-all);
+// plain pageSlugs (home, about…) go through the existing StorefrontPreviewPage.
 const StorefrontPreview = lazy(() =>
   Promise.all([import("./pages/StorefrontPreviewPage"), import("./pages/StorefrontPreviewSurface")]).then(
     ([Page, Surface]) => ({
       default: function StorefrontPreviewRouter() {
         const params = new URLSearchParams(window.location.search);
-        return params.get("surface") ? <Surface.default /> : <Page.default />;
+        const pageSlug = window.location.pathname.split("/").pop() || "";
+        return params.get("surface") || pageSlug.startsWith("_") ? <Surface.default /> : <Page.default />;
       },
     }),
   ),

@@ -62,7 +62,9 @@ export default function StorefrontAdminEditor({ surface }: { surface: string }) 
   };
 
   const previewSurface = PREVIEW_SURFACE[surface];
-  const previewUrl = previewSurface ? `/storefronts/preview/${slug}/${previewSurface}` : undefined;
+  const previewUrl = previewSurface
+    ? `/storefronts/preview/${slug}/${previewSurface}?surface=${previewSurface}`
+    : undefined;
 
   const tab = (() => {
     switch (surface) {
