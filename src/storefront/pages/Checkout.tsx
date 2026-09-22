@@ -269,6 +269,9 @@ export default function Checkout() {
     <div className="max-w-6xl mx-auto px-4 lg:px-8 py-12">
       <h1 className="sf-display text-5xl mb-6">Checkout</h1>
 
+      {/* Step indicator */}
+      <CheckoutStepper current={2} />
+
       {/* Order Instructions from Settings */}
       {settings.checkout.order_instructions && (
         <div className="sf-glass p-4 rounded-xl mb-8 text-sm text-foreground/85 border border-primary/20 bg-primary/5">
@@ -534,6 +537,32 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between">
       <span className="text-muted-foreground">{label}</span>
       <span>{value}</span>
+    </div>
+  );
+}
+
+/** Checkout stepper — Cart → Contact & payment → Done (Bonik parity B2). */
+function CheckoutStepper({ current }: { current: number }) {
+  const STEPS = ["Cart", "Details", "Done"];
+  return (
+    <div className="flex items-center gap-2 mb-10" aria-label="Checkout progress">
+      {STEPS.map((step, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <div key={step} className="flex items-center gap-2">
+            <span
+              className={`h-6 w-6 rounded-full text-[11px] font-semibold flex items-center justify-center transition-colors ${
+                done ? "bg-primary text-primary-foreground" : active ? "bg-primary/10 text-primary border border-primary" : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {i + 1}
+            </span>
+            <span className={`text-xs uppercase tracking-widest ${active ? "text-primary font-semibold" : "text-muted-foreground"}`}>{step}</span>
+            {i < STEPS.length - 1 && <span className="w-8 h-px bg-border" />}
+          </div>
+        );
+      })}
     </div>
   );
 }

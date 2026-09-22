@@ -6,6 +6,7 @@ import { useCart } from "../lib/cart";
 import { brandBasePath } from "../lib/brand";
 import { mergeSettings } from "../lib/settings";
 import { useScrollAnimations } from "../lib/animations";
+import CartDrawer from "./CartDrawer";
 
 const ICON_STYLE = "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border hover:border-primary hover:text-primary transition";
 
@@ -15,6 +16,7 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
   const base = brandBasePath(brand);
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
 
   const settings = useMemo(() => mergeSettings(storefront.settings), [storefront.settings]);
   useScrollAnimations(settings.animations);
@@ -117,9 +119,11 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
               </a>
               );
             })}
-            <Link
-              to={`${base}/cart`}
+            <button
+              type="button"
+              onClick={() => setCartOpen(true)}
               className="relative inline-flex items-center gap-2 px-3 py-2 rounded-full border border-border hover:border-primary transition"
+              aria-label={`Open cart${count > 0 ? ` (${count} items)` : ""}`}
             >
               <ShoppingBag className="h-4 w-4" />
               <span className="text-sm hidden sm:inline">Cart</span>
@@ -128,7 +132,7 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
                   {count}
                 </span>
               )}
-            </Link>
+            </button>
             <button
               type="button"
               className={`${ICON_STYLE} md:hidden`}
@@ -176,6 +180,8 @@ export default function StorefrontLayout({ children }: { children: ReactNode }) 
       </header>
 
       <main className="relative">{children}</main>
+
+      <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
 
       <footer className="border-t border-border mt-24">
         <div className="max-w-7xl mx-auto px-4 lg:px-8 py-12 grid md:grid-cols-3 gap-8">

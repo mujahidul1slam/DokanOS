@@ -105,6 +105,10 @@ export default function Track() {
               {order.status}
             </span>
           </div>
+
+          {/* Status timeline */}
+          <StatusTimeline status={order.status} trackingStatus={order.tracking_status} />
+
           {order.tracking_status && (
             <div className="flex justify-between items-center py-1 border-b border-border/50">
               <span className="text-muted-foreground text-sm">Delivery Status</span>
@@ -131,6 +135,56 @@ export default function Track() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Status timeline — steps: pending → processing → shipped → delivered. */
+function StatusTimeline({ status, trackingStatus }: { status: string; trackingStatus?: string | null }) {
+  const STEPS = ["pending", "processing", "shipped", "delivered"];
+  // Cancelled/returned render as a terminal state badge instead of the ladder
+  if (status === "cancelled" || status === "returned") {
+    return (
+      <div className="py-3 border-b border-border/50">
+        <p className={`text-sm font-medium ${status === "cancelled" ? "text-destructive" : "text-amber-600"}`}>
+          This order was {status}.
+        </p>
+      </div>
+    );
+  }
+  const idx = STEPS.indexOf(status === "pre_order_pending" || status === "pre_order_making" || status === "pre_order_ready" ? "pending" : status);
+  const effectiveIdx = idx === -1 ? 0 : idx;
+  // tracking_status present = courier picked up → at least shipped
+  const courierPicked = !!trackingStatus;
+  const reached = Math.max(effectiveIdx, courierPicked ? 2 : effectiveIdx);
+
+  return (
+    <div className="py-4 border-b border-border/50">
+      <div className="flex items-center">
+        {STEPS.map((step, i) => {
+          const done = i <= reached;
+          const current = i === reached && status !== "delivered";
+          return (
+            <div key={step} className="flex-1 flex items-center last:flex-none">
+              <div className="flex flex-col items-center gap-1.5">
+                <span
+                  className={`h-4 w-4 rounded-full border-2 flex items-center justify-center transition-colors ${
+                    done ? "border-primary bg-primary" : "border-muted-foreground/40 bg-background"
+                  }`}
+                >
+                  {done && <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                </span>
+                <span className={`text-[10px] uppercase tracking-wider capitalize ${current ? "text-primary font-semibold" : done ? "text-foreground" : "text-muted-foreground"}`}>
+                  {step}
+                </span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className={`flex-1 h-0.5 mx-2 transition-colors ${i < reached ? "bg-primary" : "bg-muted-foreground/20"}`} />
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
