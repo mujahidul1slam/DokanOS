@@ -159,6 +159,18 @@ export default function Checkout() {
       .then(({ data }) => setAreas(data || []));
   }, [zoneId]);
 
+  // Dynamic checkout fields (overhaul 5.1)
+  const fields = settings.checkout.fields;
+  const [company, setCompany] = useState("");
+  const [address2, setAddress2] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+
+  // Regional delivery preset: is the selected city Inside Dhaka?
+  const selectedCity = cities.find((c) => c.city_id === cityId);
+  const insideDhaka = !!selectedCity && /dhaka/i.test(selectedCity.city_name);
+  // Zone required when the applicable regional preset demands it
+  const zoneRequired = insideDhaka ? fields.inside_dhaka_required : fields.outside_dhaka_required;
+
   const freeThreshold = shippingQuote?.free_threshold || settings.shipping.free_threshold || 0;
   const isFreeShipping = freeThreshold > 0 && subtotal >= freeThreshold;
   const effectiveShipping = isFreeShipping ? 0 : (shippingQuote?.rate ?? 150);
@@ -176,8 +188,8 @@ export default function Checkout() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!items.length) return;
-    if (!name || !phone || !address || !cityId || !zoneId) {
-      toast({ title: "Missing info", description: "Please fill all required fields.", variant: "destructive" });
+    if (!name || !phone || !address || !cityId || (zoneRequired && !zoneId)) {
+      toast({ title: "Missing info", description: zoneRequired && !zoneId ? "Please select a zone." : "Please fill all required fields.", variant: "destructive" });
       return;
     }
     if (isBelowMinOrder) {
@@ -215,7 +227,9 @@ export default function Checkout() {
             name,
             phone,
             email: email || null,
-            address,
+            // Address 2 / company / postal ride along in the address string —
+            // no edge-fn signature change needed (overhaul 5.1).
+            address: [address, address2, postalCode && `Postal: ${postalCode}`, company && `Company: ${company}`].filter(Boolean).join(", "),
             city_id: cityId,
             zone_id: zoneId,
             area_id: areaId,
@@ -293,7 +307,12 @@ export default function Checkout() {
             <div className="grid sm:grid-cols-2 gap-4">
               <Input label="Full name *" value={name} onChange={setName} />
               <Input label="Phone *" value={phone} onChange={setPhone} placeholder="01XXXXXXXXX" />
-              <Input label="Email" type="email" value={email} onChange={setEmail} className="sm:col-span-2" />
+              {fields.show_email && (
+                <Input label="Email" type="email" value={email} onChange={setEmail} className="sm:col-span-2" />
+              )}
+              {fields.show_company && (
+                <Input label="Company" value={company} onChange={setCompany} className="sm:col-span-2" />
+              )}
               <Select
                 label="City *"
                 value={cityId}
@@ -301,7 +320,7 @@ export default function Checkout() {
                 options={cities.map((c) => ({ value: c.city_id, label: c.city_name }))}
               />
               <Select
-                label="Zone *"
+                label={insideDhaka ? "Zone" : "Zone *"}
                 value={zoneId}
                 onChange={setZoneId}
                 options={zones.map((z) => ({ value: z.zone_id, label: z.zone_name }))}
@@ -323,6 +342,17 @@ export default function Checkout() {
                 onChange={setAddress}
                 className="sm:col-span-2"
               />
+              {fields.show_address2 && (
+                <Input
+                  label="Address line 2"
+                  value={address2}
+                  onChange={setAddress2}
+                  className="sm:col-span-2"
+                />
+              )}
+              {fields.show_postal_code && (
+                <Input label="Postal code" value={postalCode} onChange={setPostalCode} />
+              )}
               <Input
                 label="Special instructions"
                 value={special}

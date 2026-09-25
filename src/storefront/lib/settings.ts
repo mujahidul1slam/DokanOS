@@ -134,12 +134,24 @@ export interface StorefrontPaymentsSettings {
   cod: { instructions: string };
 }
 
+export interface StorefrontCheckoutFields {
+  /** Optional address/contact fields merchants can toggle (overhaul 5.1). */
+  show_email: boolean;
+  show_company: boolean;
+  show_address2: boolean;
+  show_postal_code: boolean;
+  /** Regional delivery presets (Inside Dhaka vs Outside) with dependent requirements. */
+  inside_dhaka_required: boolean;
+  outside_dhaka_required: boolean;
+}
+
 export interface StorefrontSettings {
   checkout: {
     methods: { cod: boolean; bkash: boolean; nagad: boolean; rocket: boolean; upay: boolean; mcash: boolean };
     min_order_amount: number;
     order_instructions: string;
     terms_checkbox_text: string;
+    fields: StorefrontCheckoutFields;
   };
   shipping: { free_threshold: number };
   tax: { inclusive: boolean };
@@ -281,6 +293,26 @@ function pick(inb: any, def: any): any {
   return inb === undefined || inb === null ? def : inb;
 }
 
+export const DEFAULT_CHECKOUT_FIELDS: StorefrontCheckoutFields = {
+  show_email: true,
+  show_company: false,
+  show_address2: true,
+  show_postal_code: false,
+  inside_dhaka_required: false,
+  outside_dhaka_required: true,
+};
+
+function mergeFields(raw: any): StorefrontCheckoutFields {
+  return {
+    show_email: raw?.show_email !== false,
+    show_company: raw?.show_company === true,
+    show_address2: raw?.show_address2 !== false,
+    show_postal_code: raw?.show_postal_code === true,
+    inside_dhaka_required: raw?.inside_dhaka_required === true,
+    outside_dhaka_required: raw?.outside_dhaka_required !== false,
+  };
+}
+
 export function mergeSettings(raw: any): StorefrontSettings {
   const c = raw?.checkout || {};
   return {
@@ -289,6 +321,7 @@ export function mergeSettings(raw: any): StorefrontSettings {
       min_order_amount: Number.isFinite(Number(c.min_order_amount)) ? Number(c.min_order_amount) : 0,
       order_instructions: typeof c.order_instructions === "string" ? c.order_instructions : "",
       terms_checkbox_text: typeof c.terms_checkbox_text === "string" ? c.terms_checkbox_text : "",
+      fields: mergeFields(c.fields),
     },
     shipping: { free_threshold: Number.isFinite(Number(raw?.shipping?.free_threshold)) ? Number(raw.shipping.free_threshold) : 0 },
     tax: { inclusive: raw?.tax?.inclusive !== false },
@@ -324,7 +357,7 @@ export function mergeMethods(raw: any): StorefrontSettings["checkout"]["methods"
 }
 
 export const DEFAULT_STOREFRONT_SETTINGS: StorefrontSettings = {
-  checkout: { methods: { cod: true, bkash: true, nagad: true, rocket: false, upay: false, mcash: false }, min_order_amount: 0, order_instructions: "", terms_checkbox_text: "" },
+  checkout: { methods: { cod: true, bkash: true, nagad: true, rocket: false, upay: false, mcash: false }, min_order_amount: 0, order_instructions: "", terms_checkbox_text: "", fields: DEFAULT_CHECKOUT_FIELDS },
   shipping: { free_threshold: 0 },
   tax: { inclusive: false },
   announcement: { enabled: false, text: "", href: "" },

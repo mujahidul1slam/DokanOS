@@ -1,9 +1,9 @@
 # SIGNUP-PLAN — Self-Serve Sign-Up System for shohozbiz
 
-> Status: DRAFT v2 (multi-business scope added post-convergence — see `SIGNUP-CRITIQUE-14..`)
+> Status: FINAL v2.0 (multi-business scope converged in rounds 14–15 — see `SIGNUP-CRITIQUE-14.md` + `SIGNUP-CRITIQUE-FINAL.md`)
 > Scope (user-confirmed): **New business owners self-register**; sign-up provisions, in ONE transaction: business + brand(linked) + default location + store + storefront(inactive, named, linked) + full parity rows (per 20260904000100 §§5–7, statuses adjusted to `disconnected`) + owner membership + permission bundle + one store-access row. Never a global role. **A user can belong to MANY businesses (UBA roles owner/admin/member/viewer); a top-left business switcher drives the active business and offers "Create new business".**
 > Stack: Vite + React + TypeScript + shadcn/ui; Supabase (Auth, Postgres + RLS, Edge Functions).
-> Effort: **~33 person-days ≈ 6.5 weeks single-stream**; two-stream critical path **~4.5 weeks, contingent** (2 engineers; streams in §12).
+> Effort: **~33.5 person-days ≈ 6.5–7 weeks single-stream**; two-stream critical path **~4.5 weeks, contingent** (2 engineers; streams in §12).
 
 ---
 
@@ -25,7 +25,7 @@
 - Read side open today (SELECT `USING(true)` for authenticated; 28 direct client writes) → Task 1.6 member-scoping is a launch blocker. `user_store_access` fail-open (zero rows = ALL) — resolved per-table in 1.6a.
 - Business layer (20260904000100): `businesses` (INSERT platform-admin only), `user_business_access`, `brands` (member `FOR ALL` write, no column restriction → column-restricted in 1.6a; `woo_store_id` nullable/non-unique → 1.6a UNIQUE-partial-index decision), `locations`. **Parity set = exactly what migration §§5–7 produces per brand-with-store**: connectors (channel), selling_points (`showroom_pos`; `dokanos_storefront` carrying `storefront_id`; **`woocommerce`**), `product_sources`, `customer_sources` — statuses adjusted to `disconnected`. (facebook `order_sources`-dependent row: include/exclude decided in Task 0.1.)
 - `create_business_with_owner(name, slug, logo_url?, currency='BDT', timezone='Asia/Dhaka')` (20260911000130): caller-JWT SECURITY DEFINER, admin-gated (`has_role(admin)`); creates `businesses` + `user_business_access('owner')` ONLY (no brand/store/storefront/parity rows); validates name ≤100, slug 2–60 regex, currency + timezone allow-lists. Not granted to self-serve.
-- **Multi-business membership exists in schema (verified for the switcher scope)**: `user_business_access(user_id, business_id, role CHECK IN ('owner','admin','member','viewer'), UNIQUE(user_id,business_id), ON DELETE CASCADE)` (20260904000100). Existing business RPCs: `is_business_member(p_business_id)`, `my_business_role`, `can_manage_business_access`, `business_has_other_owner`, `user_business_access_immutable` trigger (20260911000100); `get_my_managed_businesses() returns TABLE` (columns verified in 0.1), `set_member_business_role` (20260911000500). Shells for the top-left mount: `AppSidebar.tsx` / `DashboardLayout.tsx` / `StorefrontAdminShell.tsx`.
+- **Multi-business membership exists in schema AND in the app (verified — Task 0.1, see `SIGNUP-DISCOVERY.md`)**: `user_business_access(user_id, business_id, role CHECK IN ('owner','admin','member','viewer'), UNIQUE(user_id,business_id), ON DELETE CASCADE)` (20260904000100). **The sidebar switcher is LIVE** (`AppSidebar.tsx:92–105`, top-left, prefers real businesses over legacy `invoice_settings` profiles); **`useBusinessContext.tsx`** provides `active`/`businesses`/`brands`/`myRole` with localStorage persistence (`dokanos-active-business-id`) + own-rows RLS read + fresh-install fallback. **`BusinessAccountTab.CreateBusinessForm`** exists (fresh-install path; calls the admin-gated `create_business_with_owner` directly; created businesses get business+UBA ONLY — no brand/store/storefront). **`src/lib/slug.ts` `slugify()`** exists (48-char truncation, fits the 2–60 rule). Existing business RPCs: `is_business_member`, `my_business_role`, `can_manage_business_access`, `business_has_other_owner`, `user_business_access_immutable` trigger (20260911000100); `get_my_managed_businesses()` — **filters to owner/admin rows and dumps all businesses for platform admins; NOT used for the switcher** (verified r14); `set_member_business_role` (20260911000500).
 - Row shapes: `stores(name TEXT NOT NULL, url TEXT NOT NULL, status CHECK(connected|disconnected|syncing|error) default 'disconnected')`; `storefronts(name NOT NULL, store_id, slug NOT NULL UNIQUE, is_active default true; anon SELECT exposes store_id; only UPDATE policy is global-staff)`.
 - Placeholder-store blast radius: existing UIs read `stores` unfiltered (`useStoresList.ts:15`, `StorefrontsPage.tsx:238` maybeSingle) → §10.11 consumer guards. woo-sync cron excludes `disconnected`; `profiles` cascade on delete.
 - `handle_new_user` trigger (20260412161413): profile insert; invitation-consume branch; ELSE first-user ⇒ global admin.
@@ -33,7 +33,7 @@
 - RPCs: `get_user_permissions(_user_id)`, `get_user_store_ids(_user_id)` — PUBLIC, read-only, arbitrary `_user_id` (pre-existing enumeration; separate phase). No grant RPC.
 - `auth.users` fields: `email_confirmed_at`, `invited_at`, `raw_app_meta_data.provider` (Task 0.1 re-verifies).
 - Cron pattern (20260824000000): pg_cron → edge fn + cron-secret, 300 s.
-- **ASSUMED until Task 0.1**: owner permission-key bundle; residual NOT-NULL inventory; `stores` consumer list completion; repeat-signup metadata behavior (**no longer gate-critical** — nonce rides the provision request body, §3); `last_sign_in_at`; `invited_at`/`provider` semantics.
+- **ASSUMED until Task 0.1 → RESOLVED (see `SIGNUP-DISCOVERY.md`)**: owner permission-key bundle — **DECIDED (28 keys + 4 exclusions, DISCOVERY §2)**; residual NOT-NULL inventory — **full table inventory (DISCOVERY §1)**; `stores` consumer list — **21 files (DISCOVERY §4)**; 1.6a join inventory — **done (DISCOVERY §5; 217 `has_role` sites)**; repeat-signup metadata behavior (no longer gate-critical — nonce rides the provision request body, §3); `last_sign_in_at`/`invited_at`/`provider` — **verified in auth-js types (DISCOVERY §6)**.
 
 ## 2. Goals and non-goals
 
@@ -124,38 +124,32 @@
 
 ### 3.2 Business switcher & creating additional businesses (post-signup)
 
-```
-[BusinessSwitcher — top-left of AppSidebar + StorefrontAdminShell header]
-  data: get_my_managed_businesses() (existing RPC, 20260911000500)
-  shows: active business name; switch list (role badge per business);
-         footer action "Create new business"
-  state: ActiveBusinessProvider (React context; NOT inside useAuth)
-         active_business_id persisted in localStorage; validated against membership on
-         every load; fallback = first business where role='owner', else first row
-  membership revoked mid-session (UBA row deleted) → context detects missing id
-    → switch to fallback + toast "You no longer have access to that business"
-  inside /storefronts/:slug/admin: switching navigates to the target business's
-    default storefront admin (or main dashboard if it has no storefront)
+**Already live (Task 0.1 discovery — do not re-build):** the top-left switcher (`AppSidebar.tsx:92–105`), `useBusinessContext` (active/businesses/brands/myRole, localStorage persistence, own-rows RLS read, fresh-install fallback), and `BusinessAccountTab.CreateBusinessForm` (fresh-install path, admin-gated RPC, minimal body). User asks #1–2 (see + switch business) are **delivered by existing code**; sign-up provisioning drops the first membership into the existing context automatically.
 
-[Create new business] (dialog from switcher):
-  input: business name (≤100, zod) + fresh Turnstile token (re-executed widget)
+```
+[Create new business] — NEW work only (switcher footer action, visible when the
+    user holds ≥1 UBA membership):
+  dialog: business name (≤100, zod, slugify from @/lib/slug + store-<4 random>
+    fallback) + fresh Turnstile token (re-executed widget)
   → POST create-business (edge fn; verify_jwt ON; reads signup_open kill switch;
       siteverifies ITS OWN token (never GoTrue-consumed); rate limits §6.3)
   → RPC create_additional_business(p_user_id) via service key:
       §6.7 hygiene; advisory lock hashtext(p_user_id)
       GATES: user confirmed; holds ≥1 user_business_access row (provisioned member);
              NOT gated on 24h/anchor/provider — those are sign-up-specific
-      SAME shared transaction body as provision (single core SQL function —
-        no drift): businesses + brands + location + store + storefront(inactive)
-        + parity rows + user_business_access('owner') + user_store_access (exactly 1)
-        + permission bundle insert ON CONFLICT DO NOTHING (bundle is global-scope
-        per §1 — granting it twice must be idempotent)
-      audit: signup_events event 'business_added' (§4.2 enum extended)
-  → 200 { slug, business_id } → context switches to it → welcome-lite
-    (publish nudge reuses the /welcome publish step for the new storefront)
+      FULL provisioning transaction body (single core SQL function shared with
+        provision_owner_business — no drift): businesses + brands + location +
+        store + storefront(is_active=false) + parity rows + user_business_access('owner')
+        + user_store_access (exactly 1) + permission bundle ON CONFLICT DO NOTHING
+        (bundle is global-scope per §1; UNIQUE(user_id,permission) confirmed 0.1)
+      audit: signup_events 'business_added' (§4.2 enum)
+  → 200 { slug, business_id } → context refresh() (exists) → switch to it →
+    welcome-lite (publish nudge reuses the /welcome publish step)
 ```
 
-**Why two thin entry RPCs over one**: sign-up provisioning gates (anchor, nonce, provider, 24 h) are meaningless for an existing verified owner; reusing the gate set would block legitimate re-provisioning. The shared core function is the single implementation; the gates differ.
+**Switcher enhancements (small, Task 2.5):** expose `rolesByBusiness` for role badges; "Create new business" footer action; switching inside `/storefronts/:slug/admin` navigates to the target business's default storefront admin. Revocation mid-session: context detects a missing active id on refresh → fallback + toast (test §10.8).
+
+**Why not reuse `create_business_with_owner`:** its admin gate (`has_role(admin)`) blocks every self-serve owner (no global role, by design), and its minimal body (business+UBA only) yields businesses with no store/storefront — broken storefront surfaces (rounds 7–8). The fresh-install form keeps its existing behavior (platform-admin path, unchanged — noted divergence).
 
 ## 4. Data model
 
@@ -209,7 +203,7 @@
 
 - `useAuth` gains `permissions`/`storeIds`/`businesses` via existing read RPCs; role logic untouched. **Active-business selection lives in a separate `ActiveBusinessProvider` (§3.2) — not in useAuth** (keeps auth context stable; business context is a UI/data-scope concern).
 - Routes: `/signup`, `/check-email`, `/auth/confirm`, `/welcome`, `/welcome/setup-failed` — runtime `signup_open`-aware; login/reset forms gain invisible Turnstile tokens (§6.1).
-- MFA untouched; nudge in `/welcome`. Login: "Create account" link (runtime flag) + universal resend link.
+- MFA untouched; nudge in `/welcome`. Login: "Create account" link (runtime flag) + universal resend link. **Welcome step 3 = publish + MFA nudge (invite nudge deferred with member-management UI — 0.2 decision: owners cannot mint global staff).**
 - Zero-permission users → resume-setup guard.
 - **Task 2.4 team-manage spec (five routes, exhaustive)** — target resolved via `get_auth_signup_state` (unpaginated; replaces the 4,000-capped listUsers scan); **ambiguity rule: exact-stored-email match wins; multiple canonical matches with no exact match ⇒ typed ambiguous-target error, never send/delete**:
   a. User WITH `user_business_access` ⇒ skip `deleteUser`/`inviteUserByEmail`; insert `user_roles('staff')` (**if a staff row already exists ⇒ typed no-op success**, never a UNIQUE-violation 500); write synthetic `invitations` row with `accepted_at=now()` (audit parity, precedent team-manage/index.ts:158–163); audit `staff_role_attached` (inviter, ts); recovery-email copy "you were granted staff access" (platform-wide disclosed in invite UI).
@@ -245,7 +239,7 @@
 ## 10. Testing plan
 
 1. **Unit**: zod schemas; slug generator (Bengali/emoji fallback; regex); canonical normalizer + gate-equality; per-call mapper (incl. email_not_confirmed→generic; **captcha-error class for each of login/reset/signup/resend**); runtime-flag guards; **`options.captchaToken` request-body assertions for signUp/resend/login/reset**; widget re-execute per attempt; nonce flow.
-2. **RLS (test:rls)**: A/B owner principals — no cross-tenant read/write via real-client-shaped queries; platform roles intact (by design); storefront unlisted pre-publish; per-1.6a-matrix acceptance rows; table reachability checks. **Multi-business**: user owning businesses A and B (plus a `member` row in C) sees A+B+C in `get_my_managed_businesses`; post-1.6b reads through business-scoped surfaces resolve to the active business only; UBA rows for other users are not visible to a plain member (existing 20260911000100 tightening keeps working).
+2. **RLS (test:rls)**: A/B owner principals — no cross-tenant read/write via real-client-shaped queries; platform roles intact (by design); storefront unlisted pre-publish; per-1.6a-matrix acceptance rows; table reachability checks. **Multi-business**: user owning businesses A and B (plus a `member` row in C) sees A+B+C in `get_my_businesses()` — incl. member/viewer rows (regresses `get_my_managed_businesses()`'s owner/admin filter by design; the new RPC is the switcher source); post-1.6b reads through business-scoped surfaces resolve to the active business only; UBA rows for other users are not visible to a plain member (existing 20260911000100 tightening keeps working); **platform admin (global role) sees only their own UBA rows in the switcher** — no all-businesses dump.
 3. **SQL/integration**: provision success with **full parity assertions** (businesses/stores/brands/locations/storefronts columns as specced + connectors, selling_points incl. storefront+woo-linked dokanos_storefront, woo-linked woocommerce, **showroom_pos bound to the default location_id** (location type 'showroom'), product_sources, customer_sources); idempotent re-call; concurrent double-invoke; 3-table slug retry; blocked domain (seeded); mid-tx error → zero rows; kill-switch 403; anchor gates (missing/expired/cross-account/forged-nonce/consumed → reject); retry-fresh-anchor succeeds; resend +2 h/+23 h → provision succeeds. `publish_my_storefront()`: owner ok; non-owner reject; >1-brand-join reject; flip-only `site_opened`; 1.6a-dependency asserted. `delete_unprovisioned_self()`: tenant/role/foreign-id rejects; clean self ok; **throttle enforced (§6.3 ≤3/h/actor → 4th call rejected)**. Consent idempotent retry + **ip/ua equal to the anchor's acceptance-time values, not the provision call's** (assertion). **`create_additional_business`**: gates (unauthenticated; unconfirmed; zero-UBA user; rate cap; kill switch off → 403) all reject; transaction contents byte-equal to the provision path incl. parity rows + `is_active=false`; permission-bundle re-grant is a no-op (ON CONFLICT); exactly one NEW `user_store_access` row per call; advisory lock serializes concurrent creates; audit row `business_added` written with user_id set. (Recorded: empty `user_store_access` fail-open — mitigated by assertion + 1.6b.)
 4. **Trigger**: owner marker skips both branches (wiped-`auth.users` case → no role); unmarked invite consumed; profile always created.
 5. **Regression**: login (WITH token), MFA, reset (WITH token), legacy team-manage invites — all unchanged post-captcha-enable. **Post-captcha-flip staging smoke**: email-confirm link redemption (`/verify`), session refresh, invite set-password acceptance — adjacent endpoint mount-scope verified live, not assumed.
@@ -264,14 +258,14 @@
 4. **Phase 0**: dark; exit gate = 1.6a reviewed + 1.6b merged + §10.2 + §10.11 green. **Phase 1**: flip; 72 h watch. **Phase 2**: OAuth (separate milestone; provider-gate redesign).
 5. Full closure: `signup_open=false` + dashboard "disable email signups".
 
-## 12. Task breakdown (~33 person-days)
+## 12. Task breakdown (~33.5 person-days)
 
 | # | Task | Size | Stream |
 |---|------|------|--------|
-| 0.1 | Discovery (**day-0 shared deliverable for both streams**): owner perm keys; residual NOT-NULL inventory; `stores` consumer list (+waivers); **1.6a join inventory**; facebook selling-point decision; repeat-signup metadata; `last_sign_in_at`; `invited_at`/`provider` semantics | 1 d | A+B shared |
-| 0.2 | Owner bundle decision record + acceptance: excludes permissions referenced by global-scope policies (e.g. `settings.manage`) | 0.5 d | A |
+| 0.1 | Discovery (**day-0 shared deliverable for both streams**) — **DONE, see `SIGNUP-DISCOVERY.md`**: table inventory; permission enum + policy keys; 21 `stores` consumers; 1.6a join inventory; facebook row (include); auth fields verified | 1 d | A+B shared |
+| 0.2 | Owner bundle decision record — **DONE (in `SIGNUP-DISCOVERY.md` §2)**: 31-key bundle + 4 exclusions (`settings.manage`, `integrations.manage`, `stores.manage`, `team.manage`) | 0.5 d | A |
 | 1.1 | Migration: 5 new tables + RLS + seeds (`signup_open=false`, versions, invitee-expiry toggle, blocklist) + verify | 1 d | A |
-| 1.2 | Migration: trigger patch + `provision_owner_business` + `get_auth_signup_state` + SQL tests | 2 d | A |
+| 1.2 | Migration: trigger patch + `provision_owner_business` + `get_auth_signup_state` + **`get_my_businesses()` (own UBA rows, all roles, with role column)** + SQL tests | 2.5 d | A |
 | 1.3 | Edge fn `signup-provision` | 1 d | A |
 | 1.4 | Edge fn `signup-event` (siteverify, server version stamping, whitelist, session-bound `email_confirmed`, dual caps, meta schema) | 1 d | A |
 | 1.5 | Edge fn `auth-resend` (token forward, pre/post unconfirmed checks, throttles, truthful events) + `purge-unconfirmed` (26 h + 30 d invitee sweep) + cron | 1 d | A |
@@ -283,7 +277,7 @@
 | 2.2 | `useAuth` extension + guards + login links | 0.5 d | A |
 | 2.3 | Emails + SMTP + dashboard/env checklist + captcha sequencing | 0.5 d | A |
 | 2.4 | `team-manage` **five-route** fix per §7 (incl. `get_auth_signup_state` target resolution) + tests | 1.5 d | A |
-| 2.5 | `BusinessSwitcher` component (both shells) + `ActiveBusinessProvider` + create-business dialog + welcome-lite publish reuse | 1.5 d | A |
+| 2.5 | Switcher wiring: "Create new business" footer action + role badges (`rolesByBusiness` exposure) + storefront-admin switch behavior (switcher itself is LIVE — Task 0.1) | 1 d | A |
 | 3.1 | Unit + RLS + SQL integration (incl. multi-business matrix rows) | 3.5 d | A |
 | 3.2 | Playwright + regression (captcha-on staging env; 8+ flows incl. rate-limit/dwell/restart states) | 2.5 d | joint |
 | 4.1 | Flags/runbook, retention jobs, alerts, funnel query | 0.5 d | A |

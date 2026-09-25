@@ -21,7 +21,7 @@ export interface StorefrontPageRow {
   storefront_id: string;
   slug: string;
   title: string;
-  type: "home" | "custom";
+  type: "home" | "custom" | "landing";
   status: "draft" | "published";
   seo: { title?: string; description?: string; og_image_url?: string };
   published_snapshot: SectionSnapshot[] | null;
@@ -98,14 +98,67 @@ export async function getDraftPage(storefrontId: string, slug: string): Promise<
     .select("type, position, is_visible, props")
     .eq("page_id", row.id)
     .order("position", { ascending: true });
-  return {
-    page: row,
-    sections: ((sections as unknown as SectionSnapshot[]) || []).map((s) => ({
-      type: s.type,
-      position: Number(s.position ?? 0),
-      is_visible: s.is_visible !== false,
-      props: (s.props && typeof s.props === "object" ? s.props : {}) as Record<string, any>,
-    })),
-    seo: row.seo,
+    return {
+      page: row,
+      sections: ((sections as unknown as SectionSnapshot[]) || []).map((s) => ({
+        type: s.type,
+        position: Number(s.position ?? 0),
+        is_visible: s.is_visible !== false,
+        props: (s.props && typeof s.props === "object" ? s.props : {}) as Record<string, any>,
+      })),
+      seo: row.seo,
+    };
+}
+
+/**
+ * Storefront initialization scaffolding (overhaul 3.3): create the essential
+ * pages for a new storefront based on its theme — a Home page with themed
+ * starter sections and a Contact page. Non-essential boilerplate is skipped.
+ * Idempotent: skips pages that already exist.
+ */
+export async function scaffoldStorefront(storefrontId: string, name: string, theme: string): Promise<void> {
+  const { data: existing } = await supabase
+    .from("storefront_pages")
+    .select("slug")
+    .eq("storefront_id", storefrontId);
+  const have = new Set((existing || []).map((r: any) => r.slug));
+
+  // Themed starter hero copy per vertical (4.1 blueprints seed these too)
+  const heroCopy: Record<string, { title: string; sub: string }> = {
+    digital: { title: `Welcome to ${name}`, sub: "Instant downloads, clean catalog, zero waiting." },
+    gadgets: { title: `Welcome to ${name}`, sub: "Specs, comparisons and the latest gear." },
+    fashion: { title: `Welcome to ${name}`, sub: "New season. New fits. Lookbook inside." },
+    food: { title: `Welcome to ${name}`, sub: "Fresh, fast and delivered to your door." },
   };
+  const bp = heroCopy[themeToBlueprint(theme)] || { title: `Welcome to ${name}`, sub: `Explore the collection.` };
+
+  if (!have.has("home")) {
+    const { data: home } = await supabase
+      .from("storefront_pages")
+      .insert({ storefront_id: storefrontId, slug: "home", title: "Home", type: "home", status: "draft", is_active: true, seo: {} })
+      .select()
+      .single();
+    if (home) {
+      await supabase.from("storefront_page_sections").insert([
+        { page_id: (home as any).id, type: "hero", position: 0, is_visible: true, props: { title: bp.title, subtitle: bp.sub } },
+        { page_id: (home as any).id, type: "featured-products", position: 1, is_visible: true, props: {} },
+      ]);
+    }
+  }
+
+  if (!have.has("contact")) {
+    await supabase
+      .from("storefront_pages")
+      .insert({ storefront_id: storefrontId, slug: "contact", title: "Contact", type: "custom", status: "draft", is_active: true, seo: {} });
+  }
+}
+
+/** Map a theme preset key to its industry blueprint (overhaul 4.1). */
+export function themeToBlueprint(theme: string): string {
+  const t = (theme || "").toLowerCase();
+  if (t.includes("saffron") || t.includes("food")) return "food";
+  if (t.includes("nimbus") || t.includes("tech") || t.includes("gadget")) return "gadgets";
+  if (t.includes("fashion") || t.includes("apparel") || t.includes("boutique")) return "fashion";
+  if (t.includes("digital") || t.includes("download")) return "digital";
+  return "fashion";
 }

@@ -276,7 +276,14 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate }: { open: boolea
     if (error) {
       toast({ title: "Failed to create", description: error.message, variant: "destructive" });
     } else if (data) {
-      toast({ title: "Storefront created successfully" });
+      // Overhaul 3.3: scaffold essential pages (Home + themed starter sections + Contact)
+      try {
+        const { scaffoldStorefront } = await import("@/storefront/lib/pages");
+        await scaffoldStorefront((data as any).id, name, theme);
+      } catch {
+        /* scaffolding is best-effort; page creation can continue manually */
+      }
+      toast({ title: "Storefront created", description: "Starter pages (Home, Contact) were scaffolded." });
       onCreate(data);
       onOpenChange(false);
     }

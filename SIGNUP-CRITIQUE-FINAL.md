@@ -1,12 +1,12 @@
 # SIGNUP-CRITIQUE-FINAL — Loop Convergence Report
 
-**Verdict: CONVERGED.** Loop terminated after 14 adversarial rounds when the final reviewer found one one-line predicate-formalization bug and explicitly declared everything else converged ("apply the one-line predicate fix; treat the rest as converged"). The fix was applied; the artifact's status is now FINAL v1.0.
+**Verdict: CONVERGED (v1.0, rounds 1–14 core)** then **re-opened by user scope change** (multi-business membership + top-left switcher + create-new-business) and **re-converged (v2.0, rounds 14–15)**: round 14 found 1 BLOCKER + 1 MAJOR (existing `get_my_managed_businesses()` filters out member/viewer memberships and returns no role column → replaced by new `get_my_businesses()` RPC returning the caller's own UBA rows, all four roles, role column included, no platform-admin dump); round 15 confirmation pass: PASS on all targeted checks, no substantive findings. The fixes were applied; the artifact's status is now FINAL v2.0.
 
 ## The loop
 
 - **Method**: fresh-context adversarial reviewer per round (doubt-driven-development) — ARTIFACT + CONTRACT only, never the author's confidence; every finding re-validated against the plan text by the orchestrator before classification.
 - **Cross-model review**: offered after round 1; **declined by user** (single-model throughout).
-- **Findings**: **137 total, 137 classified "valid + actionable", 0 dismissed as noise, 0 rubber-stamped** — no doubt theater.
+- **Findings**: **139 total, 139 classified "valid + actionable", 0 dismissed as noise, 0 rubber-stamped** — no doubt theater. (Rounds 1–13: 136 on the core; round 14: 2 on the multi-business delta; round 15 (light confirmation): 0 substantive.)
 
 | Round | Total | Blocker | Major | Minor |
 |---|---|---|---|---|
@@ -41,7 +41,7 @@ Blockers extinct by round 4 (one revival each in rounds 5–7 and 9, each fixed 
 
 ## Deliverable
 
-- **`SIGNUP-PLAN.md` (FINAL v1.0)** — 14 sections: cited ground truth; goals/non-goals; architecture (full gating + transaction spec); data model; flows incl. every edge case; security controls; existing-auth integration incl. 5-route team-manage fix; dashboard/config checklist incl. launch blockers; analytics + retention; 11-block test plan; rollout with sequencing; ~30 person-day task table (two streams); risks with accepted residuals; definition of done — every DoD line traceable to a §10 test.
+- **`SIGNUP-PLAN.md` (FINAL v2.0)** — 14 sections: cited ground truth; goals/non-goals; architecture (full gating + transaction spec, incl. §3.2 switcher + create-additional-business); data model; flows incl. every edge case; security controls; existing-auth integration incl. 5-route team-manage fix; dashboard/config checklist incl. launch blockers; analytics + retention; 11-block test plan (incl. multi-business + switcher cases); rollout with sequencing; ~33.5 person-day task table (two streams); risks with accepted residuals; definition of done — every DoD line traceable to a §10 test.
 
 ## Biggest residual flag for whoever builds this
 

@@ -17,6 +17,7 @@ const About = lazy(() => import("./pages/About"));
 const Contact = lazy(() => import("./pages/Contact"));
 const Policies = lazy(() => import("./pages/Policies"));
 const CustomPage = lazy(() => import("./pages/CustomPage"));
+const LandingPage = lazy(() => import("./pages/CustomPage"));
 const Collection = lazy(() => import("./pages/Collection"));
 
 const Fallback = () => (
@@ -55,6 +56,9 @@ export default function StorefrontApp({
             <Route path={`${basePath}/contact`} element={<Contact />} />
             <Route path={`${basePath}/policies`} element={<Policies />} />
             <Route path={`${basePath}/pages/:slug`} element={<CustomPage />} />
+{/* Landing pages (overhaul 3.3): standalone marketing pages — rendered
+    WITHOUT the storefront chrome (no header/footer), like Bonik's creator. */}
+<Route path={`${basePath}/lp/:slug`} element={<LandingPage standalone />} />
             <Route path="*" element={<Navigate to={basePath} replace />} />
           </Routes>
         </Suspense>

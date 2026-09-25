@@ -8,23 +8,30 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { Save, Loader2 } from "lucide-react";
 import type { Storefront } from "./shared";
-import { mergeSettings, type StorefrontDeliverySettings } from "@/storefront/lib/settings";
+import { mergeSettings, type StorefrontDeliverySettings, type StorefrontCheckoutFields } from "@/storefront/lib/settings";
 
 export default function DeliveryTab({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Storefront) => void }) {
   const [d, setD] = useState<StorefrontDeliverySettings>(() => mergeSettings((sf as any).settings).delivery);
+  const [cf, setF] = useState<StorefrontCheckoutFields>(() => mergeSettings((sf as any).settings).checkout.fields);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setD(mergeSettings((sf as any).settings).delivery);
+    const m = mergeSettings((sf as any).settings);
+    setD(m.delivery);
+    setF(m.checkout.fields);
   }, [sf]);
 
   function set<K extends keyof StorefrontDeliverySettings>(k: K, v: StorefrontDeliverySettings[K]) {
     setD({ ...d, [k]: v });
   }
+  function setField<K extends keyof StorefrontCheckoutFields>(k: K, v: StorefrontCheckoutFields[K]) {
+    setF({ ...cf, [k]: v });
+  }
 
   async function save() {
     setSaving(true);
-    const settings = { ...mergeSettings((sf as any).settings), delivery: d };
+    const prev = mergeSettings((sf as any).settings);
+    const settings = { ...prev, delivery: d, checkout: { ...prev.checkout, fields: cf } };
     const { data, error } = await supabase.from("storefronts").update({ settings: settings as any }).eq("id", sf.id).select().single();
     setSaving(false);
     if (error) return toast({ title: "Save failed", description: error.message, variant: "destructive" });
@@ -90,6 +97,43 @@ export default function DeliveryTab({ sf, onUpdate }: { sf: Storefront; onUpdate
               <Input type="number" min={0} max={50} value={d.advance_percent} onChange={(e) => set("advance_percent", Number(e.target.value))} />
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="pt-6 space-y-1">
+          <h3 className="text-sm font-medium mb-2">Checkout fields</h3>
+          <p className="text-xs text-muted-foreground mb-2">Toggle which fields customers fill in at checkout. Regional presets control whether a zone is required inside/outside Dhaka.</p>
+          <div className="flex items-center justify-between py-1.5">
+            <Label className="text-sm">Email</Label>
+            <Switch checked={cf.show_email} onCheckedChange={(v) => setField("show_email", v)} />
+          </div>
+          <div className="flex items-center justify-between py-1.5">
+            <Label className="text-sm">Company</Label>
+            <Switch checked={cf.show_company} onCheckedChange={(v) => setField("show_company", v)} />
+          </div>
+          <div className="flex items-center justify-between py-1.5">
+            <Label className="text-sm">Address line 2</Label>
+            <Switch checked={cf.show_address2} onCheckedChange={(v) => setField("show_address2", v)} />
+          </div>
+          <div className="flex items-center justify-between py-1.5">
+            <Label className="text-sm">Postal code</Label>
+            <Switch checked={cf.show_postal_code} onCheckedChange={(v) => setField("show_postal_code", v)} />
+          </div>
+          <div className="flex items-center justify-between py-1.5 border-t border-border mt-2">
+            <div className="pr-4">
+              <Label className="text-sm">Zone required inside Dhaka</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">Off = customers in Dhaka can skip the zone dropdown</p>
+            </div>
+            <Switch checked={cf.inside_dhaka_required} onCheckedChange={(v) => setField("inside_dhaka_required", v)} />
+          </div>
+          <div className="flex items-center justify-between py-1.5">
+            <div className="pr-4">
+              <Label className="text-sm">Zone required outside Dhaka</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">Off = customers outside Dhaka can skip the zone dropdown</p>
+            </div>
+            <Switch checked={cf.outside_dhaka_required} onCheckedChange={(v) => setField("outside_dhaka_required", v)} />
+          </div>
         </CardContent>
       </Card>
 

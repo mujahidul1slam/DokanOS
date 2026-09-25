@@ -8,8 +8,10 @@ import PublishedPageView from "../sections/PublishedPageView";
 import { usePageMeta } from "../lib/seo";
 import { pageUrl } from "../lib/routes";
 
-/** A builder page rendered at /pages/:slug (published only → 404 view). */
-export default function CustomPage() {
+/** A builder page rendered at /pages/:slug (published only → 404 view).
+ *  `standalone` (overhaul 3.3): landing-page mode — no page title header,
+ *  rendered without the storefront chrome by the /lp/:slug route. */
+export default function CustomPage({ standalone }: { standalone?: boolean }) {
   const { slug } = useParams();
   const { brand, storefront, draftPageSlug } = useBrand();
   const [data, setData] = useState<PublishedPage | null | undefined>(undefined);
@@ -58,9 +60,11 @@ export default function CustomPage() {
 
   return (
     <div>
-      <div className="max-w-5xl mx-auto px-4 pt-16 text-center">
-        <h1 className="sf-display text-4xl md:text-5xl">{data.page.title}</h1>
-      </div>
+      {!standalone && (
+        <div className="max-w-5xl mx-auto px-4 pt-16 text-center">
+          <h1 className="sf-display text-4xl md:text-5xl">{data.page.title}</h1>
+        </div>
+      )}
       <PublishedPageView sections={data.sections} />
     </div>
   );
