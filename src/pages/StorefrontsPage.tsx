@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import { ExternalLink, Loader2, Plus, Files, FolderOpen, List, Building2, Grid3X3, Square, LayoutTemplate, PanelsTopLeft, Sparkles, Truck, CreditCard, FileText, Settings, Globe } from "lucide-react";
+import { ExternalLink, Loader2, Plus, LayoutDashboard, Files, FolderOpen, List, Building2, Grid3X3, Square, LayoutTemplate, PanelsTopLeft, Sparkles, Truck, CreditCard, FileText, Settings, Globe } from "lucide-react";
+import { Link } from "react-router-dom";
 import { invalidateSlugCache } from "@/storefront/lib/brand";
 import type { Storefront } from "@/storefront/lib/brand";
 import BrandProfileTab from "@/components/storefront-admin/BrandProfileTab";
@@ -80,6 +81,31 @@ export default function StorefrontsPage() {
           />
         </div>
       </div>
+
+      {/* Entry point to the dedicated Bonik-style admin panel (the shell built in the parity plan).
+          Without this button the admin at /storefronts/:slug/admin/* is undiscoverable. */}
+      {active && (
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Design & manage {active.name} in the new admin panel</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Dashboard, theme gallery, page builder, editors with live preview, delivery & payments — all in one place.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Link to={`/storefronts/${active.slug}/admin/dashboard`}>
+              <Button size="sm" className="gap-2">
+                <LayoutDashboard className="h-4 w-4" /> Open admin panel
+              </Button>
+            </Link>
+            <a href={`/storefront/${active.slug}`} target="_blank" rel="noreferrer">
+              <Button size="sm" variant="outline" className="gap-2">
+                <ExternalLink className="h-4 w-4" /> View live
+              </Button>
+            </a>
+          </div>
+        </div>
+      )}
 
       {active && (
         <StorefrontEditor
