@@ -1,26 +1,50 @@
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
+import type { Storefront } from "@/storefront/lib/brand";
 
 /**
- * Shared editor page chrome (Phase F): title + preview iframe on the right
- * when the surface has one. The iframe reloads whenever `previewKey` changes
- * (save-then-reload contract: editors bump previewKey on save).
+ * Shared editor page chrome (overhaul 1.3): title + preview iframe on the
+ * right when the surface has one.
+ *
+ * Live preview pipeline: instead of reloading the iframe on save, the parent
+ * posts {type: "preview-storefront", storefront} to the iframe — the preview
+ * surface swaps the storefront in place and re-renders (no full page load).
+ * Posts retry (with ack handshake) until the iframe app is ready.
  */
-export default function EditorPage({ children, previewUrl, previewKey, device = "desktop" }: {
+export default function EditorPage({ children, previewUrl, liveStorefront, device = "desktop" }: {
   children: ReactNode;
   previewUrl?: string;
-  previewKey?: number;
+  /** Latest saved storefront row — posted to the preview iframe after each save. */
+  liveStorefront?: Storefront | null;
   device?: "desktop" | "mobile";
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [ready, setReady] = useState(false);
 
-  // Save-then-reload: bump the src ONLY after a save (previewKey > 0).
-  // The iframe's own src prop handles the initial load; rewriting it on mount
-  // would double-load the page.
+  // Ack handshake: iframe posts preview-ack when its message listener is up.
   useEffect(() => {
-    if (iframeRef.current && previewUrl && previewKey !== undefined && previewKey > 0) {
-      iframeRef.current.src = `${previewUrl}${previewUrl.includes("?") ? "&" : "?"}_k=${previewKey}`;
-    }
-  }, [previewKey, previewUrl]);
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "preview-ack") setReady(true);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  // Post the storefront whenever (a) the iframe acks, or (b) a new save lands.
+  useEffect(() => {
+    if (!liveStorefront || !previewUrl) return;
+    const post = () => iframeRef.current?.contentWindow?.postMessage(
+      { type: "preview-storefront", storefront: liveStorefront }, "*",
+    );
+    if (ready) { post(); return; }
+    // Not ready yet: retry until the iframe app acks (max ~15s).
+    let tries = 0;
+    const t = window.setInterval(() => {
+      tries++;
+      post();
+      if (tries > 30) window.clearInterval(t);
+    }, 500);
+    return () => window.clearInterval(t);
+  }, [liveStorefront, ready, previewUrl]);
 
   return (
     <div className={previewUrl ? "grid xl:grid-cols-[minmax(0,520px)_1fr] gap-6 items-start" : ""}>
@@ -47,7 +71,7 @@ export default function EditorPage({ children, previewUrl, previewKey, device = 
             </div>
           </div>
           <p className="text-[11px] text-muted-foreground mt-2 text-center">
-            Preview shows the saved state. Hit Save to refresh it.
+            Preview updates live after each save — no reload needed.
           </p>
         </div>
       )}

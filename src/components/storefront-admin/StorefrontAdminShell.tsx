@@ -2,7 +2,7 @@ import { ReactNode, useMemo, useState, useEffect } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   LayoutDashboard, Palette, LayoutTemplate, Files, FolderOpen, Building2,
-  PanelsTopLeft, Square, Grid3X3, List, ShoppingBag, Truck, CreditCard,
+  PanelsTopLeft, Square, Grid3X3, List, Truck, CreditCard, Sparkles,
   Globe, FileText, Settings, HelpCircle, Search, ExternalLink, X, Loader2, ChevronLeft,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,58 +24,47 @@ interface NavItem {
 
 const GROUPS: { label: string; items: { label: string; path: string; icon: ReactNode }[] }[] = [
   {
-    label: "OVERVIEW",
-    items: [{ label: "Dashboard", path: "dashboard", icon: <LayoutDashboard className="h-4 w-4" /> }],
+    label: "GENERAL",
+    items: [
+      { label: "Dashboard", path: "dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
+      { label: "Pages", path: "pages", icon: <Files className="h-4 w-4" /> },
+      { label: "Collections", path: "collections", icon: <FolderOpen className="h-4 w-4" /> },
+      { label: "Products", path: "products", icon: <List className="h-4 w-4" /> },
+      { label: "Social & Policies", path: "policies", icon: <FileText className="h-4 w-4" /> },
+      { label: "Settings", path: "settings", icon: <Settings className="h-4 w-4" /> },
+      { label: "Support", path: "help", icon: <HelpCircle className="h-4 w-4" /> },
+    ],
   },
   {
-    label: "STORE IDENTITY",
+    label: "IDENTITY",
     items: [
-      { label: "Theme", path: "theme", icon: <Palette className="h-4 w-4" /> },
-      { label: "Homepage Builder", path: "builder", icon: <LayoutTemplate className="h-4 w-4" /> },
       { label: "Store Identity", path: "identity", icon: <Building2 className="h-4 w-4" /> },
     ],
   },
   {
-    label: "PAGE LAYOUT",
+    label: "THEME & STYLING",
     items: [
-      { label: "Pages", path: "pages", icon: <Files className="h-4 w-4" /> },
-      { label: "Collections", path: "collections", icon: <FolderOpen className="h-4 w-4" /> },
-      { label: "Products", path: "products", icon: <List className="h-4 w-4" /> },
-    ],
-  },
-  {
-    label: "STOREFRONT",
-    items: [
+      { label: "Theme", path: "theme", icon: <Palette className="h-4 w-4" /> },
+      { label: "Homepage Builder", path: "builder", icon: <LayoutTemplate className="h-4 w-4" /> },
       { label: "Header & Footer", path: "header-footer", icon: <PanelsTopLeft className="h-4 w-4" /> },
-      { label: "Scroll Animations", path: "animations", icon: <ShoppingBag className="h-4 w-4" /> },
-    ],
-  },
-  {
-    label: "PRODUCT DISPLAY",
-    items: [
       { label: "Product Page", path: "product-page", icon: <Square className="h-4 w-4" /> },
       { label: "Product Card", path: "product-card", icon: <Grid3X3 className="h-4 w-4" /> },
       { label: "Shop Page", path: "shop-page", icon: <List className="h-4 w-4" /> },
+      { label: "Scroll Animations", path: "animations", icon: <Sparkles className="h-4 w-4" /> },
     ],
   },
   {
-    label: "CHECKOUT",
+    label: "CHECKOUT & SHIPPING",
     items: [
       { label: "Delivery & Shipping", path: "delivery", icon: <Truck className="h-4 w-4" /> },
       { label: "Payment Methods", path: "payments", icon: <CreditCard className="h-4 w-4" /> },
     ],
   },
   {
-    label: "SETTINGS",
+    label: "DOMAINS",
     items: [
       { label: "Domains", path: "domains", icon: <Globe className="h-4 w-4" /> },
-      { label: "Social & Policies", path: "policies", icon: <FileText className="h-4 w-4" /> },
-      { label: "General Settings", path: "settings", icon: <Settings className="h-4 w-4" /> },
     ],
-  },
-  {
-    label: "HELP",
-    items: [{ label: "Support", path: "help", icon: <HelpCircle className="h-4 w-4" /> }],
   },
 ];
 
@@ -118,10 +107,10 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
   }, []);
 
   if (sf === undefined) {
-    return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+    return <div className="flex h-[60vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
   if (!sf) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Storefront not found.</div>;
+    return <div className="flex h-[60vh] items-center justify-center text-muted-foreground">Storefront not found.</div>;
   }
 
   const base = `/storefronts/${slug}/admin`;
@@ -137,9 +126,10 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
   const hasPreview = !!surfacePages[currentSurface];
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      {/* Left sidebar — Bonik-style grouped nav */}
-      <aside className="w-64 shrink-0 border-r border-border bg-card/40 flex flex-col sticky top-0 h-screen overflow-y-auto">
+    <div className="flex h-[calc(100vh-7rem)] min-h-[32rem] rounded-xl border border-border bg-background text-foreground overflow-hidden">
+      {/* Left sub-sidebar (Bonik-style grouped nav) — in-content panel (overhaul 2.1),
+          rendered inside the main dashboard shell around it. */}
+      <aside className="w-56 shrink-0 border-r border-border bg-card/40 flex flex-col h-full overflow-y-auto">
         <div className="p-4 border-b border-border">
           <Link to="/storefronts" className="flex items-center gap-2 text-sm font-semibold hover:text-primary transition">
             <ChevronLeft className="h-4 w-4" /> All storefronts

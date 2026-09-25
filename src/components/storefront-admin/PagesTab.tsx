@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -264,7 +264,13 @@ function PagesSection({ sf }: { sf: Storefront }) {
   );
 }
 
-/** Generic prop form rendered from the registry's declarative adminFields. */
+/** Generic prop form rendered from the registry's declarative adminFields.
+ *
+ * Overhaul 1.2: keystrokes update a LOCAL draft instantly (no focus loss),
+ * and the DB save is DEBOUNCED — one guarded write after typing settles
+ * instead of a network round-trip per keystroke. Pending edits flush on
+ * unmount so switching sections never drops the last changes.
+ */
 function PropForm({
   fields,
   value,
@@ -274,10 +280,47 @@ function PropForm({
   value: SectionProps;
   onChange: (next: SectionProps) => void;
 }) {
-  const set = (key: string, v: any) => onChange({ ...value, [key]: v });
+  const [draft, setDraft] = useState<SectionProps>(() => structuredClone(value || {}));
+  const dirtyRef = useRef(false);
+  const draftRef = useRef(draft);
+  const timerRef = useRef<number | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  draftRef.current = draft;
+
+  const flush = () => {
+    if (timerRef.current) { window.clearTimeout(timerRef.current); timerRef.current = null; }
+    if (dirtyRef.current) {
+      dirtyRef.current = false;
+      onChangeRef.current(draftRef.current);
+    }
+  };
+
+  // Flush pending edits when the form unmounts (section closed / page switched)
+  useEffect(() => {
+    const d = dirtyRef, dr = draftRef, t = timerRef;
+    return () => {
+      if (t.current) window.clearTimeout(t.current);
+      if (d.current) onChangeRef.current(dr.current);
+    };
+  }, []);
+
+  // Adopt incoming server state only when the user isn't mid-edit
+  useEffect(() => {
+    if (!dirtyRef.current) setDraft(structuredClone(value || {}));
+  }, [value]);
+
+  const set = (key: string, v: any) => {
+    dirtyRef.current = true;
+    const next = { ...draftRef.current, [key]: v };
+    draftRef.current = next;
+    setDraft(next);
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(flush, 600);
+  };
 
   function StringsList({ field }: { field: FieldDef }) {
-    const list: string[] = Array.isArray(value[field.key]) ? value[field.key] : [];
+    const list: string[] = Array.isArray(draft[field.key]) ? draft[field.key] : [];
     return (
       <div className="space-y-2">
         {list.map((item, i) => (
@@ -300,7 +343,7 @@ function PropForm({
   }
 
   function ListOfObjects({ field }: { field: FieldDef }) {
-    const list: any[] = Array.isArray(value[field.key]) ? value[field.key] : [];
+    const list: any[] = Array.isArray(draft[field.key]) ? draft[field.key] : [];
     const itemFields = field.itemFields || [];
     const labelOf = (entry: any) =>
       (field.itemLabelKey && entry?.[field.itemLabelKey]) || Object.values(entry || {})[0] || "(empty)";
@@ -367,15 +410,15 @@ function PropForm({
         <div key={field.key}>
           <Label className="text-xs">{field.label}</Label>
           {field.type === "textarea" && (
-            <Textarea rows={4} value={value[field.key] || ""} onChange={(e) => set(field.key, e.target.value)} />
+            <Textarea rows={4} value={draft[field.key] || ""} onChange={(e) => set(field.key, e.target.value)} />
           )}
           {(field.type === "text" || field.type === "image-url") && (
-            <Input value={value[field.key] || ""} placeholder={field.placeholder} onChange={(e) => set(field.key, e.target.value)} />
+            <Input value={draft[field.key] || ""} placeholder={field.placeholder} onChange={(e) => set(field.key, e.target.value)} />
           )}
           {field.type === "number" && (
             <Input
               type="number"
-              value={value[field.key] ?? ""}
+              value={draft[field.key] ?? ""}
               min={field.min}
               max={field.max}
               onChange={(e) => set(field.key, e.target.value === "" ? "" : Number(e.target.value))}
@@ -383,14 +426,14 @@ function PropForm({
           )}
           {field.type === "toggle" && (
             <label className="inline-flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={!!value[field.key]} onChange={(e) => set(field.key, e.target.checked)} />
+              <input type="checkbox" checked={!!draft[field.key]} onChange={(e) => set(field.key, e.target.checked)} />
               Enabled
             </label>
           )}
           {field.type === "select" && (
             <select
               className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm"
-              value={String(value[field.key] ?? "")}
+              value={String(draft[field.key] ?? "")}
               onChange={(e) => set(field.key, e.target.value)}
             >
               {(field.options || []).map((o) => (

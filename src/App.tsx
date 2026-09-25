@@ -133,35 +133,9 @@ const AppRoutes = () => {
 
   return (
     <Routes>
-      {/* Preview routes — FULL-BLEED (no DashboardLayout chrome around the storefront page).
-          Suspense-wrapped: StorefrontPreview is lazy. */}
-      <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
-      <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
-
-      {/* Storefront admin shell routes — FULL-BLEED, outside DashboardLayout.
-          StorefrontAdminShell renders its own sidebar; AppSidebar never shows here.
-          All wrapped in StorefrontAdminRoute (PermissionGuard + Suspense — see above). */}
-      <Route path="/storefronts/:slug/admin" element={<StorefrontAdminRoute><Navigate to="dashboard" replace /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/dashboard" element={<StorefrontAdminRoute><StorefrontOverview /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/theme" element={<StorefrontAdminRoute><ThemeGallery /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/builder" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="builder" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/pages" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="pages" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/collections" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="collections" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/products" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="products" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/identity" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="identity" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/header-footer" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="header-footer" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/product-page" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="product-page" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/product-card" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="product-card" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/shop-page" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="shop-page" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/animations" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="animations" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/delivery" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="delivery" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/payments" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="payments" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/domains" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="domains" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/policies" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="policies" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/settings" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="settings" /></StorefrontAdminRoute>} />
-      <Route path="/storefronts/:slug/admin/help" element={<StorefrontAdminRoute><AdminHelp /></StorefrontAdminRoute>} />
-
-      {/* Standard dashboard routes */}
+      {/* Standard dashboard routes — AppSidebar shell around everything.
+          The storefront admin panel (2.1) now lives INSIDE this shell as an
+          in-content panel: same navigation, no hidden second app. */}
       <Route path="*" element={
         <DashboardLayout>
           <CommandPalette />
@@ -179,6 +153,28 @@ const AppRoutes = () => {
               <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
               <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
               <Route path="/storefronts" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
+              {/* Storefront admin — unified into the dashboard (overhaul 2.1) */}
+              <Route path="/storefronts/:slug/admin" element={<StorefrontAdminRoute><Navigate to="dashboard" replace /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/dashboard" element={<StorefrontAdminRoute><StorefrontOverview /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/theme" element={<StorefrontAdminRoute><ThemeGallery /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/builder" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="builder" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/pages" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="pages" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/collections" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="collections" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/products" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="products" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/identity" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="identity" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/header-footer" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="header-footer" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/product-page" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="product-page" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/product-card" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="product-card" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/shop-page" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="shop-page" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/animations" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="animations" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/delivery" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="delivery" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/payments" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="payments" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/domains" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="domains" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/policies" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="policies" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/settings" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="settings" /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/help" element={<StorefrontAdminRoute><AdminHelp /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
+              <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFound />} />

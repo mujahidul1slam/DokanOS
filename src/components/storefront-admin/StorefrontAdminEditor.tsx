@@ -39,7 +39,7 @@ const PREVIEW_SURFACE: Record<string, string> = {
 export default function StorefrontAdminEditor({ surface }: { surface: string }) {
   const { slug } = useParams();
   const [sf, setSf] = useState<Storefront | null | undefined>(undefined);
-  const [previewKey, setPreviewKey] = useState(0);
+  const [liveSf, setLiveSf] = useState<Storefront | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -56,14 +56,16 @@ export default function StorefrontAdminEditor({ surface }: { surface: string }) 
     return <div className="text-center py-20 text-muted-foreground">Storefront not found.</div>;
   }
 
+  // Save → fresh row → live preview swap via postMessage (overhaul 1.3)
   const onUpdate = (s: Storefront) => {
     setSf(s);
-    setPreviewKey((k) => k + 1);
+    setLiveSf(s);
   };
 
   const previewSurface = PREVIEW_SURFACE[surface];
+  // Builder preview shows the DRAFT working copy (?draft=home drives BrandProvider)
   const previewUrl = previewSurface
-    ? `/storefronts/preview/${slug}/${previewSurface}?surface=${previewSurface}`
+    ? `/storefronts/preview/${slug}/${previewSurface}?surface=${previewSurface}${surface === "builder" ? "&draft=home" : ""}`
     : undefined;
 
   const tab = (() => {
@@ -87,7 +89,7 @@ export default function StorefrontAdminEditor({ surface }: { surface: string }) 
   })();
 
   return (
-    <EditorPage previewUrl={previewUrl} previewKey={previewKey}>
+    <EditorPage previewUrl={previewUrl} liveStorefront={liveSf}>
       {tab}
     </EditorPage>
   );

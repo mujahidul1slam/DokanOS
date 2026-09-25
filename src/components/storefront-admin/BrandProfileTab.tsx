@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
-import { AiContentDialog, Field, THEME_PRESETS, type GeneratedContent, type Storefront } from "./shared";
+import { AiContentDialog, Field, type GeneratedContent, type Storefront } from "./shared";
 
 /** Brand profile tab (refactor of the old "profile" TabsContent — no behavior change). */
 export default function BrandProfileTab({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Storefront) => void }) {
@@ -64,22 +63,13 @@ export default function BrandProfileTab({ sf, onUpdate }: { sf: Storefront; onUp
       </div>
       <div className="grid sm:grid-cols-2 gap-4">
         <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
-        <div className="space-y-1">
-          <Label className="text-xs">Theme</Label>
-          <Select value={form.theme || "editorial"} onValueChange={(v) => setForm({ ...form, theme: v })}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {THEME_PRESETS.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* Theme & accent moved to the Theme & Styling group (overhaul 5.2):
+            admin panel → Theme. Identity keeps name, logos, hero, contact only. */}
+        <div className="space-y-1 sm:col-span-2 rounded-md border border-dashed border-border p-3">
+          <p className="text-xs text-muted-foreground">
+            Theme & accent color live in <b>Theme & Styling → Theme</b> now. Identity keeps brand info only.
+          </p>
         </div>
-        <Field label="Accent color (hex)" value={form.accent_hex} onChange={(v) => setForm({ ...form, accent_hex: v })} />
         <Field label="Hero title" value={form.hero_title} onChange={(v) => setForm({ ...form, hero_title: v })} className="sm:col-span-2" />
         <Field label="Hero subtitle" value={form.hero_subtitle} onChange={(v) => setForm({ ...form, hero_subtitle: v })} className="sm:col-span-2" />
         <Field label="Hero image URL" value={form.hero_image_url} onChange={(v) => setForm({ ...form, hero_image_url: v })} />

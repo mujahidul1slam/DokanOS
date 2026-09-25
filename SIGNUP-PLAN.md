@@ -1,13 +1,13 @@
 # SIGNUP-PLAN — Self-Serve Sign-Up System for shohozbiz
 
-> Status: DRAFT v12 (post-critique rounds 1–11 — see `SIGNUP-CRITIQUE-1..11.md`)
-> Scope (user-confirmed): **New business owners self-register**; sign-up provisions, in ONE transaction: business + brand(linked) + default location + store + storefront(inactive, named, linked) + full parity rows (per 20260904000100 §§5–7, statuses adjusted to `disconnected`) + owner membership + permission bundle + one store-access row. Never a global role.
+> Status: DRAFT v2 (multi-business scope added post-convergence — see `SIGNUP-CRITIQUE-14..`)
+> Scope (user-confirmed): **New business owners self-register**; sign-up provisions, in ONE transaction: business + brand(linked) + default location + store + storefront(inactive, named, linked) + full parity rows (per 20260904000100 §§5–7, statuses adjusted to `disconnected`) + owner membership + permission bundle + one store-access row. Never a global role. **A user can belong to MANY businesses (UBA roles owner/admin/member/viewer); a top-left business switcher drives the active business and offers "Create new business".**
 > Stack: Vite + React + TypeScript + shadcn/ui; Supabase (Auth, Postgres + RLS, Edge Functions).
-> Effort: **~29.5 person-days ≈ 6 weeks single-stream**; two-stream critical path **~4 weeks, contingent** (2 engineers; streams in §12; round-9 repricing: 1.6a review loop + E2E).
+> Effort: **~33 person-days ≈ 6.5 weeks single-stream**; two-stream critical path **~4.5 weeks, contingent** (2 engineers; streams in §12).
 
 ---
 
-## 1. Ground truth (verified against repo, rounds 1–8, migration/lib cites)
+## 1. Ground truth (verified against repo; migration/lib cites inline)
 
 **Auth & UI**
 - `src/pages/login.tsx` — login, TOTP MFA, reset; toasts **raw `error.message`**. Two planned edits: enumeration-safe mapper + **invisible Turnstile token** on login/reset (§6.1/§6.4) — user-visible behavior unchanged.
@@ -24,11 +24,12 @@
 - `user_roles` global (UNIQUE(user_id,role), 20260412161413); writes on operational tables use global `has_role('admin'|'staff')`; `stores` SELECT admin-only; `user_has_store_access` definition-only. **`has_permission()` is called by `app_settings` policies only (20260911000400:20/24/26)** — and is therefore a global-scope permission (`settings.manage`); owner bundles must exclude such keys (Task 0.2 acceptance).
 - Read side open today (SELECT `USING(true)` for authenticated; 28 direct client writes) → Task 1.6 member-scoping is a launch blocker. `user_store_access` fail-open (zero rows = ALL) — resolved per-table in 1.6a.
 - Business layer (20260904000100): `businesses` (INSERT platform-admin only), `user_business_access`, `brands` (member `FOR ALL` write, no column restriction → column-restricted in 1.6a; `woo_store_id` nullable/non-unique → 1.6a UNIQUE-partial-index decision), `locations`. **Parity set = exactly what migration §§5–7 produces per brand-with-store**: connectors (channel), selling_points (`showroom_pos`; `dokanos_storefront` carrying `storefront_id`; **`woocommerce`**), `product_sources`, `customer_sources` — statuses adjusted to `disconnected`. (facebook `order_sources`-dependent row: include/exclude decided in Task 0.1.)
-- `create_business_with_owner` (20260911000130): caller-JWT; name ≤100; currency/timezone allow-lists; slug `^[a-z0-9]+(-[a-z0-9]+)*$` 2–60. Not granted to self-serve.
+- `create_business_with_owner(name, slug, logo_url?, currency='BDT', timezone='Asia/Dhaka')` (20260911000130): caller-JWT SECURITY DEFINER, admin-gated (`has_role(admin)`); creates `businesses` + `user_business_access('owner')` ONLY (no brand/store/storefront/parity rows); validates name ≤100, slug 2–60 regex, currency + timezone allow-lists. Not granted to self-serve.
+- **Multi-business membership exists in schema (verified for the switcher scope)**: `user_business_access(user_id, business_id, role CHECK IN ('owner','admin','member','viewer'), UNIQUE(user_id,business_id), ON DELETE CASCADE)` (20260904000100). Existing business RPCs: `is_business_member(p_business_id)`, `my_business_role`, `can_manage_business_access`, `business_has_other_owner`, `user_business_access_immutable` trigger (20260911000100); `get_my_managed_businesses() returns TABLE` (columns verified in 0.1), `set_member_business_role` (20260911000500). Shells for the top-left mount: `AppSidebar.tsx` / `DashboardLayout.tsx` / `StorefrontAdminShell.tsx`.
 - Row shapes: `stores(name TEXT NOT NULL, url TEXT NOT NULL, status CHECK(connected|disconnected|syncing|error) default 'disconnected')`; `storefronts(name NOT NULL, store_id, slug NOT NULL UNIQUE, is_active default true; anon SELECT exposes store_id; only UPDATE policy is global-staff)`.
 - Placeholder-store blast radius: existing UIs read `stores` unfiltered (`useStoresList.ts:15`, `StorefrontsPage.tsx:238` maybeSingle) → §10.11 consumer guards. woo-sync cron excludes `disconnected`; `profiles` cascade on delete.
 - `handle_new_user` trigger (20260412161413): profile insert; invitation-consume branch; ELSE first-user ⇒ global admin.
-- `team-manage`: `inviteUserByEmail` rejects registered emails; recovery-email fallback; synthetic `invitations` rows precedent (index.ts:158–163) — `accepted_at` lives on `invitations`, NOT `user_roles`; stale-deletes null-role users. Staff role = global by design.
+- `team-manage` (verified against current GoTrue + this repo): target resolution currently scans `listUsers` capped at 20 pages × 200 = **4,000 users** (`findUserByEmail`, index.ts:38–49 — replaced by the unpaginated `get_auth_signup_state` in Task 2.4); `/invite` rejects only **confirmed** existing emails and **natively re-sends for unconfirmed ones, re-stamping `invited_at`** (invite.go/mail.go — version-dependent; the repo's `resend_invite` recovery fallback (index.ts:202–205) evidences older behavior; Task 0.1 verifies the deployed GoTrue version's invite semantics); synthetic `invitations` rows precedent (index.ts:158–163) — `accepted_at` lives on `invitations`, NOT `user_roles`; stale-deletes null-role users. Staff role = global by design.
 - RPCs: `get_user_permissions(_user_id)`, `get_user_store_ids(_user_id)` — PUBLIC, read-only, arbitrary `_user_id` (pre-existing enumeration; separate phase). No grant RPC.
 - `auth.users` fields: `email_confirmed_at`, `invited_at`, `raw_app_meta_data.provider` (Task 0.1 re-verifies).
 - Cron pattern (20260824000000): pg_cron → edge fn + cron-secret, 300 s.
@@ -42,10 +43,12 @@
 3. No enumeration (incl. the `email_not_confirmed` login oracle); consent server-anchored/versioned; abuse-resistant; no unconfirmed zombies (26 h purge); invitee hygiene (30 d sweep).
 4. Zero **user-visible** regression: login/MFA/reset behave identically (implementation gains invisible captcha tokens; MFA challenge untouched); `team-manage` invites unchanged in UX.
 5. Runtime kill of signup in <1 min; full closure = dashboard step (§11.2 ordering).
+6. **Multi-business**: any user can hold memberships in many businesses (UBA); a top-left switcher in both admin shells shows the active business, switches it (incl. into businesses where the user is `admin`/`member`/`viewer`), and offers "Create new business" (full provisioning, post-signup path §3.2).
 
 **Non-goals (deliberate)**
 - No OAuth, phone OTP, billing (v2+).
 - No account-deletion flow for provisioned users in v1 (consent IP/UA scrub deferred to that phase — §9).
+- **No business-member management UI in v1** (inviting members into a business with UBA roles `admin`/`member`/`viewer` via `set_member_business_role` exists as an RPC; the management screen is a v2 surface). Legacy global `staff` semantics from §7 unchanged.
 - Legacy `_user_id` RPC enumeration: separate phase.
 - Platform `admin`/`staff` remain platform-wide by design; Task 1.6 member-scopes owner principals only.
 
@@ -81,7 +84,8 @@
             UNCONSUMED server-written signup_started row with
             canonical(anchor.email) == canonical(user.email) AND
             anchor.meta.nonce == REQUEST-BODY nonce AND
-            anchor.created_at ≥ users.created_at - interval '2 minutes' AND ≤ 24h before NOW
+            anchor.created_at ≥ NOW() - interval '24 hours' AND
+            anchor.created_at ≥ users.created_at - interval '2 minutes'
           (anchor = consent/attribution + cross-account binding; trust boundary =
             confirmed fresh email-provider account — same as signup itself; §13;
             the nonce lives on the client-submitted body, NEVER on mutable user metadata — §1)
@@ -101,7 +105,8 @@
                      dokanos_storefront: storefront_id + woo_store_id := stores.id;
                      woocommerce point: woo_store_id := stores.id
             user_business_access('owner'); permission bundle; user_store_access (exactly 1)
-            consent_records(SERVER versions; ip/ua := anchor's signup_started ip/ua
+            consent_records(SERVER versions; accepted_at := anchor.created_at
+              (acceptance time, not provision time); ip/ua := anchor's signup_started ip/ua
               — the ACCEPTANCE-time actor; provision-call IP stays in signup_events audit;
               UNIQUE(user_id,doc); ON CONFLICT DO NOTHING)
             audit 'provisioned'; mark anchor consumed
@@ -117,11 +122,46 @@
 
 ### 3.1 Trigger patch: owner marker ⇒ skip BOTH role branches; audit skip only when an invitation was pending. Everything else unchanged.
 
+### 3.2 Business switcher & creating additional businesses (post-signup)
+
+```
+[BusinessSwitcher — top-left of AppSidebar + StorefrontAdminShell header]
+  data: get_my_managed_businesses() (existing RPC, 20260911000500)
+  shows: active business name; switch list (role badge per business);
+         footer action "Create new business"
+  state: ActiveBusinessProvider (React context; NOT inside useAuth)
+         active_business_id persisted in localStorage; validated against membership on
+         every load; fallback = first business where role='owner', else first row
+  membership revoked mid-session (UBA row deleted) → context detects missing id
+    → switch to fallback + toast "You no longer have access to that business"
+  inside /storefronts/:slug/admin: switching navigates to the target business's
+    default storefront admin (or main dashboard if it has no storefront)
+
+[Create new business] (dialog from switcher):
+  input: business name (≤100, zod) + fresh Turnstile token (re-executed widget)
+  → POST create-business (edge fn; verify_jwt ON; reads signup_open kill switch;
+      siteverifies ITS OWN token (never GoTrue-consumed); rate limits §6.3)
+  → RPC create_additional_business(p_user_id) via service key:
+      §6.7 hygiene; advisory lock hashtext(p_user_id)
+      GATES: user confirmed; holds ≥1 user_business_access row (provisioned member);
+             NOT gated on 24h/anchor/provider — those are sign-up-specific
+      SAME shared transaction body as provision (single core SQL function —
+        no drift): businesses + brands + location + store + storefront(inactive)
+        + parity rows + user_business_access('owner') + user_store_access (exactly 1)
+        + permission bundle insert ON CONFLICT DO NOTHING (bundle is global-scope
+        per §1 — granting it twice must be idempotent)
+      audit: signup_events event 'business_added' (§4.2 enum extended)
+  → 200 { slug, business_id } → context switches to it → welcome-lite
+    (publish nudge reuses the /welcome publish step for the new storefront)
+```
+
+**Why two thin entry RPCs over one**: sign-up provisioning gates (anchor, nonce, provider, 24 h) are meaningless for an existing verified owner; reusing the gate set would block legitimate re-provisioning. The shared core function is the single implementation; the gates differ.
+
 ## 4. Data model
 
 **New (Tasks 1.1/1.2):**
 1. `consent_records(user_id, doc, version, accepted_at, ip, ua)` — UNIQUE(user_id,doc); RPC-only; select-own RLS; versions copied from `app_config` server values.
-2. `signup_events(id, email text null, event CHECK-whitelist [signup_started|email_confirmed|provisioned|provision_failed|resend|blocked|purged_unconfirmed|owner_signup_trigger_skipped_invite|self_deleted_unprovisioned|site_opened|staff_role_attached|invitee_expired], user_id null, ip, ua, meta jsonb server-schema-validated incl. consumed flag, created_at)`. No client select/insert.
+2. `signup_events(id, email text null, event CHECK-whitelist [signup_started|email_confirmed|provisioned|provision_failed|resend|blocked|purged_unconfirmed|owner_signup_trigger_skipped_invite|self_deleted_unprovisioned|site_opened|staff_role_attached|invitee_expired|business_added], user_id uuid NULL REFERENCES auth.users(id) ON DELETE SET NULL, ip, ua, meta jsonb server-schema-validated incl. consumed flag, created_at)`. No client select/insert. Purge/sweep-written rows carry `user_id` NULL at insert (the subject is deleted); `self_deleted_unprovisioned` is written by the RPC with `email := NULL` at insert.
 3. `disposable_email_domains(domain pk)` — seeded in 1.1 (maintained source + update cadence).
 4. `app_config(key, value jsonb)` — seeds: `signup_open=false`, `tos_version`, `privacy_version`, `storefront_domain`, `invitee_expiry_enabled=true`; anon/auth select ONLY `signup_open`; service-write.
 5. `rate_limit_hits(key, bucket, count, pk(key,bucket))`.
@@ -140,9 +180,9 @@
 ### 5.2 Edge cases
 - Repeat signup (verified email): generic success; silent (accepted).
 - Repeat (unconfirmed): generic success + Resend (fresh nonce/tokens/anchor per attempt); provision-time window covers resend-then-confirm within 24 h.
-- Provision failure: typed codes → `/welcome/setup-failed` + idempotent Retry.
+- Provision failure: typed codes → `/welcome/setup-failed`. **Client rule (round 12): missing persisted nonce (cross-device/fresh-storage confirm) OR nonce-gate rejection ⇒ run the full re-anchor path instead of blind-resubmit** — resume/re-anchor = re-execute Turnstile, fresh nonce, consent re-displayed and re-affirmed at the CURRENT server versions, re-post `signup_started`, re-call provision.
 - **Gate expiry (>24 h)**: restart via `delete_unprovisioned_self()` → fresh signup (audited; E2E); email occupied meanwhile (residual §13).
-- Orphan (<24 h): login → resume-setup guard; **resume-setup re-executes Turnstile + mints a fresh nonce + re-posts `signup_started` on demand** (covers anchor-post-failure after signup) then re-calls provision.
+- Orphan (<24 h): login → resume-setup guard; resume-setup runs the same re-anchor path (tokens + fresh nonce + consent re-affirm + re-post) then re-calls provision.
 - Typo'd email: sender-side restart; recipient: confirm → recovery/set-password → session → `delete_unprovisioned_self()` (caller-JWT; self-only; zero tenant + zero roles; throttled; audited).
 - Expired link → resend screen.
 - Concurrent provisions → advisory lock + idempotency.
@@ -156,7 +196,7 @@
 
 1. **Turnstile discipline** (single-use, 300 s): per attempt re-execute widgets; `t_event` siteverified by `signup-event`; `t_signup`/resend/login/recovery tokens forwarded nested to GoTrue (captcha globally ON). No double siteverify.
 2. Kill switch: `signup-provision`, `signup-event`, `auth-resend` + runtime UI read `signup_open` live → generic closed errors.
-3. Rate limits (canonical-normalized keys): provision ≤5/h/IP; resend ≤3/h/email + ≤20/h/IP; `signup-event` ≤10/h/IP + ≤3/day/email (`signup_started` only); `delete_unprovisioned_self` ≤3/h/actor.
+3. Rate limits (canonical-normalized keys, **rolling-24 h buckets**): provision ≤5/h/IP; resend ≤3/h/email + ≤20/h/IP; `signup-event` ≤10/h/IP + ≤3/day/email (`signup_started` only); `delete_unprovisioned_self` ≤3/h/actor; **`create-business` ≤3/day/user + ≤10/day/IP** (abuse alert on repeat hits). **Anchor-cap rule**: an already-created account whose remaining 24 h provision epoch cannot fit a retry get routed to the gate-expiry restart path (self-delete → fresh signup) rather than waiting for a bucket reset — the "next bucket" promise only applies pre-account-creation.
 4. Enumeration hygiene — per-call mapping (unit-tested): signup/resend/reset generic; **login: invalid-credentials AND `email_not_confirmed` → same generic error; captcha-rejection errors (ALL FOUR calls: login/reset/signup/resend) → "Refresh and try again"** (oracle-free); MFA untouched; provision typed codes only.
 5. Disposable domains: authoritative gate in provision RPC (seeded list); **client pre-check uses a build-time bundled snapshot** of that list (staleness documented — may lag server truth; the RPC gate is the enforcement point).
 6. Passwords never logged/`meta`; leak-protection if tier.
@@ -167,16 +207,16 @@
 
 ## 7. Integration with existing auth
 
-- `useAuth` gains `permissions`/`storeIds`/`businesses` via existing read RPCs; role logic untouched.
+- `useAuth` gains `permissions`/`storeIds`/`businesses` via existing read RPCs; role logic untouched. **Active-business selection lives in a separate `ActiveBusinessProvider` (§3.2) — not in useAuth** (keeps auth context stable; business context is a UI/data-scope concern).
 - Routes: `/signup`, `/check-email`, `/auth/confirm`, `/welcome`, `/welcome/setup-failed` — runtime `signup_open`-aware; login/reset forms gain invisible Turnstile tokens (§6.1).
 - MFA untouched; nudge in `/welcome`. Login: "Create account" link (runtime flag) + universal resend link.
 - Zero-permission users → resume-setup guard.
-- **Task 2.4 team-manage spec (five routes, exhaustive)** — input = invited email resolves to existing user:
+- **Task 2.4 team-manage spec (five routes, exhaustive)** — target resolved via `get_auth_signup_state` (unpaginated; replaces the 4,000-capped listUsers scan); **ambiguity rule: exact-stored-email match wins; multiple canonical matches with no exact match ⇒ typed ambiguous-target error, never send/delete**:
   a. User WITH `user_business_access` ⇒ skip `deleteUser`/`inviteUserByEmail`; insert `user_roles('staff')` (**if a staff row already exists ⇒ typed no-op success**, never a UNIQUE-violation 500); write synthetic `invitations` row with `accepted_at=now()` (audit parity, precedent team-manage/index.ts:158–163); audit `staff_role_attached` (inviter, ts); recovery-email copy "you were granted staff access" (platform-wide disclosed in invite UI).
-  b. **Confirmed user, no UBA, no owner marker** ⇒ direct attach (same as (a), incl. duplicate-role no-op).
-  c. Stale-delete ONLY when: no UBA AND no owner marker AND **`invited_at IS NULL`** AND unconfirmed AND (age > 48 h OR no unconsumed `signup_started` anchor).
-  d. **No UBA AND owner marker present** ⇒ no delete, no attach — typed error "account has a pending self-serve setup" (admin waits for 26 h purge or support).
-  e. **Pending invitee re-invite** (`invited_at IS NOT NULL`, unconfirmed) ⇒ pass through to `inviteUserByEmail` (native re-send), never delete, never attach.
+  b. **Confirmed user, no UBA** ⇒ direct attach (same as (a), incl. duplicate-role no-op).
+  c. Stale-delete ONLY when: no UBA AND **no unconsumed `signup_started` anchor** (server-side proof of an in-flight self-serve signup — the user-writable marker is secondary evidence only) AND **`invited_at IS NULL`** AND unconfirmed AND age > 48 h.
+  d. **Unconfirmed, no invite, AND (unconsumed anchor present OR age ≤ 48 h)** ⇒ typed no-op "account has a pending self-serve setup" — NO delete, NO invite send.
+  e. **Pending invitee re-invite** (`invited_at IS NOT NULL`, unconfirmed) ⇒ pass through to `inviteUserByEmail` (native re-send; Task-0.1-verified version semantics), never delete, never attach.
 
 ## 8. Emails & config (dashboard checklist; ■ = launch blocker)
 
@@ -186,6 +226,7 @@
 4. ■ **SMTP** quota + deliverability tested.
 5. ■ **Edge-fn env / config seeds**: service key, cron secret, Turnstile secret, `storefront_domain` (app_config seed read by provision for `stores.url`).
 6. Resend UX: cooldown countdown; server throttles authoritative.
+7. ■ **GoTrue minimum password length = 10 before Phase 1** (zxcvbn/top-10k stay client-side; direct-API signups must meet the server floor).
 
 ## 9. Analytics & retention
 
@@ -196,21 +237,22 @@
 |---|---|---|---|
 | `signup_events` ip/ua | 30 d → NULL | purge edge fn |
 | `signup_events` email (live rows) | 400 d → delete | same |
-| `signup_events` email on purge/self-delete/invitee-expired rows | NULL immediately | in-job |
+| `signup_events` email on purge/invitee-expired rows | NULL immediately | in-job |
+| `signup_events` email on self-delete rows | NULL at insert | `delete_unprovisioned_self` RPC |
 | `consent_records` ip/ua | consent lifetime (v1 has no account-deletion path; scrub deferred to that phase) | future deletion phase |
 | `rate_limit_hits` | 24 h | same job |
 
 ## 10. Testing plan
 
 1. **Unit**: zod schemas; slug generator (Bengali/emoji fallback; regex); canonical normalizer + gate-equality; per-call mapper (incl. email_not_confirmed→generic; **captcha-error class for each of login/reset/signup/resend**); runtime-flag guards; **`options.captchaToken` request-body assertions for signUp/resend/login/reset**; widget re-execute per attempt; nonce flow.
-2. **RLS (test:rls)**: A/B owner principals — no cross-tenant read/write via real-client-shaped queries; platform roles intact (by design); storefront unlisted pre-publish; per-1.6a-matrix acceptance rows; table reachability checks.
-3. **SQL/integration**: provision success with **full parity assertions** (businesses/stores/brands/locations/storefronts columns as specced + connectors, selling_points incl. storefront+woo-linked dokanos_storefront, woo-linked woocommerce, **showroom_pos bound to the default location_id** (location type 'showroom'), product_sources, customer_sources); idempotent re-call; concurrent double-invoke; 3-table slug retry; blocked domain (seeded); mid-tx error → zero rows; kill-switch 403; anchor gates (missing/expired/cross-account/forged-nonce/consumed → reject); retry-fresh-anchor succeeds; resend +2 h/+23 h → provision succeeds. `publish_my_storefront()`: owner ok; non-owner reject; >1-brand-join reject; flip-only `site_opened`; 1.6a-dependency asserted. `delete_unprovisioned_self()`: tenant/role/foreign-id rejects; clean self ok; **throttle enforced (§6.3 ≤3/h/actor → 4th call rejected)**. Consent idempotent retry + **ip/ua equal to the anchor's acceptance-time values, not the provision call's** (assertion). (Recorded: empty `user_store_access` fail-open — mitigated by assertion + 1.6b.)
+2. **RLS (test:rls)**: A/B owner principals — no cross-tenant read/write via real-client-shaped queries; platform roles intact (by design); storefront unlisted pre-publish; per-1.6a-matrix acceptance rows; table reachability checks. **Multi-business**: user owning businesses A and B (plus a `member` row in C) sees A+B+C in `get_my_managed_businesses`; post-1.6b reads through business-scoped surfaces resolve to the active business only; UBA rows for other users are not visible to a plain member (existing 20260911000100 tightening keeps working).
+3. **SQL/integration**: provision success with **full parity assertions** (businesses/stores/brands/locations/storefronts columns as specced + connectors, selling_points incl. storefront+woo-linked dokanos_storefront, woo-linked woocommerce, **showroom_pos bound to the default location_id** (location type 'showroom'), product_sources, customer_sources); idempotent re-call; concurrent double-invoke; 3-table slug retry; blocked domain (seeded); mid-tx error → zero rows; kill-switch 403; anchor gates (missing/expired/cross-account/forged-nonce/consumed → reject); retry-fresh-anchor succeeds; resend +2 h/+23 h → provision succeeds. `publish_my_storefront()`: owner ok; non-owner reject; >1-brand-join reject; flip-only `site_opened`; 1.6a-dependency asserted. `delete_unprovisioned_self()`: tenant/role/foreign-id rejects; clean self ok; **throttle enforced (§6.3 ≤3/h/actor → 4th call rejected)**. Consent idempotent retry + **ip/ua equal to the anchor's acceptance-time values, not the provision call's** (assertion). **`create_additional_business`**: gates (unauthenticated; unconfirmed; zero-UBA user; rate cap; kill switch off → 403) all reject; transaction contents byte-equal to the provision path incl. parity rows + `is_active=false`; permission-bundle re-grant is a no-op (ON CONFLICT); exactly one NEW `user_store_access` row per call; advisory lock serializes concurrent creates; audit row `business_added` written with user_id set. (Recorded: empty `user_store_access` fail-open — mitigated by assertion + 1.6b.)
 4. **Trigger**: owner marker skips both branches (wiped-`auth.users` case → no role); unmarked invite consumed; profile always created.
 5. **Regression**: login (WITH token), MFA, reset (WITH token), legacy team-manage invites — all unchanged post-captcha-enable. **Post-captcha-flip staging smoke**: email-confirm link redemption (`/verify`), session refresh, invite set-password acceptance — adjacent endpoint mount-scope verified live, not assumed.
-6. **Team-manage fix**: all **five** routes (a/b attach incl. duplicate-role no-op + `staff_role_attached` audit + copy; c refuses owner-marker users AND pending invitees; d owner-marker-no-UBA → typed pending-setup error, both sub-states; **e pending-invitee re-invite → native inviteUserByEmail re-send**); invited user survives ≥8 d.
+6. **Team-manage fix**: all **five** routes (a/b attach incl. duplicate-role no-op + `staff_role_attached` audit + copy; c anchor-keyed stale-delete, refuses protected states; d typed no-op pending-setup for anchored users, both sub-states; **e pending-invitee → native re-send**; **route (d) covers the anchored AND the ≤48 h unanchored cohorts**; **ambiguous canonical multi-match without an exact stored match → typed error, never send/delete**); **target resolution via `get_auth_signup_state` (works past 4,000 users)**; invited user survives ≥8 d; no route ever bricks a provisioning user (typed no-ops, never fall-through sends).
 7. **Purge**: resend doesn't extend lifetime; resent-daily purged at 26 h; invited exempt <30 d; invitee sweep audited + toggle respected; NULL-email audits.
-8. **E2E**: full funnel (4 event rows; 3 anchors then confirm still records `email_confirmed`); resend; expired link; wrong-email restart; typo-recipient self-delete; >24 h restart; dwell-6-min retry; **anchor post-fails-after-signup → resume-setup re-runs token+nonce+anchor and recovers**; **anchor-cap 4th-attempt → rate-limit state, next-day success**; runtime kill-switch; storefront unpublished until publish.
-9. **Security smoke**: tokenless signUp/resend/login/reset **rejected** (captcha ON); replayed token rejected; resend hammer → 429; 4th anchor/day/email rejected; forged `email_confirmed`/terminal events rejected+audited; forged consent version → server version wins; cross-channel (invite/OAuth-shaped) fresh accounts → gate reject; cross-account anchor use → reject.
+8. **E2E**: full funnel (4 event rows; 3 anchors then confirm still records `email_confirmed`); resend; expired link; wrong-email restart; typo-recipient self-delete; >24 h restart; dwell-6-min retry; **anchor post-fails-after-signup → resume-setup recovers**; **cross-device/no-storage confirm → missing-nonce → re-anchor path recovers**; **anchor-cap 4th-attempt → rate-limit state; post-creation cap-lockout with insufficient epoch → routed to gate-expiry restart (per §6.3 rule), next-day success only when epoch permits**; runtime kill-switch; storefront unpublished until publish. **Switcher/create-business**: switch between two owned businesses (context + URL behavior in both shells); create-new-business from switcher → auto-switch → welcome-lite publish; membership revoked mid-session (UBA deleted) → fallback switch + toast; switcher never lists businesses where the user has no UBA row; 4th create-business in a day → typed rate-limit state.
+9. **Security smoke**: tokenless signUp/resend/login/reset **rejected** (captcha ON); replayed token rejected; **tokened direct-API signUp with 6-char password rejected** (GoTrue min-length, §8.7); resend hammer → 429; 4th anchor/day/email rejected; forged `email_confirmed`/terminal events rejected+audited; forged consent version → server version wins; cross-channel (invite/OAuth-shaped) fresh accounts → gate reject; cross-account anchor use → reject.
 10. **Resend negatives**: confirmed-email → generic, no row; GoTrue error → no row, generic; unconfirmed 2xx → one row; TOCTOU flip → suppressed; **>50-user past-page-1 lookup resolves** via `get_auth_signup_state`; **alias-typed resend dispatches to the STORED email** (dispatch target asserted == stored); **>1 canonical match → generic reject + blocked audit**; **invitee resend** → generic response, no `resend` row (`invited_at IS NULL` gate).
 11. **Consumer guard**: per entry in the 0.1 `stores`-consumer inventory — filtered/member-scoped after 1.6b, or explicit waiver; DoD: no placeholder store visible in any pre-existing UI.
 
@@ -222,7 +264,7 @@
 4. **Phase 0**: dark; exit gate = 1.6a reviewed + 1.6b merged + §10.2 + §10.11 green. **Phase 1**: flip; 72 h watch. **Phase 2**: OAuth (separate milestone; provider-gate redesign).
 5. Full closure: `signup_open=false` + dashboard "disable email signups".
 
-## 12. Task breakdown (~29.5 person-days)
+## 12. Task breakdown (~33 person-days)
 
 | # | Task | Size | Stream |
 |---|------|------|--------|
@@ -236,11 +278,13 @@
 | **1.6a** | **Policy matrix deliverable (per-table scope path, NULL-store rules, leaf joins, `woo_store_id` UNIQUE-partial + brands column-restricted policy, recursion-safe helpers, fail-open/closed per table, p95 + EXPLAIN ANALYZE + index plan). REVIEWED before migrations — review/fix loop budgeted inside** | 3 d | B |
 | **1.6b** | **Member-scoped RLS implementation + per-domain cutover + consumer-query fixes + rollout — LAUNCH BLOCKER** | 8 d | B |
 | 1.7 | `delete_unprovisioned_self()` + `publish_my_storefront()` — **hard dep: 1.6a landed** | 0.5 d | A (after B milestone) |
+| 1.8 | Edge fn `create-business` + `create_additional_business` RPC (shared core transaction; gate set per §3.2) + SQL tests | 1 d | A |
 | 2.1 | Frontend pages + routes + runtime flags + mapper + nonce/dual-token/re-execute + login/reset invisible Turnstile | 2.5 d | A |
 | 2.2 | `useAuth` extension + guards + login links | 0.5 d | A |
 | 2.3 | Emails + SMTP + dashboard/env checklist + captcha sequencing | 0.5 d | A |
-| 2.4 | `team-manage` three-branch fix per §7 + tests | 1 d | A |
-| 3.1 | Unit + RLS + SQL integration | 3 d | A |
+| 2.4 | `team-manage` **five-route** fix per §7 (incl. `get_auth_signup_state` target resolution) + tests | 1.5 d | A |
+| 2.5 | `BusinessSwitcher` component (both shells) + `ActiveBusinessProvider` + create-business dialog + welcome-lite publish reuse | 1.5 d | A |
+| 3.1 | Unit + RLS + SQL integration (incl. multi-business matrix rows) | 3.5 d | A |
 | 3.2 | Playwright + regression (captcha-on staging env; 8+ flows incl. rate-limit/dwell/restart states) | 2.5 d | joint |
 | 4.1 | Flags/runbook, retention jobs, alerts, funnel query | 0.5 d | A |
 
@@ -251,7 +295,7 @@
 3. Trigger patch regressions → §10.4/10.5.
 4. Deliverability → §8.4.
 5. Legal/consent jurisdiction → record-only v1 (server-versioned).
-6. **Accepted residuals**: GoTrue silent repeat-signup; signup timing side-channel; legacy `_user_id` RPC enumeration; platform staff global by design; confirmed-incomplete accounts squat the email until self-delete/support; invitees reaped at 30 d (toggleable); anchor trust boundary = confirmed fresh email-provider account (same as signup); resend TOCTOU ≈ one request lifetime (post-check suppressed); no account-deletion for provisioned users in v1 (consent scrub deferred); **brief stale-bundle captcha window during the toggle** (stale tabs show GoTrue's generic non-enumerative rejection until refresh; §11.2); **targeted daily-anchor lockout against a known email** (3 anon posts burn the day's budget; recovery = next bucket; mitigations = per-IP caps + abuse alerting).
+6. **Accepted residuals**: GoTrue silent repeat-signup; signup timing side-channel; legacy `_user_id` RPC enumeration; platform staff global by design; confirmed-incomplete accounts squat the email until self-delete/support; invitees reaped at 30 d (toggleable); anchor trust boundary = confirmed fresh email-provider account (same as signup); resend TOCTOU ≈ one request lifetime (post-check suppressed); no account-deletion for provisioned users in v1 (consent scrub deferred); **brief stale-bundle captcha window during the toggle** (stale tabs show GoTrue's generic non-enumerative rejection until refresh; §11.2); **targeted daily-anchor lockout against a known email** (3 anon posts burn the rolling-24 h budget; pre-account recovery = next bucket; post-creation lockout reroutes through the gate-expiry restart path §6.3); **permission bundle is global-scope per user** (§1) — owning two businesses grants the same permission keys twice (idempotent); business-level isolation comes from `user_store_access` + Task-1.6b policies, not from per-business permission rows; **switcher reflects membership at page-load granularity** (revocation mid-session detected on next navigation/context refresh, §10.8).
 
 ## 14. Definition of done
 
@@ -263,3 +307,4 @@
 - Lifetimes coherent: unconfirmed purged 26 h; invitees 30 d; invited users never wrongly purged (§10.7).
 - Cross-tenant read/write denied for owner principals post-1.6b (§10.2).
 - Concurrent provisions → one store (§10.3); resend events truthful incl. TOCTOU (§10.10).
+- **Multi-business**: switcher lists exactly the user's UBA businesses; create-new-business provisions the full bundle idempotently and switches to it (§10.8); revoked membership recovers gracefully (§10.8); a user cannot create businesses without an existing provisioned membership (§10.3 gate test).

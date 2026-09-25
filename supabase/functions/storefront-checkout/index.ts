@@ -87,7 +87,14 @@ const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_pay
       return json({ error: `Payment method ${body.payment?.method || ""} is not accepted` }, 400);
     }
 
-    // Verify all product_ids belong to this storefront
+    // Verify all product_ids belong to this storefront.
+    // Gate mirrors the runtime catalog (lib/catalog.ts listStorefrontProducts):
+    // a product is sellable if it is EITHER in the curated junction
+    // (storefront_products) OR the storefront is linked to a store
+    // (sf.store_id) and the product belongs to that store. Checkout used to
+    // gate on the junction only, which rejected every product on
+    // store-linked storefronts (their shops list the store's full catalog)
+    // — the customer-facing "order fails with non-200" bug.
     const prodIds = Array.from(new Set(body.items.map((i) => i.product_id)));
     const { data: sfProducts } = await supabase
       .from("storefront_products")
@@ -96,6 +103,18 @@ const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_pay
       .in("product_id", prodIds);
 
     const allowedSet = new Set((sfProducts || []).map((r: any) => r.product_id));
+
+    // Store-linked storefronts also sell the linked store's active catalog.
+    if (sf.store_id) {
+      const { data: storeProducts } = await supabase
+        .from("products")
+        .select("id")
+        .eq("store_id", sf.store_id)
+        .eq("is_active", true)
+        .in("id", prodIds);
+      for (const r of storeProducts || []) allowedSet.add(r.id);
+    }
+
     for (const id of prodIds) {
       if (!allowedSet.has(id)) {
         return json({ error: `Product ${id} not available on this storefront` }, 400);
