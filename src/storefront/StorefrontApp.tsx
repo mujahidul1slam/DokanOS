@@ -41,6 +41,13 @@ export default function StorefrontApp({
 }) {
   return (
     <BrandProvider brand={brand} storefrontOverride={storefrontOverride} draftPageSlug={draftPageSlug}>
+      {/* Landing pages (overhaul 3.3): standalone marketing pages — rendered
+          WITHOUT the storefront chrome (no header/footer), like Bonik's creator. */}
+      <Routes>
+        <Route path={`${basePath}/lp/:slug`} element={
+          <Suspense fallback={<Fallback />}><LandingPage standalone /></Suspense>
+        } />
+      </Routes>
       <StorefrontLayout>
         <Suspense fallback={<Fallback />}>
           <Routes>
@@ -56,9 +63,6 @@ export default function StorefrontApp({
             <Route path={`${basePath}/contact`} element={<Contact />} />
             <Route path={`${basePath}/policies`} element={<Policies />} />
             <Route path={`${basePath}/pages/:slug`} element={<CustomPage />} />
-{/* Landing pages (overhaul 3.3): standalone marketing pages — rendered
-    WITHOUT the storefront chrome (no header/footer), like Bonik's creator. */}
-<Route path={`${basePath}/lp/:slug`} element={<LandingPage standalone />} />
             <Route path="*" element={<Navigate to={basePath} replace />} />
           </Routes>
         </Suspense>
