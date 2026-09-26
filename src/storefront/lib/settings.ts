@@ -145,6 +145,22 @@ export interface StorefrontCheckoutFields {
   outside_dhaka_required: boolean;
 }
 
+export interface StorefrontTokens {
+  /** Granular design tokens (overhaul 4.2). "" = inherit theme value. */
+  font_display: string;   // Google Fonts family for headings
+  font_body: string;      // Google Fonts family for body
+  color_primary: string;
+  color_secondary: string;
+  color_surface: string;
+  color_text: string;
+  color_muted: string;
+  color_border: string;
+  color_accent: string;
+  corner_radius_px: number;
+  card_shadow: "none" | "soft" | "medium";
+  container_width: "narrow" | "default" | "wide";
+}
+
 export interface StorefrontSettings {
   checkout: {
     methods: { cod: boolean; bkash: boolean; nagad: boolean; rocket: boolean; upay: boolean; mcash: boolean };
@@ -164,6 +180,7 @@ export interface StorefrontSettings {
   animations: StorefrontAnimationSettings;
   delivery: StorefrontDeliverySettings;
   payments: StorefrontPaymentsSettings;
+  tokens: StorefrontTokens;
 }
 
 export const DEFAULT_CARD: StorefrontCardSettings = {
@@ -342,6 +359,7 @@ export function mergeSettings(raw: any): StorefrontSettings {
     animations: pick(raw?.animations, DEFAULT_ANIMATIONS),
     delivery: pick(raw?.delivery, DEFAULT_DELIVERY),
     payments: pick(raw?.payments, DEFAULT_PAYMENTS),
+    tokens: mergeTokens(raw?.tokens),
   };
 }
 
@@ -356,6 +374,21 @@ export function mergeMethods(raw: any): StorefrontSettings["checkout"]["methods"
   };
 }
 
+export const DEFAULT_TOKENS: StorefrontTokens = {
+  font_display: "",
+  font_body: "",
+  color_primary: "",
+  color_secondary: "",
+  color_surface: "",
+  color_text: "",
+  color_muted: "",
+  color_border: "",
+  color_accent: "",
+  corner_radius_px: 12,
+  card_shadow: "soft",
+  container_width: "default",
+};
+
 export const DEFAULT_STOREFRONT_SETTINGS: StorefrontSettings = {
   checkout: { methods: { cod: true, bkash: true, nagad: true, rocket: false, upay: false, mcash: false }, min_order_amount: 0, order_instructions: "", terms_checkbox_text: "", fields: DEFAULT_CHECKOUT_FIELDS },
   shipping: { free_threshold: 0 },
@@ -369,7 +402,25 @@ export const DEFAULT_STOREFRONT_SETTINGS: StorefrontSettings = {
   animations: DEFAULT_ANIMATIONS,
   delivery: DEFAULT_DELIVERY,
   payments: DEFAULT_PAYMENTS,
+  tokens: DEFAULT_TOKENS,
 };
+
+function mergeTokens(raw: any): StorefrontTokens {
+  return {
+    font_display: typeof raw?.font_display === "string" ? raw.font_display : "",
+    font_body: typeof raw?.font_body === "string" ? raw.font_body : "",
+    color_primary: raw?.color_primary || "",
+    color_secondary: raw?.color_secondary || "",
+    color_surface: raw?.color_surface || "",
+    color_text: raw?.color_text || "",
+    color_muted: raw?.color_muted || "",
+    color_border: raw?.color_border || "",
+    color_accent: raw?.color_accent || "",
+    corner_radius_px: Number.isFinite(Number(raw?.corner_radius_px)) ? Number(raw.corner_radius_px) : 12,
+    card_shadow: ["none", "soft", "medium"].includes(raw?.card_shadow) ? raw.card_shadow : "soft",
+    container_width: ["narrow", "default", "wide"].includes(raw?.container_width) ? raw.container_width : "default",
+  };
+}
 
 /** Validation rules (≥1 method enabled, min_order ≥ 0); returns problems. */
 export function validateSettings(s: StorefrontSettings): string[] {

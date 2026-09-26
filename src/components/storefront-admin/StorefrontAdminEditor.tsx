@@ -17,6 +17,7 @@ import HeaderFooterTab from "@/components/storefront-admin/HeaderFooterTab";
 import AnimationsTab from "@/components/storefront-admin/AnimationsTab";
 import DeliveryTab from "@/components/storefront-admin/DeliveryTab";
 import PaymentsTab from "@/components/storefront-admin/PaymentsTab";
+import ThemeTokensEditor from "@/components/storefront-admin/ThemeTokensEditor";
 import EditorPage from "@/components/storefront-admin/EditorPage";
 
 /**
@@ -78,6 +79,7 @@ export default function StorefrontAdminEditor({ surface }: { surface: string }) 
       case "collections": return <CollectionsTab sf={sf} />;
       case "settings": return <SettingsTab sf={sf} onUpdate={onUpdate} />;
       case "product-card": return <CardStyleTab sf={sf} onUpdate={onUpdate} />;
+      case "tokens": return <ThemeTokensEditor sf={sf} onUpdate={onUpdate} />;
       case "product-page": return <ProductPageTab sf={sf} onUpdate={onUpdate} />;
       case "shop-page": return <ShopPageTab sf={sf} onUpdate={onUpdate} />;
       case "header-footer": return <HeaderFooterTab sf={sf} onUpdate={onUpdate} />;

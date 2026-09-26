@@ -12,6 +12,7 @@ import { ExternalLink, Loader2, Plus, LayoutDashboard, Files, FolderOpen, List, 
 import { Link } from "react-router-dom";
 import { invalidateSlugCache } from "@/storefront/lib/brand";
 import type { Storefront } from "@/storefront/lib/brand";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
 import BrandProfileTab from "@/components/storefront-admin/BrandProfileTab";
 import SocialPoliciesTab from "@/components/storefront-admin/SocialPoliciesTab";
 import DomainsTab from "@/components/storefront-admin/DomainsTab";
@@ -229,6 +230,8 @@ function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Stor
 }
 
 function CreateStorefrontDialog({ open, onOpenChange, onCreate }: { open: boolean, onOpenChange: (open: boolean) => void, onCreate: (sf: any) => void }) {
+  const { active: activeBusiness } = useBusinessContext();
+  const businessId = activeBusiness?.id ?? null;
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [theme, setTheme] = useState("editorial");
@@ -263,12 +266,29 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate }: { open: boolea
 
     const { data: storeData } = await supabase.from("stores").select("id").limit(1).maybeSingle();
 
+    // Overhaul 2.2: every storefront belongs to a brand (root container).
+    // The brand is created under the ACTIVE BUSINESS; when none exists the
+    // relationship stays explicit via this auto-created brand row.
+    let brandId: string | null = null;
+    if (businessId) {
+      const { data: brandRow, error: brandErr } = await supabase
+        .from("brands")
+        .insert({ name: name.trim(), slug: slug.trim(), business_id: businessId })
+        .select()
+        .single();
+      if (brandErr) {
+        toast({ title: "Brand creation failed", description: brandErr.message, variant: "destructive" });
+      }
+      brandId = (brandRow as any)?.id ?? null;
+    }
+
     const { data, error } = await supabase.from("storefronts").insert({
       name,
       slug,
       theme,
       accent_hex: defaultAccents[theme] || "#000000",
       store_id: storeData?.id || null,
+      brand_id: brandId,
       currency: "BDT",
     }).select().single();
 

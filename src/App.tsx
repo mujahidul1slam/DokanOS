@@ -56,6 +56,7 @@ const StorefrontOverview = lazy(() => import("@/components/storefront-admin/Admi
 const ThemeGallery = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.ThemeGallery })));
 const AdminHelp = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.AdminHelp })));
 const StorefrontAdminEditor = lazy(() => import("@/components/storefront-admin/StorefrontAdminEditor"));
+const HealthPanel = lazy(() => import("@/components/storefront-admin/HealthPanel"));
 const StoresHub = lazy(() => import("./pages/StoresHub"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -157,6 +158,7 @@ const AppRoutes = () => {
               <Route path="/storefronts/:slug/admin" element={<StorefrontAdminRoute><Navigate to="dashboard" replace /></StorefrontAdminRoute>} />
               <Route path="/storefronts/:slug/admin/dashboard" element={<StorefrontAdminRoute><StorefrontOverview /></StorefrontAdminRoute>} />
               <Route path="/storefronts/:slug/admin/theme" element={<StorefrontAdminRoute><ThemeGallery /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/tokens" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="tokens" /></StorefrontAdminRoute>} />
               <Route path="/storefronts/:slug/admin/builder" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="builder" /></StorefrontAdminRoute>} />
               <Route path="/storefronts/:slug/admin/pages" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="pages" /></StorefrontAdminRoute>} />
               <Route path="/storefronts/:slug/admin/collections" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="collections" /></StorefrontAdminRoute>} />
@@ -173,6 +175,7 @@ const AppRoutes = () => {
               <Route path="/storefronts/:slug/admin/policies" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="policies" /></StorefrontAdminRoute>} />
               <Route path="/storefronts/:slug/admin/settings" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="settings" /></StorefrontAdminRoute>} />
               <Route path="/storefronts/:slug/admin/help" element={<StorefrontAdminRoute><AdminHelp /></StorefrontAdminRoute>} />
+              <Route path="/storefronts/:slug/admin/health" element={<StorefrontAdminRoute><HealthPanel /></StorefrontAdminRoute>} />
               <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
               <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
               <Route path="/reset-password" element={<ResetPassword />} />

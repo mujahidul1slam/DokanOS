@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   LayoutDashboard, Palette, LayoutTemplate, Files, FolderOpen, Building2,
   PanelsTopLeft, Square, Grid3X3, List, Truck, CreditCard, Sparkles,
-  Globe, FileText, Settings, HelpCircle, Search, ExternalLink, X, Loader2, ChevronLeft,
+  Globe, FileText, Settings, HelpCircle, Search, ExternalLink, X, Loader2, ChevronLeft, Activity,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ const GROUPS: { label: string; items: { label: string; path: string; icon: React
       { label: "Social & Policies", path: "policies", icon: <FileText className="h-4 w-4" /> },
       { label: "Settings", path: "settings", icon: <Settings className="h-4 w-4" /> },
       { label: "Support", path: "help", icon: <HelpCircle className="h-4 w-4" /> },
+      { label: "Health", path: "health", icon: <Activity className="h-4 w-4" /> },
     ],
   },
   {
@@ -45,6 +46,7 @@ const GROUPS: { label: string; items: { label: string; path: string; icon: React
     label: "THEME & STYLING",
     items: [
       { label: "Theme", path: "theme", icon: <Palette className="h-4 w-4" /> },
+      { label: "Design tokens", path: "tokens", icon: <Palette className="h-4 w-4" /> },
       { label: "Homepage Builder", path: "builder", icon: <LayoutTemplate className="h-4 w-4" /> },
       { label: "Header & Footer", path: "header-footer", icon: <PanelsTopLeft className="h-4 w-4" /> },
       { label: "Product Page", path: "product-page", icon: <Square className="h-4 w-4" /> },

@@ -24,6 +24,16 @@ function getLayoutStyle(theme: string): "editorial" | "cinematic" | "minimal" | 
   if (t === "cinematic" || t === "vincent" || t.includes("dark") || t.includes("cinematic")) {
     return "cinematic";
   }
+  // Overhaul 4.1: industry blueprints — nimbus (tech/gadgets) renders the
+  // spec-clean minimal catalog layout; saffron (food) renders the warm
+  // rounded-banner layout. Each vertical gets a distinct home blueprint,
+  // not just a color swap.
+  if (t === "nimbus" || t.includes("tech") || t.includes("gadget") || t.includes("digital")) {
+    return "minimal";
+  }
+  if (t === "saffron" || t.includes("food") || t.includes("grocery")) {
+    return "warm";
+  }
   if (t === "minimal" || t.includes("minimal")) {
     return "minimal";
   }

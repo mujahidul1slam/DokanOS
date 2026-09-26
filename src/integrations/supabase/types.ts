@@ -39,6 +39,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           key: string
@@ -313,6 +331,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      consent_records: {
+        Row: {
+          accepted_at: string
+          created_at: string
+          doc: string
+          id: string
+          ip: unknown
+          ua: string | null
+          user_id: string | null
+          version: string
+        }
+        Insert: {
+          accepted_at?: string
+          created_at?: string
+          doc: string
+          id?: string
+          ip?: unknown
+          ua?: string | null
+          user_id?: string | null
+          version: string
+        }
+        Update: {
+          accepted_at?: string
+          created_at?: string
+          doc?: string
+          id?: string
+          ip?: unknown
+          ua?: string | null
+          user_id?: string | null
+          version?: string
+        }
+        Relationships: []
       }
       courier_integrations: {
         Row: {
@@ -702,6 +753,18 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      disposable_email_domains: {
+        Row: {
+          domain: string
+        }
+        Insert: {
+          domain: string
+        }
+        Update: {
+          domain?: string
+        }
+        Relationships: []
       }
       held_carts: {
         Row: {
@@ -2364,6 +2427,24 @@ export type Database = {
           },
         ]
       }
+      rate_limit_hits: {
+        Row: {
+          bucket: string
+          count: number
+          key: string
+        }
+        Insert: {
+          bucket: string
+          count?: number
+          key: string
+        }
+        Update: {
+          bucket?: string
+          count?: number
+          key?: string
+        }
+        Relationships: []
+      }
       selling_points: {
         Row: {
           brand_id: string
@@ -2455,6 +2536,39 @@ export type Database = {
           },
         ]
       }
+      signup_events: {
+        Row: {
+          created_at: string
+          email: string | null
+          event: string
+          id: number
+          ip: unknown
+          meta: Json
+          ua: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          event: string
+          id?: never
+          ip?: unknown
+          meta?: Json
+          ua?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          event?: string
+          id?: never
+          ip?: unknown
+          meta?: Json
+          ua?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       storefront_collection_products: {
         Row: {
           collection_id: string
@@ -2531,6 +2645,47 @@ export type Database = {
           },
         ]
       }
+      storefront_page_sections: {
+        Row: {
+          created_at: string
+          id: string
+          is_visible: boolean
+          page_id: string
+          position: number
+          props: Json
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_visible?: boolean
+          page_id: string
+          position?: number
+          props?: Json
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_visible?: boolean
+          page_id?: string
+          position?: number
+          props?: Json
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_page_sections_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "storefront_pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       storefront_pages: {
         Row: {
           body_md: string | null
@@ -2587,47 +2742,6 @@ export type Database = {
           },
         ]
       }
-      storefront_page_sections: {
-        Row: {
-          created_at: string
-          id: string
-          is_visible: boolean
-          page_id: string
-          position: number
-          props: Json
-          type: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          is_visible?: boolean
-          page_id: string
-          position?: number
-          props?: Json
-          type: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          is_visible?: boolean
-          page_id?: string
-          position?: number
-          props?: Json
-          type?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "storefront_page_sections_page_id_fkey"
-            columns: ["page_id"]
-            isOneToOne: false
-            referencedRelation: "storefront_pages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       storefront_products: {
         Row: {
           added_at: string
@@ -2670,6 +2784,7 @@ export type Database = {
         Row: {
           about_md: string | null
           accent_hex: string
+          brand_id: string | null
           contact_email: string | null
           contact_phone: string | null
           created_at: string
@@ -2694,6 +2809,7 @@ export type Database = {
         Insert: {
           about_md?: string | null
           accent_hex?: string
+          brand_id?: string | null
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string
@@ -2718,6 +2834,7 @@ export type Database = {
         Update: {
           about_md?: string | null
           accent_hex?: string
+          brand_id?: string | null
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string
@@ -2739,7 +2856,15 @@ export type Database = {
           theme?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "storefronts_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stores: {
         Row: {
@@ -3286,6 +3411,15 @@ export type Database = {
         Args: { p_store_id: string }
         Returns: undefined
       }
+      business_has_other_owner: {
+        Args: { p_business_id: string; p_user: string }
+        Returns: boolean
+      }
+      can_manage_business_access: {
+        Args: { p_business_id: string; p_user: string }
+        Returns: boolean
+      }
+      canonical_email: { Args: { p_email: string }; Returns: string }
       claim_sync_queue_batch: {
         Args: { p_limit: number }
         Returns: {
@@ -3309,6 +3443,39 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      create_additional_business: {
+        Args: { p_business_name: string; p_user_id: string }
+        Returns: Json
+      }
+      create_business_with_owner: {
+        Args: {
+          p_currency?: string
+          p_logo_url?: string
+          p_name: string
+          p_slug: string
+          p_timezone?: string
+        }
+        Returns: {
+          address: string | null
+          created_at: string
+          currency: string
+          email: string | null
+          id: string
+          is_active: boolean
+          logo_url: string | null
+          name: string
+          phone: string | null
+          slug: string
+          timezone: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "businesses"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       enqueue_order_push: {
         Args: { p_order_id: string; p_reason?: string }
         Returns: undefined
@@ -3320,6 +3487,42 @@ export type Database = {
       generate_pos_order_number: {
         Args: { p_source?: string; p_store_id?: string }
         Returns: string
+      }
+      get_auth_signup_state: {
+        Args: { p_email: string }
+        Returns: {
+          email: string
+          email_confirmed_at: string
+          id: string
+          invited_at: string
+        }[]
+      }
+      get_member_access: {
+        Args: { p_business: string; p_user: string }
+        Returns: {
+          business_role: string
+          effective_perms: string[]
+          store_ids: string[]
+        }[]
+      }
+      get_my_businesses: {
+        Args: never
+        Returns: {
+          id: string
+          logo_url: string
+          name: string
+          role: string
+          slug: string
+        }[]
+      }
+      get_my_managed_businesses: {
+        Args: never
+        Returns: {
+          id: string
+          logo_url: string
+          name: string
+          slug: string
+        }[]
       }
       get_sync_alert_webhook_url: { Args: never; Returns: string }
       get_sync_worker_cron_token: { Args: never; Returns: string }
@@ -3356,9 +3559,16 @@ export type Database = {
           merged_phone: string
         }[]
       }
+      my_business_role: {
+        Args: { p_business_id: string; p_user: string }
+        Returns: string
+      }
       normalize_bd_phone: { Args: { _phone: string }; Returns: string }
+      provision_owner_business: {
+        Args: { p_nonce: string; p_user_id: string }
+        Returns: Json
+      }
       purge_trashed_orders: { Args: never; Returns: undefined }
-      recon_multi_business: { Args: never; Returns: Json }
       recover_orphaned_sync_rows: {
         Args: { p_stale_before: string }
         Returns: number
@@ -3367,12 +3577,17 @@ export type Database = {
         Args: { p_store_id: string }
         Returns: undefined
       }
+      set_member_business_role: {
+        Args: { p_business: string; p_role: string; p_user: string }
+        Returns: undefined
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
-      storefront_place_order: {
-        Args: { p_payload: Json }
+      signup_create_business_core: {
+        Args: { p_business_name: string; p_user_id: string }
         Returns: Json
       }
+      storefront_place_order: { Args: { p_payload: Json }; Returns: Json }
       storefront_restore_stock: {
         Args: { p_order_id: string }
         Returns: undefined
@@ -3381,38 +3596,8 @@ export type Database = {
         Args: { _store_id: string; _user_id: string }
         Returns: boolean
       }
-      get_my_managed_businesses: {
-        Args: never
-        Returns: {
-          id: string
-          name: string
-          slug: string
-          logo_url: string | null
-        }[]
-      }
-      get_member_access: {
-        Args: { p_user: string; p_business: string }
-        Returns: {
-          business_role: string | null
-          store_ids: string[] | null
-          effective_perms: string[] | null
-        }[]
-      }
-      set_member_business_role: {
-        Args: { p_user: string; p_business: string; p_role: string }
-        Returns: undefined
-      }
-      create_business_with_owner: {
-        Args: {
-          p_name: string
-          p_slug: string
-          p_logo_url?: string
-          p_currency?: string
-          p_timezone?: string
-        }
-        Returns: Json
-      }
-      verify_multi_business_foundation: { Args: never; Returns: Json }
+      verify_signup_fns: { Args: never; Returns: Json }
+      verify_signup_tables: { Args: never; Returns: Json }
     }
     Enums: {
       app_permission:

@@ -1,7 +1,18 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { type BrandSlug, type Storefront, loadStorefront } from "./lib/brand";
-import { computeAccentVars, activeBackgroundLightness } from "./lib/theme";
+import { computeAccentVars, activeBackgroundLightness, hexToHslTriplet } from "./lib/theme";
+
+/** Load a Google Fonts family (idempotent per family). */
+function loadGoogleFont(family: string) {
+  const id = `sf-font-${family.toLowerCase().replace(/\s+/g, "-")}`;
+  if (document.getElementById(id)) return;
+  const link = document.createElement("link");
+  link.id = id;
+  link.rel = "stylesheet";
+  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;500;600;700&display=swap`;
+  document.head.appendChild(link);
+}
 
 interface Ctx {
   brand: BrandSlug;
@@ -84,6 +95,42 @@ export function BrandProvider({
           document.head.appendChild(link);
         }
         link.href = sf.favicon_url;
+      }
+
+      // Overhaul 4.2: theme token customizer — granular tokens override the
+      // theme's CSS values. Fonts load from Google Fonts when a family is set.
+      const tokens = (sf as any).tokens as Record<string, any> | undefined;
+      if (tokens) {
+        const hexVars: Record<string, string> = {
+          "--primary": tokens.color_primary,
+          "--secondary": tokens.color_secondary,
+          "--card": tokens.color_surface,
+          "--background": tokens.color_surface,
+          "--foreground": tokens.color_text,
+          "--muted-foreground": tokens.color_muted,
+          "--border": tokens.color_border,
+          "--sf-accent-hex": tokens.color_accent,
+        };
+        for (const [name, hex] of Object.entries(hexVars)) {
+          if (hex) {
+            document.documentElement.style.setProperty(name, hexToHslTriplet(hex) ?? hex);
+            applied.push(name);
+          }
+        }
+        if (tokens.font_display) {
+          document.documentElement.style.setProperty("--font-display", `"${tokens.font_display}", sans-serif`);
+          applied.push("--font-display");
+          loadGoogleFont(tokens.font_display);
+        }
+        if (tokens.font_body) {
+          document.documentElement.style.setProperty("--font-body", `"${tokens.font_body}", sans-serif`);
+          applied.push("--font-body");
+          loadGoogleFont(tokens.font_body);
+        }
+        if (Number.isFinite(Number(tokens.corner_radius_px))) {
+          document.documentElement.style.setProperty("--radius", `${tokens.corner_radius_px}px`);
+          applied.push("--radius");
+        }
       }
     }
     return () => {
