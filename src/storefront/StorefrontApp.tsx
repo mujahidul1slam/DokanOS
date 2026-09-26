@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes, Navigate } from "react-router-dom";
+import { Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { BrandProvider } from "./BrandContext";
 import type { BrandSlug, Storefront } from "./lib/brand";
@@ -25,6 +25,13 @@ const Fallback = () => (
     <Loader2 className="h-6 w-6 animate-spin text-primary" />
   </div>
 );
+
+/** Catch-all that never hijacks standalone /lp/ routes (overhaul 3.3). */
+function CatchAllGuard({ basePath }: { basePath: string }) {
+  const loc = useLocation();
+  if (loc.pathname.startsWith(`${basePath}/lp/`)) return null;
+  return <Navigate to={basePath} replace />;
+}
 
 export default function StorefrontApp({
   brand,
@@ -63,7 +70,9 @@ export default function StorefrontApp({
             <Route path={`${basePath}/contact`} element={<Contact />} />
             <Route path={`${basePath}/policies`} element={<Policies />} />
             <Route path={`${basePath}/pages/:slug`} element={<CustomPage />} />
-            <Route path="*" element={<Navigate to={basePath} replace />} />
+            {/* Sibling Routes blocks match independently — without this guard
+                the catch-all hijacks /lp/ routes back to home (overhaul 3.3). */}
+            <Route path="*" element={<CatchAllGuard basePath={basePath} />} />
           </Routes>
         </Suspense>
       </StorefrontLayout>
