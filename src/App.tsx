@@ -52,6 +52,7 @@ const StorefrontPreview = lazy(() =>
   ),
 );
 const StoresHub = lazy(() => import("./pages/StoresHub"));
+const VisualPageBuilder = lazy(() => import("@/components/storefront-admin/VisualPageBuilder"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -135,9 +136,10 @@ const AppRoutes = () => {
               <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
               <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
               <Route path="/storefronts" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
-              {/* Storefront admin surfaces are handled BY StorefrontsPage
-                  (it parses /storefronts/:slug/admin/:surface from the URL,
-                  fixes C): one route, no per-surface duplication. */}
+              {/* Visual page builder (fix E): /admin/pages/:pageId/edit — two-pane
+                  palette→canvas editor; own route so it takes over the content
+                  area completely (not nested inside the admin shell panel). */}
+              <Route path="/storefronts/:slug/admin/pages/:pageId/edit" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<PageFallback />}><VisualPageBuilder /></Suspense></PermissionGuard>} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFound />} />

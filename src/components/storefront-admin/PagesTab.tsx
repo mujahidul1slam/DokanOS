@@ -228,7 +228,7 @@ function PagesSection({ sf }: { sf: Storefront }) {
                   Edit
                 </Button>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => setSelectedId(p.id)}>
+                <Button size="sm" variant="outline" onClick={() => window.location.assign(`/storefronts/${sf.slug}/admin/pages/${p.id}/edit`)}>
                   Edit
                 </Button>
               )}
