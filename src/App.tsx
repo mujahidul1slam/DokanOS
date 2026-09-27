@@ -51,12 +51,6 @@ const StorefrontPreview = lazy(() =>
     }),
   ),
 );
-const StorefrontAdminShell = lazy(() => import("@/components/storefront-admin/StorefrontAdminShell"));
-const StorefrontOverview = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.StorefrontOverview })));
-const ThemeGallery = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.ThemeGallery })));
-const AdminHelp = lazy(() => import("@/components/storefront-admin/AdminPages").then(m => ({ default: m.AdminHelp })));
-const StorefrontAdminEditor = lazy(() => import("@/components/storefront-admin/StorefrontAdminEditor"));
-const HealthPanel = lazy(() => import("@/components/storefront-admin/HealthPanel"));
 const StoresHub = lazy(() => import("./pages/StoresHub"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -88,25 +82,6 @@ const PageFallback = () => (
     <Loader2 className="h-6 w-6 animate-spin text-primary" />
   </div>
 );
-
-// Shared admin route wrapper: PermissionGuard + TWO Suspense boundaries.
-// The admin shell routes live outside DashboardLayout, so without this wrapper
-// their lazy() components suspend with no boundary above them — React 18 then
-// throws Minified error #426 ("component suspended while responding to
-// synchronous input") on every navigation. Outer boundary covers the lazy
-// shell itself; inner boundary keeps the shell mounted while surface chunks
-// load (sidebar doesn't flash).
-function StorefrontAdminRoute({ children }: { children: ReactNode }) {
-  return (
-    <PermissionGuard permission="storefronts.view">
-      <Suspense fallback={<FullScreenLoader label="Loading…" />}>
-        <StorefrontAdminShell>
-          <Suspense fallback={<PageFallback />}>{children}</Suspense>
-        </StorefrontAdminShell>
-      </Suspense>
-    </PermissionGuard>
-  );
-}
 
 const AppRoutes = () => {
   const { user, loading } = useAuth();
@@ -160,28 +135,9 @@ const AppRoutes = () => {
               <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
               <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
               <Route path="/storefronts" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
-              {/* Storefront admin — unified into the dashboard (overhaul 2.1) */}
-              <Route path="/storefronts/:slug/admin" element={<StorefrontAdminRoute><Navigate to="dashboard" replace /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/dashboard" element={<StorefrontAdminRoute><StorefrontOverview /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/theme" element={<StorefrontAdminRoute><ThemeGallery /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/tokens" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="tokens" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/builder" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="builder" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/pages" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="pages" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/collections" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="collections" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/products" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="products" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/identity" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="identity" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/header-footer" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="header-footer" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/product-page" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="product-page" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/product-card" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="product-card" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/shop-page" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="shop-page" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/animations" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="animations" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/delivery" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="delivery" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/payments" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="payments" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/domains" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="domains" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/policies" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="policies" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/settings" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="settings" /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/help" element={<StorefrontAdminRoute><AdminHelp /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/:slug/admin/health" element={<StorefrontAdminRoute><HealthPanel /></StorefrontAdminRoute>} />
+              {/* Storefront admin surfaces are handled BY StorefrontsPage
+                  (it parses /storefronts/:slug/admin/:surface from the URL,
+                  fixes C): one route, no per-surface duplication. */}
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFound />} />

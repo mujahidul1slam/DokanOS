@@ -1,38 +1,50 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import { ExternalLink, Loader2, Plus, LayoutDashboard, Files, FolderOpen, List, Building2, Grid3X3, Square, LayoutTemplate, PanelsTopLeft, Sparkles, Truck, CreditCard, FileText, Settings, Globe } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Loader2, Plus } from "lucide-react";
 import { invalidateSlugCache } from "@/storefront/lib/brand";
 import type { Storefront } from "@/storefront/lib/brand";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
-import BrandProfileTab from "@/components/storefront-admin/BrandProfileTab";
-import SocialPoliciesTab from "@/components/storefront-admin/SocialPoliciesTab";
-import DomainsTab from "@/components/storefront-admin/DomainsTab";
-import ProductsTab from "@/components/storefront-admin/ProductsTab";
-import PagesTab from "@/components/storefront-admin/PagesTab";
-import CollectionsTab from "@/components/storefront-admin/CollectionsTab";
-import SettingsTab from "@/components/storefront-admin/SettingsTab";
-import CardStyleTab from "@/components/storefront-admin/CardStyleTab";
-import ProductPageTab from "@/components/storefront-admin/ProductPageTab";
-import ShopPageTab from "@/components/storefront-admin/ShopPageTab";
-import HeaderFooterTab from "@/components/storefront-admin/HeaderFooterTab";
-import AnimationsTab from "@/components/storefront-admin/AnimationsTab";
-import DeliveryTab from "@/components/storefront-admin/DeliveryTab";
-import PaymentsTab from "@/components/storefront-admin/PaymentsTab";
 import { THEME_PRESETS } from "@/components/storefront-admin/shared";
+import StorefrontAdminShell from "@/components/storefront-admin/StorefrontAdminShell";
+import { StorefrontOverview } from "@/components/storefront-admin/AdminPages";
+import StorefrontAdminEditor from "@/components/storefront-admin/StorefrontAdminEditor";
 
-/** Storefronts admin shell — the former 818-line page, split into tabs (Phase 1 refactor). */
+/**
+ * Storefronts (overhaul 2.1 / fix C + D): clicking "Storefronts" in the main
+ * sidebar renders the admin panel DIRECTLY — no secondary page, no button.
+ * The legacy tabbed editor is removed. Storefront switching happens in the
+ * panel header; each storefront shows its brand (2.2).
+ *
+ * URL forms handled:
+ *   /storefronts                          → last-used (or first) storefront, Overview
+ *   /storefronts/:slug/admin              → that storefront, Overview
+ *   /storefronts/:slug/admin/<surface>    → that storefront, that surface
+ */
+const LAST_SF_KEY = "dokanos-admin-last-storefront";
+
+function useSlugFromUrl(): string | undefined {
+  const loc = useLocation();
+  const m = loc.pathname.match(/^\/storefronts\/([^/]+)(?:\/|$)/);
+  return m?.[1];
+}
+function useSurfaceFromUrl(): string | null {
+  const loc = useLocation();
+  const m = loc.pathname.match(/^\/storefronts\/[^/]+\/admin\/([^/]+)/);
+  return m?.[1] || null;
+}
+
 export default function StorefrontsPage() {
+  const navigate = useNavigate();
+  const urlSlug = useSlugFromUrl();
+  const urlSurface = useSurfaceFromUrl();
   const [list, setList] = useState<Storefront[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -44,204 +56,100 @@ export default function StorefrontsPage() {
   }
 
   useEffect(() => {
-    supabase.from("storefronts").select("*").order("name").then(({ data }) => {
-      setList((data as any) || []);
-      setActiveId((data?.[0] as any)?.id ?? null);
-      setLoading(false);
-    });
+    reload().then(() => setLoading(false));
   }, []);
 
-  const active = list.find((s) => s.id === activeId);
+  // Resolve the active storefront: URL slug → last-used → first
+  const active =
+    (urlSlug && list.find((s) => s.slug === urlSlug)) ||
+    list.find((s) => s.slug === localStorage.getItem(LAST_SF_KEY)) ||
+    list[0] ||
+    null;
+
+  // Persist the selection for plain /storefronts visits
+  useEffect(() => {
+    if (active) localStorage.setItem(LAST_SF_KEY, active.slug);
+  }, [active?.slug]);
+
+  const surface = urlSurface || "dashboard";
+
+  // Keep the URL in sync when the resolved storefront differs from the URL
+  // (e.g. plain /storefronts → /storefronts/<slug>/admin/dashboard).
+  useEffect(() => {
+    if (!loading && active && (!urlSlug || urlSlug !== active.slug)) {
+      navigate(`/storefronts/${active.slug}/admin/${surface}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, active?.slug, urlSlug]);
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></div>;
 
-  return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Storefronts</h1>
-        </div>
-        <div className="flex gap-2 items-center flex-wrap">
-          {list.map((s) => (
-            <Button
-              key={s.id}
-              size="sm"
-              variant={s.id === activeId ? "default" : "outline"}
-              onClick={() => setActiveId(s.id)}
-            >
-              {s.name}
-            </Button>
-          ))}
-          <CreateStorefrontDialog
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            onCreate={async (newSf) => {
-              await reload();
-              setActiveId(newSf.id);
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Entry point to the dedicated Bonik-style admin panel (the shell built in the parity plan).
-          Without this button the admin at /storefronts/:slug/admin/* is undiscoverable. */}
-      {active && (
-        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium">Design & manage {active.name} in the new admin panel</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Dashboard, theme gallery, page builder, editors with live preview, delivery & payments — all in one place.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link to={`/storefronts/${active.slug}/admin/dashboard`}>
-              <Button size="sm" className="gap-2">
-                <LayoutDashboard className="h-4 w-4" /> Open admin panel
-              </Button>
-            </Link>
-            <a href={`/storefront/${active.slug}`} target="_blank" rel="noreferrer">
-              <Button size="sm" variant="outline" className="gap-2">
-                <ExternalLink className="h-4 w-4" /> View live
-              </Button>
-            </a>
-          </div>
-        </div>
-      )}
-
-      {active && (
-        <StorefrontEditor
-          sf={active}
-          onUpdate={(s) => {
-            setList((l) => l.map((x) => (x.id === s.id ? s : x)));
-            invalidateSlugCache();
-          }}
+  if (!active) {
+    return (
+      <div className="max-w-3xl mx-auto py-20 text-center space-y-4">
+        <h1 className="text-2xl font-semibold">Storefronts</h1>
+        <p className="text-sm text-muted-foreground">No storefronts yet. Create your first one to get started.</p>
+        <CreateStorefrontDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onCreate={async (newSf) => { await reload(); navigate(`/storefronts/${newSf.slug}/admin/dashboard`); }}
+          autoOpen
         />
-      )}
-    </div>
-  );
-}
-
-function StorefrontEditor({ sf, onUpdate }: { sf: Storefront; onUpdate: (s: Storefront) => void }) {
-  const [tab, setTab] = useState("pages");
-
-  const GROUPS: { label: string; tabs: { id: string; label: string; icon: React.ReactNode }[] }[] = [
-    {
-      label: "Content",
-      tabs: [
-        { id: "pages", label: "Pages", icon: <Files className="h-4 w-4" /> },
-        { id: "collections", label: "Collections", icon: <FolderOpen className="h-4 w-4" /> },
-        { id: "products", label: "Products", icon: <List className="h-4 w-4" /> },
-      ],
-    },
-    {
-      label: "Design",
-      tabs: [
-        { id: "profile", label: "Brand profile", icon: <Building2 className="h-4 w-4" /> },
-        { id: "cardstyle", label: "Card style", icon: <Grid3X3 className="h-4 w-4" /> },
-        { id: "productpage", label: "Product page", icon: <Square className="h-4 w-4" /> },
-        { id: "shoppage", label: "Shop page", icon: <LayoutTemplate className="h-4 w-4" /> },
-        { id: "headerfooter", label: "Header & Footer", icon: <PanelsTopLeft className="h-4 w-4" /> },
-        { id: "animations", label: "Animations", icon: <Sparkles className="h-4 w-4" /> },
-      ],
-    },
-    {
-      label: "Commerce",
-      tabs: [
-        { id: "delivery", label: "Delivery", icon: <Truck className="h-4 w-4" /> },
-        { id: "payments", label: "Payments", icon: <CreditCard className="h-4 w-4" /> },
-      ],
-    },
-    {
-      label: "Configuration",
-      tabs: [
-        { id: "content", label: "Social & policies", icon: <FileText className="h-4 w-4" /> },
-        { id: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
-        { id: "domains", label: "Domains", icon: <Globe className="h-4 w-4" /> },
-      ],
-    },
-  ];
-
-  const content = (() => {
-    switch (tab) {
-      case "pages": return <PagesTab sf={sf} />;
-      case "collections": return <CollectionsTab sf={sf} />;
-      case "products": return <ProductsTab sf={sf} />;
-      case "profile": return <BrandProfileTab sf={sf} onUpdate={onUpdate} />;
-      case "cardstyle": return <CardStyleTab sf={sf} onUpdate={onUpdate} />;
-      case "productpage": return <ProductPageTab sf={sf} onUpdate={onUpdate} />;
-      case "shoppage": return <ShopPageTab sf={sf} onUpdate={onUpdate} />;
-      case "headerfooter": return <HeaderFooterTab sf={sf} onUpdate={onUpdate} />;
-      case "animations": return <AnimationsTab sf={sf} onUpdate={onUpdate} />;
-      case "delivery": return <DeliveryTab sf={sf} onUpdate={onUpdate} />;
-      case "payments": return <PaymentsTab sf={sf} onUpdate={onUpdate} />;
-      case "content": return <SocialPoliciesTab sf={sf} onUpdate={onUpdate} />;
-      case "settings": return <SettingsTab sf={sf} onUpdate={onUpdate} />;
-      case "domains": return <DomainsTab sf={sf} onUpdate={onUpdate} />;
-      default: return null;
-    }
-  })();
+      </div>
+    );
+  }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>{sf.name}</CardTitle>
-          <div className="flex items-center gap-2 mt-1">
-            <Badge variant="outline">/{sf.slug}</Badge>
-            <Badge variant={sf.is_active ? "default" : "secondary"}>{sf.is_active ? "Live" : "Hidden"}</Badge>
-          </div>
-        </div>
-        <a href={`/storefront/${sf.slug}`} target="_blank" rel="noreferrer">
-          <Button variant="outline" size="sm" className="gap-2"><ExternalLink className="h-4 w-4" /> View live</Button>
-        </a>
-      </CardHeader>
-      <CardContent>
-        <div className="flex gap-6">
-          {/* Vertical tab rail (Settings-page pattern): grouped, icons, active highlight */}
-          <nav className="w-52 shrink-0 space-y-4">
-            {GROUPS.map((g) => (
-              <div key={g.label} className="space-y-0.5">
-                <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-3 mb-1.5">
-                  {g.label}
-                </h2>
-                {g.tabs.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setTab(t.id)}
-                    className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
-                      tab === t.id
-                        ? "bg-secondary text-foreground font-medium"
-                        : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-                    }`}
-                  >
-                    {t.icon}
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </nav>
-
-          <div className="flex-1 min-w-0">{content}</div>
-        </div>
-      </CardContent>
-    </Card>
+    <StorefrontAdminShell
+      sfOverride={active}
+      list={list}
+      onSwitch={(s) => navigate(`/storefronts/${s.slug}/admin/${surface}`)}
+      onCreate={() => setCreateOpen(true)}
+    >
+      <StorefrontAdminEditor sf={active} surface={surface} onUpdate={(s) => {
+        setList((l) => l.map((x) => (x.id === s.id ? s : x)));
+        invalidateSlugCache();
+      }} />
+      <CreateStorefrontDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreate={async (newSf) => { await reload(); navigate(`/storefronts/${newSf.slug}/admin/dashboard`); }}
+      />
+    </StorefrontAdminShell>
   );
 }
 
-function CreateStorefrontDialog({ open, onOpenChange, onCreate }: { open: boolean, onOpenChange: (open: boolean) => void, onCreate: (sf: any) => void }) {
+/* ---------------- Create storefront (fix D: brand picker + auto-create) ---------------- */
+
+function CreateStorefrontDialog({ open, onOpenChange, onCreate, autoOpen }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreate: (sf: any) => void;
+  /** Empty-state mode: the trigger button is hidden (page auto-opens the dialog). */
+  autoOpen?: boolean;
+}) {
   const { active: activeBusiness } = useBusinessContext();
   const businessId = activeBusiness?.id ?? null;
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [theme, setTheme] = useState("editorial");
+  const [brandChoice, setBrandChoice] = useState<string>("__new");
+  const [brands, setBrands] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Brands of the active business (fix D: pick existing instead of always creating)
+  useEffect(() => {
+    if (!businessId) { setBrands([]); return; }
+    supabase.from("brands").select("id,name").eq("business_id", businessId).order("name")
+      .then(({ data }) => setBrands((data as any) || []));
+  }, [businessId, open]);
 
   useEffect(() => {
     if (!open) {
       setName("");
       setSlug("");
       setTheme("editorial");
+      setBrandChoice("__new");
     }
   }, [open]);
 
@@ -262,24 +170,29 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate }: { open: boolea
       cinematic: "#ffffff",
       minimal: "#000000",
       warm: "#b56149",
+      nimbus: "#2563EB",
+      saffron: "#C2410C",
     };
 
     const { data: storeData } = await supabase.from("stores").select("id").limit(1).maybeSingle();
 
-    // Overhaul 2.2: every storefront belongs to a brand (root container).
-    // The brand is created under the ACTIVE BUSINESS; when none exists the
-    // relationship stays explicit via this auto-created brand row.
+    // Overhaul 2.2 + fix D: brand is the root container. Use the picked
+    // existing brand; "__new" auto-creates one matching the storefront name.
     let brandId: string | null = null;
     if (businessId) {
-      const { data: brandRow, error: brandErr } = await supabase
-        .from("brands")
-        .insert({ name: name.trim(), slug: slug.trim(), business_id: businessId })
-        .select()
-        .single();
-      if (brandErr) {
-        toast({ title: "Brand creation failed", description: brandErr.message, variant: "destructive" });
+      if (brandChoice !== "__new" && brands.some((b) => b.id === brandChoice)) {
+        brandId = brandChoice;
+      } else {
+        const { data: brandRow, error: brandErr } = await supabase
+          .from("brands")
+          .insert({ name: name.trim(), slug: slug.trim(), business_id: businessId })
+          .select()
+          .single();
+        if (brandErr) {
+          toast({ title: "Brand creation failed", description: brandErr.message, variant: "destructive" });
+        }
+        brandId = (brandRow as any)?.id ?? null;
       }
-      brandId = (brandRow as any)?.id ?? null;
     }
 
     const { data, error } = await supabase.from("storefronts").insert({
@@ -311,17 +224,19 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate }: { open: boolea
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button variant="default" size="sm" className="gap-2">
-          <Plus className="h-4 w-4" /> New Storefront
-        </Button>
-      </DialogTrigger>
+      {!autoOpen && (
+        <DialogTrigger asChild>
+          <Button variant="default" size="sm" className="gap-2">
+            <Plus className="h-4 w-4" /> New Storefront
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-[500px]">
         <form onSubmit={handleCreate}>
           <DialogHeader>
             <DialogTitle>Create new storefront</DialogTitle>
             <DialogDescription>
-              Launch a new native storefront brand. You can configure domains and content later.
+              Launch a new native storefront under a brand. Starter pages are created automatically.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-6">
@@ -332,7 +247,22 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate }: { open: boolea
             <div className="grid gap-2">
               <Label htmlFor="slug">URL Slug</Label>
               <Input id="slug" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} required placeholder="e.g. my-brand" />
-              <p className="text-xs text-muted-foreground">Will be accessible at shohoz.biz/storefront/{slug || "..."}</p>
+              <p className="text-xs text-muted-foreground">Will be accessible at /storefront/{slug || "..."}</p>
+            </div>
+            <div className="grid gap-2">
+              <Label>Brand</Label>
+              <Select value={brandChoice} onValueChange={setBrandChoice}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pick a brand…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__new">Create new brand (“{name || "name"}”)</SelectItem>
+                  {brands.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Every storefront belongs to a brand — pick an existing one or create a new one.</p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="theme">Initial Theme</Label>

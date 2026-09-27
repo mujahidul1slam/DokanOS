@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   LayoutDashboard, Palette, LayoutTemplate, Files, FolderOpen, Building2,
   PanelsTopLeft, Square, Grid3X3, List, Truck, CreditCard, Sparkles,
-  Globe, FileText, Settings, HelpCircle, Search, ExternalLink, X, Loader2, ChevronLeft, Activity,
+  Globe, FileText, Settings, HelpCircle, Search, ExternalLink, X, Loader2, ChevronLeft, Activity, Plus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -70,22 +70,24 @@ const GROUPS: { label: string; items: { label: string; path: string; icon: React
   },
 ];
 
-export default function StorefrontAdminShell({ children }: { children: ReactNode }) {
-  const { slug } = useParams();
-  const loc = useLocation();
+export default function StorefrontAdminShell({ children, sfOverride, list, onSwitch, onCreate, surface = "dashboard" }: {
+  children: ReactNode;
+  /** The active storefront — resolved by the parent (StorefrontsPage). */
+  sfOverride?: Storefront;
+  /** All storefronts — powers the switcher in the header. */
+  list?: Storefront[];
+  /** Switch storefront (parent navigates / persists). */
+  onSwitch?: (s: Storefront) => void;
+  /** Open the create dialog (parent owns it). */
+  onCreate?: () => void;
+  /** Current surface key (dashboard/theme/builder/...). */
+  surface?: string;
+}) {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [sf, setSf] = useState<Storefront | null | undefined>(undefined);
+  const sf = sfOverride ?? null;
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    if (!slug) { setSf(null); return; }
-    supabase.from("storefronts").select("*").eq("slug", slug).maybeSingle()
-      .then(({ data }) => { if (alive) setSf((data as unknown as Storefront) || null); });
-    return () => { alive = false; };
-  }, [slug]);
 
   // Hooks-order rule: ALL hooks must run before any early return.
   const paletteItems = useMemo(() => {
@@ -108,14 +110,11 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  if (sf === undefined) {
-    return <div className="flex h-[60vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
-  }
   if (!sf) {
     return <div className="flex h-[60vh] items-center justify-center text-muted-foreground">Storefront not found.</div>;
   }
 
-  const base = `/storefronts/${slug}/admin`;
+  const base = `/storefronts/${sf.slug}/admin`;
 
   const surfacePages: Record<string, boolean> = {
     "header-footer": true, "product-page": true, "product-card": true, "shop-page": true,
@@ -124,7 +123,7 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
     "collections": true, "products": true, "help": false, "dashboard": false,
   };
 
-  const currentSurface = loc.pathname.replace(`${base}/`, "").split("/")[0] || "dashboard";
+  const currentSurface = surface;
   const hasPreview = !!surfacePages[currentSurface];
 
   return (
@@ -140,6 +139,27 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
             <div className="text-base font-semibold">{sf.name}</div>
             <div className="text-xs text-muted-foreground">/{sf.slug}</div>
           </div>
+          {/* Storefront switcher (fix C) */}
+          {list && list.length > 1 && (
+            <div className="mt-3">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5">Switch storefront</div>
+              <div className="space-y-0.5">
+                {list.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onSwitch?.(s)}
+                    className={`w-full flex items-center justify-between gap-2 rounded px-2 py-1.5 text-xs transition-colors ${
+                      s.id === sf.id ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span className="truncate">{s.name}</span>
+                    {(s as any).brand_id && <span className="text-[9px] text-muted-foreground shrink-0">brand</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <button
@@ -158,7 +178,7 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
               <div className="space-y-0.5">
                 {g.items.map((item) => {
                   const to = `${base}/${item.path}`;
-                  const active = loc.pathname === to || (item.path === "dashboard" && loc.pathname === base);
+                  const active = currentSurface === item.path;
                   return (
                     <Link
                       key={item.path}
@@ -197,8 +217,13 @@ export default function StorefrontAdminShell({ children }: { children: ReactNode
             {GROUPS.flatMap((g) => g.items).find((i) => i.path === currentSurface)?.label || "Dashboard"}
           </h1>
           <div className="flex items-center gap-2">
+            {onCreate && (
+              <Button variant="outline" size="sm" className="gap-1" onClick={onCreate}>
+                <Plus className="h-3.5 w-3.5" /> New
+              </Button>
+            )}
             {hasPreview && (
-              <a href={`/storefront/${slug}`} target="_blank" rel="noreferrer">
+              <a href={`/storefront/${sf.slug}`} target="_blank" rel="noreferrer">
                 <Button variant="outline" size="sm" className="gap-2">
                   <ExternalLink className="h-3.5 w-3.5" /> View Store
                 </Button>
