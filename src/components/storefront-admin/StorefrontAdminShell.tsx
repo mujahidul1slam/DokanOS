@@ -59,6 +59,7 @@ const GROUPS: { label: string; items: { label: string; path: string; icon: React
     label: "CHECKOUT & SHIPPING",
     items: [
       { label: "Delivery & Shipping", path: "delivery", icon: <Truck className="h-4 w-4" /> },
+      { label: "Checkout Fields", path: "checkout-fields", icon: <List className="h-4 w-4" /> },
       { label: "Payment Methods", path: "payments", icon: <CreditCard className="h-4 w-4" /> },
     ],
   },
