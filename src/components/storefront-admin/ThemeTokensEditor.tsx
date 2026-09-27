@@ -12,8 +12,10 @@ import type { Storefront } from "@/storefront/lib/brand";
 import { mergeSettings, DEFAULT_TOKENS, type StorefrontTokens } from "@/storefront/lib/settings";
 
 const FONT_FAMILIES = [
-  "", "Inter", "Poppins", "Montserrat", "Playfair Display", "Lora", "Space Grotesk", "DM Sans",
+  "__theme", "Inter", "Poppins", "Montserrat", "Playfair Display", "Lora", "Space Grotesk", "DM Sans",
 ];
+/** Radix Select forbids empty-string item values — "__theme" is the inherit sentinel. */
+const fontValue = (f: string) => (f === "__theme" ? "" : f);
 
 function TokenRow({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -77,18 +79,18 @@ export default function ThemeTokensEditor({ sf, onUpdate }: { sf: Storefront; on
         <CardContent className="pt-6 space-y-3">
           <h3 className="text-sm font-medium">Typography</h3>
           <TokenRow label="Heading font">
-            <Select value={t.font_display} onValueChange={(v) => set("font_display", v)}>
+            <Select value={t.font_display || "__theme"} onValueChange={(v) => set("font_display", fontValue(v))}>
               <SelectTrigger className="w-44"><SelectValue placeholder="Theme default" /></SelectTrigger>
               <SelectContent>
-                {FONT_FAMILIES.map((f) => <SelectItem key={f || "theme"} value={f}>{f || "Theme default"}</SelectItem>)}
+                {FONT_FAMILIES.map((f) => <SelectItem key={f} value={f}>{f === "__theme" ? "Theme default" : f}</SelectItem>)}
               </SelectContent>
             </Select>
           </TokenRow>
           <TokenRow label="Body font">
-            <Select value={t.font_body} onValueChange={(v) => set("font_body", v)}>
+            <Select value={t.font_body || "__theme"} onValueChange={(v) => set("font_body", fontValue(v))}>
               <SelectTrigger className="w-44"><SelectValue placeholder="Theme default" /></SelectTrigger>
               <SelectContent>
-                {FONT_FAMILIES.map((f) => <SelectItem key={f || "theme"} value={f}>{f || "Theme default"}</SelectItem>)}
+                {FONT_FAMILIES.map((f) => <SelectItem key={f} value={f}>{f === "__theme" ? "Theme default" : f}</SelectItem>)}
               </SelectContent>
             </Select>
           </TokenRow>

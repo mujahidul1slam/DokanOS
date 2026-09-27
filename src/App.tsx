@@ -134,8 +134,14 @@ const AppRoutes = () => {
 
   return (
     <Routes>
+      {/* Preview routes — FULL-BLEED, chrome-free (fix B): the preview iframe
+          renders the storefront page alone, NOT the admin app. Must sit
+          outside DashboardLayout so no sidebar/palette wraps the preview. */}
+      <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
+      <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
+
       {/* Standard dashboard routes — AppSidebar shell around everything.
-          The storefront admin panel (2.1) now lives INSIDE this shell as an
+          The storefront admin panel (2.1) lives INSIDE this shell as an
           in-content panel: same navigation, no hidden second app. */}
       <Route path="*" element={
         <DashboardLayout>
@@ -176,8 +182,6 @@ const AppRoutes = () => {
               <Route path="/storefronts/:slug/admin/settings" element={<StorefrontAdminRoute><StorefrontAdminEditor surface="settings" /></StorefrontAdminRoute>} />
               <Route path="/storefronts/:slug/admin/help" element={<StorefrontAdminRoute><AdminHelp /></StorefrontAdminRoute>} />
               <Route path="/storefronts/:slug/admin/health" element={<StorefrontAdminRoute><HealthPanel /></StorefrontAdminRoute>} />
-              <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
-              <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFound />} />

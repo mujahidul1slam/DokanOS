@@ -261,9 +261,17 @@ export default function Checkout() {
       clear();
       navigate(`${brandBasePath(brand)}/checkout/success/${data.order_number}`);
     } catch (err: any) {
+      // Surface the server's REAL error message (fix A): supabase-js wraps
+      // non-2xx responses in FunctionsInvokeError whose .message is generic;
+      // the actual body ({error: "..."}) lives on err.context — read it.
+      let realMessage = err?.message || "Try again.";
+      try {
+        const ctxBody = err?.context ? await err.context.json() : (typeof err?.data === "object" ? err.data : null);
+        if (ctxBody?.error) realMessage = ctxBody.error;
+      } catch { /* body not JSON — keep generic */ }
       toast({
         title: "Could not place order",
-        description: err.message || "Try again.",
+        description: realMessage,
         variant: "destructive",
       });
     } finally {

@@ -55,9 +55,13 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Invalid payload" }, 400);
     }
     const c = body.customer;
-    if (!c.name || !c.phone || !c.address || !c.city_id || !c.zone_id) {
+    if (!c.name || !c.phone || !c.address || !c.city_id) {
       return json({ error: "Missing customer fields" }, 400);
     }
+    // NOTE: zone is validated AFTER the storefront loads — the storefront's
+    // regional checkout-fields preset (settings.checkout.fields) decides
+    // whether a zone is required inside/outside Dhaka. The frontend may send
+    // zone_id = null for optional-zone regions (overhaul 5.1/fix A).
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -85,6 +89,18 @@ const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_pay
 : Object.entries(methodsMap).filter(([, v]) => !!v).map(([k]) => k);
     if (enabledMethods.length > 0 && !enabledMethods.includes(body.payment?.method)) {
       return json({ error: `Payment method ${body.payment?.method || ""} is not accepted` }, 400);
+    }
+
+    // Zone required per regional preset (overhaul 5.1 / fix A): the frontend
+    // mirrors this exact logic — inside Dhaka uses inside_dhaka_required,
+    // outside uses outside_dhaka_required. Defaults: optional inside, required outside.
+    const cf = sfSettings?.checkout?.fields || {};
+    const insideDhaka = /dhaka/i.test(String(c.city_name || ""));
+    const zoneRequired = insideDhaka
+      ? cf.inside_dhaka_required === true
+      : cf.outside_dhaka_required !== false;
+    if (zoneRequired && !c.zone_id) {
+      return json({ error: "Please select a zone for delivery" }, 400);
     }
 
     // Verify all product_ids belong to this storefront.
