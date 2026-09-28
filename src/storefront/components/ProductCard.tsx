@@ -32,7 +32,9 @@ export default function ProductCard({ p }: { p: StorefrontProduct }) {
   const c = settings.card;
   const img = p.image_urls?.[0] || p.image_url || "";
 
-  const radius = { borderRadius: `${c.corner_px}px` };
+  // Tokens customizer (overhaul 4.2) sets --radius on the root; fall back to
+  // the Card Style tab's corner_px when no token radius is configured (V8.4).
+  const radius = { borderRadius: `var(--radius, ${c.corner_px}px)` };
   const shadowCls = c.shadow === "soft" ? "shadow-sm" : c.shadow === "medium" ? "shadow-lg" : "";
   const hoverCls =
     c.hover === "zoom" ? "transition-transform duration-500 hover:scale-[1.02]" :
