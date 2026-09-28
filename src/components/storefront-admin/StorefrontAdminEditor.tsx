@@ -19,6 +19,7 @@ import DeliveryTab from "@/components/storefront-admin/DeliveryTab";
 import PaymentsTab from "@/components/storefront-admin/PaymentsTab";
 import ThemeTokensEditor from "@/components/storefront-admin/ThemeTokensEditor";
 import HealthPanel from "@/components/storefront-admin/HealthPanel";
+import { StorefrontOverview } from "@/components/storefront-admin/AdminPages";
 import EditorPage from "@/components/storefront-admin/EditorPage";
 
 /**
@@ -97,6 +98,10 @@ export default function StorefrontAdminEditor({ sf: sfProp, surface, onUpdate }:
       case "payments": return <PaymentsTab sf={sf} onUpdate={handleUpdate} />;
       case "tokens": return <ThemeTokensEditor sf={sf} onUpdate={handleUpdate} />;
       case "health": return <HealthPanel />;
+      case "dashboard":
+      case "overview":
+        // Overview dashboard (fix C): the admin home for this storefront
+        return <StorefrontOverview />;
       default: return <div className="text-muted-foreground text-sm">Unknown surface.</div>;
     }
   })();
