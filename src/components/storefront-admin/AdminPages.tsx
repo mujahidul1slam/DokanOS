@@ -11,8 +11,9 @@ import type { Storefront } from "@/storefront/lib/brand";
 
 /* ---------------- Overview dashboard (Phase C) ---------------- */
 
-export function StorefrontOverview() {
-  const { slug } = useParams();
+export function StorefrontOverview({ slugOverride }: { slugOverride?: string }) {
+  const { slug: routeSlug } = useParams();
+  const slug = slugOverride || routeSlug;
   const [sf, setSf] = useState<Storefront | null>(null);
   const [orders, setOrders] = useState<{ total: number; rows: any[]; recent: any[] }>({ total: 0, rows: [], recent: [] });
   const [productCount, setProductCount] = useState<number | null>(null);
@@ -146,17 +147,21 @@ function KpiCard({ label, value, sub, muted }: { label: string; value: string; s
 
 /* ---------------- Theme gallery (Phase B) ---------------- */
 
-export function ThemeGallery() {
-  const { slug } = useParams();
-  const [sf, setSf] = useState<Storefront | null | undefined>(undefined);
+export function ThemeGallery({ slugOverride, sfOverride, onUpdate }: { slugOverride?: string; sfOverride?: Storefront; onUpdate?: (s: Storefront) => void }) {
+  const { slug: routeSlug } = useParams();
+  const slug = slugOverride || routeSlug;
+  const [sfState, setSfState] = useState<Storefront | null | undefined>(sfOverride === undefined ? undefined : sfOverride);
+  const sf = sfState;
+  const setSf = setSfState;
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
+    if (sfOverride !== undefined) return; // preloaded by the parent (fix C inline mode)
     let alive = true;
     supabase.from("storefronts").select("*").eq("slug", slug).maybeSingle()
-      .then(({ data }) => { if (alive) setSf((data as unknown as Storefront) || null); });
+      .then(({ data }) => { if (alive) setSfState((data as unknown as Storefront) || null); });
     return () => { alive = false; };
-  }, [slug]);
+  }, [slug, sfOverride]);
 
   async function applyTheme(themeKey: string, accentHex: string) {
     if (!sf) return;
@@ -169,7 +174,8 @@ export function ThemeGallery() {
       .single();
     setSaving(null);
     if (error) return;
-    setSf(data as unknown as Storefront);
+    setSfState(data as unknown as Storefront);
+    onUpdate?.(data as unknown as Storefront);
   }
 
   if (sf === undefined) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></div>;

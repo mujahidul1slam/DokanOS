@@ -101,7 +101,7 @@ export default function StorefrontAdminEditor({ sf: sfProp, surface, onUpdate }:
       case "dashboard":
       case "overview":
         // Overview dashboard (fix C): the admin home for this storefront
-        return <StorefrontOverview />;
+        return <StorefrontOverview slugOverride={sf.slug} />;
       default: return <div className="text-muted-foreground text-sm">Unknown surface.</div>;
     }
   })();
