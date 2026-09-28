@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, MemoryRouter } from "react-router-dom";
+import { useParams, MemoryRouter, useInRouterContext } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useBrand, BrandProvider } from "@/storefront/BrandContext";
 import type { Storefront } from "@/storefront/lib/brand";
@@ -105,29 +105,38 @@ function SurfaceFrame({ surface, brand }: { surface: string; brand: string }) {
 
   // MemoryRouter lets the real page components use useParams/useNavigate
   // without touching the iframe's address bar — the URL stays frozen.
+  // Nested-Router guard (V3 crash fix): this surface renders INSIDE the app's
+  // BrowserRouter — React Router forbids a <Router> nested inside another
+  // <Router> and its prod invariant throws `new Error(undefined)` (empty
+  // message → blank "An unexpected error occurred"). Host MemoryRouter only
+  // when standalone; inside the app's Router the pages render against it
+  // directly and Link clicks navigate the app's live-path history instead.
+  const standalone = !useInRouterContext();
+
   switch (surface) {
     case "home":
     case "_builder":
-    case "_identity":
-      return (
-        <MemoryRouter initialEntries={[`/storefront/${brand}`]}>
-          <StorefrontLayout><Home /></StorefrontLayout>
-        </MemoryRouter>
-      );
-    case "_product_page":
-      return firstProductSlug ? (
-        <MemoryRouter initialEntries={[`/storefront/${brand}/product/${firstProductSlug}`]}>
-          <StorefrontLayout><Product slugOverride={firstProductSlug} /></StorefrontLayout>
-        </MemoryRouter>
-      ) : (
-        <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
-      );
-    case "_shop_page":
-      return (
-        <MemoryRouter initialEntries={[`/storefront/${brand}/shop`]}>
-          <StorefrontLayout><Shop /></StorefrontLayout>
-        </MemoryRouter>
-      );
+    case "_identity": {
+      const home = <StorefrontLayout><Home /></StorefrontLayout>;
+      return standalone ? (
+        <MemoryRouter initialEntries={[`/storefront/${brand}`]}>{home}</MemoryRouter>
+      ) : home;
+    }
+    case "_product_page": {
+      if (!firstProductSlug) {
+        return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+      }
+      const product = <StorefrontLayout><Product slugOverride={firstProductSlug} /></StorefrontLayout>;
+      return standalone ? (
+        <MemoryRouter initialEntries={[`/storefront/${brand}/product/${firstProductSlug}`]}>{product}</MemoryRouter>
+      ) : product;
+    }
+    case "_shop_page": {
+      const shop = <StorefrontLayout><Shop /></StorefrontLayout>;
+      return standalone ? (
+        <MemoryRouter initialEntries={[`/storefront/${brand}/shop`]}>{shop}</MemoryRouter>
+      ) : shop;
+    }
     default:
       return (
         <div className="flex min-h-screen items-center justify-center text-muted-foreground text-sm">
