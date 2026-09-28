@@ -136,7 +136,9 @@ const AppRoutes = () => {
               <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
               <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
               <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
-              <Route path="/storefronts" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
+              {/* Wildcard: deep admin URLs (/storefronts/:slug/admin/:surface)
+                  mount StorefrontsPage, which parses the URL itself (fix C). */}
+              <Route path="/storefronts/*" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
               {/* Visual page builder (fix E): /admin/pages/:pageId/edit — two-pane
                   palette→canvas editor; own route so it takes over the content
                   area completely (not nested inside the admin shell panel). */}
