@@ -99,7 +99,9 @@ export function BrandProvider({
 
       // Overhaul 4.2: theme token customizer — granular tokens override the
       // theme's CSS values. Fonts load from Google Fonts when a family is set.
-      const tokens = (sf as any).tokens as Record<string, any> | undefined;
+      // Tokens live at settings.tokens (the Tokens editor writes them there);
+      // reading sf.tokens (top-level) never resolved — V8.3/V8.4 fix.
+      const tokens = ((sf as any).settings as any)?.tokens as Record<string, any> | undefined;
       if (tokens) {
         const hexVars: Record<string, string> = {
           "--primary": tokens.color_primary,
