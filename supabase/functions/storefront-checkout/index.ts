@@ -152,10 +152,15 @@ const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_pay
     const varIds = body.items.map((i) => i.variation_id).filter(Boolean) as string[];
     let varMap = new Map<string, any>();
     if (varIds.length > 0) {
-      const { data: variations } = await supabase
+      // NOTE: product_variations has NO is_active column — availability rides
+      // on stock_status ("in_stock" / "out_of_stock"). Selecting the phantom
+      // column made this fetch fail silently, varMap stayed empty and every
+      // variation checkout 400'd with "not available" (V5.2 fix).
+      const { data: variations, error: varErr } = await supabase
         .from("product_variations")
-        .select("id, product_id, attributes, price, stock_quantity, manage_stock, is_active")
+        .select("id, product_id, attributes, price, stock_quantity, manage_stock, stock_status")
         .in("id", varIds);
+      if (varErr) console.error("storefront-checkout: variations fetch failed:", varErr.message);
 
       if (variations) {
         varMap = new Map(variations.map((v: any) => [v.id, v]));
@@ -177,7 +182,7 @@ const enabledMethods: string[] = Array.isArray(sfSettings?.checkout?.enabled_pay
 
       if (it.variation_id) {
         const v: any = varMap.get(it.variation_id);
-        if (!v || v.product_id !== p.id || !v.is_active) {
+        if (!v || v.product_id !== p.id || v.stock_status === "out_of_stock") {
           return json({ error: `Selected variation for ${p.name} is not available` }, 400);
         }
         // Fact 13 / M2: gate availability strictly on manage_stock && stock_quantity < it.quantity

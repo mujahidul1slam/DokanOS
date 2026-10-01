@@ -134,13 +134,13 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate, autoOpen }: {
   const [slug, setSlug] = useState("");
   const [theme, setTheme] = useState("editorial");
   const [brandChoice, setBrandChoice] = useState<string>("__new");
-  const [brands, setBrands] = useState<{ id: string; name: string }[]>([]);
+  const [brands, setBrands] = useState<{ id: string; name: string; woo_store_id?: string | null }[]>([]);
   const [saving, setSaving] = useState(false);
 
   // Brands of the active business (fix D: pick existing instead of always creating)
   useEffect(() => {
     if (!businessId) { setBrands([]); return; }
-    supabase.from("brands").select("id,name").eq("business_id", businessId).order("name")
+    supabase.from("brands").select("id, name, woo_store_id").eq("business_id", businessId).order("name")
       .then(({ data }) => setBrands((data as any) || []));
   }, [businessId, open]);
 
@@ -174,8 +174,6 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate, autoOpen }: {
       saffron: "#C2410C",
     };
 
-    const { data: storeData } = await supabase.from("stores").select("id").limit(1).maybeSingle();
-
     // Overhaul 2.2 + fix D: brand is the root container. Use the picked
     // existing brand; "__new" auto-creates one matching the storefront name.
     let brandId: string | null = null;
@@ -195,12 +193,24 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate, autoOpen }: {
       }
     }
 
+    // Scoped store resolution: pick store linked to brand/business
+    let storeId: string | null = brands.find((b) => b.id === brandId)?.woo_store_id || null;
+    if (!storeId) {
+      const activeStoreIds = brands.map((b) => b.woo_store_id).filter(Boolean) as string[];
+      let storeQuery = supabase.from("stores").select("id");
+      if (activeStoreIds.length > 0) {
+        storeQuery = storeQuery.in("id", activeStoreIds);
+      }
+      const { data: storeData } = await storeQuery.limit(1).maybeSingle();
+      storeId = storeData?.id || null;
+    }
+
     const { data, error } = await supabase.from("storefronts").insert({
       name,
       slug,
       theme,
       accent_hex: defaultAccents[theme] || "#000000",
-      store_id: storeData?.id || null,
+      store_id: storeId,
       brand_id: brandId,
       currency: "BDT",
     }).select().single();

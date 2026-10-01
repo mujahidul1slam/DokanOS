@@ -354,9 +354,10 @@ BEGIN
     RAISE EXCEPTION 'PROVISION_UNCONFIRMED: email not confirmed' USING ERRCODE = 'P0001';
   END IF;
 
-  -- Must already be a provisioned member (≥1 UBA row).
+  -- Must already be a provisioned member (≥1 UBA row) OR platform admin/staff.
   -- Sign-up-specific gates (anchor/nonce/provider/24h) intentionally absent.
-  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE user_id = p_user_id) THEN
+  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE user_id = p_user_id)
+     AND NOT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = p_user_id AND role IN ('admin', 'staff')) THEN
     RAISE EXCEPTION 'PROVISION_NOT_MEMBER: complete your account setup first'
       USING ERRCODE = 'P0001';
   END IF;

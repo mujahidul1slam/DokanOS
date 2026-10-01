@@ -4,6 +4,50 @@ All notable changes to DokanOS will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026-10-01]
+
+### Added
+
+- **Self-Serve Business Owner Sign-Up & Atomic Provisioning** (migrations `20260925120000_signup_support_tables.sql`, `20260925120100_signup_provision_fns.sql`, `20260925140000_signup_publish_and_delete_rpcs.sql`):
+  - **Full Frontend Flow**: Self-serve registration (`/signup`), verification screen (`/check-email`), email link verification (`/auth/confirm`), welcome onboarding (`/welcome`), and error recovery (`/welcome/setup-failed`).
+  - **Single Atomic Transaction (`signup_create_business_core`)**: Provisions the root business, brand, default location ('Main', showroom), disconnected store, inactive storefront, 4 parity rows (`connectors`, `selling_points`, `product_sources`, `customer_sources`), `user_business_access` with role `owner`, 1 store access row, and the 32-key tenant permission bundle.
+  - **Strict Zero Global Roles**: Self-serve business owners receive strictly 0 rows in global `user_roles`. Multi-tenant access is scoped exclusively via Row-Level Security.
+  - **Server-Side Audit & Consent Anchor**: Client generates a cryptographic `signup_nonce` paired with a server-written `signup_started` row in `signup_events` tracking IP, user-agent, and server-authoritative versions in `consent_records`.
+  - **Disposable Email Protection**: Real-time screening against a client snapshot (`src/lib/disposableDomains.ts`) and authoritative PostgreSQL table `disposable_email_domains`.
+  - **Password Hygiene**: Password strength meter via `zxcvbn` (minimum 10 characters, checks against breached top-10k passwords).
+  - **Edge Functions**:
+    - `signup-event`: Records server-side audit events with Cloudflare Turnstile verification.
+    - `signup-provision`: Verifies caller JWT, enforces 24-hour setup window, validates nonce against server anchor, and calls `provision_owner_business`.
+    - `auth-resend`: Canonical email lookup via `get_auth_signup_state`, unconfirmed check, rate limiting (3/h/email, 20/h/IP), and token forwarding.
+    - `purge-unconfirmed`: Automated 26-hour purge for abandoned self-signups and 30-day sweep for unaccepted staff invitations.
+    - `create-business`: Authenticated edge function allowing provisioned users and platform admins to create additional businesses (rate-limited to 3/day/user).
+- **Member-Scoped Row Level Security (RLS)** (migration `20260929120000_member_scoped_rls.sql`):
+  - New `public.user_can_access_store(p_store_id)` helper function (`STABLE SECURITY DEFINER SET search_path = ''`).
+  - Multi-tenant isolation on operational tables: `stores`, `storefronts`, `products`, `orders`, `order_items`, and `customers`.
+  - Grants access to platform `admin`/`staff`, direct `user_store_access` holders, and business owners/members through `brands` $\rightarrow$ `user_business_access`.
+  - Shielding legacy orders (with `store_id IS NULL`) from tenant members while preserving platform staff visibility.
+  - Integration test suite (`scripts/test_tenant_rls_isolation.sql`) verifying cross-tenant read/write isolation between distinct business owners.
+- **Multi-Business Management & "Create New Business" Entry Points**:
+  - **AppSidebar Business Switcher**: Top-left header dropdown is always interactive, showing all member businesses with role badges (`owner`, `admin`, `member`, `viewer`), active checkmark, brand counts, and a persistent `+ Create new business` action.
+  - **Settings Business Account Tab**: New header card in **Settings $\rightarrow$ Business Account** displaying the active business with role badge and a prominent `+ Create new business` button, with full empty-state support for fresh accounts.
+  - **`CreateBusinessDialog` component**: Modal prompting for business name, live slug generation, Cloudflare Turnstile token validation, and instant context refresh via `useBusinessContext`.
+  - **Consumer Query Guards**: Scoped `useStoresList.ts` and `StorefrontsPage.tsx` to active business brands, preventing cross-tenant placeholder store leakage.
+- **Operations & Runbook**:
+  - Complete operations guide (`SIGNUP-OPERATIONS-AND-RUNBOOK.md`) covering conversion funnels, alert queries, retention sweeps, and Supabase dashboard checklists.
+  - Policy documentation (`MEMBER-SCOPED-RLS-MATRIX.md`) detailing per-table scope paths and index plans.
+- **Automated Tests**:
+  - 19 new signup unit/flow tests in `src/test/signup.test.ts`. Full test suite passing (94/94 across 11 test suites).
+
+### Changed
+
+- **Login & Reset Password Security**:
+  - Integrated invisible Cloudflare Turnstile tokens into `/login` and `/reset-password`.
+  - Universal account enumeration defense via `src/lib/authErrors.ts`: merged `invalid_credentials` and `email_not_confirmed` into identical generic error messages.
+  - Added universal "Didn't receive a confirmation email?" resend link to the login screen.
+- **Team Management Edge Function**:
+  - Replaced 4,000-user paginated `listUsers` scan with unpaginated, canonical SQL lookup `get_auth_signup_state`.
+  - Implemented 5-route target resolution handling existing members, unconsumed anchors, and pending invitees safely without deleting in-flight self-signups.
+
 ## [2026-08-31]
 
 ### Added

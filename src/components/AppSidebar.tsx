@@ -3,12 +3,13 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import {
   LayoutDashboard, ShoppingCart, Package, Users, Monitor, Plug,
   Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3, Hourglass, Receipt, ChevronsUpDown, Check, Store,
-  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags
+  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags, Plus
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -92,7 +93,8 @@ const AppSidebar = ({
   const { active: legacyProfile, profiles, setActive: setLegacyProfile } = useBusinessProfile();
   // Multi-business Phase 1: prefer real businesses over the invoice_settings
   // profile rows. Same UI shape either way (name + logo + switcher).
-  const { active: activeBusiness, businesses, setActive: setActiveBusiness, brands } = useBusinessContext();
+  const { active: activeBusiness, businesses, setActive: setActiveBusiness, brands, rolesByBusiness } = useBusinessContext();
+  const [createBizOpen, setCreateBizOpen] = useState(false);
   const active = activeBusiness
     ? { id: activeBusiness.id, business_name: activeBusiness.name, logo_url: activeBusiness.logo_url }
     : legacyProfile;
@@ -100,8 +102,14 @@ const AppSidebar = ({
     ? businesses.map((b) => ({ id: b.id, business_name: b.name, logo_url: b.logo_url }))
     : profiles.map((p) => ({ id: p.id, business_name: p.business_name, logo_url: p.logo_url }));
   const setActive = (id: string) => {
-    if (businesses.length > 0) setActiveBusiness(id);
-    else setLegacyProfile(id);
+    if (businesses.length > 0) {
+      setActiveBusiness(id);
+      if (location.pathname.startsWith("/storefronts/")) {
+        navigate("/storefronts");
+      }
+    } else {
+      setLegacyProfile(id);
+    }
   };
   
   // Fetch product categories for sidebar
@@ -171,7 +179,7 @@ const AppSidebar = ({
   const initials = user?.email?.slice(0, 2).toUpperCase() || "??";
   const businessName = active?.business_name || "DokanOS";
   const businessLogo = active?.logo_url || "";
-  const hasMultiple = switcherList.length > 1;
+  const hasMultiple = businesses.length >= 1 || switcherList.length > 1;
 
   const BrandBlock = (
     <div className={`flex items-center gap-2 min-w-0 ${collapsed ? "justify-center w-full px-0" : ""}`}>
@@ -183,7 +191,7 @@ const AppSidebar = ({
       {!collapsed && (
         <>
           <span className="font-heading text-sm font-semibold text-foreground truncate">{businessName}</span>
-          {hasMultiple && <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0 ml-auto" />}
+          <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0 ml-auto" />
         </>
       )}
     </div>
@@ -192,40 +200,68 @@ const AppSidebar = ({
   const sidebar = (
     <div className="flex h-full flex-col backdrop-blur-xl bg-sidebar/70">
       <div className="flex h-14 items-center justify-between border-b border-border/30 px-4">
-        {hasMultiple ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger className={`flex-1 min-w-0 text-left rounded-md hover:bg-secondary/60 py-1 transition-colors ${collapsed ? "" : "px-2 -mx-2"}`}>
-              {BrandBlock}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56 bg-sidebar/90 backdrop-blur-md border-border/30">
-              <DropdownMenuLabel>Switch business</DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-border/30" />
-              {switcherList.map((p) => (
-                <DropdownMenuItem key={p.id} onClick={() => setActive(p.id)} className="gap-2">
-                  {p.logo_url ? (
-                    <img src={p.logo_url} alt="" className="h-5 w-5 rounded object-contain bg-white p-0.5 border border-border/30" />
-                  ) : (
-                    <div className="flex h-5 w-5 items-center justify-center rounded bg-primary text-[10px] font-bold text-primary-foreground">
-                      {p.business_name.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <span className="flex-1 truncate">{p.business_name}</span>
-                  {active?.id === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
-                </DropdownMenuItem>
-              ))}
-              {brands.length > 0 && (
-                <>
-                  <DropdownMenuSeparator className="bg-border/30" />
-                  <DropdownMenuLabel className="text-[10px] text-muted-foreground">
-                    {brands.length} brand{brands.length === 1 ? "" : "s"} · {switcherList.length === 1 ? "configure in Stores" : "manage in Stores"}
-                  </DropdownMenuLabel>
-                </>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className={`flex-1 min-w-0 text-left rounded-md hover:bg-secondary/60 py-1 transition-colors ${collapsed ? "" : "px-2 -mx-2"}`}
+            title="Switch or create business"
+          >
+            {BrandBlock}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64 bg-sidebar/95 backdrop-blur-md border-border/30">
+            <DropdownMenuLabel className="text-xs font-semibold flex items-center justify-between">
+              <span>Switch business</span>
+              {switcherList.length > 0 && (
+                <span className="text-[10px] text-muted-foreground font-normal">
+                  {switcherList.length} {switcherList.length === 1 ? "business" : "businesses"}
+                </span>
               )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : (
-          BrandBlock
-        )}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator className="bg-border/30" />
+            {switcherList.length > 0 ? (
+              switcherList.map((p) => {
+                const bRole = rolesByBusiness[p.id];
+                return (
+                  <DropdownMenuItem key={p.id} onClick={() => setActive(p.id)} className="gap-2 cursor-pointer">
+                    {p.logo_url ? (
+                      <img src={p.logo_url} alt="" className="h-5 w-5 rounded object-contain bg-white p-0.5 border border-border/30 shrink-0" />
+                    ) : (
+                      <div className="flex h-5 w-5 items-center justify-center rounded bg-primary text-[10px] font-bold text-primary-foreground shrink-0">
+                        {p.business_name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <span className="flex-1 truncate text-xs">{p.business_name}</span>
+                    {bRole && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-secondary font-mono uppercase text-muted-foreground font-semibold">
+                        {bRole}
+                      </span>
+                    )}
+                    {active?.id === p.id && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                  </DropdownMenuItem>
+                );
+              })
+            ) : (
+              <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                No businesses linked
+              </div>
+            )}
+            <DropdownMenuSeparator className="bg-border/30" />
+            <DropdownMenuItem
+              onClick={() => setCreateBizOpen(true)}
+              className="gap-2 text-primary font-medium cursor-pointer text-xs focus:text-primary focus:bg-primary/10"
+            >
+              <Plus className="h-4 w-4 text-primary" />
+              <span>Create new business</span>
+            </DropdownMenuItem>
+            {brands.length > 0 && (
+              <>
+                <DropdownMenuSeparator className="bg-border/30" />
+                <DropdownMenuLabel className="text-[10px] text-muted-foreground font-normal">
+                  {brands.length} brand{brands.length === 1 ? "" : "s"} under active business
+                </DropdownMenuLabel>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button className="lg:hidden text-muted-foreground ml-2 shrink-0 p-1 rounded-md hover:bg-secondary/50" onClick={() => setMobileOpen(false)}>
           <X className="h-5 w-5" />
         </button>
@@ -428,6 +464,8 @@ const AppSidebar = ({
       <aside className={`hidden lg:flex fixed left-0 top-0 z-40 h-screen flex-col border-r border-border/30 bg-sidebar/80 backdrop-blur-xl transition-[width] duration-300 ease-in-out ${collapsed ? "w-16" : "w-64"}`}>
         {sidebar}
       </aside>
+
+      <CreateBusinessDialog open={createBizOpen} onOpenChange={setCreateBizOpen} />
     </>
   );
 };

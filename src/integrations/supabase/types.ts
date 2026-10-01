@@ -3476,6 +3476,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      delete_unprovisioned_self: {
+        Args: never
+        Returns: Json
+      }
       enqueue_order_push: {
         Args: { p_order_id: string; p_reason?: string }
         Returns: undefined
@@ -3576,6 +3580,10 @@ export type Database = {
       reset_store_circuit_breaker: {
         Args: { p_store_id: string }
         Returns: undefined
+      }
+      publish_my_storefront: {
+        Args: { p_storefront_id?: string }
+        Returns: Json
       }
       set_member_business_role: {
         Args: { p_business: string; p_role: string; p_user: string }

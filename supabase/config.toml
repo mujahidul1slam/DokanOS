@@ -36,3 +36,22 @@ entrypoint = "./functions/get-orders/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/get-orders/*.html" ]
+
+[functions.signup-event]
+verify_jwt = false
+
+[functions.auth-resend]
+verify_jwt = false
+
+[functions.signup-provision]
+verify_jwt = true
+
+[functions.create-business]
+verify_jwt = true
+
+[functions.purge-unconfirmed]
+verify_jwt = false
+
+[functions.team-manage]
+verify_jwt = true
+

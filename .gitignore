@@ -26,5 +26,6 @@ dist-ssr
 
 # agent intermediates
 .tmp/
+supabase/.temp/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/

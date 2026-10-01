@@ -48,6 +48,8 @@ interface BusinessContextValue {
   activeBrand: Brand | null;
   /** The caller's role in the active business (user_business_access.role). */
   myRole: string | null;
+  /** Role map indexed by business_id (Task 2.5). */
+  rolesByBusiness: Record<string, string>;
   loading: boolean;
   setActive: (id: string) => void;
   setActiveBrand: (id: string | null) => void;
@@ -160,6 +162,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
         brands,
         activeBrand,
         myRole,
+        rolesByBusiness,
         loading,
         setActive,
         setActiveBrand,

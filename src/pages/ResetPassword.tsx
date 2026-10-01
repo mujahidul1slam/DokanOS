@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
+import { mapAuthError } from "@/lib/authErrors";
+import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 
 const ResetPassword = () => {
   const [password, setPassword] = useState("");
@@ -37,7 +39,7 @@ const ResetPassword = () => {
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+    if (password.length < 10) { toast.error("Password must be at least 10 characters"); return; }
     if (password !== confirm) { toast.error("Passwords don't match"); return; }
 
     setLoading(true);
@@ -45,7 +47,7 @@ const ResetPassword = () => {
     setLoading(false);
 
     if (error) {
-      toast.error(error.message);
+      toast.error(mapAuthError(error));
     } else {
       toast.success("Password updated successfully");
       navigate("/");
@@ -56,11 +58,9 @@ const ResetPassword = () => {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <span className="text-lg font-bold text-primary-foreground">O</span>
-          </div>
+          <img src={dokanosLogo} alt="DokanOS" className="mx-auto mb-2 h-24 w-auto object-contain" />
           <CardTitle className="text-xl">Reset Password</CardTitle>
-          <CardDescription>Enter your new password</CardDescription>
+          <CardDescription>Enter your new password (minimum 10 characters)</CardDescription>
         </CardHeader>
         <CardContent>
           {!ready ? (

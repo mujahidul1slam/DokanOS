@@ -74,3 +74,26 @@ Filtered (status/business filter present — likely safe): StoreHealthGrid, Glob
 
 - Repeat-signup metadata-overwrite behavior (pinned GoTrue version behavior) — **no longer gate-critical** (nonce rides the provision request body). Staging test in §10.8 covers it incidentally.
 - Deployed GoTrue version's exact `/invite` + `/resend` semantics — staging smoke (§10.5/§10.6).
+
+## 8. Execution status (Tasks 0.1–1.2)
+
+- **Task 0.1 — DONE.** This document.
+- **Task 0.2 — DONE.** §2 decision record (31-key bundle + 4 exclusions).
+- **Task 1.1 — DONE + VERIFIED.** `supabase/migrations/20260925120000_signup_support_tables.sql` (5 tables, RLS, seeds with `signup_open=false`, `get_my_businesses()`, `verify_signup_tables()`). Applied against the real `supabase/postgres:17.6.1.147` image with full Supabase schemas; verify returns `{"seeds":5,"status":"ok","tables":5,"rls_enabled":true,"get_my_businesses":true}`.
+- **Task 1.2 — DONE + VERIFIED.** `supabase/migrations/20260925120100_signup_provision_fns.sql` (trigger patch, `canonical_email`, `signup_create_business_core`, `provision_owner_business`, `create_additional_business`, `get_auth_signup_state`, `verify_signup_fns()`). Verify returns `{"fns":5,"status":"ok","trigger_patched":true}`.
+- **Verification method**: the CLI's `supabase start`/`db reset` path **segfaults on this machine's fresh WSL2** (exit 139; culprit container isolated to `storage-api` + the CLI's init runner; independent of the migrations). Worked around by bootstrapping a manual Postgres container on the project's volume: postgres image init → storage-api migrations (extracted from `storage-api:v1.67.15`, 60 files; one grant statement patched for the image-bootstrap cycle) → GoTrue migrations (rendered from `gotrue:v2.194.0` templates, 70 files) → **all 157 project migrations in order, zero failures**.
+- **Caveat**: this proves migration correctness, not CLI parity. `npm run test:rls` (CLI-driven) remains blocked until the WSL2/Docker storage-api segfault is resolved; the manual container serves as the working DB in the meantime.
+
+## 9. Bootstrap recipe (repeatable, `.tmp/bootstrap-full.ps1`)
+
+Clean-slate order that produced SUCCESS (157/157 + both verify fns):
+1. `docker rm -f sbdb` + `docker volume rm supabase_db_jiwndicvfkiltgageqwv`
+2. `docker run` postgres image with the volume + read-only mounts of `supabase/migrations`, `.tmp/storagemig`, `.tmp/authmig-rendered`
+3. Wait for `init process complete`
+4. `search_path=storage` ← apply `storagemig/vector_store/0001-init.sql`, then tenant migrations in **numeric** order (60 files)
+5. Apply `authmig-rendered/*.up.sql` as `supabase_auth_admin` over TCP (70 files)
+6. Apply project migrations in filename order with `search_path=public,storage,auth` (157 files) — **`public` must be first**, or unqualified `CREATE FUNCTION` lands in the wrong schema
+7. `SELECT public.verify_signup_tables()` / `verify_signup_fns()`
+
+- Repeat-signup metadata-overwrite behavior (pinned GoTrue version behavior) — **no longer gate-critical** (nonce rides the provision request body). Staging test in §10.8 covers it incidentally.
+- Deployed GoTrue version's exact `/invite` + `/resend` semantics — staging smoke (§10.5/§10.6).

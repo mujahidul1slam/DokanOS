@@ -54,6 +54,11 @@ const StorefrontPreview = lazy(() =>
 const StoresHub = lazy(() => import("./pages/StoresHub"));
 const VisualPageBuilder = lazy(() => import("@/components/storefront-admin/VisualPageBuilder"));
 const CheckoutFieldsEditor = lazy(() => import("@/components/storefront-admin/CheckoutFieldsEditor"));
+const Signup = lazy(() => import("./pages/Signup"));
+const CheckEmail = lazy(() => import("./pages/CheckEmail"));
+const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
+const Welcome = lazy(() => import("./pages/Welcome"));
+const SetupFailed = lazy(() => import("./pages/SetupFailed"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -103,6 +108,11 @@ const AppRoutes = () => {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Signup /></Suspense>} />
+        <Route path="/check-email" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><CheckEmail /></Suspense>} />
+        <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
+        <Route path="/welcome" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Welcome /></Suspense>} />
+        <Route path="/welcome/setup-failed" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><SetupFailed /></Suspense>} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
@@ -111,6 +121,11 @@ const AppRoutes = () => {
 
   return (
     <Routes>
+      <Route path="/welcome" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Welcome /></Suspense>} />
+      <Route path="/welcome/setup-failed" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><SetupFailed /></Suspense>} />
+      <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
+      <Route path="/signup" element={<Navigate to="/" replace />} />
+      <Route path="/check-email" element={<Navigate to="/" replace />} />
       {/* Preview routes — FULL-BLEED, chrome-free (fix B): the preview iframe
           renders the storefront page alone, NOT the admin app. Must sit
           outside DashboardLayout so no sidebar/palette wraps the preview. */}
