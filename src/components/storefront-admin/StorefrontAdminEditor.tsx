@@ -155,5 +155,5 @@ function HomepageBuilder({ sf }: { sf: Storefront }) {
   if (!page) {
     return <div className="text-muted-foreground text-sm">No home page found — create one from the Pages surface.</div>;
   }
-  return <PageEditor key={page.id} page={page} sf={sf} onChanged={load} />;
+  return <PageEditor key={page.id} page={page} sf={sf} onChanged={load} preview={false} />;
 }

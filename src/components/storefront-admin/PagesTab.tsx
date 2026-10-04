@@ -489,7 +489,7 @@ function PropForm({
 }
 
 /** The per-page editor: meta + SEO, ordered sections, publish + preview. */
-export function PageEditor({ page, sf, onChanged }: { page: PageRow; sf: Storefront; onChanged: () => void }) {
+export function PageEditor({ page, sf, onChanged, preview = true }: { page: PageRow; sf: Storefront; onChanged: () => void; preview?: boolean }) {
   const [sections, setSections] = useState<SectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [addType, setAddType] = useState<string>("");
@@ -498,6 +498,16 @@ export function PageEditor({ page, sf, onChanged }: { page: PageRow; sf: Storefr
   const [seo, setSeo] = useState<{ title?: string; description?: string; og_image_url?: string }>(page.seo || {});
   const [publishing, setPublishing] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+
+  /** Live preview swap (audit fix): after any section/page mutation, tell the
+   *  preview iframe(s) to remount and refetch the draft working copy. Posts
+   *  to every iframe on the page — the inline preview here AND the sticky
+   *  EditorPage pane on the Homepage Builder surface both pick it up. */
+  function refreshPreview() {
+    document.querySelectorAll("iframe").forEach((f) => {
+      f.contentWindow?.postMessage({ type: "preview-refresh" }, "*");
+    });
+  }
 
   /** Overhaul 3.3: AI page generation — prompt → sections inserted into this page. */
   async function generateSections(brief: string): Promise<number> {
@@ -525,6 +535,7 @@ export function PageEditor({ page, sf, onChanged }: { page: PageRow; sf: Storefr
       .order("position");
     setSections((data as unknown as SectionRow[]) || []);
     setLoading(false);
+    refreshPreview();
   }
   useEffect(() => {
     load();
@@ -612,6 +623,7 @@ export function PageEditor({ page, sf, onChanged }: { page: PageRow; sf: Storefr
     }
     toast({ title: "Page saved" });
     onChanged();
+    refreshPreview();
   }
 
   /** Publish = copy visible sorted sections into published_snapshot + stamp. */
@@ -636,6 +648,7 @@ export function PageEditor({ page, sf, onChanged }: { page: PageRow; sf: Storefr
     }
     toast({ title: unpublish ? "Page unpublished — visitors see the legacy layout" : "Page published" });
     onChanged();
+    refreshPreview();
   }
 
   const sorted = [...sections].sort((a, b) => a.position - b.position);
@@ -683,15 +696,18 @@ export function PageEditor({ page, sf, onChanged }: { page: PageRow; sf: Storefr
         </div>
       </details>
 
-      {/* Live preview iframe (draft mode) */}
-      <div>
-        <Label className="text-xs">Live preview (draft)</Label>
-        <iframe
-          title={`Preview of ${page.title}`}
-          src={`/storefronts/preview/${sf.slug}/${page.slug}`}
-          className="w-full h-[420px] mt-2 rounded-lg border border-border bg-background"
-        />
-      </div>
+      {/* Live preview iframe (draft mode) — hidden when the builder surface
+          already renders the sticky EditorPage preview (audit: no doubles). */}
+      {preview && (
+        <div>
+          <Label className="text-xs">Live preview (draft)</Label>
+          <iframe
+            title={`Preview of ${page.title}`}
+            src={`/storefronts/preview/${sf.slug}/${page.slug}?surface=home&draft=${page.slug}`}
+            className="w-full h-[420px] mt-2 rounded-lg border border-border bg-background"
+          />
+        </div>
+      )}
 
       {/* Sections */}
       <div className="space-y-2">
