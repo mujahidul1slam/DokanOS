@@ -59,6 +59,31 @@ function mapProduct(
 }
 
 export async function listStorefrontProducts(storefront_id: string): Promise<StorefrontProduct[]> {
+  // Manual curation wins whenever the merchant has curated rows (audit fix —
+  // previously a store link made the Products tab curate a list nobody read).
+  const { data: links } = await supabase
+    .from("storefront_products")
+    .select("product_id, position, is_featured, badge")
+    .eq("storefront_id", storefront_id)
+    .order("position", { ascending: true });
+  if (links?.length) {
+    const ids = links.map((l) => l.product_id);
+    const { data: products } = await supabase
+      .from("products")
+      .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_active,created_at")
+      .in("id", ids)
+      .eq("is_active", true);
+    if (!products) return [];
+    const map = new Map(products.map((p) => [p.id, p]));
+    return links
+      .map((l) => {
+        const p = map.get(l.product_id);
+        if (!p) return null;
+        return mapProduct(p, { is_featured: l.is_featured, badge: l.badge || "", position: l.position });
+      })
+      .filter(Boolean) as StorefrontProduct[];
+  }
+
   // Check if storefront is linked to a store — if so, show all active products from that store
   const { data: sf } = await supabase
     .from("storefronts")
@@ -78,28 +103,7 @@ export async function listStorefrontProducts(storefront_id: string): Promise<Sto
     return (products || []).map((p, i) => mapProduct(p, { position: i }));
   }
 
-  // Fallback: manual curation
-  const { data: links } = await supabase
-    .from("storefront_products")
-    .select("product_id, position, is_featured, badge")
-    .eq("storefront_id", storefront_id)
-    .order("position", { ascending: true });
-  if (!links?.length) return [];
-  const ids = links.map((l) => l.product_id);
-  const { data: products } = await supabase
-    .from("products")
-    .select("id,name,slug,price,image_url,image_urls,description,stock_quantity,manage_stock,stock_status,is_active,created_at")
-    .in("id", ids)
-    .eq("is_active", true);
-  if (!products) return [];
-  const map = new Map(products.map((p) => [p.id, p]));
-  return links
-    .map((l) => {
-      const p = map.get(l.product_id);
-      if (!p) return null;
-      return mapProduct(p, { is_featured: l.is_featured, badge: l.badge || "", position: l.position });
-    })
-    .filter(Boolean) as StorefrontProduct[];
+  return [];
 }
 
 export async function getStorefrontProductBySlug(

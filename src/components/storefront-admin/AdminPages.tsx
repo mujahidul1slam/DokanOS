@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, ExternalLink, Palette, LayoutTemplate, Square, Grid3X3, List, Truck, CreditCard, Building2, Plus } from "lucide-react";
 import { THEME_PRESETS } from "@/components/storefront-admin/shared";
 import EditorPage from "@/components/storefront-admin/EditorPage";
+import { toast } from "@/hooks/use-toast";
 import type { Storefront } from "@/storefront/lib/brand";
 
 /* ---------------- Overview dashboard (Phase C) ---------------- */
@@ -173,9 +174,13 @@ export function ThemeGallery({ slugOverride, sfOverride, onUpdate }: { slugOverr
       .select()
       .single();
     setSaving(null);
-    if (error) return;
+    if (error) {
+      toast({ title: "Theme not applied", description: error.message, variant: "destructive" });
+      return;
+    }
     setSfState(data as unknown as Storefront);
     onUpdate?.(data as unknown as Storefront);
+    toast({ title: "Theme applied" });
   }
 
   if (sf === undefined) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></div>;

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCurrency } from "@/hooks/useCurrency";
+import { toast } from "@/hooks/use-toast";
 import { ChevronDown, ChevronUp, Loader2, Plus, Star, Trash2 } from "lucide-react";
 import type { Storefront } from "./shared";
 
@@ -18,10 +19,10 @@ interface SfProduct {
 
 /** Manual product curation (refactor of the old ProductCuration — no behavior change). */
 export default function ProductsTab({ sf }: { sf: Storefront }) {
-  return <ProductCuration storefrontId={sf.id} />;
+  return <ProductCuration storefrontId={sf.id} storeLinked={!!sf.store_id} />;
 }
 
-function ProductCuration({ storefrontId }: { storefrontId: string }) {
+function ProductCuration({ storefrontId, storeLinked }: { storefrontId: string; storeLinked: boolean }) {
   const { symbol } = useCurrency();
   const [items, setItems] = useState<SfProduct[]>([]);
   const [search, setSearch] = useState("");
@@ -70,22 +71,36 @@ function ProductCuration({ storefrontId }: { storefrontId: string }) {
 
   async function add(productId: string) {
     const nextPos = items.length;
-    await supabase.from("storefront_products").insert({
+    const { error } = await supabase.from("storefront_products").insert({
       storefront_id: storefrontId,
       product_id: productId,
       position: nextPos,
     });
+    if (error) {
+      toast({ title: "Could not add product", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Product added" });
     setResults((r) => r.filter((p) => p.id !== productId));
     load();
   }
 
   async function remove(id: string) {
-    await supabase.from("storefront_products").delete().eq("id", id);
+    const { error } = await supabase.from("storefront_products").delete().eq("id", id);
+    if (error) {
+      toast({ title: "Could not remove product", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Product removed" });
     load();
   }
 
   async function toggleFeatured(it: SfProduct) {
-    await supabase.from("storefront_products").update({ is_featured: !it.is_featured }).eq("id", it.id);
+    const { error } = await supabase.from("storefront_products").update({ is_featured: !it.is_featured }).eq("id", it.id);
+    if (error) {
+      toast({ title: "Could not update product", description: error.message, variant: "destructive" });
+      return;
+    }
     load();
   }
 
@@ -93,15 +108,24 @@ function ProductCuration({ storefrontId }: { storefrontId: string }) {
     const idx = items.findIndex((i) => i.id === it.id);
     const swap = items[idx + dir];
     if (!swap) return;
-    await Promise.all([
+    const [a, b] = await Promise.all([
       supabase.from("storefront_products").update({ position: swap.position }).eq("id", it.id),
       supabase.from("storefront_products").update({ position: it.position }).eq("id", swap.id),
     ]);
+    if (a.error || b.error) {
+      toast({ title: "Could not reorder", description: (a.error || b.error)!.message, variant: "destructive" });
+      return;
+    }
     load();
   }
 
   return (
     <div className="space-y-6">
+      {storeLinked && items.length === 0 && (
+        <p className="text-sm text-muted-foreground rounded-md border border-border bg-muted/30 px-3 py-2">
+          This storefront syncs all active products from its linked store automatically. Add products below to curate a smaller list manually.
+        </p>
+      )}
       <div>
         <Label className="text-xs">Add a product</Label>
         <Input placeholder="Search products by name…" value={search} onChange={(e) => runSearch(e.target.value)} />
