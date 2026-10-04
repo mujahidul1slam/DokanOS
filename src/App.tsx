@@ -53,7 +53,6 @@ const StorefrontPreview = lazy(() =>
 );
 const StoresHub = lazy(() => import("./pages/StoresHub"));
 const VisualPageBuilder = lazy(() => import("@/components/storefront-admin/VisualPageBuilder"));
-const CheckoutFieldsEditor = lazy(() => import("@/components/storefront-admin/CheckoutFieldsEditor"));
 const Signup = lazy(() => import("./pages/Signup"));
 const CheckEmail = lazy(() => import("./pages/CheckEmail"));
 const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
@@ -157,7 +156,8 @@ const AppRoutes = () => {
               {/* Visual page builder (fix E): /admin/pages/:pageId/edit — two-pane
                   palette→canvas editor; own route so it takes over the content
                   area completely (not nested inside the admin shell panel). */}
-              <Route path="/storefronts/:slug/admin/checkout-fields" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<PageFallback />}><CheckoutFieldsEditor /></Suspense></PermissionGuard>} />
+              {/* checkout-fields lives INSIDE the admin shell now (audit fix) —
+                  the standalone route dropped the storefront sidebar + switcher. */}
               <Route path="/storefronts/:slug/admin/pages/:pageId/edit" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<PageFallback />}><VisualPageBuilder /></Suspense></PermissionGuard>} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<Navigate to="/" replace />} />

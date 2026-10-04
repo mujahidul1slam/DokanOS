@@ -7,7 +7,7 @@ import BrandProfileTab from "@/components/storefront-admin/BrandProfileTab";
 import SocialPoliciesTab from "@/components/storefront-admin/SocialPoliciesTab";
 import DomainsTab from "@/components/storefront-admin/DomainsTab";
 import ProductsTab from "@/components/storefront-admin/ProductsTab";
-import PagesTab from "@/components/storefront-admin/PagesTab";
+import PagesTab, { PageEditor, type PageRow } from "@/components/storefront-admin/PagesTab";
 import CollectionsTab from "@/components/storefront-admin/CollectionsTab";
 import SettingsTab from "@/components/storefront-admin/SettingsTab";
 import CardStyleTab from "@/components/storefront-admin/CardStyleTab";
@@ -19,7 +19,8 @@ import DeliveryTab from "@/components/storefront-admin/DeliveryTab";
 import PaymentsTab from "@/components/storefront-admin/PaymentsTab";
 import ThemeTokensEditor from "@/components/storefront-admin/ThemeTokensEditor";
 import HealthPanel from "@/components/storefront-admin/HealthPanel";
-import { StorefrontOverview, ThemeGallery } from "@/components/storefront-admin/AdminPages";
+import CheckoutFieldsEditor from "@/components/storefront-admin/CheckoutFieldsEditor";
+import { StorefrontOverview, ThemeGallery, AdminHelp } from "@/components/storefront-admin/AdminPages";
 import EditorPage from "@/components/storefront-admin/EditorPage";
 
 /**
@@ -98,6 +99,12 @@ export default function StorefrontAdminEditor({ sf: sfProp, surface, onUpdate }:
       case "payments": return <PaymentsTab sf={sf} onUpdate={handleUpdate} />;
       case "tokens": return <ThemeTokensEditor sf={sf} onUpdate={handleUpdate} />;
       case "health": return <HealthPanel />;
+      // Audit fix: these three sidebar surfaces had no cases — they rendered
+      // "Unknown surface." (builder/help) or dropped the admin shell entirely
+      // (checkout-fields rendered as a standalone route without the shell).
+      case "builder": return <HomepageBuilder sf={sf} />;
+      case "help": return <AdminHelp />;
+      case "checkout-fields": return <CheckoutFieldsEditor sf={sf} onUpdate={handleUpdate} />;
       case "theme":
         // Theme gallery (inline mode: preloaded sf + live update)
         return <ThemeGallery slugOverride={sf.slug} sfOverride={sf} onUpdate={handleUpdate} />;
@@ -119,4 +126,34 @@ export default function StorefrontAdminEditor({ sf: sfProp, surface, onUpdate }:
 function useSlugParam(): { slug?: string } {
   // Safe outside a Router context: useParams falls back to an empty object.
   return useParams();
+}
+
+/** Homepage Builder surface (audit fix): the home page's section editor
+    inline — sections + AI + publish; the draft preview iframe swaps live
+    via EditorPage's postMessage pipeline. */
+function HomepageBuilder({ sf }: { sf: Storefront }) {
+  const [page, setPage] = useState<PageRow | null | undefined>(undefined);
+
+  function load() {
+    supabase
+      .from("storefront_pages")
+      .select("id,storefront_id,slug,title,body_md,is_active,type,status,seo,published_at,updated_at")
+      .eq("storefront_id", sf.id)
+      .or("type.eq.home,slug.eq.home")
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => setPage((data as unknown as PageRow) || null));
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sf.id]);
+
+  if (page === undefined) {
+    return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+  }
+  if (!page) {
+    return <div className="text-muted-foreground text-sm">No home page found — create one from the Pages surface.</div>;
+  }
+  return <PageEditor key={page.id} page={page} sf={sf} onChanged={load} />;
 }

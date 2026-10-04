@@ -15,7 +15,7 @@ import {
 import type { Storefront } from "./shared";
 import { registry, DEFERRED_SECTION_TYPES, type FieldDef, type SectionProps } from "@/storefront/sections/registry";
 
-interface PageRow {
+export interface PageRow {
   id: string;
   storefront_id: string;
   slug: string;
@@ -489,7 +489,7 @@ function PropForm({
 }
 
 /** The per-page editor: meta + SEO, ordered sections, publish + preview. */
-function PageEditor({ page, sf, onChanged }: { page: PageRow; sf: Storefront; onChanged: () => void }) {
+export function PageEditor({ page, sf, onChanged }: { page: PageRow; sf: Storefront; onChanged: () => void }) {
   const [sections, setSections] = useState<SectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [addType, setAddType] = useState<string>("");
