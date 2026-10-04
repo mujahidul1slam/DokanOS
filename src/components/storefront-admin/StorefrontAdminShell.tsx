@@ -117,15 +117,7 @@ export default function StorefrontAdminShell({ children, sfOverride, list, onSwi
 
   const base = `/storefronts/${sf.slug}/admin`;
 
-  const surfacePages: Record<string, boolean> = {
-    "header-footer": true, "product-page": true, "product-card": true, "shop-page": true,
-    "builder": true, "theme": true, "animations": true, "identity": false, "delivery": false,
-    "payments": false, "domains": false, "policies": false, "settings": false, "pages": true,
-    "collections": true, "products": true, "help": false, "dashboard": false,
-  };
-
   const currentSurface = surface;
-  const hasPreview = !!surfacePages[currentSurface];
 
   return (
     <div className="flex h-[calc(100vh-7rem)] min-h-[32rem] rounded-xl border border-border bg-background text-foreground overflow-hidden">
@@ -223,13 +215,14 @@ export default function StorefrontAdminShell({ children, sfOverride, list, onSwi
                 <Plus className="h-3.5 w-3.5" /> New
               </Button>
             )}
-            {hasPreview && (
-              <a href={`/storefront/${sf.slug}`} target="_blank" rel="noreferrer">
-                <Button variant="outline" size="sm" className="gap-2">
-                  <ExternalLink className="h-3.5 w-3.5" /> View Store
-                </Button>
-              </a>
-            )}
+            {/* Audit fix: "View Store" was gated on a surfacePages map, so the
+                link vanished on dashboard/identity/... surfaces. A merchant
+                always wants the link to their actual storefront. */}
+            <a href={`/storefront/${sf.slug}`} target="_blank" rel="noreferrer">
+              <Button variant="outline" size="sm" className="gap-2">
+                <ExternalLink className="h-3.5 w-3.5" /> View Store
+              </Button>
+            </a>
           </div>
         </header>
 
