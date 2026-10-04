@@ -98,7 +98,7 @@ export default function StorefrontAdminEditor({ sf: sfProp, surface, onUpdate }:
       case "delivery": return <DeliveryTab sf={sf} onUpdate={handleUpdate} />;
       case "payments": return <PaymentsTab sf={sf} onUpdate={handleUpdate} />;
       case "tokens": return <ThemeTokensEditor sf={sf} onUpdate={handleUpdate} />;
-      case "health": return <HealthPanel />;
+      case "health": return <HealthPanel sf={sf} />;
       // Audit fix: these three sidebar surfaces had no cases — they rendered
       // "Unknown surface." (builder/help) or dropped the admin shell entirely
       // (checkout-fields rendered as a standalone route without the shell).

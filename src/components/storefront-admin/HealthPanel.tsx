@@ -28,20 +28,24 @@ interface AssetCheck {
   error?: string;
 }
 
-export default function HealthPanel() {
-  const { slug } = useParams();
-  const [sf, setSf] = useState<Storefront | null | undefined>(undefined);
+export default function HealthPanel({ sf: sfProp }: { sf?: Storefront }) {
+  const params = useParams();
+  // Audit fix: inside the /storefronts/* wildcard route useParams() only has '*',
+  // so slug was undefined and every Health panel showed "Storefront not found".
+  const slug = sfProp?.slug || (params as any).slug || window.location.pathname.match(/^\/storefronts\/([^/]+)/)?.[1];
+  const [sf, setSf] = useState<Storefront | null | undefined>(sfProp ?? undefined);
   const [pages, setPages] = useState<PageCheck[]>([]);
   const [assets, setAssets] = useState<AssetCheck[]>([]);
   const [running, setRunning] = useState(false);
   const [ranAt, setRanAt] = useState<string | null>(null);
 
   useEffect(() => {
+    if (sfProp) { setSf(sfProp); return; }
     let alive = true;
     supabase.from("storefronts").select("*").eq("slug", slug).maybeSingle()
       .then(({ data }) => { if (alive) setSf((data as unknown as Storefront) || null); });
     return () => { alive = false; };
-  }, [slug]);
+  }, [slug, sfProp]);
 
   async function runChecks() {
     if (!sf) return;
