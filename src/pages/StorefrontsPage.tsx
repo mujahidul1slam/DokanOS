@@ -105,6 +105,7 @@ export default function StorefrontsPage() {
       list={list}
       onSwitch={(s) => navigate(`/storefronts/${s.slug}/admin/${surface}`)}
       onCreate={() => setCreateOpen(true)}
+      surface={surface}
     >
       <StorefrontAdminEditor sf={active} surface={surface} onUpdate={(s) => {
         setList((l) => l.map((x) => (x.id === s.id ? s : x)));
