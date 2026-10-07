@@ -19,8 +19,8 @@ const fontValue = (f: string) => (f === "__theme" ? "" : f);
 
 function TokenRow({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-2">
-      <div className="min-w-0">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2">
+      <div className="min-w-0 flex-1">
         <Label className="text-sm">{label}</Label>
         {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
       </div>
@@ -31,9 +31,16 @@ function TokenRow({ label, children, hint }: { label: string; children: React.Re
 
 function ColorToken({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
       <Label className="text-sm">{label}</Label>
       <div className="flex items-center gap-2">
+        {value ? (
+          <span className="max-w-[72px] truncate text-[10px] font-mono uppercase tracking-wide text-muted-foreground border border-border rounded px-1.5 py-0.5 shrink-0">
+            {value}
+          </span>
+        ) : (
+          <span className="text-[10px] text-muted-foreground shrink-0">theme default</span>
+        )}
         <input
           type="color"
           value={value || "#888888"}
@@ -41,7 +48,7 @@ function ColorToken({ label, value, onChange }: { label: string; value: string; 
           className="h-8 w-10 rounded border border-border cursor-pointer bg-transparent"
           aria-label={`${label} picker`}
         />
-        <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder="theme" className="w-28 h-8 text-xs" />
+        <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Theme default" className="w-28 h-8 text-xs" />
         {value && (
           <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => onChange("")}>clear</Button>
         )}

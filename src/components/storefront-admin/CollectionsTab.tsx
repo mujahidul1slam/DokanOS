@@ -77,7 +77,13 @@ export default function CollectionsTab({ sf }: { sf: Storefront }) {
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No collections yet.</p>
+        <div className="rounded-lg border border-dashed border-border p-4 space-y-1">
+          <p className="text-sm text-muted-foreground">No collections yet.</p>
+          <p className="text-xs text-muted-foreground">
+            Collections only appear on the storefront once you add a Collection grid section to a page
+            (Homepage Builder). Create one here, then add the section to feature it.
+          </p>
+        </div>
       ) : (
         <div className="border border-border rounded-lg divide-y divide-border">
           {items.map((c) => (

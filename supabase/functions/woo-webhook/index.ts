@@ -1,12 +1,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
-import { 
-  mapWooStatus, 
-  fromWooStockStatus, 
-  derivePaymentStatus, 
-  fromWooShipping, 
-  normalizePhone, 
-  extractMeasurementsFromMeta, 
-  buildVariationLabel 
+import {
+  mapWooStatus,
+  fromWooStockStatus,
+  derivePaymentStatus,
+  fromWooShipping,
+  normalizePhone,
+  extractMeasurementsFromMeta,
+  buildVariationLabel,
+  stripWooHtml
 } from "../_shared/woo-mapping.ts";
 
 const corsHeaders = {
@@ -216,8 +217,8 @@ async function handleProductWebhook(supabase: any, store: any, p: any) {
   const sale = p.sale_price && parseFloat(p.sale_price) > 0 ? parseFloat(p.sale_price) : null;
   const productData = {
     store_id, woo_product_id: p.id, name: p.name, sku: p.sku || null,
-    short_description: p.short_description || null,
-    description: p.description || p.short_description || null,
+    short_description: stripWooHtml(p.short_description) || null,
+    description: stripWooHtml(p.description) || stripWooHtml(p.short_description) || null,
     price: parseFloat(p.price) || 0,
     regular_price: regular,
     sale_price: sale,

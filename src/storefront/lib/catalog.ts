@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { stripHtml } from "./sanitize";
 
 export interface StorefrontVariation {
   id: string;
@@ -47,7 +48,7 @@ function mapProduct(
     price: Number(p.price),
     image_url: p.image_url,
     image_urls: (p.image_urls as string[]) || [],
-    description: p.description,
+    description: stripHtml(p.description) || null,
     stock_quantity: p.stock_quantity,
     manage_stock: p.manage_stock,
     stock_status: p.stock_status,

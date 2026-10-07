@@ -287,7 +287,7 @@ export default function Home() {
                 </Link>
               </div>
             </div>
-            <div className="min-h-[320px] bg-muted">
+            <div className="min-h-[320px] overflow-hidden rounded-b-3xl lg:rounded-b-none lg:rounded-r-3xl bg-muted">
               {heroImg && (
                 <img src={heroImg} alt={storefront.name} className="h-full w-full object-cover" />
               )}

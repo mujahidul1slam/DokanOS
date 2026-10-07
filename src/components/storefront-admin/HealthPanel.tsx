@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAdminSlug } from "./useAdminSlug";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,10 +29,8 @@ interface AssetCheck {
 }
 
 export default function HealthPanel({ sf: sfProp }: { sf?: Storefront }) {
-  const params = useParams();
-  // Audit fix: inside the /storefronts/* wildcard route useParams() only has '*',
-  // so slug was undefined and every Health panel showed "Storefront not found".
-  const slug = sfProp?.slug || (params as any).slug || window.location.pathname.match(/^\/storefronts\/([^/]+)/)?.[1];
+  // Centralized slug resolution (review E3) — works standalone AND in-shell.
+  const slug = useAdminSlug(sfProp?.slug);
   const [sf, setSf] = useState<Storefront | null | undefined>(sfProp ?? undefined);
   const [pages, setPages] = useState<PageCheck[]>([]);
   const [assets, setAssets] = useState<AssetCheck[]>([]);

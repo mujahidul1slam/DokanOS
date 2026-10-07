@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
+import { Globe } from "lucide-react";
 import type { Storefront } from "@/storefront/lib/brand";
 
 /**
@@ -47,25 +48,24 @@ export default function EditorPage({ children, previewUrl, liveStorefront, devic
   }, [liveStorefront, ready, previewUrl]);
 
   return (
-    <div className={previewUrl ? "grid xl:grid-cols-[minmax(0,520px)_1fr] gap-6 items-start" : ""}>
+    <div className={previewUrl ? "grid gap-6 items-start xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : ""}>
       <div className="space-y-4">{children}</div>
       {previewUrl && (
         <div className="xl:sticky xl:top-24">
           <div className="rounded-xl border border-border overflow-hidden bg-muted/20">
-            <div className="flex items-center gap-1.5 border-b border-border bg-card px-3 py-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
-              <span className="ml-2 text-[10px] text-muted-foreground truncate">
-                {device === "mobile" ? "Mobile preview" : "Desktop preview"} · {previewUrl}
+            <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <Globe className="h-3 w-3" />
+                {device === "mobile" ? "Mobile" : "Desktop"}
               </span>
+              <span className="flex-1 truncate text-[11px] text-muted-foreground">{previewUrl}</span>
             </div>
             <div className={device === "mobile" ? "mx-auto max-w-[390px]" : "w-full"}>
               <iframe
                 ref={iframeRef}
                 src={previewUrl}
                 title="Storefront preview"
-                className="w-full h-[640px] border-0"
+                className="w-full h-[calc(100vh-10rem)] min-h-[520px] border-0"
                 sandbox="allow-scripts allow-same-origin allow-forms"
               />
             </div>

@@ -12,7 +12,7 @@ import {
   Loader2, MousePointerClick, Plus, Save, Sparkles, Trash2, X,
 } from "lucide-react";
 import type { Storefront } from "@/storefront/lib/brand";
-import { registry, type FieldDef, type SectionProps } from "@/storefront/sections/registry";
+import { registry, isDefaultSectionString, type FieldDef, type SectionProps } from "@/storefront/sections/registry";
 
 /**
  * Visual page builder (overhaul 3.2 / fix E): a real two-pane editor.
@@ -263,6 +263,7 @@ export default function VisualPageBuilder() {
               <InspectorForm
                 fields={registry[selected.type]?.adminFields || []}
                 value={selected.props}
+                selectedType={selected.type}
                 onSave={(props) => saveProps(selected, props)}
               />
             </div>
@@ -271,11 +272,12 @@ export default function VisualPageBuilder() {
 
         {/* RIGHT: full-pane canvas — the DRAFT page via postMessage pipeline */}
         <div className="rounded-xl border border-border overflow-hidden bg-muted/20 lg:sticky lg:top-24">
-          <div className="flex items-center gap-1.5 border-b border-border bg-card px-3 py-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
-            <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
-            <span className="ml-2 text-[10px] text-muted-foreground truncate">Canvas — {page.title} (draft) · {previewUrl}</span>
+          <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              <LayoutTemplate className="h-3 w-3" />
+              Canvas · draft
+            </span>
+            <span className="flex-1 truncate text-[11px] text-muted-foreground">{previewUrl}</span>
           </div>
           <iframe
             key={previewKey}
@@ -302,7 +304,7 @@ export default function VisualPageBuilder() {
 }
 
 /** Inspector form: registry fields → save button (persist + canvas refresh). */
-function InspectorForm({ fields, value, onSave }: { fields: FieldDef[]; value: SectionProps; onSave: (props: SectionProps) => void }) {
+function InspectorForm({ fields, value, onSave, selectedType }: { fields: FieldDef[]; value: SectionProps; onSave: (props: SectionProps) => void; selectedType?: string }) {
   const [draft, setDraft] = useState<SectionProps>(() => structuredClone(value || {}));
   const [saving, setSaving] = useState(false);
 
@@ -323,6 +325,11 @@ function InspectorForm({ fields, value, onSave }: { fields: FieldDef[]; value: S
       {fields.map((field) => (
         <div key={field.key}>
           <Label className="text-xs">{field.label}</Label>
+          {field.key === "title" && selectedType && isDefaultSectionString(selectedType, "title", (draft as any).title) && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-0.5 mb-1">
+              Still the default — replace it with your store's headline.
+            </p>
+          )}
           {field.type === "textarea" && (
             <textarea rows={3} value={(draft as any)[field.key] || ""} onChange={(e) => set(field.key, e.target.value)}
               className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />

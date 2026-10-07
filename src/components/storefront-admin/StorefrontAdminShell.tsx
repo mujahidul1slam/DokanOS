@@ -1,9 +1,9 @@
 import { ReactNode, useMemo, useState, useEffect } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   LayoutDashboard, Palette, LayoutTemplate, Files, FolderOpen, Building2,
   PanelsTopLeft, Square, Grid3X3, List, Truck, CreditCard, Sparkles,
-  Globe, FileText, Settings, HelpCircle, Search, ExternalLink, X, Loader2, ChevronLeft, Activity, Plus,
+  Globe, FileText, Settings, HelpCircle, ExternalLink, Loader2, ChevronLeft, Activity, Plus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,19 @@ import type { Storefront } from "@/storefront/lib/brand";
  * inside. Grouped sections mirror Bonik's seller panel.
  */
 
+/** Surface → preview path segment (mirrors StorefrontAdminEditor.PREVIEW_SURFACE).
+ *  Used by the header button so "Preview" opens the surface you're editing (E4). */
+const PREVIEW_SURFACE: Record<string, string> = {
+  "header-footer": "home",
+  "product-page": "_product_page",
+  "product-card": "_shop_page",
+  "shop-page": "_shop_page",
+  builder: "home",
+  theme: "home",
+  tokens: "home",
+  animations: "home",
+};
+
 interface NavItem {
   label: string;
   to: string;
@@ -26,7 +39,7 @@ const GROUPS: { label: string; items: { label: string; path: string; icon: React
   {
     label: "GENERAL",
     items: [
-      { label: "Dashboard", path: "dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
+      { label: "Overview", path: "dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
       { label: "Pages", path: "pages", icon: <Files className="h-4 w-4" /> },
       { label: "Collections", path: "collections", icon: <FolderOpen className="h-4 w-4" /> },
       { label: "Products", path: "products", icon: <List className="h-4 w-4" /> },
@@ -84,32 +97,32 @@ export default function StorefrontAdminShell({ children, sfOverride, list, onSwi
   /** Current surface key (dashboard/theme/builder/...). */
   surface?: string;
 }) {
-  const navigate = useNavigate();
   const { user } = useAuth();
   const sf = sfOverride ?? null;
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [search, setSearch] = useState("");
 
   // Hooks-order rule: ALL hooks must run before any early return.
-  const paletteItems = useMemo(() => {
-    const all = GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })));
-    if (!search.trim()) return all;
-    const q = search.toLowerCase();
-    return all.filter((i) => i.label.toLowerCase().includes(q) || i.group.toLowerCase().includes(q));
-  }, [search]);
-
-  // ⌘K opens the palette; Escape closes it
+  // Real brand names for the switcher badge (review C1) — the literal
+  // "brand" string named nothing.
+  const brandIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          ((list || []) as Array<Storefront & { brand_id?: string | null }>)
+            .map((s) => s.brand_id)
+            .filter((b): b is string => !!b),
+        ),
+      ),
+    [list],
+  );
+  const [brandNames, setBrandNames] = useState<Record<string, string>>({});
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setPaletteOpen((o) => !o);
-      }
-      if (e.key === "Escape") { setPaletteOpen(false); setSearch(""); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    if (brandIds.length === 0) { setBrandNames({}); return; }
+    supabase.from("brands").select("id,name").in("id", brandIds).then(({ data }) => {
+      const m: Record<string, string> = {};
+      ((data || []) as Array<{ id: string; name: string }>).forEach((b) => { m[b.id] = b.name; });
+      setBrandNames(m);
+    });
+  }, [brandIds]);
 
   if (!sf) {
     return <div className="flex h-[60vh] items-center justify-center text-muted-foreground">Storefront not found.</div>;
@@ -137,32 +150,30 @@ export default function StorefrontAdminShell({ children, sfOverride, list, onSwi
             <div className="mt-3">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5">Switch storefront</div>
               <div className="space-y-0.5">
-                {list.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => onSwitch?.(s)}
-                    className={`w-full flex items-center justify-between gap-2 rounded px-2 py-1.5 text-xs transition-colors ${
-                      s.id === sf.id ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    <span className="truncate">{s.name}</span>
-                    {(s as any).brand_id && <span className="text-[9px] text-muted-foreground shrink-0">brand</span>}
-                  </button>
-                ))}
+                {list.map((s) => {
+                  const brandId = (s as Storefront & { brand_id?: string | null }).brand_id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => onSwitch?.(s)}
+                      className={`w-full flex items-center justify-between gap-2 rounded px-2 py-1.5 text-xs transition-colors ${
+                        s.id === sf.id ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <span className="truncate">{s.name}</span>
+                      {brandId && brandNames[brandId] && (
+                        <span className="max-w-[80px] truncate text-[9px] text-muted-foreground shrink-0">
+                          {brandNames[brandId]}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
-
-        <button
-          type="button"
-          onClick={() => setPaletteOpen(true)}
-          className="mx-4 mt-4 flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 transition"
-        >
-          <Search className="h-3.5 w-3.5" /> Search…
-          <kbd className="ml-auto text-[10px] border border-border rounded px-1">⌘K</kbd>
-        </button>
 
         <nav className="flex-1 p-4 space-y-5">
           {GROUPS.map((g) => (
@@ -215,58 +226,27 @@ export default function StorefrontAdminShell({ children, sfOverride, list, onSwi
                 <Plus className="h-3.5 w-3.5" /> New
               </Button>
             )}
-            {/* Audit fix: "View Store" was gated on a surfacePages map, so the
-                link vanished on dashboard/identity/... surfaces. A merchant
-                always wants the link to their actual storefront. */}
-            <a href={`/storefront/${sf.slug}`} target="_blank" rel="noreferrer">
-              <Button variant="outline" size="sm" className="gap-2">
-                <ExternalLink className="h-3.5 w-3.5" /> View Store
-              </Button>
-            </a>
+            {/* Review E4: point the button at the CURRENT SURFACE's preview when
+                one exists (theme/product-page/card/builder…), else the live store.
+                Previously it always opened the live storefront. */}
+            {(() => {
+              const previewSurface = PREVIEW_SURFACE[currentSurface];
+              const href = previewSurface
+                ? `/storefronts/preview/${sf.slug}/${previewSurface}?surface=${previewSurface}${currentSurface === "builder" ? "&draft=home" : ""}`
+                : `/storefront/${sf.slug}`;
+              return (
+                <a href={href} target="_blank" rel="noreferrer" title={previewSurface ? "Open the current surface's preview" : "Open your live storefront"}>
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <ExternalLink className="h-3.5 w-3.5" /> {previewSurface ? "Preview" : "View Store"}
+                  </Button>
+                </a>
+              );
+            })()}
           </div>
         </header>
 
         <main className="p-6">{children}</main>
       </div>
-
-      {/* Command palette overlay */}
-      {paletteOpen && (
-        <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-start justify-center pt-24" onClick={() => { setPaletteOpen(false); setSearch(""); }}>
-          <div className="w-full max-w-md rounded-xl border border-border bg-card shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                autoFocus
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Jump to a surface…"
-                className="flex-1 bg-transparent text-sm outline-none"
-              />
-              <button onClick={() => { setPaletteOpen(false); setSearch(""); }} aria-label="Close">
-                <X className="h-4 w-4 text-muted-foreground" />
-              </button>
-            </div>
-            <div className="max-h-80 overflow-auto p-2">
-              {paletteItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground p-3">No surfaces match.</p>
-              ) : (
-                paletteItems.map((i) => (
-                  <button
-                    key={i.path}
-                    type="button"
-                    onClick={() => { setPaletteOpen(false); setSearch(""); navigate(`${base}/${i.path}`); }}
-                    className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm text-left hover:bg-muted transition"
-                  >
-                    {i.icon}
-                    <span className="flex-1">{i.label}</span>
-                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{i.group}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

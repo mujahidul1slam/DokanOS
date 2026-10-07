@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,7 @@ import {
   ChevronDown, ChevronUp, Copy, ExternalLink, Eye, EyeOff, Loader2, Plus, Save, Sparkles, Trash2,
 } from "lucide-react";
 import type { Storefront } from "./shared";
-import { registry, DEFERRED_SECTION_TYPES, type FieldDef, type SectionProps } from "@/storefront/sections/registry";
+import { registry, DEFERRED_SECTION_TYPES, isDefaultSectionString, type FieldDef, type SectionProps } from "@/storefront/sections/registry";
 
 export interface PageRow {
   id: string;
@@ -151,6 +152,7 @@ function NavEditor({ sf }: { sf: Storefront }) {
 const DEFERRED = DEFERRED_SECTION_TYPES.map((d) => d.type);
 
 function PagesSection({ sf }: { sf: Storefront }) {
+  const navigate = useNavigate();
   const [pages, setPages] = useState<PageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -224,11 +226,11 @@ function PagesSection({ sf }: { sf: Storefront }) {
                 </div>
               </button>
               {isSystem ? (
-                <Button size="sm" variant="outline" onClick={() => window.location.assign(editTarget)}>
+                <Button size="sm" variant="outline" onClick={() => navigate(editTarget)}>
                   Edit
                 </Button>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => window.location.assign(`/storefronts/${sf.slug}/admin/pages/${p.id}/edit`)}>
+                <Button size="sm" variant="outline" onClick={() => navigate(`/storefronts/${sf.slug}/admin/pages/${p.id}/edit`)}>
                   Edit
                 </Button>
               )}
@@ -311,10 +313,12 @@ function PropForm({
   fields,
   value,
   onChange,
+  sectionType,
 }: {
   fields: FieldDef[];
   value: SectionProps;
   onChange: (next: SectionProps) => void;
+  sectionType?: string;
 }) {
   const [draft, setDraft] = useState<SectionProps>(() => structuredClone(value || {}));
   const dirtyRef = useRef(false);
@@ -445,6 +449,11 @@ function PropForm({
       {fields.map((field) => (
         <div key={field.key}>
           <Label className="text-xs">{field.label}</Label>
+          {field.key === "title" && sectionType && isDefaultSectionString(sectionType, "title", draft[field.key]) && (
+            <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
+              Still the default — replace it with your store's headline.
+            </p>
+          )}
           {field.type === "textarea" && (
             <Textarea rows={4} value={draft[field.key] || ""} onChange={(e) => set(field.key, e.target.value)} />
           )}
@@ -704,7 +713,7 @@ export function PageEditor({ page, sf, onChanged, preview = true }: { page: Page
           <iframe
             title={`Preview of ${page.title}`}
             src={`/storefronts/preview/${sf.slug}/${page.slug}?surface=home&draft=${page.slug}`}
-            className="w-full h-[420px] mt-2 rounded-lg border border-border bg-background"
+            className="w-full h-[560px] mt-2 rounded-lg border border-border bg-background"
           />
         </div>
       )}
@@ -806,6 +815,7 @@ export function PageEditor({ page, sf, onChanged, preview = true }: { page: Page
                       <PropForm
                         fields={def.adminFields}
                         value={{ ...def.defaultProps, ...sec.props }}
+                        sectionType={sec.type}
                         onChange={(props) => saveSection(sec, { props })}
                       />
                        <p className="text-xs text-muted-foreground mt-2">Changes save automatically.</p>

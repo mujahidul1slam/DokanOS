@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { registry, type SectionProps } from "./registry";
+import { registry, isDefaultSectionString, type SectionProps } from "./registry";
 import type { SectionSnapshot } from "../lib/pages";
 
 /**
@@ -24,6 +24,16 @@ export default function SectionRenderer({ section }: { section: SectionSnapshot 
   if (section.is_visible === false) return null;
 
   const props: SectionProps = { ...def.defaultProps, ...(section.props || {}) };
+  // Review C4: a section that still carries the registry's own default or its
+  // admin label as the title ("Hero"/"Featureda") shows friendlier placeholder
+  // copy instead of printing the raw label. The merchant's real copy is never
+  // touched — this only swaps leftover labels at render time.
+  if (isDefaultSectionString(section.type, "title", props.title)) {
+    props.title = def.previewTitle || def.adminLabel;
+  }
+  if (isDefaultSectionString(section.type, "subtitle", props.subtitle)) {
+    props.subtitle = "";
+  }
   const errors = def.validate(props);
   if (errors.length) return null;
 

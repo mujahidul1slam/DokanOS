@@ -251,7 +251,7 @@ export default function Product({ slugOverride }: { slugOverride?: string }) {
             </div>
           )}
 
-          {p.description && <div className="text-muted-foreground leading-relaxed mb-10 whitespace-pre-line">{p.description}</div>}
+          {p.description && <div className="text-muted-foreground leading-relaxed mb-10 max-w-prose whitespace-pre-line">{p.description}</div>}
 
           {/* Buttons row */}
           <div className={`flex items-stretch gap-3 mb-3 ${sp.atc_arrangement === "stacked" ? "flex-col" : ""}`}>

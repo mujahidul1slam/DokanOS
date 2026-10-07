@@ -68,6 +68,13 @@ export interface SectionDef {
   /** Returns user-facing problems; empty array = valid. Runs on admin save. */
   validate: (props: SectionProps) => string[];
   adminFields: FieldDef[];
+  /** Friendly preview heading shown when the stored title is a leftover
+   *  default/label (review C4). Falls back to adminLabel. */
+  previewTitle?: string;
+  /** Known legacy/placeholder titles that should never print as headings
+   *  (e.g. the seed data's "Featureda"). Explicit list — no fuzzy matching,
+   *  so real merchant copy is never suppressed. */
+  defaultTitles?: string[];
 }
 
 const columnsField: FieldDef = {
@@ -88,6 +95,7 @@ export const registry: Record<string, SectionDef> = {
     adminLabel: "Hero",
     component: Hero,
     defaultProps: { title: "", subtitle: "", image_url: "", align: "center", overlay: 30 },
+    previewTitle: "Your store headline",
     validate: (p) => (p?.title ? [] : ["Hero needs a title"]),
     adminFields: [
       { key: "title", label: "Title", type: "text" },
@@ -109,6 +117,8 @@ export const registry: Record<string, SectionDef> = {
     adminLabel: "Featured products",
     component: FeaturedProducts,
     defaultProps: { title: "Featured", limit: 8, columns: 4 },
+    previewTitle: "Featured products",
+    defaultTitles: ["Featured", "Featureda"],
     validate: (p) => {
       const errs: string[] = [];
       const limit = Number(p?.limit ?? 8);
@@ -127,6 +137,7 @@ export const registry: Record<string, SectionDef> = {
     adminLabel: "Product grid",
     component: ProductGrid,
     defaultProps: { title: "", product_ids: [], columns: 4 },
+    previewTitle: "Product grid",
     validate: (p) => {
       const errs: string[] = [];
       if (!Array.isArray(p?.product_ids) || p.product_ids.length === 0) errs.push("Pick at least one product");
@@ -140,6 +151,7 @@ export const registry: Record<string, SectionDef> = {
     adminLabel: "Collection grid",
     component: CollectionGrid,
     defaultProps: { title: "Collections", collection_ids: [], columns: 3 },
+    previewTitle: "Collections",
     validate: (p) => {
       const errs: string[] = [];
       if (!Array.isArray(p?.collection_ids) || p.collection_ids.length === 0) errs.push("Pick at least one collection");
@@ -227,6 +239,24 @@ export const registry: Record<string, SectionDef> = {
     ],
   },
 };
+
+/**
+ * True when a stored string prop is really the registry's own default or the
+ * section's admin label — a leftover label, not merchant copy. Review C4:
+ * "Hero"/"Featureda" rendered as literal preview headings when sections still
+ * carried default props. Used by the renderer to drop such titles.
+ */
+export function isDefaultSectionString(type: string, key: string, value: unknown): boolean {
+  const def = registry[type];
+  if (!def || typeof value !== "string") return false;
+  const v = value.trim().toLowerCase();
+  if (!v) return false;
+  if (def.defaultTitles?.some((t) => t.trim().toLowerCase() === v)) return true;
+  const defVal = def.defaultProps[key];
+  if (typeof defVal === "string" && defVal.trim() && v === defVal.trim().toLowerCase()) return true;
+  if (key === "title" && v === def.adminLabel.trim().toLowerCase()) return true;
+  return false;
+}
 
 export const DEFERRED_SECTION_TYPES: { type: string; reason: string }[] = [
   { type: "contact-form", reason: "Needs an anon-writable messages table + moderation + anti-spam; deferred to the notifications follow-up (P1 #11)." },

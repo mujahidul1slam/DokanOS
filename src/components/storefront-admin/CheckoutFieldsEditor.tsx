@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAdminSlug } from "./useAdminSlug";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -15,14 +16,14 @@ import { mergeSettings, type StorefrontCheckoutFields } from "@/storefront/lib/s
  * presets. Honored by the checkout runtime and the edge function.
  */
 export default function CheckoutFieldsEditor({ sf: sfProp, onUpdate }: { sf?: Storefront; onUpdate?: (s: Storefront) => void }) {
+  const slug = useAdminSlug(sfProp?.slug);
   const [cf, setF] = useState<StorefrontCheckoutFields | null>(null);
   const [sf, setSf] = useState<Storefront | null>(sfProp ?? null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (sfProp) { setSf(sfProp); return; }
-    // Deep-link mode: resolve from :slug route
-    const slug = window.location.pathname.match(/^\/storefronts\/([^/]+)/)?.[1];
+    // Deep-link mode: resolve from the admin route slug (E3 — centralized hook)
     if (!slug) return;
     supabase.from("storefronts").select("*").eq("slug", slug).maybeSingle()
       .then(({ data }) => {
@@ -31,7 +32,7 @@ export default function CheckoutFieldsEditor({ sf: sfProp, onUpdate }: { sf?: St
           setF(mergeSettings((data as any).settings).checkout.fields);
         }
       });
-  }, [sfProp]);
+  }, [sfProp, slug]);
 
   if (!sf || !cf) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></div>;
 

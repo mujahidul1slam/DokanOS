@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, ExternalLink, Palette, LayoutTemplate, Square, Grid3X3, List, Truck, CreditCard, Building2, Plus } from "lucide-react";
+import { Loader2, ExternalLink, Palette, LayoutTemplate, Square, Grid3X3, List, Truck, CreditCard, Building2, Plus, Check } from "lucide-react";
 import { THEME_PRESETS } from "@/components/storefront-admin/shared";
 import EditorPage from "@/components/storefront-admin/EditorPage";
 import { toast } from "@/hooks/use-toast";
@@ -195,14 +195,6 @@ export function ThemeGallery({ slugOverride, sfOverride, onUpdate }: { slugOverr
     nimbus: ["#2563EB", "#F0F6FF", "#0F172A", "#93B4F5"],
     saffron: ["#C2410C", "#FFF7ED", "#431407", "#FDBA74"],
   };
-  const labels: Record<string, string> = {
-    editorial: "Editorial — warm, elegant magazine style",
-    cinematic: "Cinematic — bold, dark immersive layout",
-    minimal: "Minimal — clean, modern, black & white",
-    warm: "Warm — earthy, warm-toned and inviting",
-    nimbus: "Nimbus — crisp blues for tech & gadgets",
-    saffron: "Saffron — warm, appetizing food & beverage tones",
-  };
 
   return (
     <div className="space-y-6">
@@ -214,12 +206,19 @@ export function ThemeGallery({ slugOverride, sfOverride, onUpdate }: { slugOverr
           return (
             <Card key={t.value} className={active ? "ring-2 ring-primary" : ""}>
               <CardContent className="pt-6 space-y-3">
-                <div className="flex gap-1">
-                  {sw.map((c) => <span key={c} className="h-6 flex-1 rounded" style={{ background: c }} />)}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex gap-1 flex-1">
+                    {sw.map((c) => <span key={c} className="h-6 flex-1 rounded" style={{ background: c }} />)}
+                  </div>
+                  {active && (
+                    <Badge className="gap-1 shrink-0">
+                      <Check className="h-3 w-3" /> Active
+                    </Badge>
+                  )}
                 </div>
                 <div>
-                  <p className="text-sm font-medium">{t.label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{labels[t.value] || t.description}</p>
+                  <p className="text-sm font-medium">{t.label.replace(/\s*\(.*\)$/, "")}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1" title={t.description}>{t.description}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <a href={`/storefronts/preview/${slug}/home?surface=home&theme_override=${t.value}`} target="_blank" rel="noreferrer">
