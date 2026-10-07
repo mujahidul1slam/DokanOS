@@ -48,3 +48,41 @@ export function formatVariationLabel(attrs: ParsedAttr[]): string {
 export function joinVariationOptions(attrs: ParsedAttr[]): string {
   return attrs.map((a) => a.option).join(" / ");
 }
+
+/**
+ * Resolve which variations belong to a product.
+ *
+ * The `products.id` ↔ `product_variations.product_id` link is a UUID foreign
+ * key, and PostgreSQL compares UUIDs **case-insensitively**. Screens that
+ * filter server-side (`.eq("product_id", id)` — e.g. pos/VariationModal) are
+ * therefore correct for every product, while client-side `===` comparisons are
+ * not: a variation whose `product_id` differs only in case from `products.id`
+ * still links correctly in SQL, yet fails a strict JS string comparison. On the
+ * Add Order screen that failure meant the variation modal was skipped entirely
+ * (product added with no size) and, when the modal did open, in-stock
+ * variations were hidden as unselectable.
+ *
+ * This helper performs the lookup the same way the database does — trimmed and
+ * case-insensitive — so both screens agree on which variations a product has.
+ *
+ * Variations with a non-string `product_id` are malformed (the column is a
+ * UUID) and are ignored rather than matched or crashed on.
+ */
+export function getProductVariations<T extends { product_id?: unknown }>(
+  productId: string | null | undefined,
+  variations: readonly T[] | null | undefined,
+): T[] {
+  if (typeof productId !== "string") return [];
+  const target = productId.trim().toLowerCase();
+  if (!target) return [];
+  if (!Array.isArray(variations)) return [];
+
+  const out: T[] = [];
+  for (const v of variations) {
+    if (!v || typeof v !== "object") continue;
+    const pid = (v as { product_id?: unknown }).product_id;
+    if (typeof pid !== "string") continue;
+    if (pid.trim().toLowerCase() === target) out.push(v);
+  }
+  return out;
+}

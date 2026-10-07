@@ -6,7 +6,8 @@ import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, 
 
 
 import { supabase } from "@/integrations/supabase/client";
-import { parseVariationAttributes as parseVariationAttributesShared } from "@/lib/variations";
+import { parseVariationAttributes as parseVariationAttributesShared, getProductVariations } from "@/lib/variations";
+import { fetchAllRows } from "@/lib/supabasePage";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
@@ -110,7 +111,7 @@ interface ProductSearchResultRowProps {
 function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchResultRowProps) {
   const { symbol } = useCurrency();
   const productVars = useMemo(
-    () => variations.filter((v) => v.product_id === product.productId),
+    () => getProductVariations(product.productId, variations),
     [variations, product.productId],
   );
 
@@ -280,9 +281,16 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   useEffect(() => {
     if (!open) return;
+    // product_variations exceeds the Supabase REST server-side max-rows cap
+    // (1180 rows vs 1000): an unpaginated fetch silently truncated at 1000,
+    // so variable products whose variations fell past the boundary lost their
+    // variation selector or showed only some sizes. Fetch paged until
+    // exhausted; never silent on error.
     Promise.all([
       supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode, is_featured, sales_count, manage_stock, stock_status").eq("is_active", true).order("name"),
-      supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes"),
+      fetchAllRows((range) =>
+        supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes").range(range.from, range.to),
+      ),
       supabase.from("order_sources").select("id, name, is_default").order("sort_order"),
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
@@ -293,7 +301,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       supabase.from("product_categories").select("product_id, category_id"),
     ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes, stRes, catRes, pcRes]) => {
       setProducts(pRes.data || []);
-      setVariations((vRes.data || []) as VariationRow[]);
+      setVariations(vRes as VariationRow[]);
       const srcs = (sRes.data || []) as any[];
       setSources(srcs);
       const def = srcs.find((s) => s.is_default);
@@ -313,6 +321,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         map.get(pc.product_id)!.add(pc.category_id);
       });
       setProductCatMap(map);
+    }).catch((err: any) => {
+      // A failed catalog fetch must never be silent: without products or
+      // variations the picker still renders, but variable products would be
+      // added without sizes and items would vanish from search.
+      console.error("AddOrderDialog: failed to load catalog data", err);
+      toast.error(err?.message || "Failed to load product catalog");
     });
 
   }, [open]);
@@ -426,7 +440,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   const productIndex = useMemo((): ProductSearchRow[] => {
     return products.map((p) => {
-      const productVariations = variations.filter((v) => v.product_id === p.id);
+      const productVariations = getProductVariations(p.id, variations);
       const variationText = productVariations
         .map((v) => {
           const label =
@@ -471,11 +485,16 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     // Exact SKU match (product or any variation) wins
     const exactProduct = productIndex.filter((r) => (r.sku || "").toLowerCase() === q);
     if (exactProduct.length > 0) return exactProduct.slice(0, 20);
+    // Exact variation-SKU match wins. Compare with the same case-insensitive
+    // normalization the variation lookup uses so a product is not dropped when
+    // the SKU belongs to a variation whose product_id casing differs.
     const exactVarProductIds = new Set(
-      variations.filter((v) => (v.sku || "").toLowerCase() === q).map((v) => v.product_id),
+      variations
+        .filter((v) => (v.sku || "").toLowerCase() === q)
+        .map((v) => (v.product_id || "").trim().toLowerCase()),
     );
     if (exactVarProductIds.size > 0) {
-      return productIndex.filter((r) => exactVarProductIds.has(r.productId)).slice(0, 20);
+      return productIndex.filter((r) => exactVarProductIds.has((r.productId || "").trim().toLowerCase())).slice(0, 20);
     }
     return fuse.search(q).slice(0, 20).map((r) => r.item);
   }, [productIndex, fuse, productSearch, variations]);
@@ -485,7 +504,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const searchIndex = useMemo((): (SearchResult & { searchText: string })[] => {
     const flat: (SearchResult & { searchText: string })[] = [];
     for (const p of products) {
-      const productVariations = variations.filter((v) => v.product_id === p.id);
+      const productVariations = getProductVariations(p.id, variations);
       if (productVariations.length > 0) {
         for (const v of productVariations) {
           const varLabel =
@@ -621,6 +640,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       })
       .filter((x): x is CapturedMeasurement => x !== null);
   };
+
+  // Variations belonging to the product whose variation modal is open. Resolved
+  // with the shared case-insensitive lookup so in-stock variations are never
+  // hidden from the picker.
+  const selectedProductVariations = useMemo(
+    () => getProductVariations(selectedProduct?.id, variations),
+    [selectedProduct, variations],
+  );
 
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const total = subtotal - discount + shippingCost;
@@ -934,8 +961,11 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               productCatMap={productCatMap}
               stores={stores}
               onSelectProduct={(p) => {
-                const isVar = variations.some(v => v.product_id === p.id);
-                if (isVar) {
+                // Resolve variations the same way the database does (trimmed +
+                // case-insensitive UUID match) so a variable product never gets
+                // added straight to the cart without a size being chosen.
+                const productVariations = getProductVariations(p.id, variations);
+                if (productVariations.length > 0) {
                    setSelectedProduct(p);
                    setShowVariationModal(true);
                 } else {
@@ -1260,9 +1290,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       title={selectedProduct?.name || "Select Variation"}
     >
       <div className="space-y-4 py-4">
-        {variations.filter(v => v.product_id === selectedProduct?.id).length > 0 ? (
+        {selectedProductVariations.length > 0 ? (
           <div className="grid grid-cols-2 gap-2">
-            {variations.filter(v => v.product_id === selectedProduct?.id).map(v => (
+            {selectedProductVariations.map(v => (
               <Button
                 key={v.id}
                 variant="outline"
