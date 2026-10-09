@@ -89,15 +89,17 @@ export default function AuthConfirm() {
           }
 
           navigate(
-            `/welcome/setup-failed?code=${encodeURIComponent(provErr?.name || "PROVISION_FAILED")}&message=${encodeURIComponent(errMsg)}`
+            `/onboarding?error=${encodeURIComponent(provErr?.name || "PROVISION_FAILED")}&message=${encodeURIComponent(errMsg)}`
           );
           return;
         }
 
-        // Success! Clean up setup state and navigate to /welcome
+        // Success! Clean up setup state and navigate to the onboarding wizard
         localStorage.removeItem("dokanos_signup_nonce");
         localStorage.removeItem("dokanos_signup_business_name");
-        navigate(`/welcome?slug=${encodeURIComponent(provData.slug)}`);
+        navigate(
+          `/onboarding?slug=${encodeURIComponent(provData.slug)}&business_id=${encodeURIComponent(provData.business_id)}`
+        );
       } catch (err: any) {
         if (!active) return;
         setState("error");
@@ -165,13 +167,15 @@ export default function AuthConfirm() {
       if (provErr || !provData?.slug) {
         toast.error(provErr?.message || "Provisioning failed.");
         navigate(
-          `/welcome/setup-failed?message=${encodeURIComponent(provErr?.message || "Provisioning failed")}`
+          `/onboarding?error=${encodeURIComponent(provErr?.name || "PROVISION_FAILED")}&message=${encodeURIComponent(provErr?.message || "Provisioning failed")}`
         );
         return;
       }
 
       localStorage.removeItem("dokanos_signup_nonce");
-      navigate(`/welcome?slug=${encodeURIComponent(provData.slug)}`);
+      navigate(
+        `/onboarding?slug=${encodeURIComponent(provData.slug)}&business_id=${encodeURIComponent(provData.business_id)}`
+      );
     } catch (err: any) {
       setSubmittingReanchor(false);
       toast.error(err?.message || "An unexpected error occurred.");
