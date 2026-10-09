@@ -25,6 +25,8 @@ export interface Business {
   email: string | null;
   phone: string | null;
   is_active: boolean;
+  /** Server-side onboarding done marker (plan 01-04, D-09/D-12). */
+  onboarding_completed_at?: string | null;
 }
 
 export interface Brand {
@@ -54,6 +56,10 @@ interface BusinessContextValue {
   setActive: (id: string) => void;
   setActiveBrand: (id: string | null) => void;
   refresh: () => Promise<void>;
+  /** Count of selling_points rows under the active business (plan 01-04 guard input). */
+  sellingPointsCount: number;
+  /** Onboarding done marker read from the loaded active business (plan 01-04, D-09/D-12). */
+  onboardingCompletedAt: string | null;
 }
 
 const Ctx = createContext<BusinessContextValue | undefined>(undefined);
@@ -70,6 +76,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   );
   const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sellingPointsCount, setSellingPointsCount] = useState(0);
 
   const refresh = useCallback(async () => {
     // user_business_access RLS: users see their own rows. Join to businesses.
@@ -114,21 +121,22 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     };
   }, [refresh]);
 
-  // Load brands whenever the active business changes.
+  // Load brands + selling-point count whenever the active business changes.
   useEffect(() => {
     if (!activeId) {
       setBrands([]);
+      setSellingPointsCount(0);
       return;
     }
     let cancelled = false;
-    supabase
-      .from("brands")
-      .select("*")
-      .eq("business_id", activeId)
-      .order("name")
-      .then(({ data }) => {
-        if (!cancelled) setBrands((data as Brand[]) || []);
-      });
+    Promise.all([
+      supabase.from("brands").select("*").eq("business_id", activeId).order("name"),
+      supabase.from("selling_points").select("id", { count: "exact", head: true }).eq("business_id", activeId),
+    ]).then(([brandsRes, spRes]) => {
+      if (cancelled) return;
+      setBrands((brandsRes.data as Brand[]) || []);
+      setSellingPointsCount(spRes.count ?? 0);
+    });
     return () => {
       cancelled = true;
     };
@@ -153,6 +161,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   const activeBrand =
     brands.find((b) => b.id === activeBrandId) || null;
   const myRole = active ? rolesByBusiness[active.id] ?? null : null;
+  const onboardingCompletedAt = active?.onboarding_completed_at ?? null;
 
   return (
     <Ctx.Provider
@@ -167,6 +176,8 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
         setActive,
         setActiveBrand,
         refresh,
+        sellingPointsCount,
+        onboardingCompletedAt,
       }}
     >
       {children}
