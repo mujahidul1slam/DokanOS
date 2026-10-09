@@ -5,10 +5,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Step1Store } from "@/components/onboarding/Step1Store";
 import { Step2Locations } from "@/components/onboarding/Step2Locations";
 import { Step3SellingPoints } from "@/components/onboarding/Step3SellingPoints";
+import { Step4Storefront } from "@/components/onboarding/Step4Storefront";
 import type { CreateMyBrandStoreResult } from "@/lib/createMyBrandStore";
-import { deriveStartStep } from "@/components/onboarding/guards";
+import { decideRoute, deriveStartStep } from "@/components/onboarding/guards";
+import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, Check, CircleAlert, Store } from "lucide-react";
+import { AlertCircle, ArrowRight, Check, CircleAlert, Loader2, Store } from "lucide-react";
+import { toast } from "sonner";
 
 /** Fixed wizard order (D-10). Step 1 = store, 2 = locations, 3 = selling points, 4 = finish. */
 const STEP_LABELS = ["Store", "Locations", "Selling points", "Finish"] as const;
@@ -46,23 +49,6 @@ const StepIndicator = ({ current }: { current: number }) => (
   </ol>
 );
 
-/**
- * Steps 2–4 are explicit mount points for plan 01-04 — the shell's step
- * registry below is the seam that fills them. No business logic here.
- */
-const StepPlaceholder = ({ step }: { step: number }) => (
-  <div className="space-y-2 rounded-md border border-dashed border-border p-6 text-center">
-    <p className="text-sm font-medium">{STEP_LABELS[step - 1]}</p>
-    <p className="text-sm text-muted-foreground">
-      This step is coming in the next update. Your store and storefront are already
-      reserved — you can finish setup later from the dashboard.
-    </p>
-    <Button variant="outline" onClick={() => window.location.assign("/")}>
-      Go to dashboard <ArrowRight className="h-4 w-4" />
-    </Button>
-  </div>
-);
-
 const Shell = ({ children }: { children: ReactNode }) => (
   <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
     <div className="w-full max-w-xl space-y-6">
@@ -86,11 +72,13 @@ const Shell = ({ children }: { children: ReactNode }) => (
  * the failure path (RESEARCH Open Question 1).
  */
 export default function Onboarding() {
-  const { loading, active, brands, refresh, sellingPointsCount, onboardingCompletedAt } = useBusinessContext();
+  const { loading, active, businesses, brands, refresh, sellingPointsCount, onboardingCompletedAt } = useBusinessContext();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [step, setStep] = useState<number | null>(null);
   const [step1Result, setStep1Result] = useState<CreateMyBrandStoreResult | null>(null);
+  const [createOpen, setCreateOpen] = useState(true);
+  const [finishing, setFinishing] = useState(false);
 
   const paramError = searchParams.get("error");
   // ?slug=&business_id= is the AuthConfirm success contract (plan 01-05);
@@ -155,8 +143,45 @@ export default function Onboarding() {
     setStep(4);
   };
 
+  // Finish flow (D-09/D-12): writes the server-side done marker under the
+  // existing owner UPDATE policy — no new RPC. The marker is what stops the
+  // resume predicate, so skipped items are explicitly NOT re-trapped.
+  const handleFinish = async () => {
+    if (!active || finishing) return;
+    setFinishing(true);
+    try {
+      const { error } = await supabase
+        .from("businesses")
+        .update({ onboarding_completed_at: new Date().toISOString() })
+        .eq("id", active.id);
+      if (error) throw error;
+      await refresh();
+      toast.success("You're all set", {
+        description: "Your business setup is complete.",
+      });
+      navigate("/", { replace: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not finish setup.");
+    } finally {
+      setFinishing(false);
+    }
+  };
+
   // Render nothing while loading (PermissionGuard contract).
   if (loading || step === null) return null;
+
+  // Zero-membership create-business mode (D-04/D-12): when decideRoute yields
+  // "create-business" post-load, the shell presents CreateBusinessDialog
+  // full-page instead of the wizard steps. On success (refresh() +
+  // setActive(business_id) inside the dialog) the shell transitions into the
+  // wizard at step 1; a close without creation falls back to the re-anchor panel.
+  const decision = decideRoute({
+    loading,
+    memberships: businesses.length,
+    hasStore: brands.length > 0,
+    hasSellingPoints: sellingPointsCount > 0,
+    onboardingCompletedAt,
+  });
 
   // ?error= — the AuthConfirm failure contract: show a retry/re-anchor panel.
   if (paramError) {
@@ -186,22 +211,31 @@ export default function Onboarding() {
     );
   }
 
-  // No business membership at all: the wizard can't run without a business.
-  if (!active) {
+  // Zero memberships: the create-business surface replaces the wizard.
+  if (decision === "create-business") {
     return (
       <Shell>
-        <div className="space-y-4 rounded-md border border-border p-6">
-          <p className="flex items-start gap-2 text-sm">
-            <CircleAlert className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-            <span>
-              No business is linked to your account yet. Create your business
-              from the dashboard first, then return here to set up your store.
-            </span>
-          </p>
-          <Button variant="outline" onClick={() => navigate("/", { replace: true })}>
-            Go to dashboard
-          </Button>
-        </div>
+        {createOpen ? (
+          <CreateBusinessDialog open={createOpen} onOpenChange={setCreateOpen} />
+        ) : (
+          <div className="space-y-4 rounded-md border border-border p-6">
+            <p className="flex items-start gap-2 text-sm">
+              <CircleAlert className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+              <span>
+                No business is linked to your account yet. Create your business
+                to set up your store.
+              </span>
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setCreateOpen(true)}>
+                Create my business
+              </Button>
+              <Button variant="ghost" onClick={() => navigate("/", { replace: true })}>
+                Go to dashboard
+              </Button>
+            </div>
+          </div>
+        )}
       </Shell>
     );
   }
@@ -216,7 +250,25 @@ export default function Onboarding() {
       ) : step === 3 ? (
         <Step3SellingPoints brandId={resolved?.brand_id ?? null} onAdvance={handleStep3Advance} />
       ) : (
-        <StepPlaceholder step={step} />
+        <>
+          {resolved && (
+            <Step4Storefront
+              brandId={resolved.brand_id}
+              storeId={resolved.store_id}
+              storefrontId={resolved.storefront_id}
+              slug={resolved.slug}
+              onPublished={() => refresh()}
+            />
+          )}
+          <Button
+            onClick={handleFinish}
+            disabled={finishing || !active || brands.length === 0}
+            className="gap-1.5"
+          >
+            {finishing && <Loader2 className="h-4 w-4 animate-spin" />}
+            Finish setup <ArrowRight className="h-4 w-4" />
+          </Button>
+        </>
       )}
       {step === 1 && paramBusinessId && paramSlug && (
         <p className="text-xs text-muted-foreground text-center">
