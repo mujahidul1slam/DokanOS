@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +60,7 @@ const CONNECTOR_CAT_LABELS: Record<string, string> = {
 
 export default function StoresHub() {
   const { active, brands, loading: ctxLoading } = useBusinessContext();
+  const navigate = useNavigate();
   const [expandedBrand, setExpandedBrand] = useState<string | null>(null);
   const [tab, setTab] = useState<string>("locations");
 
@@ -83,9 +85,16 @@ export default function StoresHub() {
           </Badge>
         </div>
         {brands.length === 0 && (
-          <p className="mt-3 text-sm text-muted-foreground">
-            No brands yet. Brands are created automatically when a WooCommerce store is connected.
-          </p>
+          <div className="mt-3 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              No brands yet. Your first store and brand are created in the
+              onboarding wizard — they are not created automatically by
+              connecting a WooCommerce store.
+            </p>
+            <Button size="sm" onClick={() => navigate("/onboarding")}>
+              Open the onboarding wizard
+            </Button>
+          </div>
         )}
       </div>
 
@@ -134,9 +143,9 @@ function BrandCard({
     const [loc, sp, conn, psrc, csrc, sup] = await Promise.all([
       supabase.from("locations").select("*").eq("brand_id", brand.id).order("name"),
       supabase.from("selling_points").select("*").eq("brand_id", brand.id).order("name"),
-      supabase.from("connectors").select("*").or(`brand_id.eq.${brand.id},brand_id.is.null`).order("category").order("name"),
-      supabase.from("product_sources").select("*").or(`brand_id.eq.${brand.id},brand_id.is.null`).order("name"),
-      supabase.from("customer_sources").select("*").or(`brand_id.eq.${brand.id},brand_id.is.null`).order("name"),
+      supabase.from("connectors").select("*").eq("brand_id", brand.id).order("category").order("name"),
+      supabase.from("product_sources").select("*").eq("brand_id", brand.id).order("name"),
+      supabase.from("customer_sources").select("*").eq("brand_id", brand.id).order("name"),
       supabase.from("suppliers").select("*").order("name"),
     ]);
     setLocations((loc.data as LocationRow[]) || []);
@@ -275,7 +284,12 @@ function LocationsPanel({ brandId, rows, onChanged }: { brandId: string; rows: L
         </Button>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No locations.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">No locations yet.</p>
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Add a location
+          </Button>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((l) => (
@@ -376,7 +390,12 @@ function SellingPointsPanel({
         </Button>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No selling points.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">No selling points yet.</p>
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Add a selling point
+          </Button>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((sp) => (
@@ -485,7 +504,12 @@ function SuppliersPanel({ rows, onChanged }: { rows: SupplierRow[]; onChanged: (
         </Button>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No suppliers yet.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">No locations yet.</p>
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Add a location
+          </Button>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((s) => (
@@ -559,13 +583,19 @@ function SuppliersPanel({ rows, onChanged }: { rows: SupplierRow[]; onChanged: (
 // Connectors panel (channels + couriers)
 // ---------------------------------------------------------------------------
 function ConnectorsPanel({ rows }: { rows: ConnectorRow[] }) {
+  const navigate = useNavigate();
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
         Integrations registered for this brand — WooCommerce channels and couriers (Pathao) today.
       </p>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No connectors.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">No connectors yet.</p>
+          <Button size="sm" variant="outline" onClick={() => navigate("/onboarding")}>
+            Set up in the onboarding wizard
+          </Button>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((c) => (
@@ -596,6 +626,7 @@ function SourcesPanel({
   kind, brandId, rows, onChanged,
 }: { kind: "product" | "customer"; brandId: string; rows: SourceRow[]; onChanged: () => void }) {
   const { active } = useBusinessContext();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", type: "other", sync_direction: "import" });
   const [saving, setSaving] = useState(false);
@@ -633,7 +664,14 @@ function SourcesPanel({
         </Button>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No sources registered.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">
+            {kind === "product" ? "No product sources yet." : "No customer sources yet."}
+          </p>
+          <Button size="sm" variant="outline" onClick={() => navigate("/onboarding")}>
+            Set up in the onboarding wizard
+          </Button>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((s) => (
