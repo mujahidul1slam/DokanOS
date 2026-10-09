@@ -1,8 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Step1Store } from "@/components/onboarding/Step1Store";
+import { Step2Locations } from "@/components/onboarding/Step2Locations";
+import { Step3SellingPoints } from "@/components/onboarding/Step3SellingPoints";
 import type { CreateMyBrandStoreResult } from "@/lib/createMyBrandStore";
+import { deriveStartStep } from "@/components/onboarding/guards";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, ArrowRight, Check, CircleAlert, Store } from "lucide-react";
 
@@ -82,10 +86,11 @@ const Shell = ({ children }: { children: ReactNode }) => (
  * the failure path (RESEARCH Open Question 1).
  */
 export default function Onboarding() {
-  const { loading, active, brands, refresh } = useBusinessContext();
+  const { loading, active, brands, refresh, sellingPointsCount, onboardingCompletedAt } = useBusinessContext();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [step, setStep] = useState<number | null>(null);
+  const [step1Result, setStep1Result] = useState<CreateMyBrandStoreResult | null>(null);
 
   const paramError = searchParams.get("error");
   // ?slug=&business_id= is the AuthConfirm success contract (plan 01-05);
@@ -94,16 +99,60 @@ export default function Onboarding() {
   const paramSlug = searchParams.get("slug");
   const paramBusinessId = searchParams.get("business_id");
 
-  // Derive the starting step from the server once loading finishes:
-  // brands already exist → step 1 (store creation) is done.
+  // Derive the starting step from the server once loading finishes via
+  // deriveStartStep (guards.ts): store/selling-point state gate the step —
+  // locations are NOT a resume trigger (audit R4).
   useEffect(() => {
     if (loading || step !== null) return;
-    setStep(brands.length > 0 ? 2 : 1);
-  }, [loading, step, brands.length]);
+    setStep(
+      deriveStartStep({
+        hasStore: brands.length > 0,
+        hasSellingPoints: sellingPointsCount > 0,
+        onboardingCompletedAt,
+      })
+    );
+  }, [loading, step, brands.length, sellingPointsCount, onboardingCompletedAt]);
 
-  const handleStep1Complete = async (_result: CreateMyBrandStoreResult) => {
+  // Re-derive the step-1 resolution when the shell mounts fresh mid-wizard
+  // (abandonment resume): resolve ids from the loaded brand (woo_store_id)
+  // and the R4a-reserved storefront (query storefronts for the store).
+  const rederiveBrand = step1Result ? null : (brands.find((b) => b.woo_store_id) ?? null);
+  const [rederived, setRederived] = useState<CreateMyBrandStoreResult | null>(null);
+  useEffect(() => {
+    if (step1Result || !rederiveBrand?.woo_store_id) return;
+    let cancelled = false;
+    const storeId = rederiveBrand.woo_store_id;
+    supabase
+      .from("storefronts")
+      .select("id")
+      .eq("store_id", storeId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data?.id) return;
+        setRederived({
+          store_id: storeId,
+          brand_id: rederiveBrand.id,
+          storefront_id: data.id as string,
+          slug: rederiveBrand.slug,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step1Result, rederiveBrand]);
+  const resolved = step1Result ?? rederived;
+
+  const handleStep1Complete = async (result: CreateMyBrandStoreResult) => {
     await refresh();
+    setStep1Result(result);
     setStep(2);
+  };
+
+  const handleStep2Advance = () => setStep(3);
+
+  const handleStep3Advance = async () => {
+    await refresh();
+    setStep(4);
   };
 
   // Render nothing while loading (PermissionGuard contract).
@@ -162,6 +211,10 @@ export default function Onboarding() {
       <StepIndicator current={step} />
       {step === 1 ? (
         <Step1Store onComplete={handleStep1Complete} />
+      ) : step === 2 ? (
+        <Step2Locations brandId={resolved?.brand_id ?? null} onAdvance={handleStep2Advance} />
+      ) : step === 3 ? (
+        <Step3SellingPoints brandId={resolved?.brand_id ?? null} onAdvance={handleStep3Advance} />
       ) : (
         <StepPlaceholder step={step} />
       )}
