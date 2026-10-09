@@ -179,6 +179,7 @@ export type Database = {
           is_active: boolean
           logo_url: string | null
           name: string
+          onboarding_completed_at: string | null
           phone: string | null
           slug: string
           timezone: string
@@ -193,6 +194,7 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name: string
+          onboarding_completed_at?: string | null
           phone?: string | null
           slug: string
           timezone?: string
@@ -207,6 +209,7 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name?: string
+          onboarding_completed_at?: string | null
           phone?: string | null
           slug?: string
           timezone?: string
@@ -3464,6 +3467,7 @@ export type Database = {
           is_active: boolean
           logo_url: string | null
           name: string
+          onboarding_completed_at: string | null
           phone: string | null
           slug: string
           timezone: string
@@ -3476,10 +3480,11 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      delete_unprovisioned_self: {
-        Args: never
+      create_my_brand_store: {
+        Args: { p_business_id: string; p_name: string }
         Returns: Json
       }
+      delete_unprovisioned_self: { Args: never; Returns: Json }
       enqueue_order_push: {
         Args: { p_order_id: string; p_reason?: string }
         Returns: undefined
@@ -3528,6 +3533,13 @@ export type Database = {
           slug: string
         }[]
       }
+      get_purge_candidates: {
+        Args: never
+        Returns: {
+          id: string
+          reason: string
+        }[]
+      }
       get_sync_alert_webhook_url: { Args: never; Returns: string }
       get_sync_worker_cron_token: { Args: never; Returns: string }
       get_user_permissions: {
@@ -3572,6 +3584,10 @@ export type Database = {
         Args: { p_nonce: string; p_user_id: string }
         Returns: Json
       }
+      publish_my_storefront: {
+        Args: { p_storefront_id?: string }
+        Returns: Json
+      }
       purge_trashed_orders: { Args: never; Returns: undefined }
       recover_orphaned_sync_rows: {
         Args: { p_stale_before: string }
@@ -3581,10 +3597,7 @@ export type Database = {
         Args: { p_store_id: string }
         Returns: undefined
       }
-      publish_my_storefront: {
-        Args: { p_storefront_id?: string }
-        Returns: Json
-      }
+      run_data_retention_cleanup: { Args: never; Returns: Json }
       set_member_business_role: {
         Args: { p_business: string; p_role: string; p_user: string }
         Returns: undefined
@@ -3600,11 +3613,15 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: undefined
       }
+      user_can_access_store: { Args: { p_store_id: string }; Returns: boolean }
       user_has_store_access: {
         Args: { _store_id: string; _user_id: string }
         Returns: boolean
       }
+      verify_create_my_brand_store: { Args: never; Returns: Json }
+      verify_member_scoped_rls: { Args: never; Returns: Json }
       verify_signup_fns: { Args: never; Returns: Json }
+      verify_signup_publish_and_delete_rpcs: { Args: never; Returns: Json }
       verify_signup_tables: { Args: never; Returns: Json }
     }
     Enums: {
