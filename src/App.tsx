@@ -58,6 +58,7 @@ const CheckEmail = lazy(() => import("./pages/CheckEmail"));
 const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
 const Welcome = lazy(() => import("./pages/Welcome"));
 const SetupFailed = lazy(() => import("./pages/SetupFailed"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -110,8 +111,12 @@ const AppRoutes = () => {
         <Route path="/signup" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Signup /></Suspense>} />
         <Route path="/check-email" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><CheckEmail /></Suspense>} />
         <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
-        <Route path="/welcome" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Welcome /></Suspense>} />
-        <Route path="/welcome/setup-failed" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><SetupFailed /></Suspense>} />
+      <Route path="/welcome" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Welcome /></Suspense>} />
+      <Route path="/welcome/setup-failed" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><SetupFailed /></Suspense>} />
+      {/* Onboarding wizard (D-10): full-page, outside DashboardLayout like
+          /welcome. The /welcome retirement happens in plan 01-05, atomic
+          with the AuthConfirm retarget — do not touch /welcome routes here. */}
+      <Route path="/onboarding" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Onboarding /></Suspense>} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
