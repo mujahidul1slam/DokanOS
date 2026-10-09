@@ -1,20 +1,21 @@
-import { Navigate, Outlet } from "react-router-dom";
+import type { ReactNode } from "react";
+import { Navigate } from "react-router-dom";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { decideRoute } from "./guards";
 
 /**
- * Route guard wrapping DashboardLayout (plan 01-04, D-17).
+ * Route guard wrapping DashboardLayout (plan 01-04/01-05, D-17).
  * Reads the extended business-context fields and delegates all branching
  * to the pure decideRoute predicate — no logic lives here.
  *
  * Decisions:
  *   wait             → render nothing (Pitfall 5: guards tolerate loading)
- *   create-business  → redirect to /onboarding?error=no-business
- *                      (the onboarding shell's !active panel handles it)
+ *   create-business  → redirect to /onboarding (the shell's create-business
+ *                      mode renders CreateBusinessDialog)
  *   wizard           → redirect to /onboarding
- *   app              → <Outlet />
+ *   app              → {children}
  */
-export function BusinessGuards() {
+export function BusinessGuards({ children }: { children: ReactNode }) {
   const {
     loading,
     businesses,
@@ -35,10 +36,10 @@ export function BusinessGuards() {
     case "wait":
       return null;
     case "create-business":
-      return <Navigate to="/onboarding?error=no-business" replace />;
+      return <Navigate to="/onboarding" replace />;
     case "wizard":
       return <Navigate to="/onboarding" replace />;
     case "app":
-      return <Outlet />;
+      return <>{children}</>;
   }
 }

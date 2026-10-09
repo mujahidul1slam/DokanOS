@@ -13,6 +13,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import PermissionGuard from "@/components/PermissionGuard";
 import CommandPalette from "@/components/CommandPalette";
 import DashboardLayout from "./components/DashboardLayout";
+import { BusinessGuards } from "@/components/onboarding/BusinessGuards";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import { Loader2 } from "lucide-react";
@@ -56,8 +57,6 @@ const VisualPageBuilder = lazy(() => import("@/components/storefront-admin/Visua
 const Signup = lazy(() => import("./pages/Signup"));
 const CheckEmail = lazy(() => import("./pages/CheckEmail"));
 const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
-const Welcome = lazy(() => import("./pages/Welcome"));
-const SetupFailed = lazy(() => import("./pages/SetupFailed"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -111,11 +110,9 @@ const AppRoutes = () => {
         <Route path="/signup" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Signup /></Suspense>} />
         <Route path="/check-email" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><CheckEmail /></Suspense>} />
         <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
-      <Route path="/welcome" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Welcome /></Suspense>} />
-      <Route path="/welcome/setup-failed" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><SetupFailed /></Suspense>} />
-      {/* Onboarding wizard (D-10): full-page, outside DashboardLayout like
-          /welcome. The /welcome retirement happens in plan 01-05, atomic
-          with the AuthConfirm retarget — do not touch /welcome routes here. */}
+      {/* Onboarding wizard (D-10): full-page, outside DashboardLayout. The
+          welcome-family routes were retired in plan 01-05, atomic with the
+          AuthConfirm retarget. */}
       <Route path="/onboarding" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Onboarding /></Suspense>} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -125,8 +122,6 @@ const AppRoutes = () => {
 
   return (
     <Routes>
-      <Route path="/welcome" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Welcome /></Suspense>} />
-      <Route path="/welcome/setup-failed" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><SetupFailed /></Suspense>} />
       <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
       <Route path="/signup" element={<Navigate to="/" replace />} />
       <Route path="/check-email" element={<Navigate to="/" replace />} />
@@ -140,7 +135,8 @@ const AppRoutes = () => {
           The storefront admin panel (2.1) lives INSIDE this shell as an
           in-content panel: same navigation, no hidden second app. */}
       <Route path="*" element={
-        <DashboardLayout>
+        <BusinessGuards>
+          <DashboardLayout>
           <CommandPalette />
           <Suspense fallback={<PageFallback />}>
             <Routes>
@@ -169,7 +165,8 @@ const AppRoutes = () => {
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
-        </DashboardLayout>
+          </DashboardLayout>
+        </BusinessGuards>
       } />
     </Routes>
   );
