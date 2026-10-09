@@ -31,15 +31,12 @@ describe("Signup Helper Utilities", () => {
       expect(generateStoreSlug("Acme Supplies")).toBe("acme-supplies");
     });
 
-    it("provides fallback with store- prefix for non-latin or symbol names", () => {
-      const slug = generateStoreSlug("দোকান");
-      expect(slug.startsWith("store-")).toBe(true);
-      expect(slug.length).toBeGreaterThan(6);
+    it("provides the deterministic literal 'store' fallback for non-latin names (create_my_brand_store parity)", () => {
+      expect(generateStoreSlug("দোকান")).toBe("store");
     });
 
-    it("provides fallback for empty input", () => {
-      const slug = generateStoreSlug("");
-      expect(slug.startsWith("store-")).toBe(true);
+    it("provides the deterministic 'store' fallback for empty input", () => {
+      expect(generateStoreSlug("")).toBe("store");
     });
   });
 

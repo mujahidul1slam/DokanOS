@@ -11,15 +11,24 @@ export const slugify = (input: string): string =>
     .slice(0, 48);
 
 /**
- * Produces a valid business/storefront slug with a random fallback
- * for names that strip to nothing (e.g. pure Bengali, emoji, symbols),
- * matching the server-side logic in signup_create_business_core.
+ * Store/brand slug derivation aligned EXACTLY to the create_my_brand_store
+ * RPC (migration 20261006121000_create_my_brand_store.sql): lowercase, collapse runs
+ * of non-alphanumerics to '-', trim leading/trailing '-', deterministic
+ * literal "store" when the cleaned base is under 2 chars (no random suffix —
+ * the preview must match the RPC's reserved slug), truncated at 60
+ * (left(v_slug_base, 60)).
+ *
+ * Display-only parity: the server derivation stays authoritative; after the
+ * RPC runs, the slug it RETURNs supersedes this preview. The signup core's
+ * random business-slug fallback does not apply to this derivation.
  */
 export const generateStoreSlug = (name: string): string => {
-  const base = slugify(name);
-  if (base.length >= 2) {
-    return base;
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (base.length < 2) {
+    return "store";
   }
-  const randomSuffix = Math.random().toString(36).substring(2, 6);
-  return `store-${randomSuffix}`;
+  return base.slice(0, 60);
 };
