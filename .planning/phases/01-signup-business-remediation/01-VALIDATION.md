@@ -3,8 +3,8 @@ phase: "1"
 slug: "signup-business-remediation"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-10-06"
 ---
 
@@ -43,22 +43,22 @@ created: "2026-10-06"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD-01 | — | 0 | R1-a | T-01 | Provisioned business = 1 businesses + 1 UBA('owner') + 33 user_permissions rows | SQL | `scripts/test_signup_rpc.sql` §1 (rewritten) | ❌ W0 rewrite | ⬜ pending |
-| TBD-02 | — | 0 | R1-b | T-01 | ZERO rows in stores/brands/locations/storefronts/selling_points/connectors/product_sources/customer_sources/user_store_access | SQL | same script, per-table count(*)=0 asserts | ❌ W0 rewrite | ⬜ pending |
-| TBD-03 | — | 0 | R1-c | T-02 | Gates (anchor/nonce/expiry/provider/domain/idempotency) re-run green unchanged | SQL | same script, gate sections carry-over | ✅ edit in place | ⬜ pending |
-| TBD-04 | — | 0 | R1-d | T-02 | create_additional_business idempotency: same-name≤24h→same id; diff name→new; user-B gets suffixed slug | SQL | same script §6b (new) | ❌ W0 | ⬜ pending |
-| TBD-05 | — | 0 | R4a-a | T-03 | owner/admin of A cannot create in B; member/viewer denied (P0001) | SQL | same script deny-asserts (member-JWT via set_context pattern :184–185) | ✅ pattern exists | ⬜ pending |
-| TBD-06 | — | 0 | R4a-b | T-03 | Second invoke returns the SAME store (single-store cap) | SQL + unit | script asserts + `src/test/createMyBrandStoreWrapper.test.ts` | ❌ W0 | ⬜ pending |
-| TBD-07 | — | 0 | R4a-c | T-03 | One transaction: store + brand(woo_store_id) + user_store_access + inactive storefront (reserved slug, is_active=false) | SQL | script asserts is_active=false, slug equality, brand link | ❌ W0 | ⬜ pending |
-| TBD-08 | — | 0 | R4-d1 | — | storefronts.view in bundle → fresh owner opens /storefronts | SQL + UAT | bundle count (R1-a) + manual UAT | — | ⬜ pending |
-| TBD-09 | — | 0 | R4-d2 | — | Resume: abandonment → step 3; explicit finish (marker) never re-trapped | unit | `src/test/onboardingGuards.test.ts` — pure predicate decideRoute across 5 state cases | ❌ W0 | ⬜ pending |
-| TBD-10 | — | 0 | R4-d3 | — | Zero-membership redirect fires, never during loading | unit | same predicate file, loading=true case | ❌ W0 | ⬜ pending |
-| TBD-11 | — | 0 | R4-d4 | — | Publish works post-wizard on the R4a-reserved storefront | SQL | script §5 re-pointed at R4a-created storefront id | ✅ edit target | ⬜ pending |
-| TBD-12 | — | 0 | R3-a | — | useStoresList fail-closed: zero brand-stores → [] never all stores | unit | `src/test/useStoresList.test.tsx` (renderHook + vi.mock client; assert from("stores") never called) | ❌ W0 | ⬜ pending |
-| TBD-13 | — | 0 | R3-b | — | No NULL-brand leakage; badges only for real connections; Connect CTAs | UAT + grep | manual UAT blank vs backfilled + grep no `brand_id.is.null` | — | ⬜ pending |
-| TBD-14 | — | 0 | R0-a | — | Detector matches ONLY template businesses; evidence columns per D-07 | SQL (operator) | `.planning/detect-window-businesses.sql` IS the deliverable; cross-check count vs report | ❌ W0 | ⬜ pending |
-| TBD-15 | — | 0 | R0-b | — | Report-only: zero destructive statements | review | grep gate: no DELETE/UPDATE/ALTER in file | — | ⬜ pending |
-| TBD-16 | — | 0 | Gate-regression | T-04 | Kill switch 403s when signup_open=false; purge/retention fns unchanged; delete_unprovisioned_self invariants hold under blank-slate | SQL | script gate-regression section (extends :210+ delete test) | ✅ extend existing | ⬜ pending |
+| TBD-01 | — | 0 | R1-a | T-01 | Provisioned business = 1 businesses + 1 UBA('owner') + 33 user_permissions rows | SQL | `scripts/test_signup_rpc.sql` §1 (rewritten) | ✅ exists | ⬜ pending (operator SQL run) |
+| TBD-02 | — | 0 | R1-b | T-01 | ZERO rows in stores/brands/locations/storefronts/selling_points/connectors/product_sources/customer_sources/user_store_access | SQL | same script, per-table count(*)=0 asserts | ✅ exists | ⬜ pending (operator SQL run) |
+| TBD-03 | — | 0 | R1-c | T-02 | Gates (anchor/nonce/expiry/provider/domain/idempotency) re-run green unchanged | SQL | same script, gate sections carry-over | ✅ exists | ⬜ pending (operator SQL run) |
+| TBD-04 | — | 0 | R1-d | T-02 | create_additional_business idempotency: same-name≤24h→same id; diff name→new; user-B gets suffixed slug | SQL | same script §6b (new) | ✅ exists | ⬜ pending (operator SQL run) |
+| TBD-05 | — | 0 | R4a-a | T-03 | owner/admin of A cannot create in B; member/viewer denied (P0001) | SQL | same script deny-asserts (member-JWT via set_context pattern :184–185) | ✅ exists | ⬜ pending (operator SQL run) |
+| TBD-06 | — | 0 | R4a-b | T-03 | Second invoke returns the SAME store (single-store cap) | SQL + unit | script asserts + `src/test/createMyBrandStoreWrapper.test.ts` | ✅ exists | ✅ green (unit seam ran green in the 125-test suite; SQL assert rides the operator run) |
+| TBD-07 | — | 0 | R4a-c | T-03 | One transaction: store + brand(woo_store_id) + user_store_access + inactive storefront (reserved slug, is_active=false) | SQL | script asserts is_active=false, slug equality, brand link | ✅ exists | ⬜ pending (operator SQL run) |
+| TBD-08 | — | 0 | R4-d1 | — | storefronts.view in bundle → fresh owner opens /storefronts | SQL + UAT | bundle count (R1-a) + manual UAT | — | ⬜ pending (operator UAT) |
+| TBD-09 | — | 0 | R4-d2 | — | Resume: abandonment → step 3; explicit finish (marker) never re-trapped | unit | `src/test/onboardingGuards.test.ts` — pure predicate decideRoute across 5 state cases | ✅ exists | ✅ green |
+| TBD-10 | — | 0 | R4-d3 | — | Zero-membership redirect fires, never during loading | unit | same predicate file, loading=true case | ✅ exists | ✅ green |
+| TBD-11 | — | 0 | R4-d4 | — | Publish works post-wizard on the R4a-reserved storefront | SQL | script §5 re-pointed at R4a-created storefront id | ✅ exists | ⬜ pending (operator SQL run) |
+| TBD-12 | — | 0 | R3-a | — | useStoresList fail-closed: zero brand-stores → [] never all stores | unit | `src/test/useStoresList.test.tsx` (renderHook + vi.mock client; assert from("stores") never called) | ✅ exists | ✅ green |
+| TBD-13 | — | 0 | R3-b | — | No NULL-brand leakage; badges only for real connections; Connect CTAs | UAT + grep | manual UAT blank vs backfilled + grep no `brand_id.is.null` | — | ✅ green (release-sweep grep 0 hits; visual UAT rides the operator walk) |
+| TBD-14 | — | 0 | R0-a | — | Detector matches ONLY template businesses; evidence columns per D-07 | SQL (operator) | `.planning/detect-window-businesses.sql` IS the deliverable; cross-check count vs report | ✅ exists | ⬜ pending (operator review, D-08) |
+| TBD-15 | — | 0 | R0-b | — | Report-only: zero destructive statements | review | grep gate: no DELETE/UPDATE/ALTER in file | — | ✅ green (release sweep 0 hits) |
+| TBD-16 | — | 0 | Gate-regression | T-04 | Kill switch 403s when signup_open=false; purge/retention fns unchanged; delete_unprovisioned_self invariants hold under blank-slate | SQL | script gate-regression section (extends :210+ delete test) | ✅ exists | ⬜ pending (operator SQL run) |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -66,12 +66,12 @@ created: "2026-10-06"
 
 ## Wave 0 Requirements
 
-- [ ] `scripts/test_signup_rpc.sql` — REWRITE (old-shape asserts fail silently post-R1; becomes the R1/R4a/gate acceptance script)
-- [ ] `.planning/detect-window-businesses.sql` — the R0 deliverable itself
-- [ ] `src/test/useStoresList.test.tsx` — R3-a fail-closed seam test
-- [ ] `src/test/onboardingGuards.test.ts` — R4-d2/d3 predicate tests
-- [ ] `src/test/createMyBrandStoreWrapper.test.ts` — R4a-b wrapper idempotency
-- [ ] Types regeneration (`supabase gen types`) must precede wizard implementation — wrapper needs typed `create_my_brand_store` in `Database["public"]["Functions"]`
+- [x] `scripts/test_signup_rpc.sql` — REWRITE (old-shape asserts fail silently post-R1; becomes the R1/R4a/gate acceptance script)
+- [x] `.planning/detect-window-businesses.sql` — the R0 deliverable itself
+- [x] `src/test/useStoresList.test.tsx` — R3-a fail-closed seam test
+- [x] `src/test/onboardingGuards.test.ts` — R4-d2/d3 predicate tests
+- [x] `src/test/createMyBrandStoreWrapper.test.ts` — R4a-b wrapper idempotency
+- [x] Types regeneration (`supabase gen types`) must precede wizard implementation — wrapper needs typed `create_my_brand_store` in `Database["public"]["Functions"]`
 
 *Framework install: none needed — jsdom/RTL/jest-dom configured and installed (verified).*
 
@@ -89,11 +89,11 @@ created: "2026-10-06"
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s
+- [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending
