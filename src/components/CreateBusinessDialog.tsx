@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import {
@@ -24,6 +25,7 @@ interface CreateBusinessDialogProps {
 
 export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialogProps) {
   const { refresh, setActive } = useBusinessContext();
+  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const turnstileRef = useRef<TurnstileWidgetRef>(null);
@@ -66,6 +68,8 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
       // Refresh business list and switch to newly created business
       await refresh();
       setActive(data.business_id);
+      // Wizard hand-off (R4): the fresh zero-brand business starts at step 1.
+      navigate("/onboarding");
     } catch (err: any) {
       setLoading(false);
       turnstileRef.current?.reset();
@@ -82,7 +86,9 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
               <Building2 className="h-5 w-5 text-primary" /> Create New Business
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Provision a complete new business entity with default showroom, warehouse, online storefront, and POS.
+              Creates your business, owner access, and permissions — nothing else.
+              The onboarding wizard then sets up your first store and a reserved
+              storefront.
             </DialogDescription>
           </DialogHeader>
 
@@ -101,7 +107,8 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 p-2 rounded border border-border/30">
                 <Store className="h-3.5 w-3.5 text-primary shrink-0" />
                 <span className="truncate">
-                  Storefront URL: <strong className="text-foreground">https://{slug}.stores.dokanos.app</strong>
+                  https://<strong className="text-foreground">{slug}</strong> — reserved
+                  when the wizard creates your store
                 </span>
               </div>
             </div>
