@@ -222,7 +222,7 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub', v_test_uid::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_test_uid::text, 'role', 'authenticated')::text, true);
   v_store_domain := NULL;
-  SELECT value INTO v_store_domain FROM public.app_config WHERE key = 'storefront_domain';
+  SELECT value #>> '{}' INTO v_store_domain FROM public.app_config WHERE key = 'storefront_domain';
   v_res := public.create_my_brand_store(v_biz_id, 'Bengal Artisans Main');
   RAISE NOTICE 'create_my_brand_store result: %', v_res;
   v_store_id := (v_res->>'store_id')::uuid;
@@ -357,7 +357,7 @@ BEGIN
 
   -- 8c. kill switch untouched: signup_open still false
   v_switch := NULL;
-  SELECT value INTO v_switch FROM public.app_config WHERE key = 'signup_open';
+  SELECT value #>> '{}' INTO v_switch FROM public.app_config WHERE key = 'signup_open';
   IF v_switch IS NULL OR v_switch <> 'false' THEN
     RAISE EXCEPTION 'gate-regression: signup_open must remain false, got %', v_switch;
   END IF;

@@ -84,7 +84,7 @@ SELECT b.id AS business_id,
           JOIN public.stores s ON s.id = br.woo_store_id
          WHERE br.business_id = b.id LIMIT 1)
         = 'https://' || b.slug || '.' ||
-          (SELECT ac.value FROM public.app_config ac WHERE ac.key = 'storefront_domain')
+          (SELECT ac.value #>> '{}' FROM public.app_config ac WHERE ac.key = 'storefront_domain')
     AND (SELECT s.status FROM public.brands br
           JOIN public.stores s ON s.id = br.woo_store_id
          WHERE br.business_id = b.id LIMIT 1) = 'disconnected'
@@ -174,7 +174,7 @@ FROM (
           JOIN public.stores s ON s.id = br.woo_store_id
          WHERE br.business_id = b.id LIMIT 1)
         = 'https://' || b.slug || '.' ||
-          (SELECT ac.value FROM public.app_config ac WHERE ac.key = 'storefront_domain')
+          (SELECT ac.value #>> '{}' FROM public.app_config ac WHERE ac.key = 'storefront_domain')
     AND (SELECT s.status FROM public.brands br
           JOIN public.stores s ON s.id = br.woo_store_id
          WHERE br.business_id = b.id LIMIT 1) = 'disconnected'
