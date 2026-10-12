@@ -276,6 +276,7 @@ BEGIN
   -- 6b. R4a-a: deny matrix
   -- member denied
   PERFORM set_member_business_role(v_member_uid, v_biz_id, 'member');
+  PERFORM set_config('request.jwt.claim.sub', v_member_uid::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_member_uid::text, 'role', 'authenticated')::text, true);
   BEGIN
     PERFORM public.create_my_brand_store(v_biz_id, 'Should Not Exist');
@@ -286,8 +287,10 @@ BEGIN
     END IF;
   END;
   -- viewer denied
+  PERFORM set_config('request.jwt.claim.sub', v_test_uid::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_test_uid::text, 'role', 'authenticated')::text, true);
   PERFORM set_member_business_role(v_viewer_uid, v_biz_id, 'viewer');
+  PERFORM set_config('request.jwt.claim.sub', v_viewer_uid::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_viewer_uid::text, 'role', 'authenticated')::text, true);
   BEGIN
     PERFORM public.create_my_brand_store(v_biz_id, 'Should Not Exist');
@@ -298,6 +301,7 @@ BEGIN
     END IF;
   END;
   -- owner of another business denied (user2 owns their own business, none on v_biz_id)
+  PERFORM set_config('request.jwt.claim.sub', v_user2_uid::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_user2_uid::text, 'role', 'authenticated')::text, true);
   BEGIN
     PERFORM public.create_my_brand_store(v_biz_id, 'Cross Tenant');
@@ -312,6 +316,7 @@ BEGIN
     RAISE EXCEPTION 'R4a-a: denied attempts left rows behind';
   END IF;
   -- restore owner context
+  PERFORM set_config('request.jwt.claim.sub', v_test_uid::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_test_uid::text, 'role', 'authenticated')::text, true);
   RAISE NOTICE 'R4a-a deny matrix PASSED.';
 
@@ -332,6 +337,7 @@ BEGIN
 
   -- 8. gate-regression
   -- 8a. provisioned owner denied by delete_unprovisioned_self (carried over)
+  PERFORM set_config('request.jwt.claim.sub', v_test_uid::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_test_uid::text, 'role', 'authenticated')::text, true);
   BEGIN
     PERFORM public.delete_unprovisioned_self();
@@ -372,6 +378,7 @@ BEGIN
   RAISE NOTICE 'gate-regression PASSED.';
 
   -- 9. delete_unprovisioned_self succeeds for an unprovisioned user (carried over)
+  PERFORM set_config('request.jwt.claim.sub', v_other_uid::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_other_uid::text, 'role', 'authenticated')::text, true);
   v_del_res := public.delete_unprovisioned_self();
   IF (v_del_res->>'status') <> 'ok' THEN
