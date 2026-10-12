@@ -4,7 +4,7 @@
  * Maps captcha-rejection errors uniformly to "Refresh and try again".
  */
 export function mapAuthError(error: any): string {
-  if (!error) return "";
+  if (!error) return "An unexpected error occurred. Please try again.";
   const msg = (error.message || error.error_description || String(error)).toLowerCase();
 
   // Captcha rejection errors across all endpoints

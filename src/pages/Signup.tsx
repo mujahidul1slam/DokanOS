@@ -120,7 +120,9 @@ export default function Signup() {
         },
       });
 
-      if (eventErr || (eventData && !eventData.success)) {
+      // The edge fn's success contract is { status: "ok" }; failures carry
+      // { error: "CODE", message }. Never treat a successful anchor as an error.
+      if (eventErr || (eventData && eventData.error)) {
         const errMsg = eventData?.error || eventErr?.message || "";
         if (errMsg.includes("RATE_LIMITED")) {
           setLoading(false);
