@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidget";
 import { isDisposableEmail } from "@/lib/disposableDomains";
 import { mapAuthError } from "@/lib/authErrors";
+import { readEdgeFnError } from "@/lib/edgeFnError";
 import { generateStoreSlug } from "@/lib/slug";
 import { toast } from "sonner";
 import { Loader2, Eye, EyeOff, Building2, Store, Lock, Mail, User, ShieldAlert } from "lucide-react";
@@ -123,13 +124,17 @@ export default function Signup() {
       // The edge fn's success contract is { status: "ok" }; failures carry
       // { error: "CODE", message }. Never treat a successful anchor as an error.
       if (eventErr || (eventData && eventData.error)) {
-        const errMsg = eventData?.error || eventErr?.message || "";
-        if (errMsg.includes("RATE_LIMITED")) {
+        const fnBody = eventData?.error
+          ? (eventData as { error?: string; message?: string })
+          : await readEdgeFnError(eventErr);
+        const errCode = fnBody?.error || "";
+        const errMsg = fnBody?.message || "";
+        if (errCode.includes("RATE_LIMITED")) {
           setLoading(false);
           navigate(`/check-email?email=${encodeURIComponent(email.trim())}&rate_limited=true`);
           return;
         }
-        toast.error(mapAuthError(eventData?.error || eventErr));
+        toast.error(errMsg || mapAuthError(fnBody || eventErr));
         turnstileRef.current?.reset();
         setLoading(false);
         return;

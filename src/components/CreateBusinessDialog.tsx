@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidget";
 import { generateStoreSlug } from "@/lib/slug";
+import { readEdgeFnError } from "@/lib/edgeFnError";
 import { toast } from "sonner";
 import { Building2, Loader2, Store, Plus } from "lucide-react";
 
@@ -56,7 +57,9 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
 
       if (error || !data?.business_id) {
         turnstileRef.current?.reset();
-        const msg = error?.message || data?.message || "Failed to create business";
+        const fnBody = await readEdgeFnError(error);
+        const msg =
+          fnBody?.message || data?.message || error?.message || "Failed to create business";
         toast.error(msg);
         return;
       }

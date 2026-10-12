@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { readEdgeFnError } from "@/lib/edgeFnError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,14 +83,15 @@ export default function AuthConfirm() {
         if (!active) return;
 
         if (provErr || !provData?.slug) {
-          const errMsg = provErr?.message || "";
+          const fnBody = await readEdgeFnError(provErr);
+          const errMsg = fnBody?.message || provErr?.message || "";
           if (errMsg.includes("PROVISION_NO_ANCHOR")) {
             setState("reanchor");
             return;
           }
 
           navigate(
-            `/onboarding?error=${encodeURIComponent(provErr?.name || "PROVISION_FAILED")}&message=${encodeURIComponent(errMsg)}`
+            `/onboarding?error=${encodeURIComponent(fnBody?.error || "PROVISION_FAILED")}&message=${encodeURIComponent(errMsg)}`
           );
           return;
         }
@@ -165,9 +167,10 @@ export default function AuthConfirm() {
       setSubmittingReanchor(false);
 
       if (provErr || !provData?.slug) {
-        toast.error(provErr?.message || "Provisioning failed.");
+        const fnBody = await readEdgeFnError(provErr);
+        toast.error(fnBody?.message || provErr?.message || "Provisioning failed.");
         navigate(
-          `/onboarding?error=${encodeURIComponent(provErr?.name || "PROVISION_FAILED")}&message=${encodeURIComponent(provErr?.message || "Provisioning failed")}`
+          `/onboarding?error=${encodeURIComponent(fnBody?.error || "PROVISION_FAILED")}&message=${encodeURIComponent(fnBody?.message || provErr?.message || "Provisioning failed")}`
         );
         return;
       }
