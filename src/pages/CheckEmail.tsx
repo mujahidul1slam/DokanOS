@@ -98,8 +98,8 @@ export default function CheckEmail() {
                 <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> What happens next?
               </div>
               <p>1. Open your email inbox and click the confirmation link.</p>
-              <p>2. We will automatically provision your business, default location, catalog, and storefront.</p>
-              <p>3. You'll enter your dashboard ready to sell!</p>
+              <p>2. We will set up your business, owner access, and permissions — nothing else yet.</p>
+              <p>3. You'll complete a short wizard to create your store and reserved storefront, then enter your dashboard.</p>
             </div>
           )}
 

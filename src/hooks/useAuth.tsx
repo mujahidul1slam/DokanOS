@@ -23,11 +23,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const fetchRole = async (userId: string) => {
+    // maybeSingle: Release-1 blank-slate owners have NO user_roles row
+    // (owner membership lives in user_business_access); .single() would 406.
     const { data } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
     const next = (data?.role as AppRole) || null;
     setRole((prev) => (prev === next ? prev : next));
   };
