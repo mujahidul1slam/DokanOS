@@ -125,6 +125,11 @@ const AppRoutes = () => {
       <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
       <Route path="/signup" element={<Navigate to="/" replace />} />
       <Route path="/check-email" element={<Navigate to="/" replace />} />
+      {/* Onboarding wizard (D-10): full-page, outside DashboardLayout AND
+          outside BusinessGuards — the guard's wizard redirect targets this
+          route, so wrapping it would loop (the shell renders the
+          create-business surface itself for zero memberships). */}
+      <Route path="/onboarding" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Onboarding /></Suspense>} />
       {/* Preview routes — FULL-BLEED, chrome-free (fix B): the preview iframe
           renders the storefront page alone, NOT the admin app. Must sit
           outside DashboardLayout so no sidebar/palette wraps the preview. */}
