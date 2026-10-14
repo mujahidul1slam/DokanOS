@@ -8,6 +8,7 @@ import { Step3SellingPoints } from "@/components/onboarding/Step3SellingPoints";
 import { Step4Storefront } from "@/components/onboarding/Step4Storefront";
 import type { CreateMyBrandStoreResult } from "@/lib/createMyBrandStore";
 import { decideRoute, deriveStartStep } from "@/components/onboarding/guards";
+import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, ArrowRight, Check, CircleAlert, Loader2, Store } from "lucide-react";
@@ -104,6 +105,7 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep] = useState<number | null>(null);
   const [step1Result, setStep1Result] = useState<CreateMyBrandStoreResult | null>(null);
+  const [createOpen, setCreateOpen] = useState(true);
   const [finishing, setFinishing] = useState(false);
 
   const paramError = searchParams.get("error");
@@ -237,27 +239,33 @@ export default function Onboarding() {
     );
   }
 
-  // Zero memberships: the account-setup recovery surface replaces the wizard
-  // (D-04/D-12). The FIRST business is anchor-gated (signup-provision), so the
-  // hand-off goes to /auth/confirm's re-anchor flow — the CreateBusinessDialog
-  // backs create_additional_business, which requires an existing membership
-  // and raises PROVISION_NOT_MEMBER for exactly these users.
+  // Zero memberships (D-04/D-12): the create-business surface replaces the
+  // wizard steps. create_additional_business serves first businesses for
+  // zero-membership confirmed accounts (migration 20261014120000); on the
+  // dialog's success (refresh() + setActive inside it) the shell transitions
+  // into the wizard at step 1. A close without creation falls back to a
+  // re-anchor panel — no navigation race with the dialog's close-then-refresh.
   if (decision === "create-business") {
     return (
       <Shell>
-        <div className="space-y-4 rounded-md border border-border p-6">
-          <p className="flex items-start gap-2 text-sm">
-            <CircleAlert className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-            <span>
-              Your account isn't linked to a business yet. Complete account setup
-              to provision your first business, then set up your store and a
-              reserved storefront.
-            </span>
-          </p>
-          <Button onClick={() => navigate("/auth/confirm", { replace: true })} className="gap-1.5">
-            Complete account setup <ArrowRight className="h-4 w-4" />
-          </Button>
-        </div>
+        {createOpen ? (
+          <CreateBusinessDialog open={createOpen} onOpenChange={setCreateOpen} />
+        ) : (
+          <div className="space-y-4 rounded-md border border-border p-6">
+            <p className="flex items-start gap-2 text-sm">
+              <CircleAlert className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+              <span>
+                Your account isn't linked to a business yet. Create your first
+                business to set up your store and a reserved storefront.
+              </span>
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setCreateOpen(true)}>
+                Create my business
+              </Button>
+            </div>
+          </div>
+        )}
       </Shell>
     );
   }
