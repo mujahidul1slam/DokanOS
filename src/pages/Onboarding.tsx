@@ -8,7 +8,7 @@ import { Step3SellingPoints } from "@/components/onboarding/Step3SellingPoints";
 import { Step4Storefront } from "@/components/onboarding/Step4Storefront";
 import type { CreateMyBrandStoreResult } from "@/lib/createMyBrandStore";
 import { decideRoute, deriveStartStep } from "@/components/onboarding/guards";
-import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, ArrowRight, Check, CircleAlert, Loader2, Store } from "lucide-react";
 import { toast } from "sonner";
@@ -49,18 +49,45 @@ const StepIndicator = ({ current }: { current: number }) => (
   </ol>
 );
 
-const Shell = ({ children }: { children: ReactNode }) => (
-  <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-    <div className="w-full max-w-xl space-y-6">
-      <header className="flex items-center gap-2">
-        <Store className="h-5 w-5 text-primary" />
-        <span className="font-semibold">DokanOS</span>
-        <span className="text-sm text-muted-foreground">· Setting up your business</span>
-      </header>
-      {children}
+const Shell = ({ children }: { children: ReactNode }) => {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/login", { replace: true });
+  };
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-xl space-y-6">
+        <header className="flex items-center gap-2 flex-wrap">
+          <Store className="h-5 w-5 text-primary" />
+          <span className="font-semibold">DokanOS</span>
+          <span className="text-sm text-muted-foreground">· Setting up your business</span>
+          {user && (
+            <span className="ml-auto flex items-center gap-1.5 min-w-0">
+              <span
+                className="text-xs text-muted-foreground truncate max-w-[220px]"
+                title={user.email ?? undefined}
+              >
+                {user.email}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs shrink-0"
+                onClick={handleSignOut}
+              >
+                Sign out
+              </Button>
+            </span>
+          )}
+        </header>
+        {children}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 /**
  * Full-page onboarding wizard at /onboarding (D-10): lives outside
@@ -77,7 +104,6 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep] = useState<number | null>(null);
   const [step1Result, setStep1Result] = useState<CreateMyBrandStoreResult | null>(null);
-  const [createOpen, setCreateOpen] = useState(true);
   const [finishing, setFinishing] = useState(false);
 
   const paramError = searchParams.get("error");
@@ -211,31 +237,27 @@ export default function Onboarding() {
     );
   }
 
-  // Zero memberships: the create-business surface replaces the wizard.
+  // Zero memberships: the account-setup recovery surface replaces the wizard
+  // (D-04/D-12). The FIRST business is anchor-gated (signup-provision), so the
+  // hand-off goes to /auth/confirm's re-anchor flow — the CreateBusinessDialog
+  // backs create_additional_business, which requires an existing membership
+  // and raises PROVISION_NOT_MEMBER for exactly these users.
   if (decision === "create-business") {
     return (
       <Shell>
-        {createOpen ? (
-          <CreateBusinessDialog open={createOpen} onOpenChange={setCreateOpen} />
-        ) : (
-          <div className="space-y-4 rounded-md border border-border p-6">
-            <p className="flex items-start gap-2 text-sm">
-              <CircleAlert className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-              <span>
-                No business is linked to your account yet. Create your business
-                to set up your store.
-              </span>
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setCreateOpen(true)}>
-                Create my business
-              </Button>
-              <Button variant="ghost" onClick={() => navigate("/", { replace: true })}>
-                Go to dashboard
-              </Button>
-            </div>
-          </div>
-        )}
+        <div className="space-y-4 rounded-md border border-border p-6">
+          <p className="flex items-start gap-2 text-sm">
+            <CircleAlert className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+            <span>
+              Your account isn't linked to a business yet. Complete account setup
+              to provision your first business, then set up your store and a
+              reserved storefront.
+            </span>
+          </p>
+          <Button onClick={() => navigate("/auth/confirm", { replace: true })} className="gap-1.5">
+            Complete account setup <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
       </Shell>
     );
   }
