@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 /**
@@ -77,6 +77,23 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sellingPointsCount, setSellingPointsCount] = useState(0);
+  const scopedLoadToken = useRef(0);
+
+  // Brands + selling-point count for a business. Called from BOTH the
+  // activeId effect and refresh() — the wizard creates the brand mid-session
+  // (create_my_brand_store), so refresh() must re-read the scoped state too
+  // or brands.length stays stale at 0 and gates built on it (the wizard's
+  // Finish button) never re-enable in the same session.
+  const loadScoped = useCallback(async (bizId: string) => {
+    const token = ++scopedLoadToken.current;
+    const [brandsRes, spRes] = await Promise.all([
+      supabase.from("brands").select("*").eq("business_id", bizId).order("name"),
+      supabase.from("selling_points").select("id", { count: "exact", head: true }).eq("business_id", bizId),
+    ]);
+    if (token !== scopedLoadToken.current) return; // superseded by a newer load
+    setBrands((brandsRes.data as Brand[]) || []);
+    setSellingPointsCount(spRes.count ?? 0);
+  }, []);
 
   const refresh = useCallback(async () => {
     // user_business_access RLS: users see their own rows. Join to businesses.
@@ -103,8 +120,12 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
 
       const brandStored = localStorage.getItem(BRAND_STORAGE_PREFIX + effective);
       setActiveBrandId(brandStored && brandStored !== "null" ? brandStored : null);
+
+      // Re-read the scoped brand/count state: the active business may have
+      // gained its first store/brand since the last load (wizard step 1).
+      loadScoped(effective);
     }
-  }, []);
+  }, [loadScoped]);
 
   useEffect(() => {
     refresh();
@@ -124,23 +145,13 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   // Load brands + selling-point count whenever the active business changes.
   useEffect(() => {
     if (!activeId) {
+      scopedLoadToken.current++; // invalidate any in-flight load
       setBrands([]);
       setSellingPointsCount(0);
       return;
     }
-    let cancelled = false;
-    Promise.all([
-      supabase.from("brands").select("*").eq("business_id", activeId).order("name"),
-      supabase.from("selling_points").select("id", { count: "exact", head: true }).eq("business_id", activeId),
-    ]).then(([brandsRes, spRes]) => {
-      if (cancelled) return;
-      setBrands((brandsRes.data as Brand[]) || []);
-      setSellingPointsCount(spRes.count ?? 0);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeId]);
+    loadScoped(activeId);
+  }, [activeId, loadScoped]);
 
   const setActive = (id: string) => {
     setActiveId(id);
