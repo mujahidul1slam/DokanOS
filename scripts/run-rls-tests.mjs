@@ -12,6 +12,7 @@
  * an uncaught error is always a real policy bug.
  */
 import { execSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import pg from "pg";
@@ -41,7 +42,7 @@ const ADMIN = "00000000-0000-0000-0000-00000000000a";
 const STAFF_NO = "00000000-0000-0000-0000-00000000000b";
 const STAFF_MGMT = "00000000-0000-0000-0000-00000000000c";
 
-function dbUrl() {
+function localStatus() {
   try {
     const out = execSync("supabase status --output json", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     const { DB_URL } = JSON.parse(out);
@@ -50,11 +51,89 @@ function dbUrl() {
         !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
       throw new Error("Refusing non-local Supabase DB URL");
     }
-    return DB_URL;
+    return JSON.parse(out);
   } catch {
     console.error("FAIL: could not resolve local Supabase DB URL. Is Docker running?");
     // CLI errors may include local credentials; do not echo raw status output.
     process.exit(1);
+  }
+}
+
+function jwtFor(status, userId) {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const header = encode({ alg: "HS256", typ: "JWT" });
+  const payload = encode({
+    aud: "authenticated",
+    exp: Math.floor(Date.now() / 1000) + 300,
+    role: "authenticated",
+    sub: userId,
+  });
+  const signature = createHmac("sha256", status.JWT_SECRET)
+    .update(`${header}.${payload}`)
+    .digest("base64url");
+  return `${header}.${payload}.${signature}`;
+}
+
+async function runApiChecks(client, status) {
+  const storeA = "33333333-0000-0000-0000-000000000011";
+  const storeB = "33333333-0000-0000-0000-000000000012";
+  const productA = "55555555-0000-0000-0000-000000000011";
+  const productB = "55555555-0000-0000-0000-000000000012";
+  await client.query(`
+    INSERT INTO public.stores (id, name, url) VALUES
+      ('${storeA}', 'API Store A', 'https://api-a.test'),
+      ('${storeB}', 'API Store B', 'https://api-b.test')
+    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO public.brands (id, business_id, name, slug, woo_store_id) VALUES
+      ('44444444-0000-0000-0000-000000000011', '${BIZ_A}', 'API Brand A', 'issue-10-api-brand-a', '${storeA}'),
+      ('44444444-0000-0000-0000-000000000012', '${B_OTHER}', 'API Brand B', 'issue-10-api-brand-b', '${storeB}')
+    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO public.products (id, store_id, name) VALUES
+      ('${productA}', '${storeA}', 'API Product A'),
+      ('${productB}', '${storeB}', 'API Product B')
+    ON CONFLICT (id) DO NOTHING;
+  `);
+
+  const headersFor = (userId) => ({
+    apikey: status.ANON_KEY,
+    Authorization: `Bearer ${jwtFor(status, userId)}`,
+    "Content-Type": "application/json",
+  });
+  const productIds = async (userId) => {
+    const response = await fetch(`${status.API_URL}/rest/v1/products?select=id&id=in.(${productA},${productB})`, {
+      headers: headersFor(userId),
+    });
+    if (!response.ok) throw new Error(`API SELECT failed (${response.status})`);
+    return (await response.json()).map((row) => row.id).sort();
+  };
+
+  try {
+    const ownerIds = await productIds(FIXTURE_IDS[3]);
+    const memberIds = await productIds(FIXTURE_IDS[6]);
+    const nonmemberIds = await productIds(FIXTURE_IDS[9]);
+    const globalStaffIds = await productIds(FIXTURE_IDS[1]);
+    if (ownerIds.join() !== productA || memberIds.join() !== productA) {
+      throw new Error("owner/member API read did not stay inside Biz A");
+    }
+    if (nonmemberIds.length || globalStaffIds.length) {
+      throw new Error("nonmember or legacy global role crossed the API account boundary");
+    }
+    const forged = await fetch(`${status.API_URL}/rest/v1/products`, {
+      method: "POST",
+      headers: { ...headersFor(FIXTURE_IDS[6]), Prefer: "return=representation" },
+      body: JSON.stringify({ store_id: storeB, name: "Forged API Product" }),
+    });
+    if (forged.ok) throw new Error("forged cross-account store id was accepted by the API");
+    console.log("PASS  account_boundaries_api (owner/member/nonmember + forged id)");
+  } finally {
+    await client.query(`
+      DELETE FROM public.products WHERE id IN ('${productA}', '${productB}') OR name = 'Forged API Product';
+      DELETE FROM public.brands WHERE id IN (
+        '44444444-0000-0000-0000-000000000011',
+        '44444444-0000-0000-0000-000000000012'
+      );
+      DELETE FROM public.stores WHERE id IN ('${storeA}', '${storeB}');
+    `);
   }
 }
 
@@ -122,8 +201,8 @@ async function seed(client) {
 }
 
 async function run() {
-  const url = dbUrl();
-  const client = new Client({ connectionString: url });
+  const status = localStatus();
+  const client = new Client({ connectionString: status.DB_URL });
   await client.connect();
   try {
     await seed(client);
@@ -147,6 +226,14 @@ async function run() {
         // recover before running the next file so its verdict is independent.
         await client.query("ROLLBACK");
         await client.query("RESET ROLE");
+      }
+    }
+    if (failures === 0) {
+      try {
+        await runApiChecks(client, status);
+      } catch (e) {
+        failures++;
+        console.log(`FAIL  account_boundaries_api: ${e.message}`);
       }
     }
     console.log(failures === 0 ? `\nALL GREEN (${files.length} files)` : `\n${failures} file(s) FAILED`);

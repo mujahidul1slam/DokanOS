@@ -139,6 +139,72 @@ test("explicitly creating another business switches setup to that business, not 
   await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("New Account");
 });
 
+test("a verified person creates their first empty business and becomes its owner", async ({ page }) => {
+  const created = { id: "11111111-0000-0000-0000-000000000003", name: "First Account", slug: "first", is_active: true };
+  const memberships: unknown[] = [];
+  const requests = await api(page, memberships);
+  await signedIn(page);
+  await page.route("**/functions/v1/create-business", async (route) => {
+    memberships.push({ role: "owner", business_id: created.id, businesses: created });
+    await route.fulfill({ json: { business_id: created.id } });
+  });
+
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: "Create a business account", exact: true }).click();
+  await page.getByLabel("Business Name", { exact: true }).fill("First Account");
+  await page.getByRole("button", { name: "Create Business", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dokanos-active-business-id"))).toBe(created.id);
+  expect(requests.some((request) =>
+    ["POST", "PATCH", "PUT", "DELETE"].includes(request.method)
+    && /\/rest\/v1\/(brands|selling_points|stores)$/.test(request.path)
+  )).toBe(false);
+});
+
+test("switching revalidates a stale account membership before changing context", async ({ page }) => {
+  const retained = { id: "11111111-0000-0000-0000-000000000001", name: "Retained Account", slug: "retained", is_active: true };
+  const revoked = { id: "11111111-0000-0000-0000-000000000002", name: "Revoked Account", slug: "revoked", is_active: true };
+  const memberships = [
+    { role: "owner", business_id: retained.id, businesses: retained },
+    { role: "member", business_id: revoked.id, businesses: revoked },
+  ];
+  await api(page, memberships);
+  await signedIn(page);
+  await page.addInitScript((id) => localStorage.setItem("dokanos-active-business-id", id), retained.id);
+  await page.goto("/accounts");
+  await expect(page.getByRole("button", { name: "Revoked Account", exact: true })).toBeVisible();
+
+  memberships.splice(1, 1);
+  await page.getByRole("button", { name: "Revoked Account", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/accounts$/);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dokanos-active-business-id"))).toBe(retained.id);
+  await expect(page.getByRole("button", { name: "Revoked Account", exact: true })).toHaveCount(0);
+});
+
+test("switching accounts refreshes account-scoped permissions and resources", async ({ page }) => {
+  const first = { id: "11111111-0000-0000-0000-000000000001", name: "First Context", slug: "first-context", is_active: true };
+  const second = { id: "11111111-0000-0000-0000-000000000002", name: "Second Context", slug: "second-context", is_active: true };
+  const requests = await api(page, [
+    { role: "owner", business_id: first.id, businesses: first },
+    { role: "member", business_id: second.id, businesses: second },
+  ]);
+  await signedIn(page);
+  await page.addInitScript((id) => localStorage.setItem("dokanos-active-business-id", id), first.id);
+  await page.goto("/accounts");
+  const permissionLoadsBefore = requests.filter((request) => request.path.endsWith("/rpc/get_user_permissions")).length;
+
+  await page.getByRole("button", { name: "Second Context", exact: true }).click();
+
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dokanos-active-business-id"))).toBe(second.id);
+  await expect.poll(() => requests.filter((request) => request.path.endsWith("/rpc/get_user_permissions")).length)
+    .toBeGreaterThan(permissionLoadsBefore);
+  await expect.poll(() => requests.some((request) =>
+    request.path.endsWith("/brands") && new URL(request.url).searchParams.get("business_id")?.includes(second.id)
+  )).toBe(true);
+});
+
 test("an invalid confirmation preserves invitation intent without offering business setup", async ({ page }) => {
   const requests = await api(page);
   await page.goto("/auth/confirm?error=access_denied&invite=retry-invitation");

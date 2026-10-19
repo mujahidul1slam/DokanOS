@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useQueryClient } from "@tanstack/react-query";
 
 /**
  * Multi-business restructure Phase 1: the REAL business context.
@@ -55,7 +56,7 @@ interface BusinessContextValue {
   rolesByBusiness: Record<string, string>;
   loading: boolean;
   error: string | null;
-  setActive: (id: string) => void;
+  setActive: (id: string) => Promise<boolean>;
   setActiveBrand: (id: string | null) => void;
   refresh: () => Promise<void>;
   /** Count of selling_points rows under the active business (plan 01-04 guard input). */
@@ -71,6 +72,7 @@ const BRAND_STORAGE_PREFIX = "dokanos-active-brand-";
 
 export const BusinessContextProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const userId = user?.id;
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const currentBusinesses = useRef<Business[]>([]);
@@ -185,14 +187,26 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     loadScoped(activeId);
   }, [activeId, loadScoped]);
 
-  const setActive = (id: string) => {
-    // refresh() callers may hold a setter from before the React re-render.
-    if (!currentBusinesses.current.some((business) => business.id === id)) return;
+  const setActive = async (id: string) => {
+    // Membership can be revoked while an account is still rendered. Re-read
+    // the authoritative membership list before accepting any user selection.
+    await refresh();
+    if (!currentBusinesses.current.some((business) => business.id === id)) return false;
+
+    // Account-scoped React Query results must never survive a tenant switch,
+    // even when an older query omitted the account id from its cache key.
+    await queryClient.cancelQueries();
+    queryClient.removeQueries();
+    scopedLoadToken.current++;
+    setBrands([]);
+    setSellingPointsCount(0);
     setActiveId(id);
     localStorage.setItem(STORAGE_KEY, id);
     // Per-business brand selection resets on switch.
     const brandStored = localStorage.getItem(BRAND_STORAGE_PREFIX + id);
     setActiveBrandId(brandStored && brandStored !== "null" ? brandStored : null);
+    await loadScoped(id);
+    return true;
   };
 
   const setActiveBrand = (id: string | null) => {

@@ -25,7 +25,7 @@ interface CreateBusinessDialogProps {
 }
 
 export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialogProps) {
-  const { refresh, setActive } = useBusinessContext();
+  const { setActive } = useBusinessContext();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -69,14 +69,15 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
       onOpenChange(false);
 
       // Refresh business list and switch to newly created business
-      await refresh();
-      setActive(data.business_id);
+      if (!await setActive(data.business_id)) {
+        throw new Error("The new business account membership could not be verified.");
+      }
       // Wizard hand-off (R4): the fresh zero-brand business starts at step 1.
       navigate("/onboarding");
-    } catch (err: any) {
+    } catch (err: unknown) {
       setLoading(false);
       turnstileRef.current?.reset();
-      toast.error(err?.message || "An unexpected error occurred");
+      toast.error(err instanceof Error ? err.message : "An unexpected error occurred");
     }
   };
 

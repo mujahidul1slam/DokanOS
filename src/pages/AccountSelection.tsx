@@ -40,9 +40,8 @@ export default function AccountSelection() {
             <ul className="space-y-2">
               {businesses.map((business) => (
                 <li key={business.id}>
-                  <Button variant="outline" className="w-full justify-start" onClick={() => {
-                    setActive(business.id);
-                    navigate("/", { replace: true });
+                  <Button variant="outline" className="w-full justify-start" onClick={async () => {
+                    if (await setActive(business.id)) navigate("/", { replace: true });
                   }}>{business.name}</Button>
                 </li>
               ))}
