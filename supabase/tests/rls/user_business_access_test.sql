@@ -163,7 +163,7 @@ BEGIN
 END $$;
 ROLLBACK;
 
--- ============ AC-7 (Shape B x3): owner deletes own row w/ co-owner; owner deletes member; uba-admin deletes member ============
+-- ============ AC-7: own-row leave; restricted direct DELETE; owner RPC management ============
 -- 7a: OWNER_A (co-owner exists) deletes own row → allowed
 BEGIN;
 SET LOCAL ROLE authenticated;
@@ -175,33 +175,56 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000001')
   THEN RAISE EXCEPTION 'FAIL: W1a-AC7a co-owner leave did not persist' USING ERRCODE = 'P0001'; END IF;
 END $$;
+BEGIN;
 INSERT INTO public.user_business_access (user_id, business_id, role) VALUES ('00000000-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001', 'owner');
+COMMIT;
 
--- 7b: OWNER_A deletes MEMBER_A's row → allowed
+-- 7b: other-member direct DML is invisible even to owners (PLAN-v5 §5.5).
+-- Owner management uses the guarded RPC, not a widened table SELECT policy.
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}';
-DELETE FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004';
-COMMIT;
+DO $$
+DECLARE affected bigint;
+BEGIN
+  DELETE FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004';
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  IF affected <> 0 THEN
+    RAISE EXCEPTION 'FAIL: W1a-AC7b direct DELETE exposed another membership' USING ERRCODE = 'P0001';
+  END IF;
+END $$;
+SELECT public.set_member_business_role('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'viewer');
+RESET ROLE;
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004')
-  THEN RAISE EXCEPTION 'FAIL: W1a-AC7b owner delete of member did not persist' USING ERRCODE = 'P0001'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004' AND role='viewer') THEN
+    RAISE EXCEPTION 'FAIL: W1a-AC7b owner role RPC did not update the preserved membership' USING ERRCODE = 'P0001';
+  END IF;
 END $$;
-INSERT INTO public.user_business_access (user_id, business_id, role) VALUES ('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'member');
+ROLLBACK;
 
--- 7c: UBA_ADMIN_A deletes MEMBER_A's row → allowed
+-- 7c: legacy UBA_ADMIN_A has no other-member direct DELETE visibility either.
+-- Do not turn a legacy manager into an owner to make this assertion pass.
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated"}';
-DELETE FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004';
-COMMIT;
+DO $$
+DECLARE affected bigint;
+BEGIN
+  DELETE FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004';
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  IF affected <> 0 THEN
+    RAISE EXCEPTION 'FAIL: W1a-AC7c legacy manager deleted another membership' USING ERRCODE = 'P0001';
+  END IF;
+END $$;
+RESET ROLE;
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004')
-  THEN RAISE EXCEPTION 'FAIL: W1a-AC7c uba-admin delete of member did not persist' USING ERRCODE = 'P0001'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004' AND role='member') THEN
+    RAISE EXCEPTION 'FAIL: W1a-AC7c membership did not survive the direct DELETE' USING ERRCODE = 'P0001';
+  END IF;
 END $$;
-INSERT INTO public.user_business_access (user_id, business_id, role) VALUES ('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'member');
+ROLLBACK;
 
 -- ============ AC-8 (A'-DELETE / A'-UPDATE): uba-admin deletes/demotes sole owner of B_other → denied ============
 -- 8a: UBA_ADMIN_A attempts to delete OWNER_B (sole owner of B_other) → denied
@@ -291,66 +314,85 @@ BEGIN
 END $$;
 ROLLBACK;
 
--- ============ AC-10 (B x3 / A x1): owner demotes co-owner; uba-admin demotes co-owner; elevation rules ============
--- 10a: OWNER_A demotes co-owner OWNER_A2 (owner→member) → allowed (OWNER_A still owner)
+-- ============ AC-10: guarded owner RPC mutations; direct legacy-manager denials ============
+-- 10a: direct UPDATE is invisible; owner RPC demotion is allowed (another owner remains).
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}';
-UPDATE public.user_business_access SET role='member'
- WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002';
+DO $$
+DECLARE affected bigint;
+BEGIN
+  UPDATE public.user_business_access SET role='member'
+    WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002';
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  IF affected <> 0 THEN
+    RAISE EXCEPTION 'FAIL: W1a-AC10a direct UPDATE exposed another membership' USING ERRCODE = 'P0001';
+  END IF;
+END $$;
+SELECT public.set_member_business_role('00000000-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001', 'member');
 COMMIT;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002' AND role='member')
   THEN RAISE EXCEPTION 'FAIL: W1a-AC10a owner demote of co-owner did not persist' USING ERRCODE = 'P0001'; END IF;
 END $$;
+BEGIN;
 UPDATE public.user_business_access SET role='owner' WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002';
+COMMIT;
 
--- 10b: UBA_ADMIN_A demotes co-owner OWNER_A2 (owner→member) → allowed (OWNER_A still owner)
+-- 10b: a legacy manager must not acquire owner-demotion authority via direct DML.
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated"}';
-UPDATE public.user_business_access SET role='member'
- WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002';
-COMMIT;
+DO $$
+DECLARE affected bigint;
+BEGIN
+  UPDATE public.user_business_access SET role='member'
+    WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002';
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  IF affected <> 0 THEN
+    RAISE EXCEPTION 'FAIL: W1a-AC10b legacy manager demoted an owner' USING ERRCODE = 'P0001';
+  END IF;
+END $$;
+RESET ROLE;
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002' AND role='member')
-  THEN RAISE EXCEPTION 'FAIL: W1a-AC10b uba-admin demote of co-owner did not persist' USING ERRCODE = 'P0001'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002' AND role='owner')
+  THEN RAISE EXCEPTION 'FAIL: W1a-AC10b owner role did not survive' USING ERRCODE = 'P0001'; END IF;
 END $$;
-UPDATE public.user_business_access SET role='owner' WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002';
+ROLLBACK;
 
--- 10c: UBA_ADMIN_A elevates MEMBER_A viewer→owner → denied (WITH CHECK raises 42501)
+-- 10c: the guarded RPC denies legacy UBA_ADMIN_A an ownership elevation.
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated"}';
 DO $$
 BEGIN
   BEGIN
-    UPDATE public.user_business_access SET role='owner'
-     WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004';
+    PERFORM public.set_member_business_role('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'owner');
     RAISE EXCEPTION 'FAIL: W1a-AC10c uba-admin elevated a member to owner' USING ERRCODE = 'P0001';
   EXCEPTION
-    WHEN SQLSTATE '42501' THEN NULL;  -- UPDATE WITH CHECK elevation violation
+    WHEN SQLSTATE '42501' THEN NULL;
   END;
 END $$;
 ROLLBACK;
 
--- 10d: OWNER_A elevates MEMBER_A viewer→owner → allowed
+-- 10d: OWNER_A elevates MEMBER_A member→owner through the guarded RPC.
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}';
-UPDATE public.user_business_access SET role='owner'
- WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004';
+SELECT public.set_member_business_role('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'owner');
 COMMIT;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004' AND role='owner')
   THEN RAISE EXCEPTION 'FAIL: W1a-AC10d owner elevation did not persist' USING ERRCODE = 'P0001'; END IF;
 END $$;
+BEGIN;
 UPDATE public.user_business_access SET role='member' WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004';
+COMMIT;
 
--- ============ AC-11 (Shape A trigger): OWNER_A2 mutates OWNER_A's identity → trigger check_violation ============
+-- ============ AC-11 (Shape A trigger): OWNER_A2 mutates their own visible identity → trigger check_violation ============
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated"}';
@@ -358,7 +400,7 @@ DO $$
 BEGIN
   BEGIN
     UPDATE public.user_business_access SET user_id='00000000-0000-0000-0000-000000000008'
-     WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000001';
+     WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002';
     RAISE EXCEPTION 'FAIL: W1a-AC11 identity mutation succeeded' USING ERRCODE = 'P0001';
   EXCEPTION
     WHEN SQLSTATE '23514' THEN NULL;  -- check_violation from trg_uba_immutable
