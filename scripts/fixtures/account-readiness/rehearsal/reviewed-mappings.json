@@ -1,0 +1,14 @@
+[
+  {
+    "resource": "stores:clean", "rowHash": "store-1", "brandId": "brand",
+    "disposition": "store", "storeType": "online",
+    "reviewedBy": "fixture-operator",
+    "evidence": "Representative rehearsal: confirmed a single parent brand and an online operation; the Woo connector ID is retained. Synthetic only, not a deployed-data approval."
+  },
+  {
+    "resource": "locations:warehouse", "rowHash": "location-1", "brandId": "brand",
+    "disposition": "retain-legacy",
+    "reviewedBy": "fixture-operator",
+    "evidence": "Representative rehearsal: a warehouse is a retaining resource, not a physical or online selling store."
+  }
+]

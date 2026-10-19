@@ -257,7 +257,8 @@ export default function Onboarding() {
               <CircleAlert className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
               <span>
                 Your account isn't linked to a business yet. Create your first
-                business to set up your store and a reserved storefront.
+                business account to continue. A brand and stores are added
+                explicitly afterwards.
               </span>
             </p>
             <div className="flex gap-2">

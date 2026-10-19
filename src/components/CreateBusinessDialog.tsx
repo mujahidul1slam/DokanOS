@@ -90,9 +90,9 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
               <Building2 className="h-5 w-5 text-primary" /> Create New Business
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Creates your business, owner access, and permissions — nothing else.
-              The onboarding wizard then sets up your first store and a reserved
-              storefront.
+              Creates your business and owner access — nothing else. Your first
+              brand and stores are added explicitly; creating a business never
+              provisions a store, storefront or connector.
             </DialogDescription>
           </DialogHeader>
 
