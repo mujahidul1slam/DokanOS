@@ -68,9 +68,9 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
       : roleClass === "owner"
         ? ALL_PERMISSIONS
         : roleClass === "operator"
-          ? Array.from(new Set([...permissions, ...(membershipBaseline ?? [])]))
+          ? membershipBaseline ?? []
           : roleClass === "viewer"
-            ? permissions.length > 0 ? permissions : membershipBaseline ?? []
+            ? Array.from(new Set([...VIEWER_BASELINE, ...permissions.filter((permission) => VIEWER_BASELINE.includes(permission))]))
             : [],
     [active, permissions, membershipBaseline, roleClass],
   );
@@ -78,10 +78,12 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
   const can = useCallback((perm: AppPermission) => effectivePermissions.includes(perm), [effectivePermissions]);
   const canAny = useCallback((perms: AppPermission[]) => perms.some((p) => effectivePermissions.includes(p)), [effectivePermissions]);
   const hasStoreAccess = useCallback((storeId: string | null | undefined) => {
+    if (!active || !roleClass) return false;
+    if (roleClass === "owner" || roleClass === "operator") return true;
     if (!storeId) return true;
     if (storeIds.length === 0) return true; // unrestricted
     return storeIds.includes(storeId);
-  }, [storeIds]);
+  }, [active, roleClass, storeIds]);
 
   return (
     <PermissionsContext.Provider
@@ -208,8 +210,8 @@ const accountBaselinePermissions = (
 ): AppPermission[] | null => {
   switch (role) {
     case "owner":
-    case "admin":
       return ALL_PERMISSIONS;
+    case "admin":
     case "member":
       return STAFF_BASELINE;
     case "viewer":

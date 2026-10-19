@@ -28,6 +28,11 @@ const Probe = ({ perm }: { perm: AppPermission }) => {
   return <span data-testid="probe">{loading ? "loading" : can(perm) ? "yes" : "no"}</span>;
 };
 
+const StoreAccessProbe = ({ storeId }: { storeId: string | null }) => {
+  const { hasStoreAccess, loading } = usePermissions();
+  return <span data-testid={`store-${storeId ?? "none"}`}>{loading ? "loading" : hasStoreAccess(storeId) ? "yes" : "no"}</span>;
+};
+
 const renderProbe = (perm: AppPermission) =>
   render(
     <PermissionsProvider>
@@ -80,7 +85,10 @@ describe("account membership permission resolution (#13 operational access)", ()
     });
   });
 
-  it("member has account-wide operations including analytics, deletes, refunds and operational management", async () => {
+  it("member has operational capabilities but cannot inherit legacy owner/platform grants", async () => {
+    rpcMock.mockImplementation((fn: string) =>
+      Promise.resolve({ data: fn === "get_user_permissions" ? ["team.manage", "settings.manage", "audit.view"] : [], error: null }),
+    );
     setContext({ role: "member" });
     render(
       <PermissionsProvider>
@@ -197,22 +205,56 @@ describe("account membership permission resolution (#13 operational access)", ()
     });
   });
 
+  it("legacy account admin is operational, not an owner", async () => {
+    setContext({ role: "admin" });
+    render(
+      <PermissionsProvider>
+        <Probe perm="orders.refund" />
+        <Probe perm="team.manage" />
+        <Probe perm="settings.manage" />
+      </PermissionsProvider>,
+    );
+    await waitFor(() => {
+      const [refund, team, settings] = screen.getAllByTestId("probe");
+      expect(refund).toHaveTextContent("yes");
+      expect(team).toHaveTextContent("no");
+      expect(settings).toHaveTextContent("no");
+    });
+  });
+
   it("preserves existing viewer permission rows for compatibility", async () => {
     rpcMock.mockImplementation((fn: string) =>
-      Promise.resolve({ data: fn === "get_user_permissions" ? ["orders.view"] : [], error: null }),
+      Promise.resolve({ data: fn === "get_user_permissions" ? ["orders.create", "team.manage"] : [], error: null }),
     );
     setContext({ role: "viewer" });
     render(
       <PermissionsProvider>
         <Probe perm="orders.view" />
-        <Probe perm="dashboard.view" />
+        <Probe perm="orders.create" />
+        <Probe perm="team.manage" />
       </PermissionsProvider>,
     );
     await waitFor(() => {
-      const [orders, dashboard] = screen.getAllByTestId("probe");
+      const [orders, createOrder, team] = screen.getAllByTestId("probe");
       expect(orders).toHaveTextContent("yes");
-      expect(dashboard).toHaveTextContent("no");
+      expect(createOrder).toHaveTextContent("no");
+      expect(team).toHaveTextContent("no");
     });
+  });
+
+  it.each(["owner", "member"])('%s is not narrowed by legacy selected-store assignments', async (role) => {
+    rpcMock.mockImplementation((fn: string) => Promise.resolve({
+      data: fn === "get_user_store_ids" ? ["legacy-restricted-store"] : [], error: null,
+    }));
+    setContext({ role });
+    render(<PermissionsProvider><StoreAccessProbe storeId="another-account-store" /></PermissionsProvider>);
+    await waitFor(() => expect(screen.getByTestId("store-another-account-store")).toHaveTextContent("yes"));
+  });
+
+  it("fails closed for store access without an active business membership", async () => {
+    setContext({ role: null });
+    render(<PermissionsProvider><StoreAccessProbe storeId={null} /></PermissionsProvider>);
+    await waitFor(() => expect(screen.getByTestId("store-none")).toHaveTextContent("no"));
   });
 
   it("creates no user_roles/user_permissions rows and only reads through the resolver RPCs", async () => {

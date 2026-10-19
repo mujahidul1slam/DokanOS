@@ -427,6 +427,13 @@ test("an account member reaches operational routes and can create orders without
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
   await expect(page.getByText("Access denied")).toHaveCount(0);
+  for (const label of ["Analytics", "Integrations", "Storefronts", "Stores"]) {
+    await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole("link", { name: "Team", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Members", exact: true })).toHaveCount(0);
+  await page.getByRole("navigation").getByRole("link", { name: "POS", exact: true }).click();
+  await expect(page.getByRole("navigation").getByRole("link", { name: "POS Reports", exact: true })).toBeVisible();
 
   await page.goto("/orders");
   await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
@@ -464,6 +471,7 @@ test("an account owner retains operational and management surfaces", async ({ pa
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Team", exact: true })).toBeVisible();
   await page.goto("/orders");
   await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
   await expect(page.getByText("Access denied")).toHaveCount(0);

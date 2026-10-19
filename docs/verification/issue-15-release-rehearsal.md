@@ -148,11 +148,14 @@ stays **blocked** until a human resolves the records a mapping cannot.
 
 ## Final review corrections
 
-- Owners ignore restrictive legacy permission rows. Members receive account-wide
+- Owners ignore restrictive legacy permission and selected-store rows. Members receive account-wide
   operational UI capabilities (including refund/delete/analytics and store/integration
-  operations); team membership controls and global settings/audit controls remain
-  excluded because their existing backend checks are owner/platform authority. Legacy
-  viewer behavior is retained. Server membership isolation remains authoritative.
+  operations), independent of legacy permission and selected-store rows; team membership
+  controls and global settings/audit controls remain excluded because their existing
+  backend checks are owner/platform authority. Legacy `admin` is operational, not owner.
+  Viewers are constrained to the compatibility read-only capability set even when legacy
+  rows contain writes. No active membership fails closed. Server membership isolation
+  remains authoritative.
 - Global platform role alone cannot read or create brands/brand stores through the new
   account paths. Direct API/RLS probes cover global admin, global staff, foreign
   account, viewer, member, and forged parent identities. The unresolved global-authority
@@ -165,9 +168,10 @@ stays **blocked** until a human resolves the records a mapping cannot.
 Final review verification on the worker branch: fresh disposable local reset applied
 171 migrations; `node scripts/run-rls-tests.mjs` **ALL GREEN (14 files)**; real local
 Auth/PostgREST signup, ownership-transfer, and lifecycle scripts **1/1 each**; unit
-suite **206 passed / 3 skipped**; typecheck/build passed; Chrome accounts suite
-**30/30**. Chrome uses the real routed app with mocked Data API responses; the separate
-real-backend scripts and RLS battery prove server authorization. Lint remains at the
+suite **210 passed / 3 skipped**; typecheck/build passed; Chrome accounts suite
+**30/30**. Chrome runs the real routed UI with mocked Data API responses; it is not
+real-browser/real-backend E2E. Separate real-backend scripts and the RLS battery prove
+server authorization. Lint remains at the
 known **775 errors / 43 warnings** baseline; normalized changed-source diagnostic delta
 is **0 added / 0 removed**. The fixture rehearsal remains **7 blockers**, with
 `preservation: { preserved: true, violations: [] }`.

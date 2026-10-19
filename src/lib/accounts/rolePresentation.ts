@@ -4,7 +4,8 @@ export type AccountRoleClass = "owner" | "operator" | "viewer" | null;
 
 /** UI capability classification only; database/RPC checks remain authoritative. */
 export function accountRoleClass(role: string | null | undefined): AccountRoleClass {
-  if (role === "owner" || role === "admin") return "owner";
+  if (role === "owner") return "owner";
+  if (role === "admin") return "operator";
   if (role === "member") return "operator";
   if (role === "viewer") return "viewer";
   return null;

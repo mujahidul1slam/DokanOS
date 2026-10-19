@@ -49,7 +49,7 @@ const BASE_NAV_GROUPS: NavGroup[] = [
         { icon: Trash2, label: "Trash", path: "/orders?tab=trash", roles: ["admin", "staff", "viewer"] },
       ] },
       { icon: Monitor, label: "POS", path: "/pos", roles: ["admin", "staff"], children: [
-        { icon: Receipt, label: "POS Reports", path: "/pos/reports", roles: ["admin"] },
+        { icon: Receipt, label: "POS Reports", path: "/pos/reports", roles: ["admin", "staff"] },
       ] },
     ]
   },
@@ -63,12 +63,12 @@ const BASE_NAV_GROUPS: NavGroup[] = [
   {
     title: "System",
     items: [
-      { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin"] },
+      { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin", "staff"] },
       { icon: Tags, label: "Brands", path: "/brands", roles: ["admin", "staff", "viewer"] },
       { icon: UserPlus, label: "Members", path: "/members", roles: ["admin"] },
       { icon: Store, label: "Stores", path: "/stores", roles: ["admin", "staff"] },
-      { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin"] },
-      { icon: Plug, label: "Integrations", path: "/integrations", roles: ["admin"] },
+      { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin", "staff"] },
+      { icon: Plug, label: "Integrations", path: "/integrations", roles: ["admin", "staff"] },
       { icon: UsersRound, label: "Team", path: "/team", roles: ["admin"] },
       { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },
     ]
