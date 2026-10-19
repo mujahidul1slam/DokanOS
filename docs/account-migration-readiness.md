@@ -44,7 +44,8 @@ Credential values, emails, order notes, addresses and arbitrary JSON payloads ar
 exported. IDs and fingerprints are still sensitive. Nonempty opaque JSON columns are
 flagged for review, not parsed to invent ownership. Config-only/embedded references
 therefore cannot become a false ready result. RLS policy and relevant authorization
-function definitions/EXECUTE ACLs are fingerprinted, not exported as source code.
+function definitions/EXECUTE ACLs and ownership, table/column/schema ACLs and ownership, table RLS flags,
+database role capabilities and role membership are fingerprinted, not exported as source code.
 
 | Evidence | Blocking cases |
 | --- | --- |
@@ -52,7 +53,7 @@ function definitions/EXECUTE ACLs are fingerprinted, not exported as source code
 | `user_roles`, permission overrides (including revokes), custom roles/assignments, store assignments, permission settings and invitations | Global roles/grants/restrictions and legacy invitation intent are retained verbatim. Assignments/invitations block normalization; they never imply account membership. An empty store-assignment list is not evidence of account isolation. |
 | `brands.woo_store_id`, `storefronts.brand_id/store_id`, locations and selling points | No established brand/account, more than one brand/account, dangling links, inconsistent account identifiers, or lack of an explicit physical/online versus retain-legacy decision. |
 | All discovered operational relationship paths | Missing targets, unscoped operations, and cross-account references. Includes indirect history such as order items → orders, stock → products/locations, source registries, POS, fulfillment and storefront children where those tables exist. |
-| Full row and authorization fingerprints | Rehearsal blocks removed/changed legacy rows, removed relationship contracts, and changed/removed policy/function evidence. Additive rows/tables/references are permitted. |
+| Full row and authorization fingerprints | Rehearsal blocks removed/changed legacy rows, removed relationship contracts, and added/changed/removed authorization evidence, including ACLs and RLS flags. Additive data rows/tables/references are permitted, but authorization changes need separate review. |
 
 Legacy `stores` rows are WooCommerce connections; a `location`, `selling_point` or
 `storefront` is **not automatically** a store in the new model. Relationship graphs
@@ -152,3 +153,11 @@ catalog/transaction/hash behavior, not the entire application migration/RLS suit
 Without the explicit URL, these tests are visibly skipped. During implementation,
 Docker/local PostgreSQL was unavailable, so these integration checks remain a release
 verification gate; no deployed inspection or migration was attempted.
+
+Validation snapshot (2026-10-19, local `Frontpage` including the concurrently landed
+personal-signup slice): full Vitest suite **134 passed, 3 PostgreSQL tests skipped**;
+typecheck and production build passed; targeted lint passed. Repository-wide lint
+still fails with **780 errors and 43 warnings outside this slice**; this work does
+not change those files. Two-axis review found and corrected missing owner identity
+validation, authorization-addition handling, and ACL/RLS preservation evidence; the
+collector and offline auditor now share known legacy relationship definitions.

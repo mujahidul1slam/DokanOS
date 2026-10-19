@@ -126,4 +126,23 @@ describe("legacy account readiness report", () => {
       expect.objectContaining({ code: "opaque-reference", resource: "orders:order" }),
     ]));
   });
+
+  it("blocks authorization additions that could restrict otherwise preserved access", () => {
+    const before = safeInventory();
+    before.authorization = [];
+    const after = structuredClone(before);
+    after.authorization.push({ kind: "policy", id: "public.orders:deny-member", row_hash: "restrictive-policy" });
+    expect(rehearsePreservation(before, after)).toEqual({
+      preserved: false,
+      violations: [expect.objectContaining({ code: "authority-added", resource: "policy:public.orders:deny-member" })],
+    });
+  });
+
+  it("cannot establish an owner from an imported membership with no personal identity", () => {
+    const inventory = safeInventory();
+    delete inventory.tables.user_business_access[0].user_id;
+    const report = auditLegacyAccounts(inventory, reviewedStore);
+    expect(report.ready).toBe(false);
+    expect(report.blockers).toContainEqual(expect.objectContaining({ code: "missing-relationship", resource: "user_business_access:owner-membership" }));
+  });
 });

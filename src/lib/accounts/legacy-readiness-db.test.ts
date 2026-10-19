@@ -61,4 +61,17 @@ describe.skipIf(!testUrl)("account audit against disposable PostgreSQL", () => {
     expect(auditLegacyAccounts(after).blockers).toContainEqual(expect.objectContaining({ code: "shared-resource", resource: "stores:woo" }));
     expect(rehearsePreservation(before, after).violations).toContainEqual(expect.objectContaining({ code: "row-changed", resource: "orders:order" }));
   });
+
+  it("detects table privilege revocation, RLS changes and restrictive policy additions", async () => {
+    await fixture.query("GRANT SELECT ON orders TO PUBLIC");
+    const before = await collectLegacyInventory(connectionString);
+    await fixture.query("REVOKE SELECT ON orders FROM PUBLIC");
+    await fixture.query("ALTER TABLE orders ENABLE ROW LEVEL SECURITY");
+    await fixture.query("CREATE POLICY deny_members ON orders AS RESTRICTIVE FOR SELECT USING (false)");
+    const after = await collectLegacyInventory(connectionString);
+    expect(rehearsePreservation(before, after).violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "authority-changed", resource: "table-security:public.orders" }),
+      expect.objectContaining({ code: "authority-added", resource: "policy:public.orders:deny_members" }),
+    ]));
+  });
 });

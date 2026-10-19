@@ -1,12 +1,8 @@
 import pg from "pg";
-import { REQUIRED_TABLES } from "../../src/lib/accounts/legacy-readiness.ts";
+import { REQUIRED_TABLES, SEMANTIC_REFERENCE_TARGETS } from "../../src/lib/accounts/legacy-readiness.ts";
 
 const quote = (identifier) => `"${identifier.replaceAll('"', '""')}"`;
 const qualified = (table) => table.split(".").map(quote).join(".");
-const SEMANTIC_REFERENCES = {
-  business_id: "businesses", brand_id: "brands", store_id: "stores", woo_store_id: "stores",
-  location_id: "locations", selling_point_id: "selling_points", storefront_id: "storefronts",
-};
 const SAFE_VALUES = new Set([
   "type", "role", "permission", "granted", "permissions", "allowed_store_ids",
   "enforce_store_scoping", "is_active", "accepted_at",
@@ -81,7 +77,7 @@ export async function collectLegacyInventory(connectionString) {
     }
     // Several legacy identifiers (notably storefronts.store_id) have no FK.
     for (const [table, tableColumns] of byTable) for (const column of tableColumns) {
-      const target = SEMANTIC_REFERENCES[column.column_name];
+      const target = SEMANTIC_REFERENCE_TARGETS[column.column_name];
       if (target && !references.some((r) => r.table === table && r.column === column.column_name)) {
         references.push({ table, column: column.column_name, target, targetColumn: "id" });
       }
@@ -108,11 +104,38 @@ export async function collectLegacyInventory(connectionString) {
       FROM pg_policies p WHERE schemaname = 'public'
       UNION ALL
       SELECT 'function', p.oid::regprocedure::text,
-             encode(sha256(convert_to(pg_get_functiondef(p.oid) || COALESCE(p.proacl::text, ''), 'UTF8')), 'hex')
+             encode(sha256(convert_to(pg_get_functiondef(p.oid) || COALESCE(p.proacl::text, '') || p.proowner::text, 'UTF8')), 'hex')
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = 'public' AND p.proname IN
         ('has_permission', 'has_role', 'get_user_permissions', 'user_can_access_store', 'user_has_store_access',
          'is_business_member', 'my_business_role', 'can_manage_business_access')
+      UNION ALL
+      SELECT 'table-security', n.nspname || '.' || c.relname,
+             encode(sha256(convert_to(jsonb_build_object('acl', c.relacl, 'owner', c.relowner,
+               'rls', c.relrowsecurity, 'force_rls', c.relforcerowsecurity)::text, 'UTF8')), 'hex')
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind IN ('r', 'p') AND NOT c.relispartition
+        AND (n.nspname = 'public' OR (n.nspname = 'auth' AND c.relname = 'users'))
+      UNION ALL
+      SELECT 'column-security', n.nspname || '.' || c.relname || '.' || a.attname,
+             encode(sha256(convert_to(COALESCE(a.attacl::text, ''), 'UTF8')), 'hex')
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+      WHERE c.relkind IN ('r', 'p') AND NOT c.relispartition
+        AND (n.nspname = 'public' OR (n.nspname = 'auth' AND c.relname = 'users'))
+      UNION ALL
+      SELECT 'schema-security', nspname,
+             encode(sha256(convert_to(jsonb_build_object('acl', nspacl, 'owner', nspowner)::text, 'UTF8')), 'hex')
+      FROM pg_namespace WHERE nspname IN ('public', 'auth')
+      UNION ALL
+      SELECT 'role-security', rolname,
+             encode(sha256(convert_to(jsonb_build_object('superuser', rolsuper, 'inherit', rolinherit,
+               'bypassrls', rolbypassrls, 'login', rolcanlogin)::text, 'UTF8')), 'hex')
+      FROM pg_roles
+      UNION ALL
+      SELECT 'role-membership', roleid::text || ':' || member::text,
+             encode(sha256(convert_to(to_jsonb(m)::text, 'UTF8')), 'hex')
+      FROM pg_auth_members m
       ORDER BY kind, id
     `);
     return {

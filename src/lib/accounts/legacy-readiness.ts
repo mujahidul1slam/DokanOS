@@ -23,21 +23,21 @@ export const REQUIRED_TABLES = [
   "user_custom_roles", "custom_roles", "permission_settings", "invitations",
 ];
 const RESOURCE_TABLES = ["stores", "storefronts", "locations", "selling_points"];
+export const SEMANTIC_REFERENCE_TARGETS = {
+  business_id: "businesses", brand_id: "brands", store_id: "stores", woo_store_id: "stores",
+  location_id: "locations", selling_point_id: "selling_points", storefront_id: "storefronts",
+};
 const CORE_REFERENCES: LegacyReference[] = [
   { table: "user_business_access", column: "user_id", target: "auth.users" },
-  { table: "user_business_access", column: "business_id", target: "businesses" },
-  { table: "brands", column: "business_id", target: "businesses" },
-  { table: "brands", column: "woo_store_id", target: "stores" },
-  ...["storefronts", "locations", "selling_points"].map((table) => ({ table, column: "brand_id", target: "brands" })),
-  ...["locations", "selling_points"].map((table) => ({ table, column: "business_id", target: "businesses" })),
-  { table: "storefronts", column: "store_id", target: "stores" },
-  { table: "selling_points", column: "woo_store_id", target: "stores" },
-  { table: "selling_points", column: "storefront_id", target: "storefronts" },
-  { table: "selling_points", column: "location_id", target: "locations" },
-  { table: "user_store_access", column: "store_id", target: "stores" },
   ...["user_roles", "user_permissions", "user_store_access", "user_custom_roles"].map((table) => ({ table, column: "user_id", target: "auth.users" })),
   { table: "user_custom_roles", column: "custom_role_id", target: "custom_roles" },
 ];
+const REQUIRED_RELATIONSHIPS = {
+  user_business_access: ["user_id", "business_id"], brands: ["business_id"],
+  locations: ["business_id"], selling_points: ["business_id", "brand_id"],
+  user_roles: ["user_id"], user_permissions: ["user_id"], user_store_access: ["user_id", "store_id"],
+  user_custom_roles: ["user_id", "custom_role_id"],
+};
 type Blocker = { code: string; resource: string; detail: string };
 type Resource = {
   resource: string;
@@ -74,16 +74,28 @@ export function auditLegacyAccounts(inventory: LegacyInventory, mappings: Review
   const blockers: Blocker[] = [];
   const rows = (table: string) => inventory.tables[table] ?? [];
   const block = (code: string, resource: string, detail: string) => blockers.push({ code, resource, detail });
+  const observedReferences: LegacyReference[] = Object.entries(inventory.tables).flatMap(([table, tableRows]) =>
+    [...new Set(tableRows.flatMap((row) => Object.keys(row)))].filter((column) => SEMANTIC_REFERENCE_TARGETS[column])
+      .map((column) => ({ table, column, target: SEMANTIC_REFERENCE_TARGETS[column] })));
+  const references = [...CORE_REFERENCES, ...observedReferences, ...inventory.references].filter((ref, i, all) =>
+    all.findIndex((other) => other.table === ref.table && other.column === ref.column && other.target === ref.target
+      && (other.targetColumn ?? "id") === (ref.targetColumn ?? "id")) === i);
   for (const table of REQUIRED_TABLES) {
     if (!Array.isArray(inventory.tables[table])) block("incomplete-inventory", table, "Required table was not collected.");
   }
   for (const [table, tableRows] of Object.entries(inventory.tables)) for (const row of tableRows) {
+    for (const field of REQUIRED_RELATIONSHIPS[table] ?? []) {
+      if (typeof row[field] !== "string" || !String(row[field]).trim()) {
+        block("missing-relationship", `${table}:${row.id}`, `Required ${field} does not establish an identity/parent.`);
+      }
+    }
     if (Array.isArray(row.opaque_columns) && row.opaque_columns.length) {
       block("opaque-reference", `${table}:${row.id}`, `Review non-empty embedded payload columns: ${row.opaque_columns.join(", ")}. Values are fingerprinted, never interpreted as ownership.`);
     }
   }
   for (const business of rows("businesses")) {
-    const owners = rows("user_business_access").filter((m) => m.business_id === business.id && m.role === "owner");
+    const owners = rows("user_business_access").filter((m) => m.business_id === business.id && m.role === "owner"
+      && rows("auth.users").some((user) => user.id === m.user_id));
     if (owners.length !== 1) block(owners.length ? "multiple-owners" : "missing-owner", `businesses:${business.id}`, "Keep all memberships; reviewed ownership decision required.");
   }
   for (const member of rows("user_business_access")) {
@@ -101,7 +113,7 @@ export function auditLegacyAccounts(inventory: LegacyInventory, mappings: Review
       businesses: new Set(row.business_id ? [String(row.business_id)] : []), edges: new Set(),
     });
   }
-  for (const ref of CORE_REFERENCES) {
+  for (const ref of references) {
     for (const row of rows(ref.table)) {
       const from = nodes.get(`${ref.table}:${row.id}`);
       const targetKey = `${ref.target}:${row[ref.column]}`;
@@ -142,8 +154,6 @@ export function auditLegacyAccounts(inventory: LegacyInventory, mappings: Review
   for (const mapping of mappings) {
     if (!resources.some((resource) => resource.resource === mapping?.resource)) block("unknown-mapping", mapping?.resource ?? "mapping", "Reviewed decision does not match an inventoried legacy resource.");
   }
-  const references = [...CORE_REFERENCES, ...inventory.references].filter((ref, i, all) =>
-    all.findIndex((other) => JSON.stringify(other) === JSON.stringify(ref)) === i);
   const allRows = new Map<string, { row: LegacyRow; businesses: Set<string>; parents: string[] }>();
   for (const [table, tableRows] of Object.entries(inventory.tables)) for (const row of tableRows) {
     allRows.set(`${table}:${row.id}`, {
@@ -229,6 +239,11 @@ export function rehearsePreservation(before: LegacyInventory, after: LegacyInven
   for (const original of before.authorization ?? []) {
     if (!after.authorization?.some((entry) => entry.kind === original.kind && entry.id === original.id && entry.row_hash === original.row_hash)) {
       violations.push({ code: "authority-changed", resource: `${original.kind}:${original.id}`, detail: "Legacy server-side authorization changed; separate policy/access rehearsal required." });
+    }
+  }
+  for (const entry of after.authorization ?? []) {
+    if (!before.authorization?.some((original) => original.kind === entry.kind && original.id === entry.id)) {
+      violations.push({ code: "authority-added", resource: `${entry.kind}:${entry.id}`, detail: "New authorization can restrict or expand access; separate reviewed authorization rehearsal required." });
     }
   }
   return { preserved: violations.length === 0, violations };
