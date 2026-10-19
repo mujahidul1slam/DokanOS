@@ -219,6 +219,192 @@ async function runApiChecks(client, status) {
   }
 }
 
+async function runBrandStoreApiChecks(client, status) {
+  const OWNER_A = FIXTURE_IDS[3];
+  const MEMBER_A = FIXTURE_IDS[6];
+  const VIEWER_A = FIXTURE_IDS[7];
+  const OWNER_B = FIXTURE_IDS[8];
+  const LEGACY_STAFF = FIXTURE_IDS[1];
+  const BRAND_NAME = "Issue 12 API Brand A";
+  const STORE_PHYSICAL = "Issue 12 API Outlet";
+  const STORE_ONLINE = "Issue 12 API Online";
+
+  const headersFor = (userId) => ({
+    apikey: status.ANON_KEY,
+    Authorization: `Bearer ${jwtFor(status, userId)}`,
+    "Content-Type": "application/json",
+  });
+  const createBrand = (userId, businessId, name) => fetch(
+    `${status.API_URL}/rest/v1/rpc/create_business_brand`,
+    {
+      method: "POST",
+      headers: { ...headersFor(userId), Prefer: "return=representation" },
+      body: JSON.stringify({ p_business_id: businessId, p_name: name }),
+    },
+  );
+  const createStore = (userId, brandId, name, storeType) => fetch(
+    `${status.API_URL}/rest/v1/rpc/create_brand_store`,
+    {
+      method: "POST",
+      headers: { ...headersFor(userId), Prefer: "return=representation" },
+      body: JSON.stringify({ p_brand_id: brandId, p_name: name, p_store_type: storeType }),
+    },
+  );
+  const storesFor = async (userId, brandId) => {
+    const response = await fetch(
+      `${status.API_URL}/rest/v1/brand_stores?select=id,name,store_type,is_published,brand_id,legacy_location_id,legacy_selling_point_id,legacy_woo_store_id&brand_id=eq.${brandId}`,
+      { headers: headersFor(userId) },
+    );
+    if (!response.ok) throw new Error(`brand_stores API SELECT failed (${response.status})`);
+    return response.json();
+  };
+  const directInsert = (userId, body) => fetch(`${status.API_URL}/rest/v1/brand_stores`, {
+    method: "POST",
+    headers: { ...headersFor(userId), Prefer: "return=representation" },
+    body: JSON.stringify(body),
+  });
+
+  let brandId = null;
+  let otherBrandId = null;
+  try {
+    // A member creates the parent brand through the real API.
+    const brandResponse = await createBrand(MEMBER_A, BIZ_A, BRAND_NAME);
+    const brandPayload = brandResponse.ok ? await brandResponse.json() : null;
+    const brand = Array.isArray(brandPayload) ? brandPayload[0] : brandPayload;
+    if (!brandResponse.ok || !brand?.id || brand?.business_id !== BIZ_A) {
+      throw new Error(`could not create the parent brand through the API (${brandResponse.status})`);
+    }
+    brandId = brand.id;
+
+    // A brand in another account is the forged parent target.
+    const otherResponse = await createBrand(OWNER_B, B_OTHER, "Issue 12 API Brand B");
+    const otherPayload = otherResponse.ok ? await otherResponse.json() : null;
+    const otherBrand = Array.isArray(otherPayload) ? otherPayload[0] : otherPayload;
+    if (!otherResponse.ok || !otherBrand?.id || otherBrand?.business_id !== B_OTHER) {
+      throw new Error(`could not create the other-account brand (${otherResponse.status})`);
+    }
+    otherBrandId = otherBrand.id;
+
+    const countsBefore = (await client.query(`
+      SELECT
+        (SELECT count(*)::int FROM public.stores)       AS stores,
+        (SELECT count(*)::int FROM public.storefronts)  AS storefronts,
+        (SELECT count(*)::int FROM public.brands)       AS brands,
+        (SELECT count(*)::int FROM public.selling_points WHERE type = 'woocommerce') AS woo_points
+    `)).rows[0];
+
+    // Multiple creation under one brand with explicit physical/online types.
+    for (const [name, type] of [[STORE_PHYSICAL, "physical"], [STORE_ONLINE, "online"]]) {
+      const response = await createStore(MEMBER_A, brandId, name, type);
+      const payload = response.ok ? await response.json() : null;
+      const store = Array.isArray(payload) ? payload[0] : payload;
+      if (!response.ok || store?.store_type !== type || store?.brand_id !== brandId || store?.is_published !== false) {
+        throw new Error(`member could not create an explicit ${type} store (${response.status})`);
+      }
+      if (store?.legacy_location_id || store?.legacy_selling_point_id || store?.legacy_woo_store_id) {
+        throw new Error("minimal store creation attached an unreviewed legacy reference");
+      }
+    }
+
+    // Owner and member both see exactly the two own-account stores.
+    for (const [label, userId] of [["owner", OWNER_A], ["member", MEMBER_A], ["viewer", VIEWER_A]]) {
+      const stores = await storesFor(userId, brandId);
+      const names = stores.map((store) => store.name).sort();
+      if (stores.length !== 2 || names.join() !== [STORE_ONLINE, STORE_PHYSICAL].sort().join()) {
+        throw new Error(`${label} did not list both own-account stores`);
+      }
+      if (stores.some((store) => store.is_published !== false)) {
+        throw new Error(`${label} saw an implicitly published store`);
+      }
+    }
+
+    // Another account and a legacy global role see nothing, even with the brand id.
+    for (const [label, userId] of [["other-account owner", OWNER_B], ["legacy global role", LEGACY_STAFF]]) {
+      if ((await storesFor(userId, brandId)).length) {
+        throw new Error(`${label} listed another account's brand stores`);
+      }
+    }
+
+    // No combined/unknown/empty type is accepted, and nothing is created.
+    for (const type of ["both", "physical_online", "hybrid", "PHYSICAL", ""]) {
+      const response = await createStore(MEMBER_A, brandId, `Issue 12 API Invalid ${type}`, type);
+      if (response.ok) throw new Error(`API accepted invalid store type "${type}"`);
+    }
+
+    // Forged parent, viewer and legacy global role are all denied.
+    const forgedParent = await createStore(MEMBER_A, otherBrandId, "Issue 12 API Forged", "physical");
+    if (forgedParent.ok) throw new Error("forged cross-account parent brand was accepted by the API");
+    const forgedOwnerB = await createStore(OWNER_B, brandId, "Issue 12 API Owner B", "online");
+    if (forgedOwnerB.ok) throw new Error("other-account owner created a store under a foreign brand");
+    const viewerStore = await createStore(VIEWER_A, brandId, "Issue 12 API Viewer", "online");
+    if (viewerStore.ok) throw new Error("read-only viewer created a store through the API");
+    const globalStore = await createStore(LEGACY_STAFF, brandId, "Issue 12 API Global", "online");
+    if (globalStore.ok) throw new Error("legacy global role created an account store through the API");
+
+    // Direct Data API inserts obey the same type, publication and ownership rules.
+    const direct = await directInsert(MEMBER_A, {
+      brand_id: brandId, name: "Issue 12 API Direct Outlet", store_type: "physical",
+    });
+    if (!direct.ok) throw new Error(`direct valid insert was rejected (${direct.status})`);
+    for (const [label, body] of [
+      ["invalid type", { brand_id: brandId, name: "Issue 12 API Direct Hybrid", store_type: "hybrid" }],
+      ["published", { brand_id: brandId, name: "Issue 12 API Direct Published", store_type: "online", is_published: true }],
+      ["foreign brand", { brand_id: otherBrandId, name: "Issue 12 API Direct Foreign", store_type: "physical" }],
+      ["foreign insert as other account", { brand_id: brandId, name: "Issue 12 API Direct Other", store_type: "physical" }],
+    ]) {
+      const actor = label === "foreign insert as other account" ? OWNER_B : MEMBER_A;
+      const response = await directInsert(actor, body);
+      if (response.ok) throw new Error(`direct insert accepted a ${label} row`);
+    }
+
+    // Creation manufactured no legacy connector, storefront, brand or Woo point.
+    const countsAfter = (await client.query(`
+      SELECT
+        (SELECT count(*)::int FROM public.stores)       AS stores,
+        (SELECT count(*)::int FROM public.storefronts)  AS storefronts,
+        (SELECT count(*)::int FROM public.brands)       AS brands,
+        (SELECT count(*)::int FROM public.selling_points WHERE type = 'woocommerce') AS woo_points
+    `)).rows[0];
+    if (countsAfter.stores !== countsBefore.stores
+        || countsAfter.storefronts !== countsBefore.storefronts
+        || countsAfter.brands !== countsBefore.brands
+        || countsAfter.woo_points !== countsBefore.woo_points) {
+      throw new Error("store creation implicitly created a legacy store, storefront, brand or Woo selling point");
+    }
+
+    // Exactly one audit event per successful RPC store (the two explicit
+    // creation calls; the direct insert is a table write, not an RPC).
+    const audit = (await client.query(
+      `SELECT count(*)::int AS n FROM public.audit_log
+       WHERE action = 'create_brand_store' AND details->>'brand_id' = $1`,
+      [brandId],
+    )).rows[0].n;
+    if (audit !== 2) throw new Error(`brand store audit trail was not written once per RPC store (${audit})`);
+
+    // Legacy operational data (Woo orders/products) stays readable and intact.
+    const legacyReadable = (await client.query(`
+      SELECT
+        (SELECT count(*)::int FROM public.orders)   AS orders,
+        (SELECT count(*)::int FROM public.products) AS products
+    `)).rows[0];
+    if (legacyReadable.orders === null || legacyReadable.products === null) {
+      throw new Error("legacy operational tables became unreadable");
+    }
+
+    console.log("PASS  brand_store_boundaries_api (multi-create, invalid type, forged/viewer/global denial, no publish)");
+    console.log("PASS  brand_store_direct_insert_api (type/publication/ownership parity, audit, legacy intact)");
+  } finally {
+    await client.query(`
+      DELETE FROM public.brand_stores WHERE name LIKE 'Issue 12 API%';
+      DELETE FROM public.audit_log
+       WHERE action = 'create_brand_store' AND details->>'name' LIKE 'Issue 12 API%';
+      DELETE FROM public.brands WHERE name IN ('${BRAND_NAME}', 'Issue 12 API Brand B');
+      DELETE FROM public.audit_log
+       WHERE action = 'create_brand' AND details->>'name' IN ('${BRAND_NAME}', 'Issue 12 API Brand B');
+    `);
+  }
+}
+
 async function seed(client) {
   // auth.users rows (fixture emails; passwords never exercised)
   const names = [
@@ -316,6 +502,12 @@ async function run() {
       } catch (e) {
         failures++;
         console.log(`FAIL  account_boundaries_api: ${e.message}`);
+      }
+      try {
+        await runBrandStoreApiChecks(client, status);
+      } catch (e) {
+        failures++;
+        console.log(`FAIL  brand_store_boundaries_api: ${e.message}`);
       }
     }
     console.log(failures === 0 ? `\nALL GREEN (${files.length} files)` : `\n${failures} file(s) FAILED`);

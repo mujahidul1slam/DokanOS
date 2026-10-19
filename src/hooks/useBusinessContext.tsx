@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode, useC
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
+import type { BrandStore } from "@/lib/brandStores";
 
 /**
  * Multi-business restructure Phase 1: the REAL business context.
@@ -48,6 +49,8 @@ interface BusinessContextValue {
   businesses: Business[];
   /** Brands under the active business. */
   brands: Brand[];
+  /** Explicit physical/online stores under the active business's brands. */
+  brandStores: BrandStore[];
   /** The active brand (persisted per business; null = all brands). */
   activeBrand: Brand | null;
   /** The caller's role in the active business (user_business_access.role). */
@@ -78,6 +81,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   const currentBusinesses = useRef<Business[]>([]);
   const [rolesByBusiness, setRolesByBusiness] = useState<Record<string, string>>({});
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [brandStores, setBrandStores] = useState<BrandStore[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() =>
     localStorage.getItem(STORAGE_KEY)
   );
@@ -99,8 +103,25 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
       supabase.from("selling_points").select("id", { count: "exact", head: true }).eq("business_id", bizId),
     ]);
     if (token !== scopedLoadToken.current) return; // superseded by a newer load
-    setBrands((brandsRes.data as Brand[]) || []);
+    const brandRows = (brandsRes.data as Brand[]) || [];
+    setBrands(brandRows);
     setSellingPointsCount(spRes.count ?? 0);
+
+    // New-model stores are scoped through their parent brands. RLS also
+    // enforces the account boundary, but include only this account's brand ids
+    // so a multi-account person never sees another context's stores.
+    const brandIds = brandRows.map((brand) => brand.id);
+    if (brandIds.length === 0) {
+      setBrandStores([]);
+      return;
+    }
+    const { data: storeRows } = await supabase
+      .from("brand_stores")
+      .select("*")
+      .in("brand_id", brandIds)
+      .order("name");
+    if (token !== scopedLoadToken.current) return;
+    setBrandStores((storeRows as BrandStore[]) || []);
   }, []);
 
   const clearMemberships = useCallback(() => {
@@ -109,6 +130,9 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     setRolesByBusiness({});
     setActiveId(null);
     setActiveBrandId(null);
+    setBrands([]);
+    setBrandStores([]);
+    setSellingPointsCount(0);
     setLoading(false);
   }, []);
 
@@ -125,6 +149,9 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
       setRolesByBusiness({});
       setActiveId(null);
       setActiveBrandId(null);
+      setBrands([]);
+      setBrandStores([]);
+      setSellingPointsCount(0);
       return;
     }
     // user_business_access RLS: users see their own rows. Join to businesses.
@@ -189,6 +216,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     if (!activeId) {
       scopedLoadToken.current++; // invalidate any in-flight load
       setBrands([]);
+      setBrandStores([]);
       setSellingPointsCount(0);
       return;
     }
@@ -207,6 +235,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     queryClient.removeQueries();
     scopedLoadToken.current++;
     setBrands([]);
+    setBrandStores([]);
     setSellingPointsCount(0);
     setActiveId(id);
     localStorage.setItem(STORAGE_KEY, id);
@@ -236,6 +265,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
         active,
         businesses,
         brands,
+        brandStores,
         activeBrand,
         myRole,
         rolesByBusiness,

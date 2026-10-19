@@ -111,6 +111,74 @@ export type Database = {
         }
         Relationships: []
       }
+      brand_stores: {
+        Row: {
+          brand_id: string
+          created_at: string
+          id: string
+          is_published: boolean
+          legacy_location_id: string | null
+          legacy_selling_point_id: string | null
+          legacy_woo_store_id: string | null
+          name: string
+          store_type: string
+          updated_at: string
+        }
+        Insert: {
+          brand_id: string
+          created_at?: string
+          id?: string
+          is_published?: boolean
+          legacy_location_id?: string | null
+          legacy_selling_point_id?: string | null
+          legacy_woo_store_id?: string | null
+          name: string
+          store_type: string
+          updated_at?: string
+        }
+        Update: {
+          brand_id?: string
+          created_at?: string
+          id?: string
+          is_published?: boolean
+          legacy_location_id?: string | null
+          legacy_selling_point_id?: string | null
+          legacy_woo_store_id?: string | null
+          name?: string
+          store_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_stores_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_stores_legacy_location_id_fkey"
+            columns: ["legacy_location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_stores_legacy_selling_point_id_fkey"
+            columns: ["legacy_selling_point_id"]
+            isOneToOne: false
+            referencedRelation: "selling_points"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_stores_legacy_woo_store_id_fkey"
+            columns: ["legacy_woo_store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brands: {
         Row: {
           business_id: string
@@ -3446,8 +3514,21 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      brand_store_legacy_links_valid: {
+        Args: {
+          p_brand_id: string
+          p_location_id: string
+          p_selling_point_id: string
+          p_woo_store_id: string
+        }
+        Returns: boolean
+      }
       create_additional_business: {
         Args: { p_business_name: string; p_user_id: string }
+        Returns: Json
+      }
+      create_brand_store: {
+        Args: { p_brand_id: string; p_name: string; p_store_type: string }
         Returns: Json
       }
       create_business_brand: {
