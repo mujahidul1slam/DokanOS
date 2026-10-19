@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 
 // Opt-in local integration test. Never use credentials from .env or a deployed DB.
 test("personal signup, confirmation and recovery do not accept invitations or expose another account", {
   skip: process.env.RUN_LOCAL_AUTH_TESTS !== "1" && "Requires RUN_LOCAL_AUTH_TESTS=1 and a migrated local Supabase stack",
 }, async () => {
-  const config = JSON.parse(execFileSync("supabase", ["status", "--output", "json"], { encoding: "utf8" }));
+  const config = JSON.parse(execSync("supabase status --output json", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
   const url = new URL(config.API_URL);
   assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(url.hostname), "Refusing non-local Supabase");
   const options = { auth: { persistSession: false, autoRefreshToken: false } };
@@ -23,7 +23,7 @@ test("personal signup, confirmation and recovery do not accept invitations or ex
     assert.ifError(result.error);
     return result.data;
   };
-  const resourceCounts = async () => Promise.all(["businesses", "brands", "woo_stores", "storefronts"].map(async (table) => {
+  const resourceCounts = async () => Promise.all(["businesses", "brands", "stores", "storefronts"].map(async (table) => {
     const result = await admin.from(table).select("id", { head: true, count: "exact" });
     ok(result);
     return result.count;

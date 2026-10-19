@@ -12,7 +12,7 @@ DECLARE
 BEGIN
   SELECT count(*) INTO account_count FROM public.businesses;
   SELECT count(*) INTO brand_count FROM public.brands;
-  SELECT count(*) INTO store_count FROM public.woo_stores;
+  SELECT count(*) INTO store_count FROM public.stores;
   SELECT count(*) INTO storefront_count FROM public.storefronts;
 
   INSERT INTO public.invitations (email, role, invited_by)
@@ -41,7 +41,7 @@ BEGIN
   END IF;
   IF account_count <> (SELECT count(*) FROM public.businesses)
      OR brand_count <> (SELECT count(*) FROM public.brands)
-     OR store_count <> (SELECT count(*) FROM public.woo_stores)
+     OR store_count <> (SELECT count(*) FROM public.stores)
      OR storefront_count <> (SELECT count(*) FROM public.storefronts) THEN
     RAISE EXCEPTION 'Personal signup/verification/recovery must preserve business resources';
   END IF;

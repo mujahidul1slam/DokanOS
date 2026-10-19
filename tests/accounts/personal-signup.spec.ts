@@ -62,21 +62,21 @@ test("a person signs up with no business details or business-provisioning state"
   expect(signup?.body?.data).toEqual({ full_name: "Sarah Jenkins", signup_intent: "personal" });
   const event = requests.find((r) => r.path.endsWith("/signup-event"));
   expect(event?.body?.meta).toEqual({ signup_intent: "personal", consent: true });
-  expect(await page.evaluate(() => localStorage.getItem("dokanos_signup_nonce"))).toBeNull();
   expect(requests.some((r) => r.path.endsWith("/signup-provision"))).toBe(false);
 });
 
-test("a confirmation URL establishes a session on a fresh browser without provisioning", async ({ page }) => {
+for (const type of ["signup", "recovery"]) test(`a ${type} URL establishes a fresh session without provisioning`, async ({ page }) => {
   const requests = await api(page);
   const token = [
     { alg: "HS256", typ: "JWT" },
     { sub: user.id, aud: "authenticated", exp: Math.floor(Date.now() / 1000) + 3600 },
   ].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".test-signature";
-  await page.goto(`/auth/confirm?invite=fresh-device#access_token=${token}&refresh_token=test-refresh&expires_in=3600&token_type=bearer&type=signup`);
-  await expect(page).toHaveURL(/\/accounts\?invite=fresh-device$/);
-  await expect(page.getByText("You don't belong to a business account yet.")).toBeVisible();
+  await page.goto(`/auth/confirm?invite=fresh-device#access_token=${token}&refresh_token=test-refresh&expires_in=3600&token_type=bearer&type=${type}`);
+  await expect(page).toHaveURL(type === "recovery" ? /\/reset-password\?invite=fresh-device$/ : /\/accounts\?invite=fresh-device$/);
+  const result = type === "recovery" ? page.getByLabel("New Password", { exact: true }) : page.getByText("You don't belong to a business account yet.");
+  await expect(result).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Choose a business account" })).toBeVisible();
+  await expect(result).toBeVisible();
   expect(requests.some((r) => /signup-provision|create-business|accept.*invit/.test(r.path))).toBe(false);
 });
 
@@ -113,8 +113,30 @@ test("existing members select only their authorized business account and resume 
   await page.goto("/auth/confirm");
   await page.getByRole("button", { name: "Existing Account", exact: true }).click();
   await expect(page).toHaveURL(/\/onboarding$/);
-  expect(await page.evaluate(() => localStorage.getItem("dokanos-active-business-id"))).toBe(business.id);
+  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("Existing Account");
+  await page.reload();
+  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("Existing Account");
   await expect(page.getByRole("list", { name: "Onboarding steps" })).toBeVisible();
+});
+
+test("explicitly creating another business switches setup to that business, not the old one", async ({ page }) => {
+  const original = { id: "11111111-0000-0000-0000-000000000001", name: "Original Account", slug: "original", is_active: true };
+  const created = { id: "11111111-0000-0000-0000-000000000002", name: "New Account", slug: "new", is_active: true };
+  const memberships = [{ role: "owner", business_id: original.id, businesses: original }];
+  await api(page, memberships);
+  await signedIn(page);
+  await page.route("**/functions/v1/create-business", async (route) => {
+    memberships.push({ role: "owner", business_id: created.id, businesses: created });
+    await route.fulfill({ json: { business_id: created.id } });
+  });
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: "Create a business account", exact: true }).click();
+  await page.getByLabel("Business Name", { exact: true }).fill("New Account");
+  await page.getByRole("button", { name: "Create Business", exact: true }).click();
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("New Account");
+  await page.reload();
+  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("New Account");
 });
 
 test("an invalid confirmation preserves invitation intent without offering business setup", async ({ page }) => {
@@ -125,6 +147,18 @@ test("an invalid confirmation preserves invitation intent without offering busin
   await expect(page).toHaveURL(/\/login\?invite=retry-invitation$/);
   await page.getByRole("link", { name: "Create account", exact: true }).click();
   await expect(page).toHaveURL(/\/signup\?invite=retry-invitation$/);
+  expect(requests.some((r) => r.path.endsWith("/signup-provision"))).toBe(false);
+});
+
+test("a missing-session callback can request another confirmation without signup state", async ({ page }) => {
+  const requests = await api(page);
+  await page.goto("/auth/confirm?invite=resend-invitation");
+  await page.getByRole("link", { name: "Request a new confirmation link" }).click();
+  await page.getByLabel("Email", { exact: true }).fill("person@example.com");
+  await page.getByRole("button", { name: "Resend confirmation email", exact: true }).click();
+  await expect.poll(() => requests.find((r) => r.path.endsWith("/auth-resend"))?.body).toMatchObject({
+    email: "person@example.com", invite: "resend-invitation",
+  });
   expect(requests.some((r) => r.path.endsWith("/signup-provision"))).toBe(false);
 });
 

@@ -51,12 +51,31 @@ Deno.serve(async (req: Request) => {
       throw new Error("AMBIGUOUS_TARGET: multiple accounts match this email variant");
     }
 
+    const isInvitationAction = action === "invite" || action === "resend_invite";
+    const invitationTarget = isInvitationAction && email
+      ? await resolveTargetUser(String(email).trim().toLowerCase())
+      : null;
+    if (isInvitationAction) {
+      if (!email) throw new Error("Email required");
+      // The legacy native-invite path depended on handle_new_user accepting
+      // invitations during identity creation. Do not send a success email (or
+      // delete/recreate an unconfirmed identity) without account-aware acceptance.
+      // Existing identities and grants remain untouched. Account-scoped invitation
+      // acceptance is a separate slice; never infer a business from a global role.
+      if (!invitationTarget?.email_confirmed_at) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "INVITATION_ACCEPTANCE_REQUIRED",
+          message: "New-person invitations require account-aware acceptance, which is not available through this legacy endpoint yet. No invitation or access was changed.",
+        }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
     // ========== INVITE (Five-route spec per SIGNUP-PLAN §7) ==========
     if (action === "invite") {
       if (!email || !role) throw new Error("Email and role are required");
       const normalizedEmail = String(email).trim().toLowerCase();
-
-      const existingUser = await resolveTargetUser(normalizedEmail);
+      const existingUser = invitationTarget;
 
       if (existingUser) {
         // Check UBA membership

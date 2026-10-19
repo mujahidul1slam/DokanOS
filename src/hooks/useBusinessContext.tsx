@@ -73,6 +73,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   const { user } = useAuth();
   const userId = user?.id;
   const [businesses, setBusinesses] = useState<Business[]>([]);
+  const currentBusinesses = useRef<Business[]>([]);
   const [rolesByBusiness, setRolesByBusiness] = useState<Record<string, string>>({});
   const [brands, setBrands] = useState<Brand[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() =>
@@ -100,15 +101,20 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     setSellingPointsCount(spRes.count ?? 0);
   }, []);
 
+  const clearMemberships = useCallback(() => {
+    currentBusinesses.current = [];
+    setBusinesses([]);
+    setRolesByBusiness({});
+    setActiveId(null);
+    setActiveBrandId(null);
+    setLoading(false);
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     if (!userId) {
-      setBusinesses([]);
-      setRolesByBusiness({});
-      setActiveId(null);
-      setActiveBrandId(null);
-      setLoading(false);
+      clearMemberships();
       return;
     }
     // user_business_access RLS: users see their own rows. Join to businesses.
@@ -118,11 +124,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
       .eq("user_id", userId);
     if (membershipError) {
       setError(membershipError.message);
-      setBusinesses([]);
-      setRolesByBusiness({});
-      setActiveId(null);
-      setActiveBrandId(null);
-      setLoading(false);
+      clearMemberships();
       return;
     }
     const roles: Record<string, string> = {};
@@ -133,6 +135,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     const rows = (memberships || [])
       .map((m: { businesses: Business | null }) => m.businesses)
       .filter((b: Business | null): b is Business => !!b);
+    currentBusinesses.current = rows;
     setBusinesses(rows);
     setLoading(false);
 
@@ -154,7 +157,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
       setActiveId(null);
       setActiveBrandId(null);
     }
-  }, [loadScoped, userId]);
+  }, [clearMemberships, loadScoped, userId]);
 
   useEffect(() => {
     refresh();
@@ -183,7 +186,8 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   }, [activeId, loadScoped]);
 
   const setActive = (id: string) => {
-    if (!businesses.some((business) => business.id === id)) return;
+    // refresh() callers may hold a setter from before the React re-render.
+    if (!currentBusinesses.current.some((business) => business.id === id)) return;
     setActiveId(id);
     localStorage.setItem(STORAGE_KEY, id);
     // Per-business brand selection resets on switch.

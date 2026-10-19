@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidget";
 import { toast } from "sonner";
@@ -11,10 +13,10 @@ import { invitationPath } from "@/lib/invitationPath";
 
 export default function CheckEmail() {
   const [searchParams] = useSearchParams();
-  const email = searchParams.get("email") || "";
+  const [email, setEmail] = useState(searchParams.get("email") || "");
   const rateLimited = searchParams.get("rate_limited") === "true";
 
-  const [cooldown, setCooldown] = useState(60);
+  const [cooldown, setCooldown] = useState(searchParams.get("email") ? 60 : 0);
   const [resending, setResending] = useState(false);
   const turnstileRef = useRef<TurnstileWidgetRef>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -28,8 +30,8 @@ export default function CheckEmail() {
   }, [cooldown]);
 
   const handleResend = async () => {
-    if (!email) {
-      toast.error("Email address missing. Please start over.");
+    if (!email.trim() || !email.includes("@")) {
+      toast.error("Please enter your email address.");
       return;
     }
     if (cooldown > 0) return;
@@ -40,7 +42,7 @@ export default function CheckEmail() {
 
       const { data, error } = await supabase.functions.invoke("auth-resend", {
         body: {
-          email,
+          email: email.trim(),
           captchaToken: token,
           invite: searchParams.get("invite") || undefined,
         },
@@ -94,6 +96,12 @@ export default function CheckEmail() {
         </CardHeader>
 
         <CardContent className="space-y-4 pt-2">
+          {!searchParams.get("email") && !rateLimited && (
+            <div className="space-y-2 text-left">
+              <Label htmlFor="resend-email">Email</Label>
+              <Input id="resend-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+            </div>
+          )}
           {!rateLimited && (
             <div className="bg-muted/40 p-4 rounded-lg border border-border/30 text-xs text-muted-foreground text-left space-y-1.5">
               <div className="flex items-center gap-1.5 font-medium text-foreground">

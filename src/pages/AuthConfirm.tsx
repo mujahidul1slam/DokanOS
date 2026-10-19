@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader2 } from "lucide-react";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 import { invitationPath } from "@/lib/invitationPath";
+import { initialAuthCallbackType } from "@/lib/authCallbackIntent";
 
 /** Authentication callbacks never create business resources or accept invitations. */
 export default function AuthConfirm() {
@@ -36,7 +37,7 @@ export default function AuthConfirm() {
           setMessage("Sign in with your verified email to continue. No business setup is required.");
           return;
         }
-        const recovery = params.get("type") === "recovery" || hash.get("type") === "recovery";
+        const recovery = params.get("type") === "recovery" || hash.get("type") === "recovery" || initialAuthCallbackType === "recovery";
         navigate(invitationPath(recovery ? "/reset-password" : "/accounts", params), { replace: true });
       } catch (error) {
         if (active) setMessage(error instanceof Error ? error.message : "Could not verify your confirmation link.");
