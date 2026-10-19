@@ -69,7 +69,7 @@ END $$;
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}';
-PERFORM public.set_member_business_role('00000000-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001', 'member');
+SELECT public.set_member_business_role('00000000-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001', 'member');
 COMMIT;
 DO $$
 BEGIN
@@ -114,6 +114,11 @@ BEGIN
   SELECT * INTO r FROM public.get_member_access('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001');
   IF r.business_role IS DISTINCT FROM 'member' THEN
     RAISE EXCEPTION 'FAIL: W7-AC5 get_member_access returned wrong role (%)', r.business_role USING ERRCODE = 'P0001';
+  END IF;
+  IF r.effective_perms IS NULL
+     OR NOT ('dashboard.view' = ANY(r.effective_perms))
+     OR 'settings.manage' = ANY(r.effective_perms) THEN
+    RAISE EXCEPTION 'FAIL: W7-AC5 expected staff permissions without settings.manage' USING ERRCODE = 'P0001';
   END IF;
 END $$;
 ROLLBACK;

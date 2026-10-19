@@ -7,8 +7,8 @@
  *   node scripts/run-rls-tests.mjs
  *
  * Seeds fixture users/roles/businesses, then executes supabase/tests/rls/*.sql
- * in filename order as multi-statement batches; fails on the first uncaught
- * SQLSTATE error. Shapes A/A'/B/C guarantee expected errors never escape, so
+ * in filename order as multi-statement batches; reports uncaught SQLSTATE
+ * errors and recovers before the next file. Shapes A/A'/B/C catch expected errors, so
  * an uncaught error is always a real policy bug.
  */
 import { execSync } from "node:child_process";
@@ -43,13 +43,17 @@ const STAFF_MGMT = "00000000-0000-0000-0000-00000000000c";
 
 function dbUrl() {
   try {
-    const out = execSync("supabase status", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    const m = out.match(/postgres(?:ql)?:\/\/\S+/);
-    if (!m) throw new Error("no DB URL in supabase status output");
-    return m[0];
-  } catch (e) {
+    const out = execSync("supabase status --output json", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const { DB_URL } = JSON.parse(out);
+    const url = new URL(DB_URL);
+    if (!["postgres:", "postgresql:"].includes(url.protocol) ||
+        !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
+      throw new Error("Refusing non-local Supabase DB URL");
+    }
+    return DB_URL;
+  } catch {
     console.error("FAIL: could not resolve local Supabase DB URL. Is Docker running?");
-    console.error(e.message);
+    // CLI errors may include local credentials; do not echo raw status output.
     process.exit(1);
   }
 }
@@ -73,8 +77,9 @@ async function seed(client) {
       [FIXTURE_IDS[i], `${names[i]}@dokanos.test`],
     );
   }
-  // user_roles: wipe handle_new_user's first-user admin side-effect, re-seed deterministically
+  // Legacy signup may provision roles/memberships; replace them deterministically.
   await client.query(`DELETE FROM public.user_roles WHERE user_id = ANY($1)`, [FIXTURE_IDS]);
+  await client.query(`DELETE FROM public.user_business_access WHERE user_id = ANY($1)`, [FIXTURE_IDS]);
   await client.query(
     `INSERT INTO public.user_roles (user_id, role)
      VALUES ($1, 'admin'), ($2, 'staff'), ($3, 'staff'),
@@ -93,14 +98,14 @@ async function seed(client) {
   // user_business_access
   await client.query(
     `INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
-       ($1, $A, 'owner'),   -- OWNER_A
-       ($2, $A, 'owner'),   -- OWNER_A2
-       ($3, $A, 'admin'),   -- UBA_ADMIN_A
-       ($4, $A, 'member'),  -- MEMBER_A
-       ($5, $A, 'viewer'),  -- VIEWER_A
-       ($6, $B, 'owner')    -- OWNER_B
+       ($1, $7, 'owner'),   -- OWNER_A
+       ($2, $7, 'owner'),   -- OWNER_A2
+       ($3, $7, 'admin'),   -- UBA_ADMIN_A
+       ($4, $7, 'member'),  -- MEMBER_A
+       ($5, $7, 'viewer'),  -- VIEWER_A
+       ($6, $8, 'owner')    -- OWNER_B
      ON CONFLICT (user_id, business_id) DO NOTHING`,
-    [FIXTURE_IDS[3], FIXTURE_IDS[4], FIXTURE_IDS[5], FIXTURE_IDS[6], FIXTURE_IDS[7], FIXTURE_IDS[8]],
+    [FIXTURE_IDS[3], FIXTURE_IDS[4], FIXTURE_IDS[5], FIXTURE_IDS[6], FIXTURE_IDS[7], FIXTURE_IDS[8], BIZ_A, B_OTHER],
   );
   // app_settings fixture row (W4 A' survival pins value)
   await client.query(
@@ -127,7 +132,7 @@ async function run() {
       .sort();
     if (files.length === 0) {
       console.log("SKIP: no *_test.sql files found");
-      process.exit(0);
+      return;
     }
     let failures = 0;
     for (const f of files) {
@@ -138,10 +143,14 @@ async function run() {
       } catch (e) {
         failures++;
         console.log(`FAIL  ${f}: ${e.message}`);
+        // Each file owns transactions. A failed batch can leave one aborted;
+        // recover before running the next file so its verdict is independent.
+        await client.query("ROLLBACK");
+        await client.query("RESET ROLE");
       }
     }
     console.log(failures === 0 ? `\nALL GREEN (${files.length} files)` : `\n${failures} file(s) FAILED`);
-    process.exit(failures === 0 ? 0 : 1);
+    process.exitCode = failures === 0 ? 0 : 1;
   } finally {
     await client.end();
   }

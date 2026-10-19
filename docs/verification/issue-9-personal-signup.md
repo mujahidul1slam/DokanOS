@@ -13,6 +13,68 @@ Spec: https://github.com/mujahidul1slam/DokanOS/issues/9
 
 ## Validation
 
+### Integration repair verification — 2026-10-19
+
+Supersedes the initial infrastructure-blocked results below. Repairs are based
+on integration tip `505c5d18d1d4cb9d2ebbd5faf7b9ff7c01f0bb45`, not ticket #10.
+Only the labelled disposable local project `accounts-8-15-disposable-20261019`
+was migrated/reset; no deployed database or dirty source tree was changed.
+
+| Check | Latest result |
+| --- | --- |
+| Real local Auth signup/confirmation/recovery | **Passed**, including repeated-token rejection, no invitation acceptance/provisioning, direct business/membership/profile denials and member-RPC denials |
+| Fresh-stack SQL/RLS battery | **7 files passed, 1 failed**; personal signup, profiles, member RPCs, businesses, app settings, creation RPC and realtime pass |
+| Unit suite with explicit disposable local DB URL | **137 passed, no skips** |
+| Typecheck / production build | **Passed** |
+| Chrome accounts browser suite | **10 passed** |
+| Full ESLint vs original start | **777 errors / 43 warnings**, versus **782 / 43**; no added normalized diagnostics |
+
+Root causes and bounded repairs:
+
+- JSON CLI status parsing replaces presentation-text scraping; numbered SQL
+  seed parameters replace literal `$A`/`$B`; invalid top-level `PERFORM` becomes
+  `SELECT`; failed SQL batches roll back before the next file.
+- The original-start migration set reproduces missing table DML grants with
+  CLI 2.107.0. Its `ApplyApiPrivileges` deliberately revokes default Data API
+  privileges. The new migration explicitly grants authenticated DML only on
+  businesses, memberships and app settings, plus profile SELECT/INSERT/UPDATE. All
+  four retain RLS. No anon/service-role grants or default privileges change.
+- Before enabling profile reads, a rollback-only probe proved the old
+  authenticated `USING (true)` policy exposed unrelated people. Profile reads
+  now allow self, shared-business directory members and existing platform
+  admins; unrelated people remain hidden. Self-update remains self-only.
+- Test fixtures/privileged resource-count observations use the verified local
+  SQL connection, not new service-role production grants. Application
+  authorization is exercised through the real Auth/PostgREST client.
+- The member-access RPC incorrectly aggregated a nonexistent `permission`
+  column from an array-returning function. Returning the typed array fixes it.
+  This also uncovered a masked authorization bug: a nonmember's management
+  predicate returned NULL, so PL/pgSQL `IF NOT predicate` skipped rejection.
+  The predicate now returns false for nonmembers. Real API tests prove both
+  member-read and role-write RPCs reject the new person with SQLSTATE 42501.
+
+**Remaining baseline contract conflict, not a passed battery:**
+`user_business_access_test.sql` AC-7b requires an owner to directly DELETE a
+different member through a filtered query; AC-15 and the documented original
+SELECT policy require managers to see only their own membership row. A
+minimized real PostgreSQL probe reports `may_manage=true`, `delete_grant=true`,
+`visible_target_rows=0`, `DELETE 0`, and preserved target count 1. PostgreSQL
+applies SELECT visibility to that filtered DELETE (and analogous UPDATE).
+The existing SELECT policy is expressly documented as “no manager widening” in
+`20260911000100_rls_tighten_user_business_access.sql`. Resolving this requires
+choosing direct-DML visibility versus the restricted-read/RPC interface; this
+repair does not widen membership reads, weaken assertions, or implement #10.
+The coordinator must keep the full-battery gate explicit rather than mark it
+green. #9 has not been closed by this worker.
+
+Detailed red/green logs, catalog audit, baseline replay, lint delta and the
+minimal contract probe are in
+`C:/Users/mujah/AppData/Local/Temp/opencode/accounts-9-repair-logs/`.
+Run the battery after a disposable reset as documented; it contains committed
+fixture mutations and is not an idempotent production diagnostic.
+
+### Initial slice verification (historical)
+
 Test seams were approved by the user: real routed browser UI with controlled external Supabase responses, and local real Auth/membership APIs when infrastructure is available.
 
 | Check | Result |
@@ -56,6 +118,6 @@ Initial independent review found three P2 findings:
 
 Follow-up reviewer: all three findings resolved; no blocking regression identified. No scope creep found. Original worst Spec findings: callback recovery and wrong-account setup context.
 
-Summary: Standards **2 findings resolved, 0 remaining**; Spec **3 findings resolved, 0 remaining**. Real database/API verification remains blocked, not passed.
+Initial review summary: Standards **2 findings resolved, 0 remaining**; Spec **3 findings resolved, 0 remaining**. See the integration repair verification above for later real database/API results and the remaining baseline battery conflict.
 
 Review baseline approved by the user: `71602f510531f639a99949135e9754fd04dfb7aa`. The unrelated concurrent issue #8 commit was excluded by the issue #9 file list. Reviews used separate parallel agents and preserved unrelated worktree changes.

@@ -58,6 +58,14 @@ BEGIN
      OR EXISTS (SELECT 1 FROM public.businesses) THEN
     RAISE EXCEPTION 'A verified nonmember must not read another account or membership';
   END IF;
+  IF (SELECT count(*) FROM public.profiles) <> 1
+     OR NOT EXISTS (SELECT 1 FROM public.profiles WHERE user_id = auth.uid()) THEN
+    RAISE EXCEPTION 'A verified nonmember may read only their own profile';
+  END IF;
+  UPDATE public.profiles SET full_name = 'Updated Personal Fixture' WHERE user_id = auth.uid();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'A person must be able to update their own profile';
+  END IF;
 END;
 $$;
 
