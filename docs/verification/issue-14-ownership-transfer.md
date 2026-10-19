@@ -72,7 +72,7 @@ was migrated or mutated and nothing was pushed.
 | Check | Latest result |
 | --- | --- |
 | Focused red test | `business_ownership_transfer_test.sql` failed first with `function public.transfer_business_ownership(unknown, unknown) does not exist` |
-| Fresh reset + full SQL/RLS battery | **ALL GREEN (14 files)** incl. `business_ownership_transfer_test.sql` (AC-1…AC-7b) |
+| Fresh reset + full SQL/RLS battery | **ALL GREEN (14 files)** incl. `business_ownership_transfer_test.sql` (AC-1…AC-6b) |
 | PostgREST ownership probes | **PASS** `business_ownership_transfer_api` (owner-only, forged cross-account target, legacy co-owner preserved, repeat, competing concurrent transfers) and **PASS** `business_ownership_departure_api` (owner blocked until transfer, member leave, transfer/leave race) |
 | Real local Auth + PostgREST probe | **PASS** `scripts/ownership-transfer-api.test.mjs` (real GoTrue sign-in; unauthorized callers, cross-account target, legacy co-owner, repeated ops, two competing transfers, transfer/leave race, concurrent member departures, no platform role or account manufactured) |
 | Unit suite | **194 passed, 3 skipped** (23 new ownership-mapper tests) |
