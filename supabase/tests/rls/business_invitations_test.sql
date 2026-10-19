@@ -184,6 +184,47 @@ BEGIN
 END $$;
 ROLLBACK;
 
+-- AC-2b (Shape B): an elapsed expiry must not block the owner forever. A fresh
+-- invitation retires the stale intent and opens exactly one usable row.
+BEGIN;
+INSERT INTO public.business_invitations (business_id, email, token, expires_at)
+VALUES ('11111111-0000-0000-0000-000000000001', 'reissue@dokanos.test',
+        'test-expired-reissue-1', now() - interval '1 hour');
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}';
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.invite_business_member('11111111-0000-0000-0000-000000000001', 'reissue@dokanos.test');
+  IF r->>'status' IS DISTINCT FROM 'pending' OR r->>'token' IS NULL
+     OR r->>'token' = 'test-expired-reissue-1' THEN
+    RAISE EXCEPTION 'FAIL: AC2b re-invitation after expiry returned %', r USING ERRCODE = 'P0001';
+  END IF;
+END $$;
+RESET ROLE;
+DO $$
+DECLARE v_open int;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.business_invitations
+    WHERE business_id = '11111111-0000-0000-0000-000000000001'
+      AND email = 'reissue@dokanos.test'
+      AND token = 'test-expired-reissue-1'
+      AND revoked_at IS NOT NULL
+      AND revoked_by = '00000000-0000-0000-0000-000000000001'
+  ) THEN
+    RAISE EXCEPTION 'FAIL: AC2b stale expired invitation was not retired' USING ERRCODE = 'P0001';
+  END IF;
+  SELECT count(*) INTO v_open FROM public.business_invitations
+   WHERE business_id = '11111111-0000-0000-0000-000000000001'
+     AND email = 'reissue@dokanos.test'
+     AND accepted_at IS NULL AND revoked_at IS NULL;
+  IF v_open <> 1 THEN
+    RAISE EXCEPTION 'FAIL: AC2b re-invitation left % open rows', v_open USING ERRCODE = 'P0001';
+  END IF;
+END $$;
+ROLLBACK;
+
 -- ---------------------------------------------------------------------------
 -- AC-3 (Shape B): the intended verified email accepts. Joining grants
 -- account-wide member operational access only: no platform role, no store
@@ -984,7 +1025,8 @@ DELETE FROM public.user_business_access
 DELETE FROM public.business_invitations
  WHERE email IN ('new.person@dokanos.test', 'spare_a@dokanos.test', 'spare_b@dokanos.test',
                  'directory_probe@dokanos.test', 'invited_by_nonowner@dokanos.test',
-                 'unverified_person@dokanos.test', 'direct_write@dokanos.test');
+                 'unverified_person@dokanos.test', 'direct_write@dokanos.test',
+                 'reissue@dokanos.test');
 DELETE FROM public.audit_log
  WHERE action IN ('invite_business_member', 'accept_business_invitation',
                   'revoke_business_invitation', 'remove_business_member');

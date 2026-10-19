@@ -127,6 +127,17 @@ BEGIN
       USING ERRCODE = '23505';
   END IF;
 
+  -- An already-expired invitation can never become usable again. Retire it as
+  -- part of the deliberate re-invitation so stale intent does not block the
+  -- owner forever (the unique open-invitation index counts un-revoked rows).
+  UPDATE public.business_invitations
+     SET revoked_at = now(), revoked_by = v_user_id
+   WHERE business_id = p_business_id
+     AND email = v_email
+     AND accepted_at IS NULL
+     AND revoked_at IS NULL
+     AND expires_at <= now();
+
   IF EXISTS (
     SELECT 1 FROM public.business_invitations
     WHERE business_id = p_business_id
@@ -219,9 +230,13 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
+  -- Serialize acceptance against a concurrent accept or revoke of the same
+  -- invitation. The state checks below are re-read after the lock is acquired,
+  -- so two callers cannot both consume it and a revoke cannot race an accept.
   SELECT * INTO v_invitation
     FROM public.business_invitations
-   WHERE token = v_token;
+   WHERE token = v_token
+   FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'INVITATION_INVALID: this invitation is not valid'
       USING ERRCODE = '23514';
@@ -532,9 +547,12 @@ BEGIN
     RAISE EXCEPTION 'AUTH_REQUIRED: authentication required' USING ERRCODE = '42501';
   END IF;
 
+  -- Take the same row lock as acceptance, so revoke and accept cannot both
+  -- commit; after waiting, the checks below see the winning state.
   SELECT * INTO v_invitation
     FROM public.business_invitations
-   WHERE id = p_invitation_id;
+   WHERE id = p_invitation_id
+   FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'INVITATION_NOT_FOUND: that invitation does not exist'
       USING ERRCODE = '22023';
