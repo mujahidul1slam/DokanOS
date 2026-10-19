@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
+import { AcceptInvitationCard } from "@/components/accounts/AcceptInvitationCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -12,8 +13,7 @@ export default function AccountSelection() {
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
   const [params] = useSearchParams();
-
-  if (loading) return <p role="status" className="p-8 text-center">Loading your business accounts...</p>;
+  const inviteToken = params.get("invite");
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -23,10 +23,13 @@ export default function AccountSelection() {
           <CardDescription>Signed in as {user?.email}. Your personal account is ready.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {params.get("invite") && (
+          {inviteToken && (
             <p role="status">Your invitation is saved. Verification does not accept it or grant access.</p>
           )}
-          {error ? (
+          {inviteToken && <AcceptInvitationCard token={inviteToken} />}
+          {loading ? (
+            <p role="status">Loading your business accounts...</p>
+          ) : error ? (
             <div role="alert" className="space-y-3">
               <p>We couldn't load your business accounts. Please try again.</p>
               <Button variant="outline" onClick={() => void refresh()}>Retry</Button>

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import {
   LayoutDashboard, ShoppingCart, Package, Users, Monitor, Plug,
   Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3, Hourglass, Receipt, ChevronsUpDown, Check, Store,
-  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags, Plus
+  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags, Plus, UserPlus
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
@@ -64,6 +64,7 @@ const BASE_NAV_GROUPS: NavGroup[] = [
     items: [
       { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin"] },
       { icon: Tags, label: "Brands", path: "/brands", roles: ["admin", "staff", "viewer"] },
+      { icon: UserPlus, label: "Members", path: "/members", roles: ["admin"] },
       { icon: Store, label: "Stores", path: "/stores", roles: ["admin", "staff"] },
       { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin"] },
       { icon: Plug, label: "Integrations", path: "/integrations", roles: ["admin"] },

@@ -237,6 +237,59 @@ export type Database = {
           },
         ]
       }
+      business_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          business_id: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string | null
+          revoked_at: string | null
+          revoked_by: string | null
+          role: string
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          business_id: string
+          created_at?: string
+          email: string
+          expires_at?: string
+          id?: string
+          invited_by?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          role?: string
+          token?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          business_id?: string
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          role?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "business_invitations_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       businesses: {
         Row: {
           address: string | null
@@ -3478,6 +3531,7 @@ export type Database = {
       }
     }
     Functions: {
+      accept_business_invitation: { Args: { p_token: string }; Returns: Json }
       bump_store_sync_failure: {
         Args: { p_store_id: string }
         Returns: undefined
@@ -3485,6 +3539,14 @@ export type Database = {
       business_has_other_owner: {
         Args: { p_business_id: string; p_user: string }
         Returns: boolean
+      }
+      business_invitation_state: {
+        Args: {
+          p_accepted_at: string
+          p_expires_at: string
+          p_revoked_at: string
+        }
+        Returns: string
       }
       can_manage_business_access: {
         Args: { p_business_id: string; p_user: string }
@@ -3570,6 +3632,7 @@ export type Database = {
         Returns: Json
       }
       delete_unprovisioned_self: { Args: never; Returns: Json }
+      describe_business_invitation: { Args: { p_token: string }; Returns: Json }
       enqueue_order_push: {
         Args: { p_order_id: string; p_reason?: string }
         Returns: undefined
@@ -3651,7 +3714,36 @@ export type Database = {
         }
         Returns: boolean
       }
+      invite_business_member: {
+        Args: { p_business_id: string; p_email: string }
+        Returns: Json
+      }
       is_business_member: { Args: { p_business_id: string }; Returns: boolean }
+      list_business_invitations: {
+        Args: { p_business_id: string }
+        Returns: {
+          accepted_at: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string
+          revoked_at: string
+          role: string
+          status: string
+          token: string
+        }[]
+      }
+      list_business_members: {
+        Args: { p_business_id: string }
+        Returns: {
+          email: string
+          full_name: string
+          joined_at: string
+          role: string
+          user_id: string
+        }[]
+      }
       merge_duplicate_customers: {
         Args: never
         Returns: {
@@ -3678,9 +3770,17 @@ export type Database = {
         Args: { p_stale_before: string }
         Returns: number
       }
+      remove_business_member: {
+        Args: { p_business_id: string; p_user_id: string }
+        Returns: Json
+      }
       reset_store_circuit_breaker: {
         Args: { p_store_id: string }
         Returns: undefined
+      }
+      revoke_business_invitation: {
+        Args: { p_invitation_id: string }
+        Returns: Json
       }
       run_data_retention_cleanup: { Args: never; Returns: Json }
       set_member_business_role: {

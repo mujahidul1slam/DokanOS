@@ -405,6 +405,301 @@ async function runBrandStoreApiChecks(client, status) {
   }
 }
 
+async function runBusinessInvitationApiChecks(client, status) {
+  const OWNER_A = FIXTURE_IDS[3];
+  const UBA_ADMIN_A = FIXTURE_IDS[5];
+  const MEMBER_A = FIXTURE_IDS[6];
+  const VIEWER_A = FIXTURE_IDS[7];
+  const OWNER_B = FIXTURE_IDS[8];
+  const OUTSIDER = FIXTURE_IDS[9];
+
+  // Fresh identities owned by this probe, so nothing depends on incidental
+  // fixture membership left behind by earlier battery files:
+  //   INVITEE     — completed personal registration/verification (a new person)
+  //   OTHER_PERSON— a different, verified person
+  //   UNVERIFIED  — has not confirmed an email address yet
+  const INVITEE = "00000000-0000-0000-0000-000000000021";
+  const OTHER_PERSON = "00000000-0000-0000-0000-000000000022";
+  const UNVERIFIED = "00000000-0000-0000-0000-000000000023";
+  const INVITEE_EMAIL = "issue13-invitee@dokanos.test";
+  const OTHER_EMAIL = "issue13-other@dokanos.test";
+  const UNVERIFIED_EMAIL = "issue13-unverified@dokanos.test";
+  const IDENTITIES = [INVITEE, OTHER_PERSON, UNVERIFIED];
+  const EMAILS = [INVITEE_EMAIL, OTHER_EMAIL, UNVERIFIED_EMAIL];
+
+  const rpc = (userId, fn, body) => fetch(`${status.API_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: {
+      apikey: status.ANON_KEY,
+      Authorization: `Bearer ${jwtFor(status, userId)}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payloadOf = async (response) => (response.ok ? response.json() : null);
+  const reasonOf = async (response) => {
+    if (response.ok) return "";
+    try {
+      return `: ${(await response.json()).message ?? ""}`;
+    } catch {
+      return "";
+    }
+  };
+
+  const invite = (actor, businessId, email) =>
+    rpc(actor, "invite_business_member", { p_business_id: businessId, p_email: email });
+  const accept = (actor, token) => rpc(actor, "accept_business_invitation", { p_token: token });
+  const describe = (actor, token) => rpc(actor, "describe_business_invitation", { p_token: token });
+  const listInvites = (actor, businessId) =>
+    rpc(actor, "list_business_invitations", { p_business_id: businessId });
+  const listMembers = (actor, businessId) =>
+    rpc(actor, "list_business_members", { p_business_id: businessId });
+  const removeMember = (actor, businessId, userId) =>
+    rpc(actor, "remove_business_member", { p_business_id: businessId, p_user_id: userId });
+  const revokeInvite = (actor, invitationId) =>
+    rpc(actor, "revoke_business_invitation", { p_invitation_id: invitationId });
+
+  try {
+    // Personal identities exist independently of any business account.
+    await client.query(`DELETE FROM public.business_invitations WHERE email = ANY($1)`, [EMAILS]);
+    await client.query(`DELETE FROM auth.users WHERE id = ANY($1)`, [IDENTITIES]);
+    await client.query(`
+      INSERT INTO auth.users
+        (id, aud, role, email, encrypted_password, email_confirmed_at,
+         raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+      VALUES
+        ($1, 'authenticated', 'authenticated', $4,
+         'local-fixture-password-never-used-for-login', now(),
+         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+        ($2, 'authenticated', 'authenticated', $5,
+         'local-fixture-password-never-used-for-login', now(),
+         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+        ($3, 'authenticated', 'authenticated', $6,
+         'local-fixture-password-never-used-for-login', NULL,
+         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now())
+    `, [...IDENTITIES, ...EMAILS]);
+
+    // ---- owner-only issuance, carrying the account context and the identity ----
+    const issued = await invite(OWNER_A, BIZ_A, "  Issue13-Invitee@Dokanos.TEST ");
+    const invitation = await payloadOf(issued);
+    if (!issued.ok || invitation?.business_id !== BIZ_A || invitation?.email !== INVITEE_EMAIL
+        || invitation?.role !== "member" || invitation?.status !== "pending"
+        || invitation?.business_name !== "Biz A Fixture" || !invitation?.token) {
+      throw new Error(`owner invitation failed or lost its account context `
+        + `(${issued.status}${await reasonOf(issued)})`);
+    }
+
+    for (const [label, actor, businessId] of [
+      ["account member", MEMBER_A, BIZ_A],
+      ["read-only viewer", VIEWER_A, BIZ_A],
+      ["account admin", UBA_ADMIN_A, BIZ_A],
+      ["nonmember", OUTSIDER, BIZ_A],
+      ["other-account owner", OWNER_B, BIZ_A],
+      ["owner of another account", OWNER_A, B_OTHER],
+    ]) {
+      const response = await invite(actor, businessId, "issue13-denied@dokanos.test");
+      if (response.ok) throw new Error(`the ${label} issued an account invitation through the API`);
+    }
+
+    // ---- the invitation ledger is not a client table ----
+    const authHeaders = (userId, extra = {}) => ({
+      apikey: status.ANON_KEY,
+      Authorization: `Bearer ${jwtFor(status, userId)}`,
+      ...extra,
+    });
+    const directRead = await fetch(`${status.API_URL}/rest/v1/business_invitations?select=token,email`, {
+      headers: authHeaders(OWNER_A),
+    });
+    if (directRead.ok && (await directRead.json()).length) {
+      throw new Error("the invitation ledger was readable through a direct Data API request");
+    }
+    const directInsert = await fetch(`${status.API_URL}/rest/v1/business_invitations`, {
+      method: "POST",
+      headers: authHeaders(OWNER_A, { "Content-Type": "application/json", Prefer: "return=representation" }),
+      body: JSON.stringify({ business_id: BIZ_A, email: "issue13-direct@dokanos.test" }),
+    });
+    if (directInsert.ok) throw new Error("the invitation ledger accepted a direct client insert");
+    const directUpdate = await fetch(
+      `${status.API_URL}/rest/v1/business_invitations?email=eq.${INVITEE_EMAIL}`,
+      {
+        method: "PATCH",
+        headers: authHeaders(OWNER_A, { "Content-Type": "application/json", Prefer: "return=representation" }),
+        body: JSON.stringify({ expires_at: "2099-01-01T00:00:00Z" }),
+      },
+    );
+    if (directUpdate.ok && (await directUpdate.json()).length) {
+      throw new Error("the invitation ledger accepted a direct client update");
+    }
+
+    // ---- describe gives every arrival a clear, honest outcome ----
+    const described = await payloadOf(await describe(INVITEE, invitation.token));
+    if (described?.status !== "pending" || described?.email_matches !== true
+        || described?.business_name !== "Biz A Fixture") {
+      throw new Error("the intended identity did not see a pending matching invitation");
+    }
+    const describedWrong = await payloadOf(await describe(OTHER_PERSON, invitation.token));
+    if (describedWrong?.status !== "pending" || describedWrong?.email_matches !== false) {
+      throw new Error("a different identity was told the invitation matched their email");
+    }
+    const describedUnknown = await payloadOf(await describe(INVITEE, "issue13-unknown-token"));
+    if (describedUnknown?.status !== "invalid" || describedUnknown?.email_matches !== false) {
+      throw new Error("an unknown token was not reported as invalid");
+    }
+
+    // ---- acceptance is bound to the verified intended identity ----
+    const wrongIdentity = await accept(OTHER_PERSON, invitation.token);
+    if (wrongIdentity.ok) throw new Error("the wrong identity accepted an invitation through the API");
+    const wrongMembership = (await client.query(
+      `SELECT count(*)::int AS n FROM public.user_business_access
+        WHERE user_id = $1 AND business_id = $2`, [OTHER_PERSON, BIZ_A],
+    )).rows[0].n;
+    if (wrongMembership !== 0) throw new Error("a refused wrong-email acceptance still created membership");
+    const stillOpen = await payloadOf(await listInvites(OWNER_A, BIZ_A));
+    if (!stillOpen.some((row) => row.email === INVITEE_EMAIL && row.status === "pending")) {
+      throw new Error("a refused wrong-email attempt consumed the invitation");
+    }
+
+    // An unverified identity cannot accept, even with a valid matching token.
+    const unverifiedInvite = await payloadOf(await invite(OWNER_A, BIZ_A, UNVERIFIED_EMAIL));
+    if (!unverifiedInvite?.token) throw new Error("could not open the unverified identity's invitation");
+    const unverifiedAccept = await accept(UNVERIFIED, unverifiedInvite.token);
+    if (unverifiedAccept.ok) throw new Error("an unverified identity accepted an invitation through the API");
+
+    const joined = await payloadOf(await accept(INVITEE, invitation.token));
+    if (joined?.outcome !== "joined" || joined?.role !== "member" || joined?.business_id !== BIZ_A) {
+      throw new Error("the intended identity did not join with account-wide member access");
+    }
+    const grant = (await client.query(`
+      SELECT
+        (SELECT count(*)::int FROM public.user_roles WHERE user_id = $1)        AS roles,
+        (SELECT count(*)::int FROM public.user_store_access WHERE user_id = $1) AS stores,
+        (SELECT count(*)::int FROM public.user_permissions WHERE user_id = $1)  AS perms,
+        (SELECT count(*)::int FROM public.businesses WHERE email = $2)          AS accounts
+    `, [INVITEE, INVITEE_EMAIL])).rows[0];
+    if (grant.roles !== 0 || grant.stores !== 0 || grant.perms !== 0 || grant.accounts !== 0) {
+      throw new Error("joining assigned a platform role, a granular grant or its own business account");
+    }
+
+    // Account-wide operational access: the new member can read the account's
+    // brands and member directory and still cannot cross into another account.
+    const brandsAsMember = await fetch(
+      `${status.API_URL}/rest/v1/brands?select=id,business_id&business_id=eq.${BIZ_A}`,
+      { headers: authHeaders(INVITEE) },
+    );
+    if (!brandsAsMember.ok) throw new Error("a new account member could not read the account's brands");
+    const foreignBrands = await fetch(
+      `${status.API_URL}/rest/v1/brands?select=id&business_id=eq.${B_OTHER}`,
+      { headers: authHeaders(INVITEE) },
+    );
+    if (!foreignBrands.ok || (await foreignBrands.json()).length) {
+      throw new Error("a new account member read another account's brands");
+    }
+    const membersAsMember = await payloadOf(await listMembers(INVITEE, BIZ_A));
+    if (!Array.isArray(membersAsMember)
+        || !membersAsMember.some((row) => row.user_id === INVITEE && row.role === "member")
+        || membersAsMember.some((row) => "token" in row || "email_matches" in row)) {
+      throw new Error("the member directory was unavailable, wrong or exposed invitation data");
+    }
+
+    // ---- acceptance is safely repeatable ----
+    const repeated = await payloadOf(await accept(INVITEE, invitation.token));
+    if (repeated?.outcome !== "already_member" || repeated?.role !== "member") {
+      throw new Error("a repeated acceptance did not report the existing membership");
+    }
+    const membershipRows = (await client.query(
+      `SELECT count(*)::int AS n FROM public.user_business_access
+        WHERE user_id = $1 AND business_id = $2`, [INVITEE, BIZ_A],
+    )).rows[0].n;
+    if (membershipRows !== 1) throw new Error("a repeated acceptance duplicated the membership row");
+
+    // ---- the invitation directory is owner-only ----
+    const ownerDirectory = await payloadOf(await listInvites(OWNER_A, BIZ_A));
+    if (!Array.isArray(ownerDirectory)
+        || !ownerDirectory.some((row) => row.email === INVITEE_EMAIL && row.status === "accepted")) {
+      throw new Error("the owner could not review the account's invitation ledger");
+    }
+    for (const [label, actor] of [
+      ["account member", MEMBER_A],
+      ["read-only viewer", VIEWER_A],
+      ["account admin", UBA_ADMIN_A],
+      ["nonmember", OUTSIDER],
+      ["other-account owner", OWNER_B],
+    ]) {
+      const response = await listInvites(actor, BIZ_A);
+      if (response.ok) throw new Error(`the ${label} listed the account's invitations through the API`);
+    }
+
+    // ---- only the owner withdraws an open invitation ----
+    const revocable = await payloadOf(await invite(OWNER_A, BIZ_A, OTHER_EMAIL));
+    if (!revocable?.id) throw new Error("could not open the invitation used for the revoke probe");
+    for (const [label, actor] of [
+      ["account member", MEMBER_A],
+      ["account admin", UBA_ADMIN_A],
+      ["other-account owner", OWNER_B],
+    ]) {
+      const response = await revokeInvite(actor, revocable.id);
+      if (response.ok) throw new Error(`the ${label} revoked an account invitation through the API`);
+    }
+    const revoked = await payloadOf(await revokeInvite(OWNER_A, revocable.id));
+    if (revoked?.revoked !== true || revoked?.status !== "revoked") {
+      throw new Error("the owner could not withdraw an open invitation");
+    }
+    const revokedDescription = await payloadOf(await describe(OTHER_PERSON, revocable.token));
+    if (revokedDescription?.status !== "revoked") {
+      throw new Error("a withdrawn invitation was not reported as revoked");
+    }
+    const revokedAccept = await accept(OTHER_PERSON, revocable.token);
+    if (revokedAccept.ok) throw new Error("a withdrawn invitation was accepted through the API");
+
+    // ---- owner-only membership management; an owner is never removed ----
+    for (const [label, actor, target] of [
+      ["account member", MEMBER_A, VIEWER_A],
+      ["read-only viewer", VIEWER_A, MEMBER_A],
+      ["account admin", UBA_ADMIN_A, MEMBER_A],
+      ["nonmember", OUTSIDER, MEMBER_A],
+      ["other-account owner", OWNER_B, MEMBER_A],
+    ]) {
+      const response = await removeMember(actor, BIZ_A, target);
+      if (response.ok) throw new Error(`the ${label} removed a member through the API`);
+    }
+    const removedCoOwner = await removeMember(OWNER_A, BIZ_A, FIXTURE_IDS[4]);
+    if (removedCoOwner.ok) throw new Error("the owner removed a co-owner through ordinary member removal");
+    const removedSelf = await removeMember(OWNER_A, BIZ_A, OWNER_A);
+    if (removedSelf.ok) throw new Error("the owner removed themselves through ordinary member removal");
+    const removedMissing = await removeMember(OWNER_A, BIZ_A, OUTSIDER);
+    if (removedMissing.ok) throw new Error("removing a nonmember was reported as success");
+
+    const removed = await payloadOf(await removeMember(OWNER_A, BIZ_A, INVITEE));
+    if (removed?.removed !== true) throw new Error("the owner could not remove an ordinary member");
+    // The removal immediately narrows the person's available account contexts.
+    const afterRemoval = await listMembers(INVITEE, BIZ_A);
+    if (afterRemoval.ok) throw new Error("a removed member still listed the account's members");
+    const remaining = (await client.query(
+      `SELECT count(*)::int AS n FROM public.user_business_access
+        WHERE user_id = $1 AND business_id = $2`, [INVITEE, BIZ_A],
+    )).rows[0].n;
+    if (remaining !== 0) throw new Error("member removal left the membership row behind");
+    const ownerRows = (await client.query(
+      `SELECT count(*)::int AS n FROM public.user_business_access
+        WHERE business_id = $1 AND role = 'owner'`, [BIZ_A],
+    )).rows[0].n;
+    if (ownerRows < 1) throw new Error("member management left the account without an owner");
+
+    console.log("PASS  business_invitation_boundaries_api (owner-only issuance, no direct ledger access, describe)");
+    console.log("PASS  business_invitation_acceptance_api (wrong email, unverified, join, repeat, revoke, refreshed contexts)");
+  } finally {
+    await client.query(`DELETE FROM public.business_invitations WHERE email = ANY($1)`, [EMAILS]);
+    await client.query(
+      `DELETE FROM public.audit_log
+        WHERE action IN ('invite_business_member', 'accept_business_invitation',
+                         'revoke_business_invitation', 'remove_business_member')
+          AND details->>'business_id' IN ($1, $2)`,
+      [BIZ_A, B_OTHER],
+    );
+    await client.query(`DELETE FROM auth.users WHERE id = ANY($1)`, [IDENTITIES]);
+  }
+}
+
 async function seed(client) {
   // auth.users rows (fixture emails; passwords never exercised)
   const names = [
@@ -508,6 +803,12 @@ async function run() {
       } catch (e) {
         failures++;
         console.log(`FAIL  brand_store_boundaries_api: ${e.message}`);
+      }
+      try {
+        await runBusinessInvitationApiChecks(client, status);
+      } catch (e) {
+        failures++;
+        console.log(`FAIL  business_invitation_boundaries_api: ${e.message}`);
       }
     }
     console.log(failures === 0 ? `\nALL GREEN (${files.length} files)` : `\n${failures} file(s) FAILED`);
