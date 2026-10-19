@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 /**
  * Multi-business restructure Phase 1: the REAL business context.
@@ -53,6 +54,7 @@ interface BusinessContextValue {
   /** Role map indexed by business_id (Task 2.5). */
   rolesByBusiness: Record<string, string>;
   loading: boolean;
+  error: string | null;
   setActive: (id: string) => void;
   setActiveBrand: (id: string | null) => void;
   refresh: () => Promise<void>;
@@ -68,6 +70,8 @@ const STORAGE_KEY = "dokanos-active-business-id";
 const BRAND_STORAGE_PREFIX = "dokanos-active-brand-";
 
 export const BusinessContextProvider = ({ children }: { children: ReactNode }) => {
+  const { user } = useAuth();
+  const userId = user?.id;
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [rolesByBusiness, setRolesByBusiness] = useState<Record<string, string>>({});
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -76,6 +80,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   );
   const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sellingPointsCount, setSellingPointsCount] = useState(0);
   const scopedLoadToken = useRef(0);
 
@@ -96,10 +101,30 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   }, []);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    if (!userId) {
+      setBusinesses([]);
+      setRolesByBusiness({});
+      setActiveId(null);
+      setActiveBrandId(null);
+      setLoading(false);
+      return;
+    }
     // user_business_access RLS: users see their own rows. Join to businesses.
-    const { data: memberships } = await supabase
+    const { data: memberships, error: membershipError } = await supabase
       .from("user_business_access")
-      .select("role, business_id, businesses(*)");
+      .select("role, business_id, businesses(*)")
+      .eq("user_id", userId);
+    if (membershipError) {
+      setError(membershipError.message);
+      setBusinesses([]);
+      setRolesByBusiness({});
+      setActiveId(null);
+      setActiveBrandId(null);
+      setLoading(false);
+      return;
+    }
     const roles: Record<string, string> = {};
     (memberships || []).forEach((m: { role: string | null; business_id: string }) => {
       if (m.role) roles[m.business_id] = m.role;
@@ -124,8 +149,12 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
       // Re-read the scoped brand/count state: the active business may have
       // gained its first store/brand since the last load (wizard step 1).
       loadScoped(effective);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+      setActiveId(null);
+      setActiveBrandId(null);
     }
-  }, [loadScoped]);
+  }, [loadScoped, userId]);
 
   useEffect(() => {
     refresh();
@@ -154,6 +183,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   }, [activeId, loadScoped]);
 
   const setActive = (id: string) => {
+    if (!businesses.some((business) => business.id === id)) return;
     setActiveId(id);
     localStorage.setItem(STORAGE_KEY, id);
     // Per-business brand selection resets on switch.
@@ -184,6 +214,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
         myRole,
         rolesByBusiness,
         loading,
+        error,
         setActive,
         setActiveBrand,
         refresh,

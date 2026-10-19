@@ -10,15 +10,14 @@ import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidge
 import { isDisposableEmail } from "@/lib/disposableDomains";
 import { mapAuthError } from "@/lib/authErrors";
 import { readEdgeFnError } from "@/lib/edgeFnError";
-import { generateStoreSlug } from "@/lib/slug";
+import { invitationPath } from "@/lib/invitationPath";
 import { toast } from "sonner";
-import { Loader2, Eye, EyeOff, Building2, Store, Lock, Mail, User, ShieldAlert } from "lucide-react";
+import { Loader2, Eye, EyeOff, Lock, Mail, User, ShieldAlert } from "lucide-react";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 
 export default function Signup() {
   const navigate = useNavigate();
   const [fullName, setFullName] = useState("");
-  const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -53,8 +52,6 @@ export default function Signup() {
     checkSignupStatus();
   }, []);
 
-  const slug = generateStoreSlug(businessName || "my-store");
-
   const getPasswordStrength = (pass: string) => {
     if (!pass) return { score: 0, text: "" };
     let score = 0;
@@ -73,8 +70,8 @@ export default function Signup() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!businessName.trim() || businessName.trim().length > 100) {
-      toast.error("Business name must be between 1 and 100 characters");
+    if (!fullName.trim() || fullName.trim().length > 100) {
+      toast.error("Your name must be between 1 and 100 characters");
       return;
     }
 
@@ -101,21 +98,16 @@ export default function Signup() {
     setLoading(true);
 
     try {
-      // 1. Mint fresh client nonce and persist in localStorage
-      const nonce = crypto.randomUUID();
-      localStorage.setItem("dokanos_signup_nonce", nonce);
-      localStorage.setItem("dokanos_signup_business_name", businessName.trim());
-
       const token = captchaToken || turnstileRef.current?.getToken() || undefined;
 
-      // 2. Post anchor event to signup-event edge function FIRST
+      // Record consent and enforce server-side signup controls, not business setup.
       const { error: eventErr, data: eventData } = await supabase.functions.invoke("signup-event", {
         body: {
           event: "signup_started",
           email: email.trim(),
           meta: {
-            business_name: businessName.trim(),
-            nonce,
+            signup_intent: "personal",
+            consent: true,
           },
           captchaToken: token,
         },
@@ -131,7 +123,7 @@ export default function Signup() {
         const errMsg = fnBody?.message || "";
         if (errCode.includes("RATE_LIMITED")) {
           setLoading(false);
-          navigate(`/check-email?email=${encodeURIComponent(email.trim())}&rate_limited=true`);
+          navigate(invitationPath(`/check-email?email=${encodeURIComponent(email.trim())}&rate_limited=true`));
           return;
         }
         toast.error(errMsg || mapAuthError(fnBody || eventErr));
@@ -141,16 +133,14 @@ export default function Signup() {
       }
 
       // 3. Register account with Supabase Auth
-      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+      const { error: signUpErr } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/confirm`,
+          emailRedirectTo: `${window.location.origin}${invitationPath("/auth/confirm")}`,
           data: {
-            signup_intent: "owner",
-            full_name: fullName.trim() || email.trim(),
-            business_name: businessName.trim(),
-            nonce,
+            signup_intent: "personal",
+            full_name: fullName.trim(),
           },
         },
       });
@@ -164,8 +154,8 @@ export default function Signup() {
 
       setLoading(false);
       // Proceed to confirmation waiting screen
-      navigate(`/check-email?email=${encodeURIComponent(email.trim())}`);
-    } catch (err: any) {
+      navigate(invitationPath(`/check-email?email=${encodeURIComponent(email.trim())}`));
+    } catch (err: unknown) {
       setLoading(false);
       turnstileRef.current?.reset();
       toast.error(mapAuthError(err));
@@ -202,9 +192,9 @@ export default function Signup() {
       <Card className="w-full max-w-lg shadow-xl border-border/40">
         <CardHeader className="text-center space-y-2">
           <img src={dokanosLogo} alt="DokanOS" className="mx-auto h-24 w-auto object-contain" />
-          <CardTitle className="text-2xl font-bold tracking-tight">Create your DokanOS business</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight">Create your personal account</CardTitle>
           <CardDescription>
-            Launch your multi-channel store, POS, and online storefront in minutes.
+            Verify your email, then choose a business account. No business details needed.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -220,33 +210,14 @@ export default function Signup() {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 autoComplete="name"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="businessName" className="flex items-center gap-1.5">
-                <Building2 className="h-3.5 w-3.5 text-muted-foreground" /> Business Name
-              </Label>
-              <Input
-                id="businessName"
-                type="text"
-                placeholder="e.g. Crimson Leather"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
                 required
                 maxLength={100}
               />
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 p-2 rounded border border-border/30">
-                <Store className="h-3.5 w-3.5 text-primary shrink-0" />
-                <span className="truncate">
-                  Storefront URL: <strong className="text-foreground">https://{slug}.stores.dokanos.app</strong>
-                </span>
-              </div>
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="email" className="flex items-center gap-1.5">
-                <Mail className="h-3.5 w-3.5 text-muted-foreground" /> Work Email
+                <Mail className="h-3.5 w-3.5 text-muted-foreground" /> Email
               </Label>
               <Input
                 id="email"
@@ -333,14 +304,14 @@ export default function Signup() {
 
             <Button type="submit" className="w-full text-base py-5" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Business Account
+              Create personal account
             </Button>
           </form>
         </CardContent>
         <CardFooter className="flex justify-center border-t border-border/30 pt-4">
           <p className="text-xs text-muted-foreground">
             Already have an account?{" "}
-            <Link to="/login" className="text-primary font-medium hover:underline">
+            <Link to={invitationPath("/login")} className="text-primary font-medium hover:underline">
               Sign In
             </Link>
           </p>

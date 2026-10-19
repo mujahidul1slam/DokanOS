@@ -10,8 +10,8 @@ import { decideRoute } from "./guards";
  *
  * Decisions:
  *   wait             → render nothing (Pitfall 5: guards tolerate loading)
- *   create-business  → redirect to /onboarding (the shell's create-business
- *                      mode renders CreateBusinessDialog)
+ *   create-business  → redirect to /accounts (valid no-membership state;
+ *                      business creation is an explicit choice)
  *   wizard           → redirect to /onboarding
  *   app              → {children}
  */
@@ -36,7 +36,7 @@ export function BusinessGuards({ children }: { children: ReactNode }) {
     case "wait":
       return null;
     case "create-business":
-      return <Navigate to="/onboarding" replace />;
+      return <Navigate to="/accounts" replace />;
     case "wizard":
       return <Navigate to="/onboarding" replace />;
     case "app":

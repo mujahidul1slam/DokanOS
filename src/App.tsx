@@ -18,6 +18,7 @@ import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import { Loader2 } from "lucide-react";
 import { markAppLoaded } from "@/lib/chunkRecovery";
+import { invitationPath } from "@/lib/invitationPath";
 import { detectBrand, detectBrandAsync } from "@/storefront/lib/brand";
 
 const StorefrontApp = lazy(() => import("@/storefront/StorefrontApp"));
@@ -57,6 +58,7 @@ const VisualPageBuilder = lazy(() => import("@/components/storefront-admin/Visua
 const Signup = lazy(() => import("./pages/Signup"));
 const CheckEmail = lazy(() => import("./pages/CheckEmail"));
 const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
+const AccountSelection = lazy(() => import("./pages/AccountSelection"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -107,6 +109,7 @@ const AppRoutes = () => {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/accounts" element={<Navigate to={invitationPath("/login")} replace />} />
         <Route path="/signup" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Signup /></Suspense>} />
         <Route path="/check-email" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><CheckEmail /></Suspense>} />
         <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
@@ -123,8 +126,10 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
-      <Route path="/signup" element={<Navigate to="/" replace />} />
-      <Route path="/check-email" element={<Navigate to="/" replace />} />
+      <Route path="/accounts" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AccountSelection /></Suspense>} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/signup" element={<Navigate to={invitationPath("/accounts")} replace />} />
+      <Route path="/check-email" element={<Navigate to={invitationPath("/accounts")} replace />} />
       {/* Onboarding wizard (D-10): full-page, outside DashboardLayout AND
           outside BusinessGuards — the guard's wizard redirect targets this
           route, so wrapping it would loop (the shell renders the
@@ -165,7 +170,6 @@ const AppRoutes = () => {
               {/* checkout-fields lives INSIDE the admin shell now (audit fix) —
                   the standalone route dropped the storefront sidebar + switcher. */}
               <Route path="/storefronts/:slug/admin/pages/:pageId/edit" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<PageFallback />}><VisualPageBuilder /></Suspense></PermissionGuard>} />
-              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

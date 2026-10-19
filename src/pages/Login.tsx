@@ -13,6 +13,7 @@ import { parseMfaError, challengeAndVerify } from "@/lib/mfa";
 import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidget";
 import { mapAuthError } from "@/lib/authErrors";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
+import { invitationPath } from "@/lib/invitationPath";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -46,7 +47,7 @@ const Login = () => {
       toast.error(mapAuthError(error));
       return;
     }
-    navigate("/");
+    navigate(invitationPath("/accounts"));
   };
 
   const handleMfaVerify = async (e: React.FormEvent) => {
@@ -55,9 +56,9 @@ const Login = () => {
     setMfaLoading(true);
     try {
       await challengeAndVerify(mfaFactorId, mfaCode);
-      navigate("/");
-    } catch (err: any) {
-      const msg = err?.message ?? "";
+      navigate(invitationPath("/accounts"));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
       toast.error(
         msg.toLowerCase().includes("expired")
           ? "That code expired — try again"
@@ -75,7 +76,7 @@ const Login = () => {
     setLoading(true);
     const token = turnstileRef.current?.getToken() || undefined;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: `${window.location.origin}${invitationPath("/reset-password")}`,
       captchaToken: token,
     });
     setLoading(false);
@@ -173,14 +174,14 @@ const Login = () => {
               </Button>
               <div className="pt-2 text-center space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  Don't have a business account?{" "}
-                  <Link to="/signup" className="text-primary font-medium hover:underline">
+                  Don't have a personal account?{" "}
+                  <Link to={invitationPath("/signup")} className="text-primary font-medium hover:underline">
                     Create account
                   </Link>
                 </p>
                 <p className="text-[11px] text-muted-foreground">
                   Didn't receive a confirmation email?{" "}
-                  <Link to="/check-email" className="text-muted-foreground hover:text-foreground underline">
+                  <Link to={invitationPath("/check-email")} className="text-muted-foreground hover:text-foreground underline">
                     Resend link
                   </Link>
                 </p>

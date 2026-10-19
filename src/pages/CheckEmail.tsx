@@ -7,6 +7,7 @@ import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidge
 import { toast } from "sonner";
 import { Mail, Clock, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2 } from "lucide-react";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
+import { invitationPath } from "@/lib/invitationPath";
 
 export default function CheckEmail() {
   const [searchParams] = useSearchParams();
@@ -41,6 +42,7 @@ export default function CheckEmail() {
         body: {
           email,
           captchaToken: token,
+          invite: searchParams.get("invite") || undefined,
         },
       });
 
@@ -54,7 +56,7 @@ export default function CheckEmail() {
       }
 
       toast.success(data?.message || "Confirmation link re-sent if account exists.");
-    } catch (err: any) {
+    } catch {
       setResending(false);
       turnstileRef.current?.reset();
       toast.error("Failed to resend confirmation email.");
@@ -85,7 +87,7 @@ export default function CheckEmail() {
               "To protect your security, daily signup attempts are capped. Please check your inbox for any existing confirmation email or try again tomorrow."
             ) : (
               <>
-                We sent a confirmation link to <strong className="text-foreground">{email || "your email address"}</strong>. Click the link to verify your account and launch your store.
+                We sent a confirmation link to <strong className="text-foreground">{email || "your email address"}</strong>. Click the link to verify your personal account.
               </>
             )}
           </CardDescription>
@@ -98,8 +100,8 @@ export default function CheckEmail() {
                 <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> What happens next?
               </div>
               <p>1. Open your email inbox and click the confirmation link.</p>
-              <p>2. We will set up your business, owner access, and permissions — nothing else yet.</p>
-              <p>3. You'll complete a short wizard to create your store and reserved storefront, then enter your dashboard.</p>
+              <p>2. Your personal account will be ready. No business account or store is created.</p>
+              <p>3. Choose an existing business account, join by invitation, or create a business account when you're ready.</p>
             </div>
           )}
 
@@ -136,13 +138,13 @@ export default function CheckEmail() {
 
         <CardFooter className="flex flex-col gap-2 border-t border-border/30 pt-4">
           <Button variant="ghost" asChild className="w-full gap-1 text-xs">
-            <Link to="/login">
+            <Link to={invitationPath("/login", searchParams)}>
               <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
             </Link>
           </Button>
           <p className="text-[11px] text-muted-foreground">
             Typed the wrong email?{" "}
-            <Link to="/signup" className="text-primary hover:underline font-medium">
+            <Link to={invitationPath("/signup", searchParams)} className="text-primary hover:underline font-medium">
               Start over
             </Link>
           </p>

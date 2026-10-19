@@ -103,11 +103,24 @@ Deno.serve(async (req: Request) => {
       const u = users[0];
       // Only proceed if unconfirmed and NOT invited
       if (!u.email_confirmed_at && !u.invited_at) {
+        // Rebuild the callback locally; never accept a client-supplied redirect URL.
+        const origin = Deno.env.get("APP_URL") || req.headers.get("origin");
+        let emailRedirectTo: string | undefined;
+        if (origin) {
+          const callback = new URL("/auth/confirm", origin);
+          if (callback.protocol === "https:" || callback.protocol === "http:") {
+            if (typeof body.invite === "string" && body.invite.length <= 512) {
+              callback.searchParams.set("invite", body.invite);
+            }
+            // Supabase Auth also enforces its configured redirect allowlist.
+            emailRedirectTo = callback.href;
+          }
+        }
         // Dispatch to stored email (never alias)
         const { error: resendErr } = await sb.auth.resend({
           type: "signup",
           email: u.email,
-          options: { captchaToken },
+          options: { captchaToken, emailRedirectTo },
         });
 
         // TOCTOU check: re-verify email is still unconfirmed before auditing

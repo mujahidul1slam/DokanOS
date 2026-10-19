@@ -71,8 +71,15 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      const businessName = meta?.business_name?.trim();
-      if (!businessName || businessName.length > 100) {
+      const personalSignup = meta?.signup_intent === "personal";
+      if (personalSignup && meta?.consent !== true) {
+        return new Response(
+          JSON.stringify({ error: "CONSENT_REQUIRED", message: "Agreement to the Terms of Service and Privacy Policy is required." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const businessName = typeof meta?.business_name === "string" ? meta.business_name.trim() : "";
+      if (!personalSignup && (!businessName || businessName.length > 100)) {
         return new Response(
           JSON.stringify({ error: "INVALID_NAME", message: "Business name must be 1 to 100 characters." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -80,7 +87,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const nonce = meta?.nonce ? String(meta.nonce) : "";
-      if (!nonce) {
+      if (!personalSignup && !nonce) {
         return new Response(
           JSON.stringify({ error: "INVALID_NONCE", message: "Nonce is required." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -132,11 +139,11 @@ Deno.serve(async (req: Request) => {
         ip: clientIp,
         ua: userAgent,
         meta: {
-          business_name: businessName,
-          nonce,
+          ...(personalSignup
+            ? { signup_intent: "personal", consent: true }
+            : { business_name: businessName, nonce, consumed: false }),
           tos_version: tosVersion,
           privacy_version: privacyVersion,
-          consumed: false,
         },
       });
 

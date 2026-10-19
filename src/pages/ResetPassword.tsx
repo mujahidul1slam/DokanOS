@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { mapAuthError } from "@/lib/authErrors";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
+import { invitationPath } from "@/lib/invitationPath";
 
 const ResetPassword = () => {
   const [password, setPassword] = useState("");
@@ -50,7 +51,7 @@ const ResetPassword = () => {
       toast.error(mapAuthError(error));
     } else {
       toast.success("Password updated successfully");
-      navigate("/");
+      navigate(invitationPath("/accounts"), { replace: true });
     }
   };
 
