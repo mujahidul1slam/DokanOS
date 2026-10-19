@@ -95,6 +95,19 @@ const AppSidebar = ({
   // Multi-business Phase 1: prefer real businesses over the invoice_settings
   // profile rows. Same UI shape either way (name + logo + switcher).
   const { active: activeBusiness, businesses, setActive: setActiveBusiness, brands, rolesByBusiness } = useBusinessContext();
+  // First-release owners/members may have no legacy user_roles row. Their
+  // account membership is the authority for this release, so derive the nav
+  // role from it instead of leaving the sidebar empty for an empty account.
+  const businessRole = activeBusiness ? rolesByBusiness[activeBusiness.id] ?? null : null;
+  const navRole = role ?? (
+    businessRole === "owner" || businessRole === "admin"
+      ? "admin"
+      : businessRole === "member"
+        ? "staff"
+        : businessRole === "viewer"
+          ? "viewer"
+          : null
+  );
   const [createBizOpen, setCreateBizOpen] = useState(false);
   const active = activeBusiness
     ? { id: activeBusiness.id, business_name: activeBusiness.name, logo_url: activeBusiness.logo_url }
@@ -291,7 +304,7 @@ const AppSidebar = ({
         <TooltipProvider delayDuration={0}>
           <nav className="flex-1 space-y-4 px-3 pb-4">
             {navGroups.map((group) => {
-              const groupItems = group.items.filter(item => role && item.roles.includes(role));
+              const groupItems = group.items.filter(item => navRole && item.roles.includes(navRole));
               if (groupItems.length === 0) return null;
 
               return (
@@ -302,7 +315,7 @@ const AppSidebar = ({
                     </h4>
                   )}
                   {groupItems.map((item) => {
-                    const children = item.children?.filter((c) => role && c.roles.includes(role)) || [];
+                    const children = item.children?.filter((c) => navRole && c.roles.includes(navRole)) || [];
                     
                     const isItemPathActive = (path: string) => {
                       const [basePath, query] = path.split('?');

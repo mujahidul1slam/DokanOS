@@ -89,6 +89,7 @@ test("an empty account can create and list independent name-only brands without 
 
   await page.goto("/brands");
   await expect(page).toHaveURL(/\/brands$/);
+  await expect(page.getByRole("link", { name: "Brands", exact: true })).toBeVisible();
   await expect(page.getByText("0 brands under Empty Account")).toBeVisible();
   await expect(page.getByText(/No brands yet/)).toBeVisible();
 
