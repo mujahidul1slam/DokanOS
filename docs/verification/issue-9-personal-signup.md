@@ -23,7 +23,7 @@ was migrated/reset; no deployed database or dirty source tree was changed.
 | Check | Latest result |
 | --- | --- |
 | Real local Auth signup/confirmation/recovery | **Passed**, including repeated-token rejection, no invitation acceptance/provisioning, direct business/membership/profile denials and member-RPC denials |
-| Fresh-stack SQL/RLS battery | **7 files passed, 1 failed**; personal signup, profiles, member RPCs, businesses, app settings, creation RPC and realtime pass |
+| Fresh-stack SQL/RLS battery | **8 files passed** after correcting stale direct-DML expectations for membership rows hidden by the documented SELECT policy |
 | Unit suite with explicit disposable local DB URL | **137 passed, no skips** |
 | Typecheck / production build | **Passed** |
 | Chrome accounts browser suite | **10 passed** |
@@ -53,19 +53,19 @@ Root causes and bounded repairs:
   The predicate now returns false for nonmembers. Real API tests prove both
   member-read and role-write RPCs reject the new person with SQLSTATE 42501.
 
-**Remaining baseline contract conflict, not a passed battery:**
-`user_business_access_test.sql` AC-7b requires an owner to directly DELETE a
-different member through a filtered query; AC-15 and the documented original
-SELECT policy require managers to see only their own membership row. A
-minimized real PostgreSQL probe reports `may_manage=true`, `delete_grant=true`,
-`visible_target_rows=0`, `DELETE 0`, and preserved target count 1. PostgreSQL
-applies SELECT visibility to that filtered DELETE (and analogous UPDATE).
-The existing SELECT policy is expressly documented as “no manager widening” in
-`20260911000100_rls_tighten_user_business_access.sql`. Resolving this requires
-choosing direct-DML visibility versus the restricted-read/RPC interface; this
-repair does not widen membership reads, weaken assertions, or implement #10.
-The coordinator must keep the full-battery gate explicit rather than mark it
-green. #9 has not been closed by this worker.
+**Membership-policy contract resolution:**
+`user_business_access_test.sql` now preserves the expressly documented “no
+manager widening” SELECT posture from
+`20260911000100_rls_tighten_user_business_access.sql`. Direct filtered DELETE
+and UPDATE assertions require zero affected invisible other-member rows.
+Authorized owner role management is exercised through the existing guarded
+`set_member_business_role` RPC instead. Legacy business managers are not
+promoted to owners to make the test pass, and their direct other-member DML
+remains denied. Fixture restoration is committed before later rollback-only
+cases so owner-RPC assertions retain the intended authority. The corrected
+file passes alone and as part of the fresh eight-file disposable battery,
+without widening membership reads, weakening authorization, or implementing
+#10.
 
 Detailed red/green logs, catalog audit, baseline replay, lint delta and the
 minimal contract probe are in
