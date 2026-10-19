@@ -87,12 +87,12 @@ export default function StoresHub() {
         {brands.length === 0 && (
           <div className="mt-3 space-y-2">
             <p className="text-sm text-muted-foreground">
-              No brands yet. Your first store and brand are created in the
-              onboarding wizard — they are not created automatically by
-              connecting a WooCommerce store.
+              No brands yet. Add a brand name first — brands can exist without
+              stores, and connecting a WooCommerce store does not create one
+              automatically.
             </p>
-            <Button size="sm" onClick={() => navigate("/onboarding")}>
-              Open the onboarding wizard
+            <Button size="sm" onClick={() => navigate("/brands")}>
+              Create a brand
             </Button>
           </div>
         )}

@@ -107,6 +107,24 @@ async function runApiChecks(client, status) {
     return (await response.json()).map((row) => row.id).sort();
   };
 
+  const brandNames = ["Issue 11 API Brand A", "Issue 11 API Brand B"];
+  const brandsFor = async (userId, businessId) => {
+    const response = await fetch(
+      `${status.API_URL}/rest/v1/brands?select=id,name,business_id,woo_store_id&business_id=eq.${businessId}`,
+      { headers: headersFor(userId) },
+    );
+    if (!response.ok) throw new Error(`brand API SELECT failed (${response.status})`);
+    return response.json();
+  };
+  const createBrand = (userId, businessId, name) => fetch(
+    `${status.API_URL}/rest/v1/rpc/create_business_brand`,
+    {
+      method: "POST",
+      headers: { ...headersFor(userId), Prefer: "return=representation" },
+      body: JSON.stringify({ p_business_id: businessId, p_name: name }),
+    },
+  );
+
   try {
     const ownerIds = await productIds(FIXTURE_IDS[3]);
     const memberIds = await productIds(FIXTURE_IDS[6]);
@@ -124,14 +142,78 @@ async function runApiChecks(client, status) {
       body: JSON.stringify({ store_id: storeB, name: "Forged API Product" }),
     });
     if (forged.ok) throw new Error("forged cross-account store id was accepted by the API");
+
+    // Issue #11: name-only brand creation and listing through real PostgREST.
+    await client.query(
+      `DELETE FROM public.brands WHERE business_id = '${BIZ_A}' AND name = ANY($1)`,
+      [brandNames],
+    );
+    await client.query(
+      `DELETE FROM public.audit_log
+       WHERE action = 'create_brand' AND details->>'business_id' = '${BIZ_A}'
+         AND details->>'name' = ANY($1)`,
+      [brandNames],
+    );
+    const storesBefore = (await client.query("SELECT count(*)::int AS n FROM public.stores")).rows[0].n;
+    const storefrontsBefore = (await client.query("SELECT count(*)::int AS n FROM public.storefronts")).rows[0].n;
+
+    for (const name of brandNames) {
+      const response = await createBrand(FIXTURE_IDS[6], BIZ_A, name);
+      const payload = response.ok ? await response.json() : null;
+      const brand = Array.isArray(payload) ? payload[0] : payload;
+      if (!response.ok || brand?.name !== name || brand?.business_id !== BIZ_A || brand?.woo_store_id !== null) {
+        throw new Error(`member could not create a name-only own-account brand (${response.status})`);
+      }
+    }
+
+    const memberBrands = await brandsFor(FIXTURE_IDS[6], BIZ_A);
+    const ownerBrands = await brandsFor(FIXTURE_IDS[3], BIZ_A);
+    const ownNames = memberBrands.map((brand) => brand.name).filter((name) => brandNames.includes(name)).sort();
+    const ownerNames = ownerBrands.map((brand) => brand.name).filter((name) => brandNames.includes(name)).sort();
+    if (ownNames.join() !== [...brandNames].sort().join() || ownerNames.join() !== ownNames.join()) {
+      throw new Error("owner/member brand listing did not return both own-account brands");
+    }
+    for (const [label, userId, businessId] of [
+      ["nonmember", FIXTURE_IDS[9], BIZ_A],
+      ["other-account owner", FIXTURE_IDS[8], BIZ_A],
+      ["legacy global role", FIXTURE_IDS[1], BIZ_A],
+    ]) {
+      const visible = (await brandsFor(userId, businessId)).filter((brand) => brandNames.includes(brand.name));
+      if (visible.length) throw new Error(`${label} listed another account's brands`);
+    }
+
+    const forgedBrand = await createBrand(FIXTURE_IDS[6], B_OTHER, "Issue 11 Forged Brand");
+    if (forgedBrand.ok) throw new Error("forged cross-account business parent was accepted by the API");
+    const viewerBrand = await createBrand(FIXTURE_IDS[7], BIZ_A, "Issue 11 Viewer Brand");
+    if (viewerBrand.ok) throw new Error("read-only viewer created a brand through the API");
+    const globalStaffBrand = await createBrand(FIXTURE_IDS[1], BIZ_A, "Issue 11 Staff Brand");
+    if (globalStaffBrand.ok) throw new Error("legacy global role created an account brand through the API");
+
+    const storesAfter = (await client.query("SELECT count(*)::int AS n FROM public.stores")).rows[0].n;
+    const storefrontsAfter = (await client.query("SELECT count(*)::int AS n FROM public.storefronts")).rows[0].n;
+    if (storesAfter !== storesBefore || storefrontsAfter !== storefrontsBefore) {
+      throw new Error("brand creation implicitly created a store/storefront");
+    }
+    const auditCount = (await client.query(
+      `SELECT count(*)::int AS n FROM public.audit_log
+       WHERE action = 'create_brand' AND details->>'business_id' = '${BIZ_A}'
+         AND details->>'name' = ANY($1)`,
+      [brandNames],
+    )).rows[0].n;
+    if (auditCount !== brandNames.length) {
+      throw new Error("brand creation did not write the audit trail");
+    }
     console.log("PASS  account_boundaries_api (owner/member/nonmember + forged id)");
+    console.log("PASS  brand_boundaries_api (member create/list, forged parent, viewer/global denial, no store)");
   } finally {
     await client.query(`
       DELETE FROM public.products WHERE id IN ('${productA}', '${productB}') OR name = 'Forged API Product';
       DELETE FROM public.brands WHERE id IN (
         '44444444-0000-0000-0000-000000000011',
         '44444444-0000-0000-0000-000000000012'
-      );
+      ) OR name LIKE 'Issue 11 % Brand%';
+      DELETE FROM public.audit_log
+      WHERE action = 'create_brand' AND details->>'name' LIKE 'Issue 11 % Brand%';
       DELETE FROM public.stores WHERE id IN ('${storeA}', '${storeB}');
     `);
   }

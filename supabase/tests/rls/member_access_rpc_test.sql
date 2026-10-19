@@ -85,9 +85,11 @@ BEGIN
     RAISE EXCEPTION 'FAIL: W7-AC1 audit row missing' USING ERRCODE = 'P0001';
   END IF;
 END $$;
--- paired cleanup: restore fixture
+-- paired cleanup: restore fixture. Commit explicitly: when the whole file is
+-- sent as one multi-statement batch, a later ROLLBACK would otherwise undo it.
 UPDATE public.user_business_access SET role='viewer'
  WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000005';
+COMMIT;
 
 -- AC-1b (Shape A): uba-admin (not owner) elevates MEMBER_A to owner → RPC raises (elevation rule)
 BEGIN;

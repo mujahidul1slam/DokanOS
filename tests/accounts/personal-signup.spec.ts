@@ -94,7 +94,7 @@ test("a recovery callback lets a person without memberships reset their password
   expect(requests.some((r) => /signup-provision|create-business|accept.*invit/.test(r.path))).toBe(false);
 });
 
-test("existing members select only their authorized business account and resume its setup", async ({ page }) => {
+test("existing members select only their authorized business account and may explicitly resume setup", async ({ page }) => {
   const business = {
     id: "11111111-0000-0000-0000-000000000001",
     name: "Existing Account",
@@ -112,6 +112,10 @@ test("existing members select only their authorized business account and resume 
   });
   await page.goto("/auth/confirm");
   await page.getByRole("button", { name: "Existing Account", exact: true }).click();
+  // Selecting an account must not force onboarding: an account with no store
+  // is a valid app destination. Setup stays available on explicit navigation.
+  await expect(page).toHaveURL(/\/$/);
+  await page.goto("/onboarding");
   await expect(page).toHaveURL(/\/onboarding$/);
   await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("Existing Account");
   await page.reload();

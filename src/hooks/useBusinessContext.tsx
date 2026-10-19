@@ -116,7 +116,15 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     setLoading(true);
     setError(null);
     if (!userId) {
-      clearMemberships();
+      // Auth is still resolving (or the user just signed out). Do not settle
+      // the context as "zero memberships" yet: a guard render between this
+      // state and the authenticated refresh would bounce a valid account to
+      // /accounts. The next refresh with a user settles loading explicitly.
+      currentBusinesses.current = [];
+      setBusinesses([]);
+      setRolesByBusiness({});
+      setActiveId(null);
+      setActiveBrandId(null);
       return;
     }
     // user_business_access RLS: users see their own rows. Join to businesses.

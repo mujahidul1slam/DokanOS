@@ -3450,6 +3450,10 @@ export type Database = {
         Args: { p_business_name: string; p_user_id: string }
         Returns: Json
       }
+      create_business_brand: {
+        Args: { p_business_id: string; p_name: string }
+        Returns: Json
+      }
       create_business_with_owner: {
         Args: {
           p_currency?: string

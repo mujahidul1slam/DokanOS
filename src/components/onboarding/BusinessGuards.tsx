@@ -12,8 +12,9 @@ import { decideRoute } from "./guards";
  *   wait             → render nothing (Pitfall 5: guards tolerate loading)
  *   create-business  → redirect to /accounts (valid no-membership state;
  *                      business creation is an explicit choice)
- *   wizard           → redirect to /onboarding
  *   app              → {children}
+ *
+ * Onboarding is opt-in. Empty accounts and brands without stores stay usable.
  */
 export function BusinessGuards({ children }: { children: ReactNode }) {
   const {
@@ -27,7 +28,8 @@ export function BusinessGuards({ children }: { children: ReactNode }) {
   const decision = decideRoute({
     loading,
     memberships: businesses.length,
-    hasStore: brands.length > 0,
+    // A brand is not a store: only a brand linked to a legacy store row counts.
+    hasStore: brands.some((brand) => brand.woo_store_id !== null),
     hasSellingPoints: (sellingPointsCount ?? 0) > 0,
     onboardingCompletedAt: onboardingCompletedAt ?? null,
   });
@@ -37,8 +39,6 @@ export function BusinessGuards({ children }: { children: ReactNode }) {
       return null;
     case "create-business":
       return <Navigate to="/accounts" replace />;
-    case "wizard":
-      return <Navigate to="/onboarding" replace />;
     case "app":
       return <>{children}</>;
   }

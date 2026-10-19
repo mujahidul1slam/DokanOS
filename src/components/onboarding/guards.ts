@@ -3,11 +3,17 @@
  * No React imports — all branching lives here; components only translate to Navigate.
  */
 
-export type RouteDecision = "wait" | "create-business" | "wizard" | "app";
+export type RouteDecision = "wait" | "create-business" | "app";
 
 export interface GuardContext {
   loading: boolean;
   memberships: number;
+  /**
+   * Retained so the wizard's resume derivation shares one context shape.
+   * Routing deliberately does not gate on brand/store/selling-point state:
+   * an account with memberships is usable while empty, and a brand is not
+   * proof that a store exists.
+   */
   hasStore: boolean;
   hasSellingPoints: boolean;
   onboardingCompletedAt: string | null;
@@ -17,17 +23,14 @@ export interface GuardContext {
  * Evaluate in exactly this order:
  * 1. loading → "wait"              (never redirect mid-load — Pitfall 5)
  * 2. memberships === 0 → "create-business"  (D-04/D-12)
- * 3. marker set → "app"            (D-09 never re-trap)
- * 4. !hasStore → "wizard"          (fresh start or step-1 resume)
- * 5. hasStore + !hasSellingPoints → "wizard"  (R4-d2 abandonment → step 3)
- * 6. otherwise → "app"
+ * 3. otherwise → "app"            (onboarding is explicit, never mandatory)
+ *
+ * Empty business accounts and brands without stores are valid destinations.
+ * Operators open /onboarding explicitly when they want the guided setup.
  */
 export function decideRoute(ctx: GuardContext): RouteDecision {
   if (ctx.loading) return "wait";
   if (ctx.memberships === 0) return "create-business";
-  if (ctx.onboardingCompletedAt !== null) return "app";
-  if (!ctx.hasStore) return "wizard";
-  if (!ctx.hasSellingPoints) return "wizard";
   return "app";
 }
 

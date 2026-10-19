@@ -122,12 +122,13 @@ export default function Onboarding() {
     if (loading || step !== null) return;
     setStep(
       deriveStartStep({
-        hasStore: brands.length > 0,
+        // Only a brand linked to an existing store row counts as a store.
+        hasStore: brands.some((brand) => brand.woo_store_id !== null),
         hasSellingPoints: sellingPointsCount > 0,
         onboardingCompletedAt,
       })
     );
-  }, [loading, step, brands.length, sellingPointsCount, onboardingCompletedAt]);
+  }, [loading, step, brands, sellingPointsCount, onboardingCompletedAt]);
 
   // Re-derive the step-1 resolution when the shell mounts fresh mid-wizard
   // (abandonment resume): resolve ids from the loaded brand (woo_store_id)
@@ -292,7 +293,7 @@ export default function Onboarding() {
           )}
           <Button
             onClick={handleFinish}
-            disabled={finishing || !active || brands.length === 0}
+            disabled={finishing || !active || !brands.some((brand) => brand.woo_store_id !== null)}
             className="gap-1.5"
           >
             {finishing && <Loader2 className="h-4 w-4 animate-spin" />}

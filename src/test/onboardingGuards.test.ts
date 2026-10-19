@@ -24,16 +24,16 @@ describe("decideRoute", () => {
     ).toBe("create-business");
   });
 
-  it("Test 3 (resume guard): membership, zero brands, marker null returns 'wizard'", () => {
+  it("keeps an empty business account navigable without mandatory onboarding", () => {
     expect(
       decideRoute({ loading: false, memberships: 1, hasStore: false, hasSellingPoints: false, onboardingCompletedAt: null })
-    ).toBe("wizard");
+    ).toBe("app");
   });
 
-  it("Test 4 (R4-d2 abandonment): store exists, no selling points, marker null returns 'wizard'", () => {
+  it("does not make onboarding mandatory when a store has no selling points", () => {
     expect(
       decideRoute({ loading: false, memberships: 1, hasStore: true, hasSellingPoints: false, onboardingCompletedAt: null })
-    ).toBe("wizard");
+    ).toBe("app");
   });
 
   it("Test 5 (D-09 never re-trap): marker set returns 'app' whatever the brand/selling-point state", () => {
