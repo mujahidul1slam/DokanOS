@@ -700,6 +700,203 @@ async function runBusinessInvitationApiChecks(client, status) {
   }
 }
 
+async function runBusinessOwnershipApiChecks(client, status) {
+  // Dedicated identities/accounts for this probe. They are created through the
+  // privileged fixture connection (not an application grant) and removed in
+  // the finally block, so the seeded battery fixtures never change shape.
+  const OWNER = "00000000-0000-0000-0000-000000000031";
+  const CO_OWNER = "00000000-0000-0000-0000-000000000032";
+  const MEMBER = "00000000-0000-0000-0000-000000000033";
+  const MEMBER2 = "00000000-0000-0000-0000-000000000034";
+  const OUTSIDER = "00000000-0000-0000-0000-000000000035";
+  const OTHER_OWNER = "00000000-0000-0000-0000-000000000036";
+  const IDENTITIES = [OWNER, CO_OWNER, MEMBER, MEMBER2, OUTSIDER, OTHER_OWNER];
+  const EMAILS = IDENTITIES.map((_, i) => `issue14-ownership-${i}@dokanos.test`);
+  const BIZ = "11111111-0000-0000-0000-000000000031";
+  const OTHER_BIZ = "11111111-0000-0000-0000-000000000032";
+
+  const rpc = (userId, fn, body) => fetch(`${status.API_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: {
+      apikey: status.ANON_KEY,
+      Authorization: `Bearer ${jwtFor(status, userId)}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(body),
+  });
+  const transfer = (actor, businessId, targetId) =>
+    rpc(actor, "transfer_business_ownership", { p_business_id: businessId, p_new_owner_id: targetId });
+  const leave = (actor, businessId) =>
+    rpc(actor, "leave_business_account", { p_business_id: businessId });
+  const setRole = (actor, businessId, targetId, role) =>
+    rpc(actor, "set_member_business_role", { p_user: targetId, p_business: businessId, p_role: role });
+
+  const roleOf = async (userId, businessId) => {
+    const result = await client.query(
+      "SELECT role FROM public.user_business_access WHERE user_id = $1 AND business_id = $2",
+      [userId, businessId],
+    );
+    return result.rows[0]?.role ?? null;
+  };
+  const resetRoles = async () => {
+    await client.query("DELETE FROM public.user_business_access WHERE business_id = $1", [BIZ]);
+    await client.query(
+      `INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
+         ($1, $5, 'owner'), ($2, $5, 'owner'), ($3, $5, 'member'), ($4, $5, 'member')`,
+      [OWNER, CO_OWNER, MEMBER, MEMBER2, BIZ],
+    );
+  };
+  const expectDenied = async (response, label) => {
+    if (response.ok) throw new Error(`${label} was accepted by the API`);
+  };
+  const ownerCount = async (businessId) => (await client.query(
+    "SELECT count(*)::int AS n FROM public.user_business_access WHERE business_id = $1 AND role = 'owner'",
+    [businessId],
+  )).rows[0].n;
+
+  try {
+    await client.query(`DELETE FROM public.businesses WHERE id = ANY($1)`, [[BIZ, OTHER_BIZ]]);
+    await client.query(`DELETE FROM auth.users WHERE id = ANY($1)`, [IDENTITIES]);
+    await client.query(
+      `INSERT INTO auth.users
+         (id, aud, role, email, encrypted_password, email_confirmed_at,
+          raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+       VALUES
+         ($1, 'authenticated', 'authenticated', $7,  'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($2, 'authenticated', 'authenticated', $8,  'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($3, 'authenticated', 'authenticated', $9,  'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($4, 'authenticated', 'authenticated', $10, 'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($5, 'authenticated', 'authenticated', $11, 'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($6, 'authenticated', 'authenticated', $12, 'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now())`,
+      [...IDENTITIES, ...EMAILS],
+    );
+    await client.query(
+      `INSERT INTO public.businesses (id, name, slug)
+       VALUES ($1, 'Issue 14 Ownership Account', 'issue-14-ownership-account'),
+              ($2, 'Issue 14 Other Account', 'issue-14-other-account')`,
+      [BIZ, OTHER_BIZ],
+    );
+    await client.query(
+      `INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
+         ($1, $6, 'owner'), ($2, $6, 'owner'), ($3, $6, 'member'), ($4, $6, 'member'),
+         ($5, $7, 'owner')`,
+      [OWNER, CO_OWNER, MEMBER, MEMBER2, OTHER_OWNER, BIZ, OTHER_BIZ],
+    );
+
+    // ---- ordinary members cannot transfer or restrict owner authority ----
+    for (const [label, actor] of [
+      ["account member", MEMBER],
+      ["second account member", MEMBER2],
+      ["nonmember", OUTSIDER],
+      ["owner of another account", OTHER_OWNER],
+      ["platform admin fixture", FIXTURE_IDS[0]],
+    ]) {
+      await expectDenied(await transfer(actor, BIZ, CO_OWNER), `${label} ownership transfer`);
+    }
+    // A nonmember who is not an owner cannot leave an account they do not belong to.
+    await expectDenied(await leave(OUTSIDER, BIZ), "nonmember departure");
+    await expectDenied(await setRole(MEMBER, BIZ, OWNER, "viewer"), "member demotion of an owner");
+    if (await roleOf(OWNER, BIZ) !== "owner" || await roleOf(CO_OWNER, BIZ) !== "owner"
+        || await roleOf(MEMBER, BIZ) !== "member") {
+      throw new Error("unauthorized ownership/role attempts changed the account");
+    }
+
+    // ---- forged cross-account, outsider and self targets are denied ----
+    for (const [label, target] of [
+      ["forged cross-account member", OTHER_OWNER],
+      ["nonmember", OUTSIDER],
+      ["self", OWNER],
+    ]) {
+      await expectDenied(await transfer(OWNER, BIZ, target), `${label} target`);
+    }
+    if (await ownerCount(BIZ) !== 2 || await roleOf(OWNER, BIZ) !== "owner") {
+      throw new Error("a refused transfer changed the owner membership");
+    }
+
+    // ---- owner transfers to an existing same-account member ----
+    const transferred = await transfer(OWNER, BIZ, MEMBER);
+    const transferBody = transferred.ok ? await transferred.json() : null;
+    if (!transferred.ok || transferBody?.transferred !== true
+        || transferBody?.new_owner_id !== MEMBER
+        || transferBody?.previous_owner_id !== OWNER) {
+      throw new Error(`owner transfer failed (${transferred.status})`);
+    }
+    if (await roleOf(MEMBER, BIZ) !== "owner") throw new Error("target did not become owner");
+    if (await roleOf(OWNER, BIZ) !== "member") throw new Error("transferring owner did not become a member");
+    if (await roleOf(CO_OWNER, BIZ) !== "owner") throw new Error("legacy co-owner was not preserved");
+    if (await ownerCount(BIZ) < 1) throw new Error("transfer left the account ownerless");
+    if (await roleOf(MEMBER2, BIZ) !== "member") throw new Error("transfer changed an unrelated member");
+
+    // Repeated transfer and repeated departure are safe.
+    await expectDenied(await transfer(OWNER, BIZ, MEMBER2), "repeated transfer by former owner");
+    const left = await leave(OWNER, BIZ);
+    if (!left.ok) throw new Error(`former owner could not leave after transfer (${left.status})`);
+    if (await roleOf(OWNER, BIZ) !== null) throw new Error("former owner departure left the membership row");
+    await expectDenied(await leave(OWNER, BIZ), "repeated departure");
+    if (await ownerCount(BIZ) < 1) throw new Error("repeated transfer/leave left the account ownerless");
+
+    // ---- owner departure is blocked until ownership is transferred ----
+    await resetRoles();
+    await expectDenied(await leave(OWNER, BIZ), "owner departure without transfer");
+    await expectDenied(await leave(CO_OWNER, BIZ), "legacy co-owner departure without transfer");
+    if (await roleOf(OWNER, BIZ) !== "owner" || await roleOf(CO_OWNER, BIZ) !== "owner") {
+      throw new Error("blocked owner departure changed owner memberships");
+    }
+
+    // ---- concurrent owner requests cannot leave the account ownerless ----
+    await resetRoles();
+    const competingTransfers = await Promise.all([
+      transfer(OWNER, BIZ, MEMBER),
+      transfer(OWNER, BIZ, MEMBER2),
+    ]);
+    const transferWins = competingTransfers.filter((response) => response.ok).length;
+    if (transferWins !== 1) {
+      throw new Error(`competing owner transfers committed ${transferWins} times`);
+    }
+    if (await ownerCount(BIZ) < 1 || await roleOf(OWNER, BIZ) !== "member") {
+      throw new Error("competing transfers did not end with a valid owner and former-owner member");
+    }
+    const winners = [await roleOf(MEMBER, BIZ), await roleOf(MEMBER2, BIZ)].filter((role) => role === "owner");
+    if (winners.length !== 1) throw new Error("competing transfers produced an ambiguous owner set");
+
+    await resetRoles();
+    const [transferRace, leaveRace] = await Promise.all([
+      transfer(OWNER, BIZ, MEMBER),
+      leave(OWNER, BIZ),
+    ]);
+    if (!transferRace.ok) throw new Error("transfer failed in the transfer/leave race");
+    if (leaveRace.ok && await roleOf(OWNER, BIZ) !== null) {
+      throw new Error("successful leave race left the former owner membership behind");
+    }
+    if (!leaveRace.ok && await roleOf(OWNER, BIZ) !== "member") {
+      throw new Error("blocked leave race did not leave the former owner as a member");
+    }
+    if (await ownerCount(BIZ) < 1) throw new Error("transfer/leave race left the account ownerless");
+    if (await roleOf(MEMBER, BIZ) !== "owner") throw new Error("transfer/leave race lost the new owner");
+
+    await resetRoles();
+    const memberLeaves = await Promise.all([leave(MEMBER, BIZ), leave(MEMBER2, BIZ)]);
+    if (memberLeaves.some((response) => !response.ok)) throw new Error("concurrent ordinary-member departure failed");
+    if (await roleOf(OWNER, BIZ) !== "owner" || await roleOf(CO_OWNER, BIZ) !== "owner") {
+      throw new Error("member departures changed the owner memberships");
+    }
+
+    console.log("PASS  business_ownership_transfer_api (owner-only, forged target, legacy co-owner, repeat, concurrent)");
+    console.log("PASS  business_ownership_departure_api (owner blocked until transfer, member leave, transfer/leave race)");
+  } finally {
+    await client.query(`DELETE FROM public.businesses WHERE id = ANY($1)`, [[BIZ, OTHER_BIZ]]);
+    await client.query(
+      `DELETE FROM public.audit_log
+        WHERE details->>'business_id' IN ($1, $2)
+          AND action IN ('transfer_business_ownership', 'leave_business_account',
+                         'update_role', 'remove_business_member')`,
+      [BIZ, OTHER_BIZ],
+    );
+    await client.query(`DELETE FROM auth.users WHERE id = ANY($1)`, [IDENTITIES]);
+  }
+}
+
 async function seed(client) {
   // auth.users rows (fixture emails; passwords never exercised)
   const names = [
@@ -809,6 +1006,12 @@ async function run() {
       } catch (e) {
         failures++;
         console.log(`FAIL  business_invitation_boundaries_api: ${e.message}`);
+      }
+      try {
+        await runBusinessOwnershipApiChecks(client, status);
+      } catch (e) {
+        failures++;
+        console.log(`FAIL  business_ownership_transfer_api: ${e.message}`);
       }
     }
     console.log(failures === 0 ? `\nALL GREEN (${files.length} files)` : `\n${failures} file(s) FAILED`);

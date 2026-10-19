@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +15,15 @@ import {
   type InvitationRow,
   type MemberRow,
 } from "@/lib/accounts/businessInvitations";
-import { Loader2, Mail, UserPlus, UsersRound } from "lucide-react";
+import {
+  canLeaveWithoutTransfer,
+  departureErrorMessage,
+  isTransferTarget,
+  parseDepartureResult,
+  parseTransferResult,
+  transferErrorMessage,
+} from "@/lib/accounts/ownership";
+import { Loader2, Mail, ShieldCheck, UserMinus, UserPlus, UsersRound } from "lucide-react";
 
 /**
  * Issue #13: owner-only membership management.
@@ -23,10 +33,18 @@ import { Loader2, Mail, UserPlus, UsersRound } from "lucide-react";
  * this, and this surface simply does not offer the controls to anyone else.
  * Removing an owner is a deliberately separate ownership-transfer act (#14),
  * so no ordinary removal control is rendered for an owner row.
+ *
+ * Issue #14: ownership is transferred, never abandoned. A current owner may
+ * hand ownership to an existing member of this same account; only then can
+ * they leave. An owner who has not transferred sees the block instead of a
+ * leave control, and every transition re-reads server authority afterwards.
  */
 export default function BusinessMembers() {
-  const { active, myRole } = useBusinessContext();
+  const { active, myRole, refresh } = useBusinessContext();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const isOwner = myRole === "owner";
+  const myUserId = user?.id ?? null;
 
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [invitations, setInvitations] = useState<InvitationRow[]>([]);
@@ -38,6 +56,10 @@ export default function BusinessMembers() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyMember, setBusyMember] = useState<string | null>(null);
   const [busyInvitation, setBusyInvitation] = useState<string | null>(null);
+  const [pendingTransfer, setPendingTransfer] = useState<MemberRow | null>(null);
+  const [transferring, setTransferring] = useState(false);
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (!active?.id) {
@@ -143,6 +165,71 @@ export default function BusinessMembers() {
     reload();
   };
 
+  const beginTransfer = (member: MemberRow) => {
+    setPendingTransfer(member);
+    setConfirmingLeave(false);
+    setActionError(null);
+  };
+
+  const transferOwnership = async () => {
+    if (!active || !pendingTransfer || transferring) return;
+    const target = pendingTransfer;
+    const label = target.fullName ?? target.email ?? "That member";
+    setTransferring(true);
+    setActionError(null);
+    const { data, error: transferError } = await supabase.rpc("transfer_business_ownership", {
+      p_business_id: active.id,
+      p_new_owner_id: target.userId,
+    });
+    setTransferring(false);
+
+    if (transferError) {
+      setActionError(transferErrorMessage(transferError, label));
+      return;
+    }
+    const result = parseTransferResult(data);
+    if (result.outcome !== "transferred") {
+      setActionError("Could not confirm the ownership transfer. Please reload and try again.");
+      return;
+    }
+
+    setPendingTransfer(null);
+    // Toast survives the context refresh that remounts this route.
+    toast({
+      title: "Ownership transferred",
+      description: `${label} is now the owner of ${active.name}. You are now a member and can leave the account.`,
+    });
+    // Re-read authoritative membership before rendering departure controls.
+    await refresh();
+    reload();
+  };
+
+  const leaveAccount = async () => {
+    if (!active || leaving) return;
+    setLeaving(true);
+    setActionError(null);
+    const { data, error: leaveError } = await supabase.rpc("leave_business_account", {
+      p_business_id: active.id,
+    });
+    setLeaving(false);
+
+    if (leaveError) {
+      setActionError(departureErrorMessage(leaveError));
+      return;
+    }
+    const result = parseDepartureResult(data);
+    if (result.outcome !== "left") {
+      setActionError("Could not confirm that you left the account. Please reload and try again.");
+      return;
+    }
+
+    setConfirmingLeave(false);
+    toast({ title: "You left the account", description: `You no longer have access to ${active.name}.` });
+    // The refreshed context drops this account and the route guard moves the
+    // person to their remaining account (or the account chooser).
+    await refresh();
+  };
+
   if (!active) {
     return (
       <div className="rounded-lg border border-dashed border-border p-8 text-center">
@@ -177,6 +264,12 @@ export default function BusinessMembers() {
         </div>
       )}
 
+      {actionError && (
+        <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+          <p className="text-sm">{actionError}</p>
+        </div>
+      )}
+
       {isOwner && (
         <form onSubmit={sendInvitation} className="rounded-lg border border-border bg-card p-5">
           <div className="flex items-center gap-2">
@@ -203,7 +296,6 @@ export default function BusinessMembers() {
               {inviting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />} Send invitation
             </Button>
           </div>
-          {actionError && <p role="alert" className="mt-3 text-sm text-destructive">{actionError}</p>}
         </form>
       )}
 
@@ -227,6 +319,20 @@ export default function BusinessMembers() {
                   <Badge variant={member.isOwner ? "secondary" : "outline"}>
                     {member.isOwner ? "Owner" : "Member"}
                   </Badge>
+                  {isOwner && isTransferTarget(myUserId, member.userId, member.role) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label={`Transfer ownership to ${member.email ?? "member"}`}
+                      disabled={transferring && pendingTransfer?.userId === member.userId}
+                      onClick={() => beginTransfer(member)}
+                    >
+                      {transferring && pendingTransfer?.userId === member.userId && (
+                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                      )}
+                      Make owner
+                    </Button>
+                  )}
                   {isOwner && !member.isOwner && (
                     <Button
                       size="sm"
@@ -241,6 +347,124 @@ export default function BusinessMembers() {
                   )}
                 </div>
               ))}
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="font-heading text-sm font-semibold">Ownership</h2>
+            <div className="space-y-3 rounded-lg border border-border bg-card p-5">
+              {isOwner ? (
+                <>
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">You are the owner of {active.name}.</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Transfer ownership to an existing member before you leave. The
+                        transfer demotes only you to member; any other owners stay untouched.
+                      </p>
+                    </div>
+                  </div>
+                  {pendingTransfer ? (
+                    <div role="group" aria-label="Confirm ownership transfer" className="rounded-md border border-border bg-secondary/40 p-3">
+                      <p className="text-sm">
+                        Make {memberLabel(pendingTransfer)} the owner of {active.name}?
+                        You will become an ordinary member and can then leave.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          disabled={transferring}
+                          onClick={() => void transferOwnership()}
+                        >
+                          {transferring && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                          Confirm transfer
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={transferring}
+                          onClick={() => setPendingTransfer(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Choose an existing member from the list above and select “Make owner”.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-start gap-3">
+                  <ShieldCheck className="mt-0.5 h-5 w-5 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    Only a current owner can transfer ownership. You cannot restrict or
+                    remove an owner’s authority.
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="font-heading text-sm font-semibold">Leave this account</h2>
+            <div className="space-y-3 rounded-lg border border-border bg-card p-5">
+              {isOwner ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <UserMinus className="h-5 w-5 text-muted-foreground" />
+                  <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+                    You cannot leave while you are an owner. Transfer ownership first.
+                  </p>
+                  <Button disabled aria-label="Leave account">
+                    Leave account
+                  </Button>
+                </div>
+              ) : canLeaveWithoutTransfer(myRole) ? (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Leaving removes your access to {active.name}. You can rejoin only
+                    through a new invitation from an owner.
+                  </p>
+                  {confirmingLeave ? (
+                    <div role="group" aria-label="Confirm leaving account" className="flex flex-wrap gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={leaving}
+                        onClick={() => void leaveAccount()}
+                      >
+                        {leaving && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                        Confirm leave
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={leaving}
+                        onClick={() => setConfirmingLeave(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setConfirmingLeave(true);
+                        setActionError(null);
+                      }}
+                    >
+                      Leave account
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Your account role does not allow you to leave from this screen.
+                </p>
+              )}
             </div>
           </section>
 
@@ -298,6 +522,10 @@ export default function BusinessMembers() {
 
 function statusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function memberLabel(member: MemberRow): string {
+  return member.fullName ?? member.email ?? "That member";
 }
 
 function inviteErrorMessage(message: string): string {

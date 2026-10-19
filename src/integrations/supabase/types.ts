@@ -3719,6 +3719,10 @@ export type Database = {
         Returns: Json
       }
       is_business_member: { Args: { p_business_id: string }; Returns: boolean }
+      leave_business_account: {
+        Args: { p_business_id: string }
+        Returns: Json
+      }
       list_business_invitations: {
         Args: { p_business_id: string }
         Returns: {
@@ -3797,6 +3801,10 @@ export type Database = {
       storefront_restore_stock: {
         Args: { p_order_id: string }
         Returns: undefined
+      }
+      transfer_business_ownership: {
+        Args: { p_business_id: string; p_new_owner_id: string }
+        Returns: Json
       }
       user_can_access_store: { Args: { p_store_id: string }; Returns: boolean }
       user_has_store_access: {

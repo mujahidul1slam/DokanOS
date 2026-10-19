@@ -77,6 +77,8 @@ type HarnessOptions = {
   describe?: unknown | (() => unknown);
   accept?: unknown;
   acceptGrantsMembership?: boolean;
+  /** Force a refused transfer so the surface must explain the refusal. */
+  transferError?: { message: string; code?: string };
 };
 
 type LoggedRequest = {
@@ -121,6 +123,7 @@ async function appHarness(page: Page, options: HarnessOptions) {
     members: options.members.map((row) => ({ ...row })),
     invitations: (options.invitations ?? []).map((row) => ({ ...row })),
     granted: options.initiallyMember ?? true,
+    role: options.role as string,
   };
 
   await page.route("https://challenges.cloudflare.com/**", (route) => route.abort());
@@ -140,7 +143,7 @@ async function appHarness(page: Page, options: HarnessOptions) {
     if (url.pathname.endsWith("/user_business_access")) {
       await route.fulfill({
         json: state.granted
-          ? [{ role: options.role, business_id: business.id, businesses: business }]
+          ? [{ role: state.role, business_id: business.id, businesses: business }]
           : [],
       });
       return;
@@ -178,6 +181,50 @@ async function appHarness(page: Page, options: HarnessOptions) {
     if (url.pathname.endsWith("/rpc/remove_business_member")) {
       state.members = state.members.filter((row) => row.user_id !== body?.p_user_id);
       await route.fulfill({ json: { removed: true, business_id: business.id, user_id: body?.p_user_id, role: "member" } });
+      return;
+    }
+    if (url.pathname.endsWith("/rpc/transfer_business_ownership")) {
+      if (options.transferError) {
+        await route.fulfill({ status: 400, json: options.transferError });
+        return;
+      }
+      const target = state.members.find((row) => row.user_id === body?.p_new_owner_id);
+      const caller = state.members.find((row) => row.user_id === options.user.id);
+      if (target) target.role = "owner";
+      if (caller) caller.role = "member";
+      state.role = "member";
+      await route.fulfill({
+        json: {
+          transferred: true,
+          business_id: business.id,
+          business_name: business.name,
+          previous_owner_id: options.user.id,
+          previous_owner_role: "member",
+          new_owner_id: body?.p_new_owner_id,
+          new_owner_previous_role: "member",
+          owner_count: 1,
+        },
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/rpc/leave_business_account")) {
+      const caller = state.members.find((row) => row.user_id === options.user.id);
+      if (!caller) {
+        await route.fulfill({ status: 400, json: { message: "MEMBER_NOT_FOUND: you are not a member of this account", code: "22023" } });
+        return;
+      }
+      if (caller.role === "owner") {
+        await route.fulfill({
+          status: 400,
+          json: { message: "OWNER_TRANSFER_REQUIRED: transfer ownership to another member before leaving", code: "23514" },
+        });
+        return;
+      }
+      state.members = state.members.filter((row) => row.user_id !== options.user.id);
+      state.granted = false;
+      await route.fulfill({
+        json: { left: true, business_id: business.id, business_name: business.name, role: caller.role },
+      });
       return;
     }
     if (url.pathname.endsWith("/rpc/describe_business_invitation")) {
@@ -257,6 +304,94 @@ test("the owner invites by email, sees the pending link, revokes it, and removes
   )).toBe(false);
 });
 
+test("an owner transfers ownership before leaving, and the former owner can then depart", async ({ page }) => {
+  const harness = await appHarness(page, {
+    user: owner,
+    role: "owner",
+    members: [ownerMember, joinedMember],
+  });
+  await signedIn(page, owner);
+
+  await page.goto("/members");
+  await expect(page.getByRole("heading", { name: "Ownership" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Leave account" })).toBeDisabled();
+  await expect(page.getByText(/You cannot leave while you are an owner/)).toBeVisible();
+  await expect(page.getByRole("button", { name: `Transfer ownership to ${owner.email}` })).toHaveCount(0);
+
+  await page.getByRole("button", { name: `Transfer ownership to ${member.email}` }).click();
+  await expect(page.getByRole("group", { name: "Confirm ownership transfer" })).toBeVisible();
+  await page.getByRole("button", { name: "Confirm transfer" }).click();
+
+  await expect.poll(() => harness.requests.some((request) =>
+    request.method === "POST" && request.path.endsWith("/rpc/transfer_business_ownership")
+  )).toBe(true);
+  const transfer = harness.requests.find((request) =>
+    request.method === "POST" && request.path.endsWith("/rpc/transfer_business_ownership")
+  );
+  expect(transfer?.body).toEqual({ p_business_id: business.id, p_new_owner_id: member.id });
+  await expect(page.getByText(/Member A is now the owner of Biz A Fixture/).first()).toBeVisible();
+  await expect.poll(() => harness.state.role).toBe("member");
+  await expect.poll(() => harness.state.members.find((row) => row.user_id === member.id)?.role).toBe("owner");
+
+  // The former owner is now an ordinary member: no transfer controls remain,
+  // and departure is available without ever leaving the account ownerless.
+  await expect(page.getByRole("button", { name: /^Transfer ownership to / })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Make owner" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Leave account" })).toBeEnabled();
+  await page.getByRole("button", { name: "Leave account" }).click();
+  await page.getByRole("button", { name: "Confirm leave" }).click();
+
+  await expect(page).toHaveURL(/\/accounts/);
+  const leave = harness.requests.find((request) =>
+    request.method === "POST" && request.path.endsWith("/rpc/leave_business_account")
+  );
+  expect(leave?.body).toEqual({ p_business_id: business.id });
+  await expect.poll(() => harness.state.members.some((row) => row.user_id === owner.id)).toBe(false);
+  expect(harness.state.members.find((row) => row.user_id === member.id)?.role).toBe("owner");
+});
+
+test("a refused transfer keeps the owner in place and explains the refusal", async ({ page }) => {
+  const harness = await appHarness(page, {
+    user: owner,
+    role: "owner",
+    members: [ownerMember, joinedMember],
+    transferError: { message: "TARGET_NOT_MEMBER: choose an existing member of this account", code: "22023" },
+  });
+  await signedIn(page, owner);
+
+  await page.goto("/members");
+  await page.getByRole("button", { name: `Transfer ownership to ${member.email}` }).click();
+  await page.getByRole("button", { name: "Confirm transfer" }).click();
+
+  await expect(page.getByRole("alert").filter({ hasText: /not an existing member of this account/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Leave account" })).toBeDisabled();
+  expect(harness.state.role).toBe("owner");
+  expect(harness.state.members.find((row) => row.user_id === owner.id)?.role).toBe("owner");
+  expect(harness.state.members.find((row) => row.user_id === member.id)?.role).toBe("member");
+});
+
+test("an ordinary member leaves without any ownership control", async ({ page }) => {
+  const harness = await appHarness(page, {
+    user: member,
+    role: "member",
+    members: [ownerMember, joinedMember],
+  });
+  await signedIn(page, member);
+
+  await page.goto("/members");
+  await expect(page.getByRole("button", { name: /^Transfer ownership to / })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Make owner" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Leave account" }).click();
+  await page.getByRole("button", { name: "Confirm leave" }).click();
+
+  await expect(page).toHaveURL(/\/accounts/);
+  const leave = harness.requests.find((request) =>
+    request.method === "POST" && request.path.endsWith("/rpc/leave_business_account")
+  );
+  expect(leave?.body).toEqual({ p_business_id: business.id });
+  expect(harness.state.members.find((row) => row.user_id === owner.id)?.role).toBe("owner");
+});
+
 test("a member can see who operates the account but gets no invitation or removal controls", async ({ page }) => {
   const harness = await appHarness(page, {
     user: member,
@@ -273,6 +408,8 @@ test("a member can see who operates the account but gets no invitation or remova
   await expect(page.getByRole("button", { name: "Send invitation" })).toHaveCount(0);
   await expect(page.getByLabel("Email address")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Remove / })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Transfer ownership to / })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Make owner" })).toHaveCount(0);
   expect(harness.requests.some((request) => request.path.endsWith("/rpc/list_business_invitations"))).toBe(false);
   expect(harness.requests.some((request) =>
     /invite_business_member|remove_business_member|revoke_business_invitation/.test(request.path)
