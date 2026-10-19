@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
@@ -113,11 +112,13 @@ const PAGE_SIZE = 200;
 // TabKey moved to ./orders/tabFilters
 
 const Orders = () => {
-  const { role } = useAuth();
   const { can } = usePermissions();
   const canAttachCourier = can("orders.attach_courier");
   const { settings: invoiceSettings } = useInvoiceSettings();
-  const canWrite = role === "admin" || role === "staff";
+  // Operational write affordances follow the resolved permission baseline, so
+  // a first-release account member (no legacy user_roles row) can create/edit
+  // orders like staff while a viewer stays read-only.
+  const canWrite = can("orders.create") || can("orders.edit");
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [orderCategoryMap, setOrderCategoryMap] = useState<Map<string, Set<string>>>(new Map());
   const [allCategories, setAllCategories] = useState<{ id: string; name: string; parent_id: string | null; store_id: string | null }[]>([]);

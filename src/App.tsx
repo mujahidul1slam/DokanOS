@@ -219,13 +219,13 @@ const Root = () => {
   }
   return (
     <AuthProvider>
-      <PermissionsProvider>
-        <BusinessContextProvider>
+      <BusinessContextProvider>
+        <PermissionsProvider>
           <BusinessProfileProvider>
             <AppRoutes />
           </BusinessProfileProvider>
-        </BusinessContextProvider>
-      </PermissionsProvider>
+        </PermissionsProvider>
+      </BusinessContextProvider>
     </AuthProvider>
   );
 };

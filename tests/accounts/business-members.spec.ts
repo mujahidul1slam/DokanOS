@@ -36,6 +36,13 @@ const member = {
   user_metadata: { full_name: "Member A" },
 };
 
+const viewer = {
+  ...owner,
+  id: "00000000-0000-0000-0000-000000000005",
+  email: "viewer-a@dokanos.test",
+  user_metadata: { full_name: "Viewer A" },
+};
+
 const invitee = {
   ...owner,
   id: "00000000-0000-0000-0000-000000000021",
@@ -62,7 +69,7 @@ type InvitationPayload = {
 
 type HarnessOptions = {
   user: typeof owner;
-  role: "owner" | "member";
+  role: "owner" | "member" | "viewer";
   members: MemberPayload[];
   /** Whether the signed-in identity already operates this account. */
   initiallyMember?: boolean;
@@ -270,6 +277,74 @@ test("a member can see who operates the account but gets no invitation or remova
   expect(harness.requests.some((request) =>
     /invite_business_member|remove_business_member|revoke_business_invitation/.test(request.path)
   )).toBe(false);
+});
+
+test("an account member reaches operational routes and can create orders without a legacy permission row", async ({ page }) => {
+  const harness = await appHarness(page, {
+    user: member,
+    role: "member",
+    members: [ownerMember, joinedMember],
+  });
+  await signedIn(page, member);
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+  await expect(page.getByText("Access denied")).toHaveCount(0);
+
+  await page.goto("/orders");
+  await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
+  await expect(page.getByText("Access denied")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Add Order/ })).toBeVisible();
+
+  // Operational access is resolved from membership, never by minting a
+  // platform role or granular permission row.
+  expect(harness.requests.some((request) =>
+    request.method !== "GET" && /\/rest\/v1\/(user_roles|user_permissions)$/.test(request.path)
+  )).toBe(false);
+});
+
+test("an account viewer can view operational routes but stays read-only", async ({ page }) => {
+  await appHarness(page, {
+    user: viewer,
+    role: "viewer",
+    members: [ownerMember, { ...joinedMember, user_id: viewer.id, email: viewer.email, full_name: "Viewer A", role: "viewer" }],
+  });
+  await signedIn(page, viewer);
+
+  await page.goto("/orders");
+  await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
+  await expect(page.getByText("Access denied")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Add Order/ })).toHaveCount(0);
+
+  // POS is an operational write module (pos.use): viewer stays denied.
+  await page.goto("/pos");
+  await expect(page.getByText("Access denied")).toBeVisible();
+});
+
+test("an account owner retains operational and management surfaces", async ({ page }) => {
+  await appHarness(page, { user: owner, role: "owner", members: [ownerMember, joinedMember] });
+  await signedIn(page, owner);
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+  await page.goto("/orders");
+  await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
+  await expect(page.getByText("Access denied")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Members", exact: true })).toBeVisible();
+});
+
+test("a signed-in non-member of the active account never reaches operational routes", async ({ page }) => {
+  await appHarness(page, {
+    user: member,
+    role: "member",
+    members: [ownerMember],
+    initiallyMember: false,
+  });
+  await signedIn(page, member);
+
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/accounts/);
+  await expect(page.getByText("Access denied")).toHaveCount(0);
 });
 
 test("a verified invitee explicitly accepts and immediately sees the refreshed business context", async ({ page }) => {
