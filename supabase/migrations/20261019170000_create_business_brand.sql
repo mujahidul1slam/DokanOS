@@ -6,23 +6,26 @@
 -- list brands; viewers remain read-only. A forged parent business is rejected
 -- with the same insufficient-privilege SQLSTATE as a nonmember.
 
--- Keep the existing SELECT policy (all account members, including viewers,
--- may list their account's brands) but stop viewers from writing directly.
+-- Replace the legacy global-admin SELECT/write predicates with account-membership
+-- checks. Viewers may read their account's brands but cannot write directly.
 DROP POLICY IF EXISTS "Members can write brands" ON public.brands;
+DROP POLICY IF EXISTS "Members can read brands" ON public.brands;
 DROP POLICY IF EXISTS "Account operators can write brands" ON public.brands;
 -- New local/cloud projects do not grant Data API table privileges implicitly.
 -- RLS remains the authority for which rows each role may touch.
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.brands TO authenticated;
 
+CREATE POLICY "Account members can read brands"
+  ON public.brands FOR SELECT TO authenticated
+  USING (public.my_business_role(business_id, auth.uid()) IN ('owner', 'admin', 'member', 'viewer'));
+
 CREATE POLICY "Account operators can write brands"
   ON public.brands FOR ALL TO authenticated
   USING (
-    public.has_role(auth.uid(), 'admin'::public.app_role)
-    OR public.my_business_role(business_id, auth.uid()) IN ('owner', 'admin', 'member')
+    public.my_business_role(business_id, auth.uid()) IN ('owner', 'admin', 'member')
   )
   WITH CHECK (
-    public.has_role(auth.uid(), 'admin'::public.app_role)
-    OR public.my_business_role(business_id, auth.uid()) IN ('owner', 'admin', 'member')
+    public.my_business_role(business_id, auth.uid()) IN ('owner', 'admin', 'member')
   );
 
 CREATE OR REPLACE FUNCTION public.create_business_brand(

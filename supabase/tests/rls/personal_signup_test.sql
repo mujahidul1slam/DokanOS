@@ -10,6 +10,18 @@ DECLARE
   store_count bigint;
   storefront_count bigint;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+    WHERE p.oid = 'public.handle_new_user()'::regprocedure
+      AND p.prosecdef
+      AND p.proconfig @> ARRAY['search_path=""']
+  ) THEN
+    RAISE EXCEPTION 'handle_new_user must be SECURITY DEFINER with an empty search_path';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.create_my_brand_store(uuid,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'retired combined onboarding RPC must not be executable by authenticated clients';
+  END IF;
+
   SELECT count(*) INTO account_count FROM public.businesses;
   SELECT count(*) INTO brand_count FROM public.brands;
   SELECT count(*) INTO store_count FROM public.stores;

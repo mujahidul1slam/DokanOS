@@ -57,8 +57,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.brand_stores TO authenticated;
 CREATE POLICY "Account members can read brand stores"
   ON public.brand_stores FOR SELECT TO authenticated
   USING (
-    public.has_role(auth.uid(), 'admin'::public.app_role)
-    OR EXISTS (
+    EXISTS (
       SELECT 1
       FROM public.brands brand
       JOIN public.user_business_access membership
@@ -99,8 +98,7 @@ BEGIN
     RETURN false;
   END IF;
 
-  IF NOT public.has_role(v_user_id, 'admin'::public.app_role)
-     AND COALESCE(public.my_business_role(v_business_id, v_user_id), '')
+  IF COALESCE(public.my_business_role(v_business_id, v_user_id), '')
            NOT IN ('owner', 'admin', 'member') THEN
     RETURN false;
   END IF;
@@ -141,8 +139,7 @@ GRANT EXECUTE ON FUNCTION public.brand_store_legacy_links_valid(uuid, uuid, uuid
 CREATE POLICY "Account operators can write brand stores"
   ON public.brand_stores FOR ALL TO authenticated
   USING (
-    public.has_role(auth.uid(), 'admin'::public.app_role)
-    OR EXISTS (
+    EXISTS (
       SELECT 1
       FROM public.brands brand
       JOIN public.user_business_access membership
@@ -154,8 +151,7 @@ CREATE POLICY "Account operators can write brand stores"
   )
   WITH CHECK (
     (
-      public.has_role(auth.uid(), 'admin'::public.app_role)
-      OR EXISTS (
+      EXISTS (
         SELECT 1
         FROM public.brands brand
         JOIN public.user_business_access membership
@@ -204,8 +200,7 @@ BEGIN
     RAISE EXCEPTION 'FORBIDDEN: authorized parent brand required' USING ERRCODE = '42501';
   END IF;
 
-  IF NOT public.has_role(v_user_id, 'admin'::public.app_role)
-     AND COALESCE(public.my_business_role(v_business_id, v_user_id), '')
+  IF COALESCE(public.my_business_role(v_business_id, v_user_id), '')
            NOT IN ('owner', 'admin', 'member') THEN
     RAISE EXCEPTION 'FORBIDDEN: account owner or member role required'
       USING ERRCODE = '42501';

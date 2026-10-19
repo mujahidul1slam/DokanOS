@@ -222,7 +222,7 @@ test("an owner rehearses signup -> verification -> business -> brand -> physical
   await page.getByRole("button", { name: "Create a business account", exact: true }).click();
   await page.getByLabel("Business Name", { exact: true }).fill(business.name);
   await page.getByRole("button", { name: "Create Business", exact: true }).click();
-  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page).toHaveURL(/\/$/);
   expect(state.memberships.map((row) => row.role)).toEqual(["owner"]);
   expect(state.writes.some((write) => /\/rest\/v1\/(brands|stores|storefronts)$/.test(write.path))).toBe(false);
 

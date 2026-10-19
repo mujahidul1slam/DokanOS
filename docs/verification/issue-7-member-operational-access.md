@@ -3,6 +3,23 @@
 Spec: https://github.com/mujahidul1slam/DokanOS/issues/7
 Related: #10 (account boundaries), #11 (brand nav fallback), #13 (invitations)
 
+## Final first-release capability decision
+
+Active owners receive the full capability set regardless of legacy `user_permissions`
+rows. Account members receive account-wide operational capabilities, including
+order/product/customer deletion, order/POS refunds, analytics and revenue, storefront
+viewing, and store/integration management. The member baseline excludes only legacy
+team/membership controls and global permission-settings/audit controls, whose existing
+server authorization is owner/platform administration; ownership and account-deletion
+RPCs remain independently owner-authorized. Existing explicit member grants
+are unioned with the first-release baseline rather than used as granular restrictions.
+Legacy viewers retain explicit rows when present, otherwise the read-only compatibility
+baseline. Nonmembers and unknown roles receive no membership baseline; permission
+guards remain fail-closed while identity or membership is loading. This is UI
+capability mapping only: database membership isolation and server-side RPC authorization
+remain authoritative. No platform or granular permission rows are created; configurable
+action/module controls remain deferred by #7.
+
 ## Outcome
 
 - A verified member of the active business account (a `user_business_access`

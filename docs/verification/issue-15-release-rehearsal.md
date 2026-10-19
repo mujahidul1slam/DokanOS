@@ -5,8 +5,9 @@ Spec: https://github.com/mujahidul1slam/DokanOS/issues/15
 Release-verification/consolidation slice for the accounts series (#8–#14), run on
 a fresh worker branch based exactly on the integration tip
 `ca876ab706c2ab68f20f00f7d2858a1fa7e08572`. It adds rehearsal seams, an
-end-to-end rehearsal and a minimal contract-removal change; it introduces no new
-authorization, no new migration and no deferred scoped-permission behavior.
+end-to-end rehearsal and a minimal contract-removal change; it adds membership-only
+authorization corrections for brand/store paths and retires legacy combined-setup
+execution without implementing deferred scoped-permission behavior.
 
 ## Outcome
 
@@ -23,16 +24,36 @@ authorization, no new migration and no deferred scoped-permission behavior.
   the records they cover; multiple owners, shared/unlinked resources and legacy
   global authority stay **release blockers** and are never guessed away.
 - **Contract removal (minimal, conservative):** the dead `signup-provision` edge
-  function and its `config.toml` entry are deleted, and misleading
-  provisioning copy is corrected. The inert service-role-only
-  `provision_owner_business` RPC is retained and recorded as a residual (see
-  below) per `docs/account-migration-readiness.md` §5.
+  function and its `config.toml` entry are deleted, `/onboarding` redirects to the
+  app, and `create_my_brand_store` remains defined but loses authenticated EXECUTE.
+  The inert service-role-only `provision_owner_business` RPC is retained and recorded
+  as a separate cleanup residual (see below) per `docs/account-migration-readiness.md` §5.
 - **Release gate result: BLOCKED.** The migration rehearsal preserves every
   fingerprinted legacy record and legitimate access, but seven affected records
   still require an operator decision. This is a release blocker, not a passing
   result.
 
 ## Validation
+
+### Opt-in real-backend scripts
+
+These scripts are deliberately separate from `npm test` and do not run by default.
+Use a freshly initialized, disposable localhost Supabase project only (never a linked
+or deployed project), then opt in explicitly:
+
+```powershell
+$env:RUN_LOCAL_AUTH_TESTS = '1'
+npm run test:local:personal-signup-api
+npm run test:local:ownership-transfer-api
+$env:RUN_LOCAL_REHEARSAL = '1'
+npm run test:local:account-lifecycle-rehearsal
+```
+
+The API scripts require the local Auth/PostgREST URLs and service credentials emitted
+by `supabase status`; the harness rejects non-local endpoints. The rehearsal requires
+the local DB URL. Ensure the project is disposable and freshly migrated before running;
+these scripts never perform a database reset themselves. Default Vitest runs and
+`npm test` do not invoke any of them.
 
 Run on a fresh disposable local Supabase project (project id
 `jiwndicvfkiltgageqwv`, disposable launch directory
@@ -104,17 +125,19 @@ stays **blocked** until a human resolves the records a mapping cannot.
 | --- | --- |
 | Deleted `supabase/functions/signup-provision/` | The last consumer of the legacy forced-provisioning path; no active code invoked it |
 | Removed `[functions.signup-provision]` from `supabase/config.toml` | The function was already deployable-dead |
-| `src/components/CreateBusinessDialog.tsx`, `src/pages/Onboarding.tsx` | Copy no longer promises a reserved storefront / automatic store; it states a business account adds only the owner and that brands and stores are added explicitly |
+| `src/components/CreateBusinessDialog.tsx`, `/onboarding` route | Creation switches to the account app screen; the retired wizard redirects, and no reserved storefront/automatic store is promised |
+| `20261020100000_retire_legacy_combined_setup.sql` | Revokes authenticated execute on the legacy combined setup RPC while retaining its definition for rollback/cleanup review |
 
 ## Rollback and release gates
 
-1. **Expand first, review before backfill** — this slice is additive and
-   reversible; it changes no reader, RPC, policy, membership or deployed row.
-2. **Rollback** — revert the worker commits. The only database-adjacent change is
-   the deleted client-invisible edge function + config entry; no migration was
-   added or removed. The retained `provision_owner_business` RPC remains
-   service-role-only, so restoring or not restoring the edge function is a
-   deployment decision, not a data decision.
+1. **Expand first, review before backfill** — no existing rows are changed or
+   deleted. The legacy combined-setup RPC execute grant is revoked; its definition
+   and existing data remain intact.
+2. **Rollback** — restore the authenticated EXECUTE grant only as part of a reviewed
+   rollback that also restores the compatible wizard. Do not drop the function or
+   clean deployed rows as part of this change. The retained
+   `provision_owner_business` RPC remains service-role-only, so restoring the deleted
+   edge function remains a separate deployment decision.
 3. **Do not cut over while the regression blocker is open.** Affected records
    (multiple owners, shared/unlinked connectors, legacy global authority) and
    their dependent operations must remain untouched until an operator resolves
@@ -122,6 +145,32 @@ stays **blocked** until a human resolves the records a mapping cannot.
 4. **Destructive contract cleanup is a separate later approval.** Removing the
    now-inert provisioning RPC and its generated types is deliberately out of
    scope here.
+
+## Final review corrections
+
+- Owners ignore restrictive legacy permission rows. Members receive account-wide
+  operational UI capabilities (including refund/delete/analytics and store/integration
+  operations); team membership controls and global settings/audit controls remain
+  excluded because their existing backend checks are owner/platform authority. Legacy
+  viewer behavior is retained. Server membership isolation remains authoritative.
+- Global platform role alone cannot read or create brands/brand stores through the new
+  account paths. Direct API/RLS probes cover global admin, global staff, foreign
+  account, viewer, member, and forged parent identities. The unresolved global-authority
+  records in the readiness report remain release blockers; no rows are reassigned or
+  stripped.
+- `handle_new_user` pins an empty search path; the SQL suite checks its catalog
+  configuration. Real-backend scripts are explicitly opt-in and separate from
+  `npm test`.
+
+Final review verification on the worker branch: fresh disposable local reset applied
+171 migrations; `node scripts/run-rls-tests.mjs` **ALL GREEN (14 files)**; real local
+Auth/PostgREST signup, ownership-transfer, and lifecycle scripts **1/1 each**; unit
+suite **206 passed / 3 skipped**; typecheck/build passed; Chrome accounts suite
+**30/30**. Chrome uses the real routed app with mocked Data API responses; the separate
+real-backend scripts and RLS battery prove server authorization. Lint remains at the
+known **775 errors / 43 warnings** baseline; normalized changed-source diagnostic delta
+is **0 added / 0 removed**. The fixture rehearsal remains **7 blockers**, with
+`preservation: { preserved: true, violations: [] }`.
 
 ## Residual blockers
 

@@ -14,10 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidget";
-import { generateStoreSlug } from "@/lib/slug";
 import { readEdgeFnError } from "@/lib/edgeFnError";
 import { toast } from "sonner";
-import { Building2, Loader2, Store, Plus } from "lucide-react";
+import { Building2, Loader2, Plus } from "lucide-react";
 
 interface CreateBusinessDialogProps {
   open: boolean;
@@ -30,8 +29,6 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const turnstileRef = useRef<TurnstileWidgetRef>(null);
-
-  const slug = generateStoreSlug(name || "new-store");
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,8 +69,8 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
       if (!await setActive(data.business_id)) {
         throw new Error("The new business account membership could not be verified.");
       }
-      // Wizard hand-off (R4): the fresh zero-brand business starts at step 1.
-      navigate("/onboarding");
+      // A new business account is usable immediately; setup stays explicit.
+      navigate("/");
     } catch (err: unknown) {
       setLoading(false);
       turnstileRef.current?.reset();
@@ -108,13 +105,6 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
                 maxLength={100}
                 autoFocus
               />
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 p-2 rounded border border-border/30">
-                <Store className="h-3.5 w-3.5 text-primary shrink-0" />
-                <span className="truncate">
-                  https://<strong className="text-foreground">{slug}</strong> — reserved
-                  when the wizard creates your store
-                </span>
-              </div>
             </div>
 
             <TurnstileWidget ref={turnstileRef} action="create_business" />

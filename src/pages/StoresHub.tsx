@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { canCreateBusinessResources } from "@/lib/accounts/rolePresentation";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,7 +68,7 @@ export default function StoresHub() {
   const [tab, setTab] = useState<string>("stores");
   const [storeOpen, setStoreOpen] = useState(false);
   const [storeBrandId, setStoreBrandId] = useState<string | null>(null);
-  const canCreate = myRole === "owner" || myRole === "admin" || myRole === "member";
+  const canCreate = canCreateBusinessResources(myRole);
 
   if (ctxLoading) {
     return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></div>;
@@ -702,7 +703,6 @@ function SuppliersPanel({ rows, onChanged }: { rows: SupplierRow[]; onChanged: (
 // Connectors panel (channels + couriers)
 // ---------------------------------------------------------------------------
 function ConnectorsPanel({ rows }: { rows: ConnectorRow[] }) {
-  const navigate = useNavigate();
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
@@ -711,9 +711,6 @@ function ConnectorsPanel({ rows }: { rows: ConnectorRow[] }) {
       {rows.length === 0 ? (
         <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
           <p className="text-xs text-muted-foreground">No connectors yet.</p>
-          <Button size="sm" variant="outline" onClick={() => navigate("/onboarding")}>
-            Set up in the onboarding wizard
-          </Button>
         </div>
       ) : (
         <div className="space-y-2">
@@ -787,9 +784,6 @@ function SourcesPanel({
           <p className="text-xs text-muted-foreground">
             {kind === "product" ? "No product sources yet." : "No customer sources yet."}
           </p>
-          <Button size="sm" variant="outline" onClick={() => navigate("/onboarding")}>
-            Set up in the onboarding wizard
-          </Button>
         </div>
       ) : (
         <div className="space-y-2">

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { canCreateBusinessResources } from "@/lib/accounts/rolePresentation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,7 +33,7 @@ export default function Brands() {
   const [storeOpen, setStoreOpen] = useState(false);
   const [storeBrandId, setStoreBrandId] = useState<string | null>(null);
 
-  const canCreate = myRole === "owner" || myRole === "admin" || myRole === "member";
+  const canCreate = canCreateBusinessResources(myRole);
 
   if (loading) {
     return (

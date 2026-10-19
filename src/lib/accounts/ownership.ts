@@ -31,31 +31,13 @@ export interface DepartureResult {
   businessName: string | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function messageOf(error: unknown): string {
-  if (!isRecord(error)) return "";
-  return typeof error.message === "string" ? error.message : "";
-}
-
-function codeOf(error: unknown): string {
-  if (!isRecord(error)) return "";
-  return typeof error.code === "string" ? error.code : "";
-}
-
 /**
  * Classify a failed RPC. Prefer the stable error prefix the migrations raise;
  * fall back only to unambiguous SQLSTATE classes.
  */
 export function classifyOwnershipError(error: unknown): OwnershipErrorOutcome {
-  const message = messageOf(error);
-  const code = codeOf(error);
+  const message = errorMessage(error);
+  const code = errorCode(error);
 
   if (message.includes("AUTH_REQUIRED")) return "auth_required";
   if (message.includes("OWNER_REQUIRED")) return "owner_required";
@@ -145,3 +127,4 @@ export function canLeaveWithoutTransfer(role: string | null | undefined): boolea
 export function isTransferTarget(callerId: string | null, memberUserId: string, role: string): boolean {
   return callerId !== null && memberUserId !== callerId && role !== "owner";
 }
+import { errorCode, errorMessage, isRecord, text } from "./recordParsing";

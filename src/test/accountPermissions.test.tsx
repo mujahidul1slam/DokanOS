@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
 // Resolver seam test (issue #13 follow-up): the permissions resolver consults
-// the active account membership only when the user holds no legacy
-// user_permissions rows. Context and client are module-mocked; nothing is
+// the active account membership as the first-release baseline, even when old
+// permission rows would restrict it. Context and client are module-mocked; nothing is
 // written, so these cases also prove no user_roles/user_permissions rows are
 // created on the client path.
 
@@ -35,8 +35,8 @@ const renderProbe = (perm: AppPermission) =>
     </PermissionsProvider>,
   );
 
-const setContext = (opts: { role: string | null; loading?: boolean }) => {
-  authMock.mockReturnValue({ user: { id: "u1" }, isAdmin: false });
+const setContext = (opts: { role: string | null; loading?: boolean; globalAdmin?: boolean }) => {
+  authMock.mockReturnValue({ user: { id: "u1" }, isAdmin: opts.globalAdmin ?? false });
   businessMock.mockReturnValue({
     active: opts.role ? { id: "b1" } : null,
     myRole: opts.role,
@@ -80,19 +80,27 @@ describe("account membership permission resolution (#13 operational access)", ()
     });
   });
 
-  it("member is denied management and analytics permissions", async () => {
+  it("member has account-wide operations including analytics, deletes, refunds and operational management", async () => {
     setContext({ role: "member" });
     render(
       <PermissionsProvider>
         <Probe perm="analytics.view" />
-        <Probe perm="settings.manage" />
-        <Probe perm="team.manage" />
+        <Probe perm="orders.refund" />
+        <Probe perm="orders.delete" />
+        <Probe perm="products.delete" />
+        <Probe perm="analytics.view_revenue" />
         <Probe perm="integrations.manage" />
         <Probe perm="stores.manage" />
+        <Probe perm="storefronts.view" />
+        <Probe perm="settings.manage" />
+        <Probe perm="team.manage" />
+        <Probe perm="audit.view" />
       </PermissionsProvider>,
     );
     await waitFor(() => {
-      for (const el of screen.getAllByTestId("probe")) expect(el).toHaveTextContent("no");
+      const probes = screen.getAllByTestId("probe");
+      for (const el of probes.slice(0, 8)) expect(el).toHaveTextContent("yes");
+      for (const el of probes.slice(8)) expect(el).toHaveTextContent("no");
     });
   });
 
@@ -143,11 +151,20 @@ describe("account membership permission resolution (#13 operational access)", ()
     await waitFor(() => expect(screen.getByTestId("probe")).toHaveTextContent("no"));
   });
 
-  it("legacy permission rows take precedence and are not widened by membership", async () => {
+  it("global platform role without account membership cannot access account operations", async () => {
+    rpcMock.mockImplementation((fn: string) =>
+      Promise.resolve({ data: fn === "get_user_permissions" ? ["dashboard.view", "team.manage"] : [], error: null }),
+    );
+    setContext({ role: null, globalAdmin: true });
+    renderProbe("dashboard.view");
+    await waitFor(() => expect(screen.getByTestId("probe")).toHaveTextContent("no"));
+  });
+
+  it("an owner's legacy explicit rows cannot restrict account authority", async () => {
     rpcMock.mockImplementation((fn: string) =>
       Promise.resolve({ data: fn === "get_user_permissions" ? ["orders.view"] : [], error: null }),
     );
-    setContext({ role: "member" });
+    setContext({ role: "owner" });
     render(
       <PermissionsProvider>
         <Probe perm="dashboard.view" />
@@ -157,9 +174,44 @@ describe("account membership permission resolution (#13 operational access)", ()
     );
     await waitFor(() => {
       const [dashboard, orders, pos] = screen.getAllByTestId("probe");
-      expect(dashboard).toHaveTextContent("no");
+      expect(dashboard).toHaveTextContent("yes");
       expect(orders).toHaveTextContent("yes");
-      expect(pos).toHaveTextContent("no");
+      expect(pos).toHaveTextContent("yes");
+    });
+  });
+
+  it("a member's restrictive legacy rows cannot remove first-release operations", async () => {
+    rpcMock.mockImplementation((fn: string) =>
+      Promise.resolve({ data: fn === "get_user_permissions" ? ["orders.view"] : [], error: null }),
+    );
+    setContext({ role: "member" });
+    render(
+      <PermissionsProvider>
+        <Probe perm="dashboard.view" />
+        <Probe perm="orders.refund" />
+        <Probe perm="orders.view" />
+      </PermissionsProvider>,
+    );
+    await waitFor(() => {
+      for (const probe of screen.getAllByTestId("probe")) expect(probe).toHaveTextContent("yes");
+    });
+  });
+
+  it("preserves existing viewer permission rows for compatibility", async () => {
+    rpcMock.mockImplementation((fn: string) =>
+      Promise.resolve({ data: fn === "get_user_permissions" ? ["orders.view"] : [], error: null }),
+    );
+    setContext({ role: "viewer" });
+    render(
+      <PermissionsProvider>
+        <Probe perm="orders.view" />
+        <Probe perm="dashboard.view" />
+      </PermissionsProvider>,
+    );
+    await waitFor(() => {
+      const [orders, dashboard] = screen.getAllByTestId("probe");
+      expect(orders).toHaveTextContent("yes");
+      expect(dashboard).toHaveTextContent("no");
     });
   });
 

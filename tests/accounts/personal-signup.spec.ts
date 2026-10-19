@@ -94,7 +94,7 @@ test("a recovery callback lets a person without memberships reset their password
   expect(requests.some((r) => /signup-provision|create-business|accept.*invit/.test(r.path))).toBe(false);
 });
 
-test("existing members select only their authorized business account and may explicitly resume setup", async ({ page }) => {
+test("existing members select their authorized account and the retired wizard redirects", async ({ page }) => {
   const business = {
     id: "11111111-0000-0000-0000-000000000001",
     name: "Existing Account",
@@ -116,11 +116,8 @@ test("existing members select only their authorized business account and may exp
   // is a valid app destination. Setup stays available on explicit navigation.
   await expect(page).toHaveURL(/\/$/);
   await page.goto("/onboarding");
-  await expect(page).toHaveURL(/\/onboarding$/);
-  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("Existing Account");
-  await page.reload();
-  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("Existing Account");
-  await expect(page.getByRole("list", { name: "Onboarding steps" })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 });
 
 test("explicitly creating another business switches setup to that business, not the old one", async ({ page }) => {
@@ -137,10 +134,10 @@ test("explicitly creating another business switches setup to that business, not 
   await page.getByRole("button", { name: "Create a business account", exact: true }).click();
   await page.getByLabel("Business Name", { exact: true }).fill("New Account");
   await page.getByRole("button", { name: "Create Business", exact: true }).click();
-  await expect(page).toHaveURL(/\/onboarding$/);
-  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("New Account");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("New Account");
+  await expect(page.getByRole("button", { name: /New Account/ })).toBeVisible();
 });
 
 test("a verified person creates their first empty business and becomes its owner", async ({ page }) => {
@@ -158,11 +155,15 @@ test("a verified person creates their first empty business and becomes its owner
   await page.getByLabel("Business Name", { exact: true }).fill("First Account");
   await page.getByRole("button", { name: "Create Business", exact: true }).click();
 
-  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page).toHaveURL(/\/$/);
   await expect.poll(() => page.evaluate(() => localStorage.getItem("dokanos-active-business-id"))).toBe(created.id);
   expect(requests.some((request) =>
     ["POST", "PATCH", "PUT", "DELETE"].includes(request.method)
     && /\/rest\/v1\/(brands|selling_points|stores)$/.test(request.path)
+  )).toBe(false);
+  expect(requests.some((request) =>
+    ["POST", "PATCH", "PUT", "DELETE"].includes(request.method)
+      && /\/rest\/v1\/(brands|brand_stores|stores|storefronts|selling_points)$/.test(request.path)
   )).toBe(false);
 });
 

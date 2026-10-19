@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import type { Database } from "@/integrations/supabase/types";
+import { accountRoleClass } from "@/lib/accounts/rolePresentation";
 
 export type AppPermission = Database["public"]["Enums"]["app_permission"];
 
@@ -21,7 +22,7 @@ interface PermissionsContextType {
 const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
 
 export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   // First-release account members hold no legacy user_roles/user_permissions
   // rows by design (the account membership is the authority). Consult the
   // active business membership so their reviewed operational baseline resolves
@@ -57,22 +58,30 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => { load(); }, [load]);
 
-  // Membership baseline applies only when the user holds no legacy permission
-  // rows; existing legacy users keep exactly what they had (never widened).
+  // Account membership is authoritative for owners/members. Legacy rows remain
+  // a compatibility restriction only for viewers; they cannot narrow members.
   const membershipBaseline = active ? accountBaselinePermissions(myRole) : null;
+  const roleClass = accountRoleClass(myRole);
   const effectivePermissions = useMemo<AppPermission[]>(
-    () => (permissions.length > 0 ? permissions : membershipBaseline ?? []),
-    [permissions, membershipBaseline],
+    () => !active
+      ? []
+      : roleClass === "owner"
+        ? ALL_PERMISSIONS
+        : roleClass === "operator"
+          ? Array.from(new Set([...permissions, ...(membershipBaseline ?? [])]))
+          : roleClass === "viewer"
+            ? permissions.length > 0 ? permissions : membershipBaseline ?? []
+            : [],
+    [active, permissions, membershipBaseline, roleClass],
   );
 
-  const can = useCallback((perm: AppPermission) => isAdmin || effectivePermissions.includes(perm), [isAdmin, effectivePermissions]);
-  const canAny = useCallback((perms: AppPermission[]) => isAdmin || perms.some((p) => effectivePermissions.includes(p)), [isAdmin, effectivePermissions]);
+  const can = useCallback((perm: AppPermission) => effectivePermissions.includes(perm), [effectivePermissions]);
+  const canAny = useCallback((perms: AppPermission[]) => perms.some((p) => effectivePermissions.includes(p)), [effectivePermissions]);
   const hasStoreAccess = useCallback((storeId: string | null | undefined) => {
-    if (isAdmin) return true;
     if (!storeId) return true;
     if (storeIds.length === 0) return true; // unrestricted
     return storeIds.includes(storeId);
-  }, [isAdmin, storeIds]);
+  }, [storeIds]);
 
   return (
     <PermissionsContext.Provider
@@ -179,20 +188,15 @@ export const PERMISSION_GROUPS: { group: string; items: { key: AppPermission; la
 
 export const ALL_PERMISSIONS: AppPermission[] = PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key));
 
-// Reviewed first-release operational baseline per account membership role.
-// Mirrors the sidebar's #11 mapping (owner/admin → admin, member → staff,
-// viewer → viewer) and the SQL `has_permission` presets, so a member reaches
-// the same operational modules the server RLS already authorizes through
-// `user_business_access`. Members deliberately receive NO management authority.
+// First release: owners get unrestricted account authority; account members get
+// every operational capability (including refunds, deletes, analytics, store,
+// integration and storefront operations). Exclude only legacy controls whose
+// server authority is owner/platform administration (team, global permission
+// settings, and global audit access); account membership RPCs stay owner-only.
 const STAFF_BASELINE: AppPermission[] = [
-  "dashboard.view",
-  "orders.view", "orders.create", "orders.edit", "orders.change_status",
-  "orders.dispatch", "orders.log_payment",
-  "preorders.view", "preorders.manage",
-  "customers.view", "customers.edit",
-  "products.view", "products.create", "products.edit",
-  "pos.use", "pos.shift_close",
-  "integrations.view", "stores.view",
+  ...ALL_PERMISSIONS.filter((permission) =>
+    permission !== "team.manage" && permission !== "settings.manage" && permission !== "audit.view"
+  ),
 ];
 
 const VIEWER_BASELINE: AppPermission[] = [

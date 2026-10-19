@@ -177,6 +177,7 @@ async function runApiChecks(client, status) {
       ["nonmember", FIXTURE_IDS[9], BIZ_A],
       ["other-account owner", FIXTURE_IDS[8], BIZ_A],
       ["legacy global role", FIXTURE_IDS[1], BIZ_A],
+      ["platform admin", FIXTURE_IDS[0], BIZ_A],
     ]) {
       const visible = (await brandsFor(userId, businessId)).filter((brand) => brandNames.includes(brand.name));
       if (visible.length) throw new Error(`${label} listed another account's brands`);
@@ -188,6 +189,8 @@ async function runApiChecks(client, status) {
     if (viewerBrand.ok) throw new Error("read-only viewer created a brand through the API");
     const globalStaffBrand = await createBrand(FIXTURE_IDS[1], BIZ_A, "Issue 11 Staff Brand");
     if (globalStaffBrand.ok) throw new Error("legacy global role created an account brand through the API");
+    const platformAdminBrand = await createBrand(FIXTURE_IDS[0], BIZ_A, "Issue 11 Platform Admin Brand");
+    if (platformAdminBrand.ok) throw new Error("platform admin without membership created an account brand");
 
     const storesAfter = (await client.query("SELECT count(*)::int AS n FROM public.stores")).rows[0].n;
     const storefrontsAfter = (await client.query("SELECT count(*)::int AS n FROM public.storefronts")).rows[0].n;
@@ -319,7 +322,7 @@ async function runBrandStoreApiChecks(client, status) {
     }
 
     // Another account and a legacy global role see nothing, even with the brand id.
-    for (const [label, userId] of [["other-account owner", OWNER_B], ["legacy global role", LEGACY_STAFF]]) {
+    for (const [label, userId] of [["other-account owner", OWNER_B], ["legacy global role", LEGACY_STAFF], ["platform admin", FIXTURE_IDS[0]]]) {
       if ((await storesFor(userId, brandId)).length) {
         throw new Error(`${label} listed another account's brand stores`);
       }
@@ -340,6 +343,8 @@ async function runBrandStoreApiChecks(client, status) {
     if (viewerStore.ok) throw new Error("read-only viewer created a store through the API");
     const globalStore = await createStore(LEGACY_STAFF, brandId, "Issue 12 API Global", "online");
     if (globalStore.ok) throw new Error("legacy global role created an account store through the API");
+    const platformAdminStore = await createStore(FIXTURE_IDS[0], brandId, "Issue 12 API Platform Admin", "online");
+    if (platformAdminStore.ok) throw new Error("platform admin without membership created an account store");
 
     // Direct Data API inserts obey the same type, publication and ownership rules.
     const direct = await directInsert(MEMBER_A, {
@@ -351,8 +356,10 @@ async function runBrandStoreApiChecks(client, status) {
       ["published", { brand_id: brandId, name: "Issue 12 API Direct Published", store_type: "online", is_published: true }],
       ["foreign brand", { brand_id: otherBrandId, name: "Issue 12 API Direct Foreign", store_type: "physical" }],
       ["foreign insert as other account", { brand_id: brandId, name: "Issue 12 API Direct Other", store_type: "physical" }],
+      ["global admin insert", { brand_id: brandId, name: "Issue 12 API Direct Platform Admin", store_type: "online" }],
     ]) {
-      const actor = label === "foreign insert as other account" ? OWNER_B : MEMBER_A;
+      const actor = label === "foreign insert as other account" ? OWNER_B
+        : label === "global admin insert" ? FIXTURE_IDS[0] : MEMBER_A;
       const response = await directInsert(actor, body);
       if (response.ok) throw new Error(`direct insert accepted a ${label} row`);
     }

@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { navigationRoleForBusinessRole } from "@/lib/accounts/rolePresentation";
 import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -100,15 +101,7 @@ const AppSidebar = ({
   // account membership is the authority for this release, so derive the nav
   // role from it instead of leaving the sidebar empty for an empty account.
   const businessRole = activeBusiness ? rolesByBusiness[activeBusiness.id] ?? null : null;
-  const navRole = role ?? (
-    businessRole === "owner" || businessRole === "admin"
-      ? "admin"
-      : businessRole === "member"
-        ? "staff"
-        : businessRole === "viewer"
-          ? "viewer"
-          : null
-  );
+  const navRole = activeBusiness ? navigationRoleForBusinessRole(businessRole) : role;
   const [createBizOpen, setCreateBizOpen] = useState(false);
   const active = activeBusiness
     ? { id: activeBusiness.id, business_name: activeBusiness.name, logo_url: activeBusiness.logo_url }

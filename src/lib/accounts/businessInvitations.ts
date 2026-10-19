@@ -70,14 +70,6 @@ const KNOWN_STATUSES: readonly Exclude<InvitationStatus, "unavailable">[] = [
   "invalid",
 ];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
 function email(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim().toLowerCase()
@@ -139,9 +131,8 @@ export function parseAcceptanceResult(raw: unknown): AcceptanceResult {
 }
 
 export function acceptanceOutcomeFromError(error: unknown): AcceptanceOutcome {
-  if (!isRecord(error)) return "failed";
-  const message = typeof error.message === "string" ? error.message : "";
-  const code = typeof error.code === "string" ? error.code : "";
+  const message = errorMessage(error);
+  const code = errorCode(error);
 
   if (message.startsWith("INVITATION_EMAIL_MISMATCH")) return "wrong_email";
   if (message.startsWith("VERIFICATION_REQUIRED")) return "not_verified";
@@ -229,3 +220,4 @@ export function normalizeMemberRows(raw: unknown): MemberRow[] {
     }];
   });
 }
+import { errorCode, errorMessage, isRecord, text } from "./recordParsing";

@@ -61,7 +61,6 @@ const Signup = lazy(() => import("./pages/Signup"));
 const CheckEmail = lazy(() => import("./pages/CheckEmail"));
 const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
 const AccountSelection = lazy(() => import("./pages/AccountSelection"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -115,10 +114,7 @@ const AppRoutes = () => {
         <Route path="/signup" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Signup /></Suspense>} />
         <Route path="/check-email" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><CheckEmail /></Suspense>} />
         <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
-      {/* Onboarding wizard (D-10): full-page, outside DashboardLayout. The
-          welcome-family routes were retired in plan 01-05, atomic with the
-          AuthConfirm retarget. */}
-      <Route path="/onboarding" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Onboarding /></Suspense>} />
+      <Route path="/onboarding" element={<Navigate to="/login" replace />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
@@ -132,11 +128,8 @@ const AppRoutes = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/signup" element={<Navigate to={invitationPath("/accounts")} replace />} />
       <Route path="/check-email" element={<Navigate to={invitationPath("/accounts")} replace />} />
-      {/* Onboarding wizard (D-10): full-page, outside DashboardLayout AND
-          outside BusinessGuards — the guard's wizard redirect targets this
-          route, so wrapping it would loop (the shell renders the
-          create-business surface itself for zero memberships). */}
-      <Route path="/onboarding" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Onboarding /></Suspense>} />
+      {/* Retired legacy combined setup route. Use independent Brands and Stores surfaces. */}
+      <Route path="/onboarding" element={<Navigate to="/" replace />} />
       {/* Preview routes — FULL-BLEED, chrome-free (fix B): the preview iframe
           renders the storefront page alone, NOT the admin app. Must sit
           outside DashboardLayout so no sidebar/palette wraps the preview. */}
