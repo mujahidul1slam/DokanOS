@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
@@ -10,6 +10,12 @@ vi.mock("@/integrations/supabase/client", () => ({
 vi.mock("@/components/TurnstileWidget", () => ({
   TurnstileWidget: () => null,
 }));
+
+vi.stubGlobal("ResizeObserver", class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+});
 
 import Signup from "@/pages/Signup";
 
@@ -29,7 +35,7 @@ describe("signup configuration state", () => {
     renderSignup();
 
     expect(screen.queryByLabelText("Your Name")).not.toBeInTheDocument();
-    resolveConfig({ data: true, error: null });
+    await act(async () => { resolveConfig({ data: true, error: null }); });
     expect(await screen.findByLabelText("Your Name")).toBeInTheDocument();
   });
 
@@ -43,6 +49,22 @@ describe("signup configuration state", () => {
 
   it("shows a configuration error instead of a signup form when lookup fails", async () => {
     rpc.mockResolvedValue({ data: null, error: { message: "lookup denied" } });
+    renderSignup();
+
+    expect(await screen.findByText("Unable to check sign-up availability")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Your Name")).not.toBeInTheDocument();
+  });
+
+  it("fails closed when the configuration request rejects", async () => {
+    rpc.mockRejectedValue(new Error("network unavailable"));
+    renderSignup();
+
+    expect(await screen.findByText("Unable to check sign-up availability")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Your Name")).not.toBeInTheDocument();
+  });
+
+  it("fails closed when the accessor returns a non-boolean value", async () => {
+    rpc.mockResolvedValue({ data: "unknown", error: null });
     renderSignup();
 
     expect(await screen.findByText("Unable to check sign-up availability")).toBeInTheDocument();
