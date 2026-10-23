@@ -43,14 +43,10 @@ export function canonicalEmail(email: string): string {
 }
 
 export async function isSignupOpen(supabase: SupabaseClient): Promise<boolean> {
-  const { data } = await supabase
-    .from("app_config")
-    .select("value")
-    .eq("key", "signup_open")
-    .maybeSingle();
-
-  if (!data || data.value === null || data.value === undefined) return false;
-  return data.value === true || data.value === "true";
+  const { data, error } = await supabase.rpc("is_signup_open");
+  if (error) throw new Error(`Signup configuration lookup failed: ${error.message}`);
+  if (typeof data !== "boolean") throw new Error("Signup configuration lookup returned an invalid value");
+  return data;
 }
 
 export async function checkRateLimit(

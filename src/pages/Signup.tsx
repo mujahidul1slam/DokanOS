@@ -24,8 +24,7 @@ export default function Signup() {
   const [agreedConsent, setAgreedConsent] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [checkingOpen, setCheckingOpen] = useState(true);
-  const [signupOpen, setSignupOpen] = useState(true);
+  const [signupConfig, setSignupConfig] = useState<"loading" | "open" | "closed" | "error">("loading");
 
   const turnstileRef = useRef<TurnstileWidgetRef>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -34,19 +33,10 @@ export default function Signup() {
   useEffect(() => {
     async function checkSignupStatus() {
       try {
-        const { data, error } = await supabase
-          .from("app_config")
-          .select("value")
-          .eq("key", "signup_open")
-          .maybeSingle();
-
-        setCheckingOpen(false);
-        if (!error && data) {
-          const isOpen = data.value === true || data.value === "true";
-          setSignupOpen(isOpen);
-        }
+        const { data, error } = await supabase.rpc("is_signup_open");
+        setSignupConfig(error || typeof data !== "boolean" ? "error" : data ? "open" : "closed");
       } catch {
-        setCheckingOpen(false);
+        setSignupConfig("error");
       }
     }
     checkSignupStatus();
@@ -162,7 +152,7 @@ export default function Signup() {
     }
   };
 
-  if (checkingOpen) {
+  if (signupConfig === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -170,7 +160,20 @@ export default function Signup() {
     );
   }
 
-  if (!signupOpen) {
+  if (signupConfig === "error") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md text-center p-6 space-y-4">
+          <ShieldAlert className="h-12 w-12 text-destructive mx-auto" />
+          <CardTitle className="text-xl">Unable to check sign-up availability</CardTitle>
+          <CardDescription>Please try again later or sign in to your existing account.</CardDescription>
+          <Button asChild className="w-full"><Link to="/login">Go to Login</Link></Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (signupConfig === "closed") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md text-center p-6 space-y-4">

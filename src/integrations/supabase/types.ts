@@ -3662,6 +3662,7 @@ export type Database = {
           store_ids: string[]
         }[]
       }
+      is_signup_open: { Args: never; Returns: boolean }
       get_my_businesses: {
         Args: never
         Returns: {
