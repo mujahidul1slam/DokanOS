@@ -24,8 +24,18 @@ dist-ssr
 *.sw?
 .vercel
 
+# graphify knowledge graph output (regenerate with: graphify update .)
+graphify-out/
+
 # agent intermediates
 .tmp/
 supabase/.temp/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+
+# agent skill packs and scaffolding (installed per-machine; pinned by skills-lock.json)
+.agents/skills/
+.claude/
+.serena/
+.lovable/
+/~
