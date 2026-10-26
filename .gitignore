@@ -32,6 +32,11 @@ graphify-out/
 supabase/.temp/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+# local artifacts and agent tooling (kept untracked — issue #16)
+.audit-ux/
+.scratch/
+test-results/
+.planning/
 
 # agent skill packs and scaffolding (installed per-machine; pinned by skills-lock.json)
 .agents/skills/

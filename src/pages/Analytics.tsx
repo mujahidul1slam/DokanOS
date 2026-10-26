@@ -23,6 +23,7 @@ import GeoBreakdown from "@/components/analytics/GeoBreakdown";
 import OperationalMetrics from "@/components/analytics/OperationalMetrics";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useStoresList } from "@/hooks/useStoresList";
 
 interface OrderRow {
   id: string;
@@ -75,6 +76,8 @@ const COLORS = [
 
 const Analytics = () => {
   const { symbol } = useCurrency();
+  const businessStores = useStoresList();
+  const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [prevOrders, setPrevOrders] = useState<OrderRow[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([]);
@@ -87,16 +90,31 @@ const Analytics = () => {
   const globalStockEnabled = useGlobalStockEnabled();
 
   useEffect(() => {
+    // Fail closed: no brand-store links (or no business context) means the
+    // business has no Selling Points to report on — never fall back to all
+    // readable stores.
+    if (businessStoreIds.length === 0) {
+      setOrders([]);
+      setPrevOrders([]);
+      setOrderItems([]);
+      setProducts([]);
+      setReturns([]);
+      setAllCustomerOrders([]);
+      setLoading(false);
+      return;
+    }
+
     const load = async () => {
       setLoading(true);
       const { from: dateFrom, to: dateTo, days } = resolveRange(datePreset, customRange);
       const prevFrom = dateFrom && days ? subDays(dateFrom, days) : null;
 
-      const baseSelect = "id, total, subtotal, discount, shipping_cost, tax_amount, source, status, payment_status, created_at, customer_id, customer_name, customer_city, consignment_id, salesperson_name";
+      const baseSelect = "id, total, subtotal, discount, shipping_cost, tax_amount, source, status, payment_status, created_at, customer_id, customer_name, customer_city, consignment_id, salesperson_name, store_id";
 
-      let ordersQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null).order("created_at", { ascending: false });
-      let prevQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null);
-      let returnsQuery = supabase.from("pos_returns").select("refund_amount, created_at");
+      let ordersQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null).in("store_id", businessStoreIds)
+       .order("created_at", { ascending: false });
+      let prevQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null).in("store_id", businessStoreIds);
+      let returnsQuery = supabase.from("pos_returns").select("refund_amount, created_at").in("store_id", businessStoreIds);
 
       if (dateFrom) {
         ordersQuery = ordersQuery.gte("created_at", dateFrom.toISOString());
@@ -116,9 +134,9 @@ const Analytics = () => {
       const [ordersRes, prevRes, productsRes, returnsRes, allCustRes] = await Promise.all([
         ordersQuery,
         prevQuery,
-        supabase.from("products").select("id, name, price, cost_price, stock_quantity, stock_status, manage_stock, sales_count, updated_at"),
+        supabase.from("products").select("id, name, price, cost_price, stock_quantity, stock_status, manage_stock, sales_count, updated_at").in("store_id", businessStoreIds),
         returnsQuery,
-        supabase.from("orders").select("customer_id, customer_name, total, created_at").is("deleted_at", null),
+        supabase.from("orders").select("customer_id, customer_name, total, created_at").is("deleted_at", null).in("store_id", businessStoreIds),
       ]);
 
       const ordersData = (ordersRes.data || []) as OrderRow[];
@@ -143,7 +161,7 @@ const Analytics = () => {
       setLoading(false);
     };
     load();
-  }, [datePreset, customRange]);
+  }, [datePreset, customRange, businessStoreIds]);
 
   const stats = useMemo(() => {
     const revenue = orders.reduce((s, o) => s + Number(o.total), 0);

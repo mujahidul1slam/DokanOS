@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { DateRange } from "react-day-picker";
 import { type DatePreset, resolveRange } from "@/components/DatePresetPicker";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
+import { useStoresList } from "@/hooks/useStoresList";
 
 export interface OrderRow {
   id: string;
@@ -82,6 +83,8 @@ export const useDashboardData = (
   customRange: DateRange | undefined,
   storeId: string = "all",
 ) => {
+  const businessStores = useStoresList();
+  const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [prevOrders, setPrevOrders] = useState<OrderRow[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemLite[]>([]);
@@ -122,6 +125,8 @@ export const useDashboardData = (
       if (from) curQ = curQ.gte("created_at", from.toISOString());
       if (to && (datePreset === "custom" || datePreset === "today" || datePreset === "yesterday"))
         curQ = curQ.lte("created_at", to.toISOString());
+      if (businessStoreIds.length > 0) curQ = curQ.in("store_id", businessStoreIds);
+      else curQ = curQ.eq("store_id", "00000000-0000-0000-0000-000000000000");
       if (storeId === "pos") curQ = curQ.eq("source", "pos");
       else if (storeId !== "all") curQ = curQ.eq("store_id", storeId);
 
@@ -131,6 +136,8 @@ export const useDashboardData = (
       } else {
         prevQ = prevQ.eq("id", "00000000-0000-0000-0000-000000000000");
       }
+      if (businessStoreIds.length > 0) prevQ = prevQ.in("store_id", businessStoreIds);
+      else prevQ = prevQ.eq("store_id", "00000000-0000-0000-0000-000000000000");
       if (storeId === "pos") prevQ = prevQ.eq("source", "pos");
       else if (storeId !== "all") prevQ = prevQ.eq("store_id", storeId);
 
@@ -138,20 +145,27 @@ export const useDashboardData = (
         .from("orders")
         .select("id", { count: "exact", head: true })
         .is("deleted_at", null);
+      if (businessStoreIds.length > 0) allCountQ = allCountQ.in("store_id", businessStoreIds);
+      else allCountQ = allCountQ.eq("store_id", "00000000-0000-0000-0000-000000000000");
       if (storeId === "pos") allCountQ = allCountQ.eq("source", "pos");
       else if (storeId !== "all") allCountQ = allCountQ.eq("store_id", storeId);
 
       // Accurate product totals (head-only counts so the 1000-row default never truncates)
-      const productsCountQ = supabase
+      let productsCountQ = supabase
         .from("products")
         .select("id", { count: "exact", head: true });
+      if (businessStoreIds.length > 0) productsCountQ = productsCountQ.in("store_id", businessStoreIds);
+      else productsCountQ = productsCountQ.eq("store_id", "00000000-0000-0000-0000-000000000000");
 
       const [curRes, prevRes, productsRes, allCountRes, productsCountRes] = await Promise.all([
         curQ,
         prevQ,
-        supabase
-          .from("products")
-          .select("id, name, sku, stock_quantity, stock_status, manage_stock, price, cost_price"),
+        (() => {
+          let q = supabase
+            .from("products")
+            .select("id, name, sku, stock_quantity, stock_status, manage_stock, price, cost_price");
+          return businessStoreIds.length > 0 ? q.in("store_id", businessStoreIds) : q.eq("store_id", "00000000-0000-0000-0000-000000000000");
+        })(),
         allCountQ,
         productsCountQ,
       ]);
@@ -176,11 +190,13 @@ export const useDashboardData = (
           .from("products")
           .select("id", { count: "exact", head: true })
           .eq("manage_stock", true)
+          .in("store_id", businessStoreIds.length ? businessStoreIds : ["00000000-0000-0000-0000-000000000000"])
           .gt("stock_quantity", 0)
           .lte("stock_quantity", 10),
         supabase
           .from("products")
           .select("id", { count: "exact", head: true })
+          .in("store_id", businessStoreIds.length ? businessStoreIds : ["00000000-0000-0000-0000-000000000000"])
           .or("stock_status.eq.outofstock,and(manage_stock.eq.true,stock_quantity.lte.0)"),
       ]);
 
@@ -195,7 +211,7 @@ export const useDashboardData = (
       setLoading(false);
     };
     load();
-  }, [datePreset, customRange, globalStockEnabled, storeId]);
+  }, [datePreset, customRange, globalStockEnabled, storeId, businessStoreIds]);
 
   const productCostMap = useMemo(() => {
     const m = new Map<string, number>();

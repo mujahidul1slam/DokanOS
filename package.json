@@ -56,7 +56,6 @@
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
     "fuse.js": "^7.3.0",
-    "headroom-ai": "^0.37.0",
     "input-otp": "^1.4.2",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^1.7.0",

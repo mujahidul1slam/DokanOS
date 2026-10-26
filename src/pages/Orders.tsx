@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useStoresList } from "@/hooks/useStoresList";
 import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
@@ -114,6 +115,8 @@ const PAGE_SIZE = 200;
 
 const Orders = () => {
   const { role } = useAuth();
+  const businessStores = useStoresList();
+  const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
   const { can } = usePermissions();
   const canAttachCourier = can("orders.attach_courier");
   const { settings: invoiceSettings } = useInvoiceSettings();
@@ -204,9 +207,16 @@ const Orders = () => {
   }, [searchParams, setSearchParams]);
 
   const loadOrders = useCallback(async () => {
+    if (businessStoreIds.length === 0) {
+      setOrders([]);
+      setOrderCategoryMap(new Map());
+      setLoading(false);
+      return;
+    }
     const { data } = await supabase
         .from("orders")
         .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), order_items(id, product_id, product_name, quantity, products(stock_status))")
+        .in("store_id", businessStoreIds)
         .order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => ({
@@ -248,7 +258,7 @@ const Orders = () => {
     }
 
     setLoading(false);
-  }, []);
+  }, [businessStoreIds]);
 
   const loadStores = useCallback(async () => {
     const [{ data: storeData }, { data: catData }] = await Promise.all([
@@ -259,7 +269,7 @@ const Orders = () => {
     setAllCategories((catData || []) as any);
   }, []);
 
-  useEffect(() => { loadOrders(); loadStores(); }, [loadOrders, loadStores]);
+  useEffect(() => { loadOrders(); loadStores(); }, [loadOrders, loadStores, businessStoreIds]);
 
   /* ─── Pre-order detection: order has at least one item whose category is configured as Pre-Order ─── */
   const preOrderOrderIds = useMemo(() => {

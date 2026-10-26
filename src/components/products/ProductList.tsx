@@ -16,6 +16,7 @@ import { format } from "date-fns";
 import CategoryFilter from "@/components/CategoryFilter";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useStoresList } from "@/hooks/useStoresList";
 
 interface ProductRow {
   id: string;
@@ -102,6 +103,8 @@ function flattenCategoryTree(nodes: CategoryNode[], depth = 0): { id: string; na
 
 const ProductList = () => {
   const { symbol } = useCurrency();
+  const businessStores = useStoresList();
+  const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -128,7 +131,9 @@ const ProductList = () => {
     setLoading(true);
 
     const [{ data }, { data: pcData }, { data: cats }, { data: storeData }] = await Promise.all([
-      supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id, is_featured, sales_count").order("name"),
+      businessStoreIds.length > 0
+        ? supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id, is_featured, sales_count").in("store_id", businessStoreIds).order("name")
+        : supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id, is_featured, sales_count").eq("store_id", "00000000-0000-0000-0000-000000000000").order("name"),
       supabase.from("product_categories").select("product_id, category_id"),
       supabase.from("categories").select("id, name, parent_id, store_id"),
       supabase.from("stores").select("id, name"),
@@ -162,7 +167,7 @@ const ProductList = () => {
     setLoading(false);
   };
 
-  useEffect(() => { loadProducts(); }, []);
+  useEffect(() => { loadProducts(); }, [businessStoreIds]);
 
   const scopedDbCategories = useMemo(
     () => storeFilter === "all" ? dbCategories : dbCategories.filter(c => c.store_id === storeFilter),
