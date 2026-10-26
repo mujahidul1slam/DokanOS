@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { format } from "date-fns";
-import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw, Link2, Truck, Copy, AlertTriangle, Loader2 } from "lucide-react";
+import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw, Link2, Truck, Copy, AlertTriangle, Loader2, Scissors } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
@@ -15,6 +15,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import { getGlobalStockEnabled } from "@/lib/stockSettings";
 import ExchangeDialog from "./ExchangeDialog";
+import SplitOrderDialog from "./SplitOrderDialog";
 import AttachParcelDialog from "./AttachParcelDialog";
 import ProductVariationPicker, { type PickableVariation, type VariationPick } from "./ProductVariationPicker";
 import { getProductVariations } from "@/lib/variations";
@@ -265,6 +266,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   // Exchange dialog
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [exchangeParent, setExchangeParent] = useState<any>(null);
+
+  // Split dialog (issue #31 — order split with payment transfer). A split is
+  // an ordinary edit: it moves items/money only and never touches the order's
+  // status or courier, so the #27 gate does not block it (and stays intact).
+  const [splitOpen, setSplitOpen] = useState(false);
 
   // Attach / Replace Parcel dialog
   const [attachParcelOpen, setAttachParcelOpen] = useState(false);
@@ -2026,7 +2032,23 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
                 {/* Line Items */}
                 <section>
-                  <h3 className="text-sm font-semibold text-foreground mb-3">Line Items</h3>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="text-sm font-semibold text-foreground">Line Items</h3>
+                    {/* Issue #31: split moves chosen items/money into a new order —
+                        an ordinary edit, never a status/courier change, so the #27
+                        payment gate intentionally does not disable it. */}
+                    {order && canEdit && order.status !== "cancelled" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setSplitOpen(true)}
+                        disabled={saving}
+                      >
+                        <Scissors className="h-3.5 w-3.5" /> Split Order
+                      </Button>
+                    )}
+                  </div>
                   <div className="rounded-lg border border-border overflow-hidden">
                     <Table>
                       <TableHeader>
@@ -2482,6 +2504,15 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         parentOrder={exchangeParent}
         onCreated={() => { setExchangeOpen(false); onSaved?.(); }}
       />
+
+      {order && (
+        <SplitOrderDialog
+          open={splitOpen}
+          onOpenChange={setSplitOpen}
+          orderId={order.id}
+          onSplitDone={() => { load(); onSaved?.(); }}
+        />
+      )}
 
       {order && (
         <AttachParcelDialog
