@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import CategoryFilter from "@/components/CategoryFilter";
-import Fuse from "fuse.js";
+import { searchProducts, type SearchableVariation } from "@/lib/productSearch";
 import { useGlobalStockEnabled, getEffectiveStock } from "@/lib/stockSettings";
 import { useCurrency } from "@/hooks/useCurrency";
 
@@ -37,11 +37,12 @@ interface Props {
   onSelectProduct: (p: Product) => void;
   onAddCustomItem: () => void;
   className?: string;
+  variations?: SearchableVariation[];
 }
 
 const PER_PAGE_OPTIONS = [12, 24, 48, 96];
 
-const MiniProductCatalog = ({ products, categories, productCatMap, stores, onSelectProduct, onAddCustomItem, className }: Props) => {
+const MiniProductCatalog = ({ products, categories, productCatMap, stores, onSelectProduct, onAddCustomItem, className, variations }: Props) => {
   const { symbol } = useCurrency();
   const globalStockEnabled = useGlobalStockEnabled();
   const [search, setSearch] = useState("");
@@ -64,28 +65,8 @@ const MiniProductCatalog = ({ products, categories, productCatMap, stores, onSel
     }
     if (hideOutOfStock) list = list.filter((p) => !getEffectiveStock(p, globalStockEnabled).outOfStock);
     if (selectedStore !== "all") list = list.filter((p) => (p as any).store_id === selectedStore);
-    if (search) {
-      const q = search.trim().toLowerCase();
-      const exact = list.filter(
-        (p) =>
-          (p.sku || "").toLowerCase() === q ||
-          ((p as any).barcode || "").toLowerCase() === q
-      );
-      if (exact.length > 0) {
-        list = exact;
-      } else {
-        const fuse = new Fuse(list, {
-          keys: [
-            { name: "name", weight: 0.6 },
-            { name: "sku", weight: 0.25 },
-            { name: "barcode", weight: 0.15 },
-          ],
-          threshold: 0.4,
-          ignoreLocation: true,
-          minMatchCharLength: 2,
-        });
-        list = fuse.search(q).map((r) => r.item);
-      }
+    if (search.trim()) {
+      list = searchProducts(list, search, { variations }).map((match) => match.product);
     }
 
     const featured = list.filter((p) => (p as any).is_featured);
@@ -109,7 +90,7 @@ const MiniProductCatalog = ({ products, categories, productCatMap, stores, onSel
     featured.sort(sortFn);
     nonFeatured.sort(sortFn);
     return [...featured, ...nonFeatured];
-  }, [products, search, activeCategory, sortBy, hideOutOfStock, selectedStore, productCatMap, categories, globalStockEnabled]);
+  }, [products, search, activeCategory, sortBy, hideOutOfStock, selectedStore, productCatMap, categories, globalStockEnabled, variations]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const currentPage = Math.min(page, totalPages);

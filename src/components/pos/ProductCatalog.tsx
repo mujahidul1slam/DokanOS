@@ -1,5 +1,5 @@
 import { useState, useMemo, RefObject } from "react";
-import Fuse from "fuse.js";
+import { searchProducts, type SearchableVariation } from "@/lib/productSearch";
 import { Search, ScanBarcode, Plus, Package, SlidersHorizontal, ArrowUpDown, Eye, EyeOff, Tag, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,11 +20,12 @@ interface Props {
   onSelectProduct: (p: Product) => void;
   onAddCustomItem: () => void;
   searchInputRef?: RefObject<HTMLInputElement>;
+  variations?: SearchableVariation[];
 }
 
 const PER_PAGE_OPTIONS = [12, 24, 48, 96];
 
-const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectProduct, onAddCustomItem, searchInputRef }: Props) => {
+const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectProduct, onAddCustomItem, searchInputRef, variations }: Props) => {
   const { symbol } = useCurrency();
   const globalStockEnabled = useGlobalStockEnabled();
   const [search, setSearch] = useState("");
@@ -49,29 +50,8 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
     }
     if (hideOutOfStock) list = list.filter((p) => !getEffectiveStock(p, globalStockEnabled).outOfStock);
     if (selectedStore !== "all") list = list.filter((p) => (p as any).store_id === selectedStore);
-    if (search) {
-      const q = search.trim().toLowerCase();
-      // Exact SKU/barcode match short-circuits (for scanners)
-      const exact = list.filter(
-        (p) =>
-          (p.sku || "").toLowerCase() === q ||
-          ((p as any).barcode || "").toLowerCase() === q
-      );
-      if (exact.length > 0) {
-        list = exact;
-      } else {
-        const fuse = new Fuse(list, {
-          keys: [
-            { name: "name", weight: 0.6 },
-            { name: "sku", weight: 0.25 },
-            { name: "barcode", weight: 0.15 },
-          ],
-          threshold: 0.4,
-          ignoreLocation: true,
-          minMatchCharLength: 2,
-        });
-        list = fuse.search(q).map((r) => r.item);
-      }
+    if (search.trim()) {
+      list = searchProducts(list, search, { variations }).map((match) => match.product);
     }
 
     // Featured products always first
@@ -97,7 +77,7 @@ const ProductCatalog = ({ products, categories, productCatMap, stores, onSelectP
     nonFeatured.sort(sortFn);
 
     return [...featured, ...nonFeatured];
-  }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore, productCatMap, categories, globalStockEnabled]);
+  }, [products, search, activeCategory, sortBy, hideOutOfStock, onSaleOnly, selectedStore, productCatMap, categories, globalStockEnabled, variations]);
 
   // Reset page on filter change
   useMemo(() => { setPage(1); }, [search, activeCategory, sortBy, hideOutOfStock, selectedStore, perPage]);
