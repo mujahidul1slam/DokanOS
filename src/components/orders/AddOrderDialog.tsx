@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Fuse from "fuse.js";
-import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search, Package, ShoppingCart, Tag, User, Check } from "lucide-react";
+import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search, Package, ShoppingCart, Tag, User, Check, X } from "lucide-react";
 
 
 
 
 import { supabase } from "@/integrations/supabase/client";
-import { parseVariationAttributes as parseVariationAttributesShared, getProductVariations } from "@/lib/variations";
+import { getProductVariations } from "@/lib/variations";
 import { fetchAllRows } from "@/lib/supabasePage";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
@@ -37,7 +37,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useCurrency } from "@/hooks/useCurrency";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
-import { deriveBrandForProduct } from "@/lib/brandIdentity";
+import { deriveBrandForProduct, deriveBrandForStore } from "@/lib/brandIdentity";
+import {
+  DUPLICATE_ORDER_WINDOW_MS,
+  findDuplicateOrders,
+  type DuplicateOrderCandidate,
+  type DuplicateOrderWarning,
+} from "@/lib/duplicateOrder";
 import {
   isAccountOverride,
   resolveDefaultAccount,
@@ -45,6 +51,21 @@ import {
   type PathaoStoreLinkRow,
 } from "@/lib/dispatchAccounts";
 import { fetchPathaoAccountData, recordPathaoAccountOverride } from "@/lib/dispatchAccountsData";
+import {
+  buildDispatchOrderPayload,
+  dispatchOrderViaAccount,
+  newCreateIdempotencyKey,
+  type DispatchEntry,
+  type DispatchOutcome,
+} from "@/lib/createDispatch";
+import {
+  fetchCourierDescriptionOptions,
+  formatOrderItemProductName,
+  isCourierDescriptionEnabled,
+  mergeCourierDescriptionOption,
+  setCourierDescriptionOption,
+  type CourierDescriptionOptions,
+} from "@/lib/courierDescription";
 import {
   BrandAvatar,
   IdentitySegment,
@@ -64,6 +85,45 @@ const normalizeBdPhone = (raw?: string | null) => {
   if (p.length === 10 && p.startsWith("1")) p = `0${p}`;
   return p;
 };
+
+// Issue #29 (warn-only duplicate detection): one recent order row as the
+// detector needs it. The brand identity comes from the Selling Point binding
+// first, falling back to the legacy store binding (see brandIdentity.ts).
+interface RecentOrderRow {
+  id: string;
+  order_number: string;
+  created_at: string;
+  customer_phone: string | null;
+  selling_point_id: string | null;
+  store_id: string | null;
+  order_items: { product_id: string | null; product_name: string }[] | null;
+}
+
+/** Fetch the last DUPLICATE_ORDER_WINDOW_MS of visible orders + items. */
+async function fetchRecentDuplicateOrders(
+  resolveBrandId: (row: RecentOrderRow) => string | null,
+): Promise<DuplicateOrderCandidate[]> {
+  const since = new Date(Date.now() - DUPLICATE_ORDER_WINDOW_MS).toISOString();
+  const { data, error } = await supabase
+    .from("orders")
+    .select("id, order_number, created_at, customer_phone, selling_point_id, store_id, order_items(product_id, product_name)")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) return [];
+  return ((data || []) as unknown as RecentOrderRow[]).map((row) => ({
+    orderNumber: row.order_number,
+    createdAt: row.created_at,
+    customerPhone: row.customer_phone,
+    brandId: resolveBrandId(row),
+    storeId: row.store_id,
+    sellingPointId: row.selling_point_id,
+    items: (row.order_items || []).map((item) => ({
+      productId: item.product_id,
+      productName: item.product_name,
+    })),
+  }));
+}
 
 interface ProductRow {
   id: string;
@@ -126,134 +186,24 @@ interface Props {
   onCreated: () => void;
 }
 
-interface ParsedAttr { key: string; value: string; }
-// Legacy local alias kept so the call sites below (which use `a.key`/`a.value`)
-// continue to work; the parsing itself is the shared implementation (Phase 3 §6.2).
-function parseVariationAttributes(attrs: any): ParsedAttr[] {
-  return parseVariationAttributesShared(attrs).map((a) => ({ key: a.name, value: a.option }));
+/** A created order kept alive across the Create & Dispatch retry UI (issue #23). */
+interface PendingDispatch {
+  created: { orderId: string; orderNumber: string };
+  entry: DispatchEntry;
+  account: PathaoAccountOption;
 }
 
-interface ProductSearchResultRowProps {
-  product: { productId: string; name: string; sku: string | null; price: number; hasVariations: boolean };
-  variations: VariationRow[];
-  onAdd: (result: SearchResult) => void;
-}
-
-function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchResultRowProps) {
-  const { symbol } = useCurrency();
-  const productVars = useMemo(
-    () => getProductVariations(product.productId, variations),
-    [variations, product.productId],
-  );
-
-  // Group attribute values per attribute key (e.g. Color → [Red, Blue], Size → [S, M, L])
-  const attrGroups = useMemo(() => {
-    const map: Record<string, string[]> = {};
-    for (const v of productVars) {
-      for (const a of parseVariationAttributes(v.attributes)) {
-        if (!map[a.key]) map[a.key] = [];
-        if (!map[a.key].includes(a.value)) map[a.key].push(a.value);
-      }
-    }
-    return map;
-  }, [productVars]);
-
-  const attrKeys = Object.keys(attrGroups);
-  const [selected, setSelected] = useState<Record<string, string>>({});
-
-  const matchedVariation = useMemo(() => {
-    if (attrKeys.length === 0) return null;
-    if (!attrKeys.every((k) => selected[k])) return null;
-    return productVars.find((v) => {
-      const parsed = parseVariationAttributes(v.attributes);
-      return attrKeys.every((k) => parsed.some((p) => p.key === k && p.value === selected[k]));
-    }) || null;
-  }, [productVars, attrKeys, selected]);
-
-  const effectivePrice = matchedVariation ? Number(matchedVariation.price) : product.price;
-  const canAdd = !product.hasVariations || (matchedVariation !== null);
-
-  const handleAdd = () => {
-    if (!product.hasVariations) {
-      onAdd({
-        id: product.productId,
-        productId: product.productId,
-        name: product.name,
-        sku: product.sku,
-        price: product.price,
-      });
-      return;
-    }
-    if (!matchedVariation) return;
-    const varLabel = parseVariationAttributes(matchedVariation.attributes)
-      .map((a) => a.value)
-      .join(" / ") || matchedVariation.name;
-    onAdd({
-      id: matchedVariation.id,
-      productId: product.productId,
-      variationId: matchedVariation.id,
-      name: product.name,
-      variationLabel: varLabel,
-      sku: matchedVariation.sku || product.sku,
-      price: Number(matchedVariation.price),
-    });
-    setSelected({});
-  };
-
-  return (
-    <div className="px-3 py-2.5 border-b border-border last:border-b-0 hover:bg-accent/40 transition-colors">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium">{product.name}</span>
-            {product.sku && <span className="text-[11px] text-muted-foreground">{product.sku}</span>}
-            {product.hasVariations && (
-              <Badge variant="secondary" className="text-[10px] py-0 px-1.5">
-                {productVars.length} variations
-              </Badge>
-            )}
-          </div>
-          {product.hasVariations && attrKeys.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {attrKeys.map((key) => (
-                <div key={key} className="flex items-center gap-1.5">
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{key}</span>
-                  <Select
-                    value={selected[key] || ""}
-                    onValueChange={(v) => setSelected((s) => ({ ...s, [key]: v }))}
-                  >
-                    <SelectTrigger className="h-7 text-xs w-auto min-w-[80px] gap-1">
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {attrGroups[key].map((opt) => (
-                        <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">{symbol}{effectivePrice.toLocaleString()}</span>
-          <Button
-            type="button"
-            size="sm"
-            variant={canAdd ? "default" : "outline"}
-            disabled={!canAdd}
-            onClick={handleAdd}
-            className="h-7 px-2 gap-1"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
+/**
+ * Create & Dispatch footer state. The order is saved as soon as creation
+ * succeeds; `failed` keeps it saved and offers a dispatch-only retry that can
+ * never create a duplicate order (orders.idempotency_key guards the create
+ * path; the retry re-runs only the dispatch step).
+ */
+type DispatchPhase =
+  | { kind: "idle" }
+  | { kind: "dispatching"; pending: PendingDispatch }
+  | { kind: "failed"; pending: PendingDispatch; error: string }
+  | { kind: "done"; pending: PendingDispatch; consignmentId: string; reused: boolean };
 
 interface CustomerMatch {
   id: string;
@@ -342,6 +292,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  // Create & Dispatch (issue #23): per-form-session idempotency key + footer state.
+  const [createIdempotencyKey, setCreateIdempotencyKey] = useState(newCreateIdempotencyKey);
+  const [dispatchPhase, setDispatchPhase] = useState<DispatchPhase>({ kind: "idle" });
+  // Per-Pathao-Account courier product description option (issue #23, default OFF).
+  const [courierDescriptionOptions, setCourierDescriptionOptions] = useState<CourierDescriptionOptions>({});
+  // Issue #29: warn-only duplicate-order banner state (never gates saving).
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateOrderWarning | null>(null);
+  const [duplicateDismissedKey, setDuplicateDismissedKey] = useState("");
 
 
   // AI parse-from-text
@@ -457,6 +415,17 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     return () => { mounted = false; };
   }, [open]);
 
+  // Per-account courier product description options (issue #23). Default OFF.
+  useEffect(() => {
+    if (!open) return;
+    let mounted = true;
+    fetchCourierDescriptionOptions().then((options) => {
+      if (!mounted) return;
+      setCourierDescriptionOptions(options);
+    });
+    return () => { mounted = false; };
+  }, [open]);
+
   // A single active brand is always carried between orders. Multi-brand
   // businesses intentionally start each order clear and select a brand when
   // the first product identifies one.
@@ -557,6 +526,58 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   useEffect(() => {
     setBrandWarningDismissed(false);
   }, [selectedBrandId, cartBrands.map((brand) => brand.id).join(",")]);
+
+  // Issue #29: warn-only duplicate detection on cart/phone/Brand change.
+  // Advisory only — the banner never blocks or gates saving.
+  useEffect(() => {
+    if (!open) return;
+    if (items.length === 0 || !customerPhone.trim() || !selectedBrandId) {
+      setDuplicateWarning(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const sellingPointBrand = new Map(sellingPoints.map((point) => [point.id, point.brand_id]));
+      const resolveBrandId = (row: RecentOrderRow): string | null => {
+        const viaSellingPoint = row.selling_point_id
+          ? sellingPointBrand.get(row.selling_point_id)
+          : undefined;
+        return viaSellingPoint ?? deriveBrandForStore(activeBrands, row.store_id)?.id ?? null;
+      };
+      const candidate: DuplicateOrderCandidate = {
+        // Draft order numbers cannot collide with saved orders (the detector
+        // excludes self-matches by order number).
+        orderNumber: `DRAFT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+        createdAt: new Date().toISOString(),
+        customerPhone,
+        brandId: selectedBrandId,
+        storeId,
+        sellingPointId: selectedSellingPoint?.id ?? null,
+        items: items.map((item) => ({
+          productId: item.isCustomItem || !item.productId ? null : item.productId,
+          productName: formatOrderItemProductName(item.name, item.variationLabel),
+        })),
+      };
+      fetchRecentDuplicateOrders(resolveBrandId).then((recent) => {
+        if (cancelled) return;
+        setDuplicateWarning(findDuplicateOrders(candidate, recent));
+      });
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, items, customerPhone, selectedBrandId, selectedSellingPoint, sellingPoints, activeBrands, storeId]);
+
+  // Re-show a dismissed banner only when the match set actually changes.
+  const duplicateBannerKey = useMemo(() => {
+    if (!duplicateWarning?.isDuplicateCandidate) return "";
+    return duplicateWarning.matches
+      .map((match) => `${match.orderNumber}:${match.sharedProducts.map((p) => p.name).join("+")}`)
+      .join("|");
+  }, [duplicateWarning]);
+  const showDuplicateBanner =
+    duplicateBannerKey !== "" && duplicateBannerKey !== duplicateDismissedKey;
 
   // When a new product is added to the cart, lazy-load its measurement groups.
   useEffect(() => {
@@ -1041,6 +1062,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setLocationHints(EMPTY_LOCATION_HINTS);
     setCustomerMatches([]);
     setAiText("");
+    // Fresh form session = fresh create idempotency key (issue #23) and no
+    // leftover Create & Dispatch result state.
+    setCreateIdempotencyKey(newCreateIdempotencyKey());
+    setDispatchPhase({ kind: "idle" });
+    setDuplicateWarning(null);
+    setDuplicateDismissedKey("");
     // Don't reset storeId to preserve memory
     // setStoreId("");
   };
@@ -1187,21 +1214,64 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   };
 
 
-  const handleCreate = async () => {
-    if (items.length === 0) { toast.error("Add at least one product"); return; }
+  // Shared validation for both footer buttons (issue #23).
+  const validateOrderForm = (): boolean => {
+    if (items.length === 0) { toast.error("Add at least one product"); return false; }
     if (activeBrands.length > 0 && !selectedBrandId) {
       toast.error("Choose a Brand before creating the order");
-      return;
+      return false;
     }
     if (activeBrands.length > 0 && brandSellingPoints.length === 0) {
       toast.error("Configure a Selling Point for this Brand in Stores");
-      return;
+      return false;
     }
     if (activeBrands.length > 0 && !selectedSellingPoint) {
       toast.error("Choose a Selling Point before creating the order");
-      return;
+      return false;
     }
-    setSaving(true);
+    return true;
+  };
+
+  // Create & Dispatch only: the courier needs a deliverable customer and a
+  // Pathao destination (mirrors DispatchDialog's missing-details check).
+  const validateDispatchRequirements = (): boolean => {
+    if (!customerName.trim()) {
+      toast.error("Enter the customer name before dispatching");
+      return false;
+    }
+    if (!customerPhone.trim() || !normalizeBdPhone(customerPhone)) {
+      toast.error("Enter the customer phone before dispatching");
+      return false;
+    }
+    if (!customerAddress.trim()) {
+      toast.error("Enter the customer address before dispatching");
+      return false;
+    }
+    if (selectedCity == null) {
+      toast.error("Choose a recipient City before dispatching");
+      return false;
+    }
+    if (selectedZone == null) {
+      toast.error("Choose a recipient Zone before dispatching");
+      return false;
+    }
+    if (!selectedAccount) {
+      toast.error("Choose a Pathao Account before dispatching");
+      return false;
+    }
+    return true;
+  };
+
+  /**
+   * The one create path shared by "Create Order" and "Create & Dispatch"
+   * (issue #23): customer, order, items, payments, measurements, timeline.
+   *
+   * Idempotent against the existing create_order guard: orders.idempotency_key
+   * carries this form session's key under uq_orders_idempotency_key, so a
+   * re-run that reaches creation again (double submit, or a Create & Dispatch
+   * retry) gets the already-created order back instead of a duplicate.
+   */
+  const createOrderRecord = async (): Promise<{ orderId: string; orderNumber: string } | null> => {
     try {
         const cityName = cities.find(c => c.city_id === selectedCity)?.city_name || locationHints.city || null;
         const zoneName = zones.find(z => z.zone_id === selectedZone)?.zone_name || locationHints.zone || null;
@@ -1269,14 +1339,32 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           pathao_recipient_city: selectedCity,
           pathao_recipient_zone: selectedZone,
           pathao_recipient_area: selectedArea,
+          // create_order guard: per-form-session key so a retried create
+          // returns this order instead of inserting a duplicate (issue #23).
+          idempotency_key: createIdempotencyKey,
         }).select("id").single();
 
-      if (error) throw error;
+      if (error) {
+        // create_order guard (uq_orders_idempotency_key): this form session's
+        // order already exists — a re-run must reuse it, never duplicate it
+        // (issue #23).
+        if (error.code === "23505" && createIdempotencyKey) {
+          const { data: existingOrder } = await supabase
+            .from("orders")
+            .select("id, order_number")
+            .eq("idempotency_key", createIdempotencyKey)
+            .maybeSingle();
+          if (existingOrder) {
+            return { orderId: existingOrder.id, orderNumber: existingOrder.order_number };
+          }
+        }
+        throw error;
+      }
 
       const orderItemsPayload = items.map(i => ({
         order_id: order.id,
         product_id: i.isCustomItem || !i.productId ? null : i.productId,
-        product_name: i.variationLabel ? `${i.name} - ${i.variationLabel}` : i.name,
+        product_name: formatOrderItemProductName(i.name, i.variationLabel),
         unit_price: i.price,
         quantity: i.qty,
         line_total: i.price * i.qty,
@@ -1292,9 +1380,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         for (const cartItem of items) {
           const captured = buildItemMeasurements(cartItem);
           if (captured.length === 0) continue;
-          const expectedName = cartItem.variationLabel
-            ? `${cartItem.name} - ${cartItem.variationLabel}`
-            : cartItem.name;
+          const expectedName = formatOrderItemProductName(cartItem.name, cartItem.variationLabel);
           const match = insertedItems.find(
             (oi: any) =>
               !used.has(oi.id) &&
@@ -1340,14 +1426,126 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         });
       }
 
-      toast.success(`Order ${orderNumber} created`);
+      return { orderId: order.id, orderNumber };
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create order");
+      return null;
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!validateOrderForm()) return;
+    setSaving(true);
+    try {
+      const created = await createOrderRecord();
+      if (!created) return;
+      toast.success(`Order ${created.orderNumber} created`);
       resetForm();
       onOpenChange(false);
       onCreated();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to create order");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // One dispatch attempt against an already-created order. Shared by "Create &
+  // Dispatch" and "Retry dispatch" — the retry re-runs ONLY this step (issue #23).
+  const runDispatch = async (pending: PendingDispatch) => {
+    setDispatchPhase({ kind: "dispatching", pending });
+    let outcome: DispatchOutcome;
+    try {
+      outcome = await dispatchOrderViaAccount(pending.entry, pending.account);
+    } catch (err: any) {
+      outcome = { status: "failed", error: err?.message || "Dispatch failed" };
+    }
+    if (outcome.status === "failed") {
+      setDispatchPhase({ kind: "failed", pending, error: outcome.error });
+      toast.error(`Order ${pending.created.orderNumber} is saved, but dispatch failed`, {
+        description: outcome.error,
+      });
+      return;
+    }
+    setDispatchPhase({
+      kind: "done",
+      pending,
+      consignmentId: outcome.consignmentId,
+      reused: outcome.status === "already_dispatched",
+    });
+    toast.success(`Order ${pending.created.orderNumber} dispatched to Pathao`, {
+      description: `Consignment: ${outcome.consignmentId}`,
+    });
+  };
+
+  const handleCreateAndDispatch = async () => {
+    if (!validateOrderForm()) return;
+    if (!validateDispatchRequirements()) return;
+    setSaving(true);
+    try {
+      const created = await createOrderRecord();
+      if (!created) return;
+      // The order is saved from here on — refresh lists even though the dialog
+      // stays open for the dispatch step.
+      onCreated();
+      const account = selectedAccount!;
+      const entry = buildDispatchOrderPayload(
+        {
+          orderId: created.orderId,
+          orderNumber: created.orderNumber,
+          recipientName: customerName.trim(),
+          recipientPhone: normalizeBdPhone(customerPhone) || customerPhone.trim(),
+          recipientAddress: customerAddress.trim(),
+          recipientCity: selectedCity!,
+          recipientZone: selectedZone!,
+          recipientArea: selectedArea,
+          itemQuantity: items.reduce((sum, item) => sum + item.qty, 0),
+          itemWeight: null,
+          amountToCollect: Math.max(0, total - paidAmount),
+          itemLines: items.map((item) => ({
+            product_name: formatOrderItemProductName(item.name, item.variationLabel),
+            quantity: item.qty,
+          })),
+          includeItemDescription: isCourierDescriptionEnabled(courierDescriptionOptions, account.key),
+        },
+        account,
+      );
+      await runDispatch({ created, entry, account });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Dispatch-only retry: the order stays saved and this can never create a
+  // duplicate (issue #23). The edge function's consignment guard additionally
+  // stops a second parcel when the first attempt actually landed on Pathao.
+  const handleRetryDispatch = async () => {
+    if (dispatchPhase.kind !== "failed") return;
+    setSaving(true);
+    try {
+      await runDispatch(dispatchPhase.pending);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const closeAfterDispatch = () => {
+    resetForm();
+    onOpenChange(false);
+    onCreated();
+  };
+
+  // Courier product descriptions (issue #23): optimistic toggle for the
+  // selected Pathao Account, persisted under one app_settings key.
+  const handleToggleCourierDescription = async (enabled: boolean) => {
+    if (!selectedAccount) return;
+    const accountKey = selectedAccount.key;
+    const previous = courierDescriptionOptions;
+    setCourierDescriptionOptions(mergeCourierDescriptionOption(previous, accountKey, enabled));
+    try {
+      const next = await setCourierDescriptionOption(accountKey, enabled);
+      setCourierDescriptionOptions(next);
+    } catch {
+      setCourierDescriptionOptions(previous);
+      toast.error("Couldn't save the courier product description option");
     }
   };
 
@@ -1491,6 +1689,24 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                         {account.key === selectedAccountKey && <Check className="h-3.5 w-3.5 shrink-0" />}
                       </button>
                     ))}
+                    {/* Courier product descriptions (issue #23): per-account
+                        option, default OFF, persisted in app_settings. */}
+                    <Separator className="my-1" />
+                    <div className="flex items-start justify-between gap-2 px-2 py-1.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium">Courier product descriptions</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {selectedAccount
+                            ? `Include product names, quantities and sizes on the courier label for ${selectedAccount.accountName}. Off by default.`
+                            : "Choose a Pathao Account to configure this."}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={isCourierDescriptionEnabled(courierDescriptionOptions, selectedAccount?.key)}
+                        disabled={!selectedAccount}
+                        onCheckedChange={handleToggleCourierDescription}
+                      />
+                    </div>
                   </PopoverContent>
                 </Popover>
                 )}
@@ -1516,17 +1732,101 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               )}
             </IdentityStripCard>
           )}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={saving || items.length === 0 || identityBlocked}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Create Order
-            </Button>
-          </div>
+          {dispatchPhase.kind === "idle" ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
+              <Button onClick={handleCreate} disabled={saving || items.length === 0 || identityBlocked}>
+                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Create Order
+              </Button>
+              <Button onClick={handleCreateAndDispatch} disabled={saving || items.length === 0 || identityBlocked}>
+                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Create &amp; Dispatch
+              </Button>
+            </div>
+          ) : dispatchPhase.kind === "dispatching" ? (
+            <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">
+                  Order {dispatchPhase.pending.created.orderNumber} saved — dispatching to Pathao…
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  Through {dispatchPhase.pending.account.accountName} · Pickup: {dispatchPhase.pending.account.pickupStoreName}
+                </p>
+              </div>
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            </div>
+          ) : dispatchPhase.kind === "failed" ? (
+            // The order stays saved on dispatch failure (issue #23); the retry
+            // button re-runs the dispatch step only — it can never create a
+            // duplicate order.
+            <div className="space-y-2 rounded-md border border-destructive/50 bg-destructive/5 p-3">
+              <p className="text-sm font-medium">
+                Order {dispatchPhase.pending.created.orderNumber} is saved, but dispatch failed.
+              </p>
+              <p className="text-xs text-muted-foreground">{dispatchPhase.error}</p>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" disabled={saving} onClick={closeAfterDispatch}>Close (order saved)</Button>
+                <Button onClick={handleRetryDispatch} disabled={saving}>
+                  {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Retry dispatch
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">
+                Order {dispatchPhase.pending.created.orderNumber} dispatched to Pathao.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Consignment: <span className="font-mono text-foreground">{dispatchPhase.consignmentId}</span>
+                {dispatchPhase.reused && " (this order already had that courier entry)"}
+              </p>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button onClick={closeAfterDispatch}>Done</Button>
+              </div>
+            </div>
+          )}
         </div>
       }
     >
       <div className="space-y-4">
+        {/* Issue #29: warn-only duplicate banner. Advisory and dismissible —
+            it never blocks or gates saving. */}
+        {showDuplicateBanner && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-medium">Possible duplicate order</p>
+                <p className="text-xs text-muted-foreground">
+                  A recent order from this customer shares this Brand and at least one product. Review before saving — this warning never blocks saving.
+                </p>
+                <ul className="space-y-0.5">
+                  {(duplicateWarning?.matches ?? []).map((match) => (
+                    <li key={match.orderNumber} className="text-xs">
+                      <span className="font-medium">#{match.orderNumber}</span>
+                      {" · "}
+                      {new Date(match.createdAt).toLocaleString()}
+                      {" · shared: "}
+                      {match.sharedProducts
+                        .map((p) => `${p.name}${p.newVariationLabel ? ` (${p.newVariationLabel})` : ""}`)
+                        .join(", ")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0"
+                aria-label="Dismiss duplicate warning"
+                onClick={() => setDuplicateDismissedKey(duplicateBannerKey)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="flex flex-col lg:flex-row gap-6">
         {/* Left Column: Product Selection */}
         <div className="flex-1 space-y-4">
@@ -1543,6 +1843,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               categories={categories}
               productCatMap={productCatMap}
               stores={stores}
+              variations={variations}
               onSelectProduct={(p) => {
                 const productBrand = deriveBrandForProduct(activeBrands, p);
                 if (!selectedBrandId && productBrand) setSelectedBrandId(productBrand.id);

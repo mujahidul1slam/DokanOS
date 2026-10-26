@@ -395,6 +395,42 @@ async function cancelPreviousParcel(
   return { success: true, cancelledOnPathao: cancelRes.success, noop: !!cancelRes.noop, error: cancelRes.error };
 }
 
+// Issue #23: courier product descriptions ride in Pathao's `item_description`
+// (parcel description). The official API docs publish no length cap for it, so
+// mirror the client-side safe cap from src/lib/courierDescription.ts (255) at
+// the API boundary: whatever a caller sends, Pathao never receives more than
+// the limit and the cut never splits a surrogate pair. `special_instruction`
+// is untouched — the API does not need it for item information.
+const ITEM_DESCRIPTION_MAX = 255;
+function clampItemDescription(orderPayload: any): any {
+  const desc = orderPayload?.item_description;
+  if (typeof desc !== "string" || desc.length <= ITEM_DESCRIPTION_MAX) return orderPayload;
+  let cut = desc.slice(0, ITEM_DESCRIPTION_MAX);
+  const last = cut.charCodeAt(cut.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
+  return { ...orderPayload, item_description: cut };
+}
+
+// Issue #27 (server side): the payment gate must hold at the API boundary, not
+// just in the UI. Mirrors the predicate in src/lib/paymentGate.ts
+// (evaluatePaymentGate): only WooCommerce online-payment orders awaiting
+// confirmation are gated — manual/POS/COD orders are never gated. A gated order
+// reads "Payment Needs Confirmation" and cannot be entered with a courier.
+const WOO_SOURCES = ["woo", "woocommerce", "online"];
+const RECORDED_PAYMENT_STATUSES = ["paid", "partial", "partially_paid"];
+function isPaymentGateBlocking(order: any): boolean {
+  if (!order) return false;
+  const norm = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
+  const paymentStatus = norm(order.payment_status);
+  const method = norm(order.payment_method);
+  return (
+    WOO_SOURCES.includes(norm(order.source)) &&
+    paymentStatus === "online" &&
+    !(paymentStatus === "cod" || method.includes("cod") || method.includes("cash on delivery")) &&
+    !RECORDED_PAYMENT_STATUSES.includes(paymentStatus)
+  );
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -599,9 +635,20 @@ Deno.serve(async (req: Request) => {
         if (order_id) {
           const { data: existing } = await sb
             .from("orders")
-            .select("id, consignment_id, order_number, pathao_integration_id")
+            .select("id, consignment_id, order_number, pathao_integration_id, source, payment_method, payment_status")
             .eq("id", order_id)
             .maybeSingle();
+          // Issue #27: reject gated orders at the API boundary (same predicate
+          // as src/lib/paymentGate.ts evaluatePaymentGate).
+          if (isPaymentGateBlocking(existing)) {
+            return new Response(
+              JSON.stringify({
+                error: `Order ${existing.order_number} is in Payment Needs Confirmation and cannot be dispatched until the payment is confirmed.`,
+                payment_gate_blocked: true,
+              }),
+              { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
           if (existing?.consignment_id) {
             if (!replace) {
               result = {
@@ -668,7 +715,7 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        const data = await pathaoPost(token, "/aladdin/api/v1/orders", order_payload);
+        const data = await pathaoPost(token, "/aladdin/api/v1/orders", clampItemDescription(order_payload));
         const consignment_id = data.data?.consignment_id || data.consignment_id;
 
         if (order_id && consignment_id) {
@@ -741,10 +788,20 @@ Deno.serve(async (req: Request) => {
                 if (entry.order_id) {
                   const { data: existing } = await sb
                     .from("orders")
-                    .select("id, consignment_id, order_number, pathao_integration_id")
+                    .select("id, consignment_id, order_number, pathao_integration_id, source, payment_method, payment_status")
                     .eq("id", entry.order_id)
                     .maybeSingle();
                   if (existing) {
+                    // Issue #27: reject gated orders at the API boundary (same
+                    // predicate as src/lib/paymentGate.ts evaluatePaymentGate).
+                    if (isPaymentGateBlocking(existing)) {
+                      return {
+                        order_id: entry.order_id,
+                        success: false,
+                        payment_gate_blocked: true,
+                        error: `Order ${existing.order_number} is in Payment Needs Confirmation and cannot be dispatched until the payment is confirmed.`,
+                      };
+                    }
                     existingConsignment = existing.consignment_id;
                     orderNumber = existing.order_number;
                     orderIntegId = existing.pathao_integration_id;
@@ -817,7 +874,7 @@ Deno.serve(async (req: Request) => {
                   }
                 }
 
-                const data = await pathaoPost(token, "/aladdin/api/v1/orders", entry.order_payload);
+                const data = await pathaoPost(token, "/aladdin/api/v1/orders", clampItemDescription(entry.order_payload));
                 const consignment_id = data.data?.consignment_id || data.consignment_id;
 
                 if (entry.order_id && consignment_id) {
