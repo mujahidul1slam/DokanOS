@@ -194,6 +194,7 @@ const MiniProductCatalog = ({ products, categories, productCatMap, stores, onSel
                     alt={p.name}
                     className="h-full w-full object-cover transition-transform group-hover:scale-105"
                     loading="lazy"
+                    referrerPolicy="no-referrer"
                     onError={(e) => {
                       const img = e.currentTarget;
                       img.style.display = "none";

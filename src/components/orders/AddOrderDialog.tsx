@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Fuse from "fuse.js";
 import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search, Package, ShoppingCart, Tag, User } from "lucide-react";
 
@@ -19,6 +19,8 @@ import {
   type CapturedMeasurement,
 } from "@/lib/measurements";
 import MiniProductCatalog from "./MiniProductCatalog";
+import { readEdgeFnError } from "@/lib/edgeFnError";
+import { buildAddressCandidates, fuzzyMatch, strictMatch } from "@/lib/pathaoMatch";
 
 
 import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
@@ -224,6 +226,44 @@ function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchRes
   );
 }
 
+interface CustomerMatch {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  zone: string | null;
+  area: string | null;
+  orderCount: number;
+}
+
+interface LocationHints {
+  city: string;
+  zone: string;
+  area: string;
+}
+
+const EMPTY_LOCATION_HINTS: LocationHints = { city: "", zone: "", area: "" };
+const LOCATION_HINT_PREFIX = "hint:";
+const normalizePlace = (v: string) => v.toLowerCase().replace(/[^a-z0-9\u0980-\u09FF]+/g, "");
+
+/**
+ * When the Pathao lists have no match for a parsed location, keep the parsed
+ * text selectable so the dropdown is not silently blank (issue #4). The hint
+ * option is only offered while nothing real is selected.
+ */
+const withHintOption = (
+  options: { value: string; label: string }[],
+  hint: string,
+  hasSelection: boolean,
+) => {
+  const h = hint.trim();
+  if (!h || hasSelection) return options;
+  const key = normalizePlace(h);
+  if (options.some((o) => normalizePlace(o.label) === key)) return options;
+  return [...options, { value: `${LOCATION_HINT_PREFIX}${h}`, label: `${h} (from message)` }];
+};
+
 export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props) {
   const { symbol } = useCurrency();
   const [products, setProducts] = useState<any[]>([]);
@@ -278,6 +318,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [selectedCity, setSelectedCity] = useState<number | null>(null);
   const [selectedZone, setSelectedZone] = useState<number | null>(null);
   const [selectedArea, setSelectedArea] = useState<number | null>(null);
+  // Parsed-but-unmatched city/zone/area text (from AI parse or a saved customer)
+  // so the dropdowns still show what the message said.
+  const [locationHints, setLocationHints] = useState<LocationHints>(EMPTY_LOCATION_HINTS);
+  // Existing-customer lookup by phone (issue #19).
+  const [customerMatches, setCustomerMatches] = useState<CustomerMatch[]>([]);
+  const phoneLookupSeq = useRef(0);
 
   useEffect(() => {
     if (!open) return;
@@ -375,56 +421,189 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   // Address auto-detect: try to match an AREA first (most specific) — that
   // back-fills its zone and city. Otherwise match a ZONE which back-fills
-  // its city. Otherwise just match the city.
+  // its city. Otherwise just match the city. Area/zone fuzzy matching stays
+  // scoped (area within zone, zone within city) and rejects ambiguous ties.
   useEffect(() => {
     if (!customerAddress || customerAddress.length < 3) return;
     if (allZones.length === 0 && cities.length === 0) return;
-    let mounted = true;
-    (async () => {
-      const { buildAddressCandidates, strictMatch, fuzzyMatch } = await import("@/lib/pathaoMatch");
-      if (!mounted) return;
-      const candidates = buildAddressCandidates([customerAddress]);
+    const candidates = buildAddressCandidates([customerAddress]);
 
-      let nextCity = selectedCity;
-      let nextZone = selectedZone;
-      let nextArea = selectedArea;
+    let nextCity = selectedCity;
+    let nextZone = selectedZone;
+    let nextArea = selectedArea;
+    let cityMatched = false;
+    let zoneMatched = false;
+    let areaMatched = false;
 
-      // Priority: city first, then zone within city, then area within zone.
-      // Area is least prioritized since it's optional and area names often
-      // collide across cities/zones.
-      const cityMatch = strictMatch(cities, (c) => c.city_name, candidates);
-      if (cityMatch) {
-        nextCity = cityMatch.city_id;
-        const cityZones = allZones.filter((z) => z.city_id === cityMatch.city_id);
-        const zoneMatch =
-          strictMatch(cityZones, (z) => z.zone_name, candidates) ||
-          fuzzyMatch(cityZones, (z) => z.zone_name, candidates);
-        if (zoneMatch) {
-          nextZone = zoneMatch.zone_id;
-          const zoneAreas = allAreas.filter((a) => a.zone_id === zoneMatch.zone_id);
-          const areaMatch = strictMatch(zoneAreas, (a) => a.area_name, candidates);
-          if (areaMatch) nextArea = areaMatch.area_id;
-        }
+    const matchArea = (zoneAreas: typeof allAreas) =>
+      strictMatch(zoneAreas, (a) => a.area_name, candidates) ||
+      fuzzyMatch(zoneAreas, (a) => a.area_name, candidates);
+
+    // Priority: city first, then zone within city, then area within zone.
+    const cityMatch = strictMatch(cities, (c) => c.city_name, candidates);
+    if (cityMatch) {
+      cityMatched = true;
+      nextCity = cityMatch.city_id;
+      const cityZones = allZones.filter((z) => z.city_id === cityMatch.city_id);
+      const zoneMatch =
+        strictMatch(cityZones, (z) => z.zone_name, candidates) ||
+        fuzzyMatch(cityZones, (z) => z.zone_name, candidates);
+      if (zoneMatch) {
+        zoneMatched = true;
+        nextZone = zoneMatch.zone_id;
+        const areaMatch = matchArea(allAreas.filter((a) => a.zone_id === zoneMatch.zone_id));
+        if (areaMatch) { areaMatched = true; nextArea = areaMatch.area_id; }
       } else {
-        // City not found in address — fall back to a strict global zone match
-        // (back-fills the city). Avoid fuzzy global zone matching since it
-        // frequently picks the wrong city.
-        const zoneMatch = strictMatch(allZones, (z) => z.zone_name, candidates);
-        if (zoneMatch) {
-          nextZone = zoneMatch.zone_id;
-          nextCity = zoneMatch.city_id;
-          const zoneAreas = allAreas.filter((a) => a.zone_id === zoneMatch.zone_id);
-          const areaMatch = strictMatch(zoneAreas, (a) => a.area_name, candidates);
-          if (areaMatch) nextArea = areaMatch.area_id;
+        // The address may name an area but not its zone — resolve the area
+        // across the city's zones and back-fill the zone it belongs to.
+        const cityZoneIds = new Set(cityZones.map((z) => z.zone_id));
+        const areaMatch = matchArea(allAreas.filter((a) => cityZoneIds.has(a.zone_id)));
+        if (areaMatch) {
+          areaMatched = true;
+          nextArea = areaMatch.area_id;
+          nextZone = areaMatch.zone_id;
+          zoneMatched = true;
         }
       }
+    } else {
+      // City not found in address — fall back to a strict global zone match
+      // (back-fills the city). Avoid fuzzy global zone matching since it
+      // frequently picks the wrong city.
+      const zoneMatch = strictMatch(allZones, (z) => z.zone_name, candidates);
+      if (zoneMatch) {
+        zoneMatched = true;
+        nextZone = zoneMatch.zone_id;
+        nextCity = zoneMatch.city_id;
+        const areaMatch = matchArea(allAreas.filter((a) => a.zone_id === zoneMatch.zone_id));
+        if (areaMatch) { areaMatched = true; nextArea = areaMatch.area_id; }
+      }
+    }
 
-      if (nextCity !== selectedCity) setSelectedCity(nextCity);
-      if (nextZone !== selectedZone) setSelectedZone(nextZone);
-      if (nextArea !== selectedArea) setSelectedArea(nextArea);
-    })();
-    return () => { mounted = false; };
+    if (nextCity !== selectedCity) setSelectedCity(nextCity);
+    if (nextZone !== selectedZone) setSelectedZone(nextZone);
+    if (nextArea !== selectedArea) setSelectedArea(nextArea);
+    // Drop hints once the real list matches; keep the ones still unmatched.
+    setLocationHints((prev) => ({
+      city: cityMatched ? "" : prev.city,
+      zone: zoneMatched ? "" : prev.zone,
+      area: areaMatched ? "" : prev.area,
+    }));
   }, [customerAddress, cities, allZones, allAreas]);
+
+  const cityOptions = useMemo(
+    () => withHintOption(
+      cities.map((c) => ({ value: c.city_id.toString(), label: c.city_name })),
+      locationHints.city,
+      selectedCity != null,
+    ),
+    [cities, locationHints.city, selectedCity],
+  );
+  const zoneOptions = useMemo(
+    () => withHintOption(
+      zones.map((z) => ({ value: z.zone_id.toString(), label: z.zone_name })),
+      locationHints.zone,
+      selectedZone != null,
+    ),
+    [zones, locationHints.zone, selectedZone],
+  );
+  const areaOptions = useMemo(
+    () => withHintOption(
+      areas.map((a) => ({ value: a.area_id.toString(), label: a.area_name })),
+      locationHints.area,
+      selectedArea != null,
+    ),
+    [areas, locationHints.area, selectedArea],
+  );
+
+  /* ─── Existing customer lookup by phone (#19) ─── */
+  const lookupCustomerByPhone = async () => {
+    const phone = normalizeBdPhone(customerPhone);
+    if (!phone || phone.length < 11) { setCustomerMatches([]); return; }
+    const seq = ++phoneLookupSeq.current;
+    const { data } = await supabase
+      .from("customers")
+      .select("id, name, phone, address, city, zone, area")
+      .eq("phone", phone)
+      .limit(10);
+    if (seq !== phoneLookupSeq.current) return;
+    let rows = (data || []) as Omit<CustomerMatch, "orderCount">[];
+
+    // Phones can also be reachable through customer_aliases (the spec's
+    // multi-match case). Match by value so any alias type carrying the number
+    // resolves; merge and dedupe with the direct phone hits.
+    const { data: aliasRows } = await supabase
+      .from("customer_aliases")
+      .select("customer_id")
+      .eq("value", phone)
+      .limit(10);
+    if (seq !== phoneLookupSeq.current) return;
+    const aliasIds = [...new Set((aliasRows || []).map((a) => a.customer_id))]
+      .filter((id) => !rows.some((r) => r.id === id));
+    if (aliasIds.length > 0) {
+      const { data: aliasCustomers } = await supabase
+        .from("customers")
+        .select("id, name, phone, address, city, zone, area")
+        .in("id", aliasIds)
+        .limit(10);
+      if (seq !== phoneLookupSeq.current) return;
+      rows = [...rows, ...((aliasCustomers || []) as Omit<CustomerMatch, "orderCount">[])]
+        .slice(0, 10);
+    }
+    if (rows.length === 0) { setCustomerMatches([]); return; }
+
+    // Exact per-customer counts: a single unbounded orders fetch both
+    // under-reports past the REST row cap and drags every order row down.
+    const counts = await Promise.all(
+      rows.map(async (r) => {
+        const { count } = await supabase
+          .from("orders")
+          .select("id", { count: "exact", head: true })
+          .eq("customer_id", r.id);
+        return [r.id, count ?? 0] as const;
+      }),
+    );
+    if (seq !== phoneLookupSeq.current) return;
+    setCustomerMatches(rows.map((r) => ({ ...r, orderCount: new Map(counts).get(r.id) || 0 })));
+  };
+
+  // Explicit Fill click: populates empty fields only — never silently replaces
+  // something the user already typed.
+  const fillFromCustomer = (c: CustomerMatch) => {
+    if (!customerName.trim() && c.name) setCustomerName(c.name);
+    if (!customerPhone.trim() && c.phone) setCustomerPhone(normalizeBdPhone(c.phone) || c.phone);
+    if (!customerAddress.trim() && c.address) setCustomerAddress(c.address);
+
+    const candidates = buildAddressCandidates([c.city, c.zone, c.area, c.address]);
+    const cityMatch = selectedCity != null
+      ? cities.find((x) => x.city_id === selectedCity)
+      : strictMatch(cities, (x) => x.city_name, candidates) ||
+        fuzzyMatch(cities, (x) => x.city_name, candidates);
+    const cityId = cityMatch?.city_id ?? null;
+
+    let zoneMatch: { zone_id: number; zone_name: string } | undefined;
+    let areaMatch: { area_id: number; area_name: string } | undefined;
+    if (cityId != null) {
+      const cityZones = allZones.filter((z) => z.city_id === cityId);
+      zoneMatch = strictMatch(cityZones, (z) => z.zone_name, candidates) ||
+        fuzzyMatch(cityZones, (z) => z.zone_name, candidates);
+      if (zoneMatch) {
+        const zoneAreas = allAreas.filter((a) => a.zone_id === zoneMatch!.zone_id);
+        areaMatch = strictMatch(zoneAreas, (a) => a.area_name, candidates) ||
+          fuzzyMatch(zoneAreas, (a) => a.area_name, candidates);
+      }
+    }
+
+    if (selectedCity == null && cityId != null) setSelectedCity(cityId);
+    if (selectedZone == null && zoneMatch) setSelectedZone(zoneMatch.zone_id);
+    if (selectedArea == null && areaMatch) setSelectedArea(areaMatch.area_id);
+
+    setLocationHints((prev) => ({
+      city: selectedCity == null && !cityMatch && c.city ? c.city : prev.city,
+      zone: selectedZone == null && !zoneMatch && c.zone ? c.zone : prev.zone,
+      area: selectedArea == null && !areaMatch && c.area ? c.area : prev.area,
+    }));
+    setCustomerMatches([]);
+  };
 
   // Per-product search index (one row per product, even if it has variations).
   // Variations contribute to searchText so users can still find a product by
@@ -663,6 +842,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setPaymentMethod("cash");
     setNotes(""); setProductSearch("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
+    setLocationHints(EMPTY_LOCATION_HINTS);
+    setCustomerMatches([]);
     setAiText("");
     // Don't reset storeId to preserve memory
     // setStoreId("");
@@ -713,6 +894,13 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       }
       const addrParts = [p.address, p.area, p.zone, p.city].filter(Boolean);
       if (addrParts.length > 0) { setCustomerAddress(addrParts.join(", ")); filled.push("address"); }
+      // Keep the AI's location values even when the matcher below can't find
+      // them in the Pathao lists — the dropdowns show them as "(from message)".
+      setLocationHints({
+        city: typeof p.city === "string" ? p.city : "",
+        zone: typeof p.zone === "string" ? p.zone : "",
+        area: typeof p.area === "string" ? p.area : "",
+      });
       if (typeof p.shipping_cost === "number") { setShippingCost(p.shipping_cost); setShippingTouched(true); filled.push("shipping"); }
       if (typeof p.discount === "number") { setDiscount(p.discount); filled.push("discount"); }
       if (p.notes) {
@@ -769,7 +957,15 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         if (payload.text) setAiText("");
       }
     } catch (err: any) {
-      toast.error(err?.message || "Failed to parse");
+      // functions-js hides the edge function's body behind a generic non-2xx
+      // message. Read it so a missing LOVABLE_API_KEY is actionable, not opaque.
+      const body = await readEdgeFnError(err);
+      const message = body?.error || body?.message || err?.message || "Failed to parse";
+      if (/not configured|LOVABLE_API_KEY/i.test(message)) {
+        toast.error("AI parsing is not configured on the server. Ask an admin to restore the LOVABLE_API_KEY Edge Function secret.");
+      } else {
+        toast.error(message);
+      }
     } finally {
       setAiParsing(false);
     }
@@ -799,6 +995,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     if (items.length === 0) { toast.error("Add at least one product"); return; }
     setSaving(true);
     try {
+        const cityName = cities.find(c => c.city_id === selectedCity)?.city_name || locationHints.city || null;
+        const zoneName = zones.find(z => z.zone_id === selectedZone)?.zone_name || locationHints.zone || null;
+        const areaName = areas.find(a => a.area_id === selectedArea)?.area_name || locationHints.area || null;
         let customerId: string | null = null;
         const normalizedCustomerPhone = normalizeBdPhone(customerPhone);
         if (customerName || normalizedCustomerPhone) {
@@ -810,9 +1009,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 name: customerName || undefined,
                 phone: normalizedCustomerPhone,
                 address: customerAddress || undefined,
-                city: cities.find(c => c.city_id === selectedCity)?.city_name || undefined,
-                zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || undefined,
-                area: areas.find(a => a.area_id === selectedArea)?.area_name || undefined,
+                city: cityName || undefined,
+                zone: zoneName || undefined,
+                area: areaName || undefined,
               }).eq("id", customerId);
             }
           }
@@ -821,9 +1020,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               name: customerName || "Customer",
               phone: normalizedCustomerPhone,
               address: customerAddress || null,
-              city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
-              zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || null,
-              area: areas.find(a => a.area_id === selectedArea)?.area_name || null,
+              city: cityName,
+              zone: zoneName,
+              area: areaName,
               source,
             }).select("id").single();
             customerId = newC?.id || null;
@@ -847,7 +1046,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           customer_name: customerName || null,
           customer_phone: normalizedCustomerPhone,
           customer_address: customerAddress || null,
-          customer_city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
+          customer_city: cityName || null,
           store_id: storeId || null,
           subtotal,
           discount,
@@ -1143,9 +1342,77 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Phone</Label>
-                <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="01XXXXXXXXX" className="h-9" />
+                <Input
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  onBlur={lookupCustomerByPhone}
+                  placeholder="01XXXXXXXXX"
+                  className="h-9"
+                />
               </div>
             </div>
+
+            {customerMatches.length > 0 && (
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-2 space-y-1.5">
+                {customerMatches.length === 1 ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 text-xs">
+                      <p className="font-medium text-foreground truncate">
+                        Existing customer — {customerMatches[0].name || "Unnamed"}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {customerMatches[0].orderCount} previous order{customerMatches[0].orderCount === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs shrink-0"
+                      onClick={() => fillFromCustomer(customerMatches[0])}
+                    >
+                      Fill
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-foreground">
+                      {customerMatches.length} customers use this phone — pick one to fill
+                    </p>
+                    {customerMatches.map((c) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between gap-2 rounded border border-border/60 bg-background/60 px-2 py-1"
+                      >
+                        <div className="min-w-0 text-[11px]">
+                          <p className="truncate font-medium text-foreground">{c.name || "Unnamed"}</p>
+                          <p className="truncate text-muted-foreground">
+                            {c.address || c.city || "No address"} · {c.orderCount} order{c.orderCount === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs shrink-0"
+                          onClick={() => fillFromCustomer(c)}
+                        >
+                          Fill
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="text-[10px] text-muted-foreground hover:underline"
+                  onClick={() => setCustomerMatches([])}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             <div className="space-y-1">
               <Label className="text-xs">Address</Label>
               <Input value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Full delivery address" className="h-9" />
@@ -1156,9 +1423,19 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               <div className="space-y-1">
                 <Label className="text-[10px]">City</Label>
                 <SearchableSelect
-                  options={cities.map((c) => ({ value: c.city_id.toString(), label: c.city_name }))}
-                  value={selectedCity?.toString() || ""}
-                  onChange={(v) => setSelectedCity(v ? Number(v) : null)}
+                  options={cityOptions}
+                  value={selectedCity?.toString() || (locationHints.city ? `${LOCATION_HINT_PREFIX}${locationHints.city}` : "")}
+                  onChange={(v) => {
+                    if (v.startsWith(LOCATION_HINT_PREFIX)) {
+                      setLocationHints((p) => ({ ...p, city: v.slice(LOCATION_HINT_PREFIX.length), zone: "", area: "" }));
+                      setSelectedCity(null);
+                    } else {
+                      setSelectedCity(Number(v));
+                      setLocationHints({ city: "", zone: "", area: "" });
+                    }
+                    setSelectedZone(null);
+                    setSelectedArea(null);
+                  }}
                   placeholder="City"
                   className="h-8 text-xs"
                 />
@@ -1166,23 +1443,40 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               <div className="space-y-1">
                 <Label className="text-[10px]">Zone</Label>
                 <SearchableSelect
-                  options={zones.map((z) => ({ value: z.zone_id.toString(), label: z.zone_name }))}
-                  value={selectedZone?.toString() || ""}
-                  onChange={(v) => setSelectedZone(v ? Number(v) : null)}
+                  options={zoneOptions}
+                  value={selectedZone?.toString() || (locationHints.zone ? `${LOCATION_HINT_PREFIX}${locationHints.zone}` : "")}
+                  onChange={(v) => {
+                    if (v.startsWith(LOCATION_HINT_PREFIX)) {
+                      setLocationHints((p) => ({ ...p, zone: v.slice(LOCATION_HINT_PREFIX.length), area: "" }));
+                      setSelectedZone(null);
+                    } else {
+                      setSelectedZone(Number(v));
+                      setLocationHints((p) => ({ ...p, zone: "", area: "" }));
+                    }
+                    setSelectedArea(null);
+                  }}
                   placeholder="Zone"
                   className="h-8 text-xs"
-                  disabled={!selectedCity}
+                  disabled={!selectedCity && !locationHints.zone}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[10px]">Area</Label>
                 <SearchableSelect
-                  options={areas.map((a) => ({ value: a.area_id.toString(), label: a.area_name }))}
-                  value={selectedArea?.toString() || ""}
-                  onChange={(v) => setSelectedArea(v ? Number(v) : null)}
+                  options={areaOptions}
+                  value={selectedArea?.toString() || (locationHints.area ? `${LOCATION_HINT_PREFIX}${locationHints.area}` : "")}
+                  onChange={(v) => {
+                    if (v.startsWith(LOCATION_HINT_PREFIX)) {
+                      setLocationHints((p) => ({ ...p, area: v.slice(LOCATION_HINT_PREFIX.length) }));
+                      setSelectedArea(null);
+                    } else {
+                      setSelectedArea(Number(v));
+                      setLocationHints((p) => ({ ...p, area: "" }));
+                    }
+                  }}
                   placeholder="Area"
                   className="h-8 text-xs"
-                  disabled={!selectedZone}
+                  disabled={!selectedZone && !locationHints.area}
                 />
               </div>
             </div>
