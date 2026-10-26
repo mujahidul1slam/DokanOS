@@ -36,3 +36,51 @@ Brand access covering only explicitly selected stores, subject to explicit restr
 
 **Action permission**:
 Permission to perform a particular action within a module, distinct from permission to view that module's information.
+
+# Ordering
+
+The language used when taking, paying for, entering, and combining customer orders.
+
+## Language
+
+**Entered**:
+An order booked with a courier, holding an active consignment. A cancelled booking returns the order to not-entered; past consignments stay in the order's history.
+_Avoid_: Shipped, dispatched (when meaning the booking act)
+
+**Consignment**:
+A single parcel booking with a courier, identified by a number the courier issued. An order can hold several over its life, one active at most.
+_Avoid_: Courier entry, parcel
+
+**Payment Needs Confirmation**:
+The state of an order whose payment was promised online but not yet recorded as received. Such an order cannot be entered with a courier or moved to another status.
+_Avoid_: Payment Pending
+
+**Payment confirmation**:
+The act of recording that an order's promised payment has been received. It is the only way an order leaves the Payment Needs Confirmation state.
+
+**Duplicate order**:
+A newly-taken order matching a recent order by the same customer and at least one product of the same brand. Stores and selling points may differ.
+
+**Merge**:
+Combining two or more not-entered orders of the same customer into a single order that takes all their items and payments.
+_Avoid_: Combine, group
+
+**Split**:
+Dividing an order into two independent orders. The original keeps its payment records; the new order's payment is assigned during the split.
+
+**Pathao account**:
+The Pathao merchant account used to dispatch an order. It determines the courier credentials and pickup configuration used for that dispatch.
+_Avoid_: Pathao store
+
+**Selling point**:
+A place or channel where a brand sells, such as a showroom, Facebook page, or online storefront. An order belongs to one selling point for operational attribution.
+_Avoid_: Store (in user-facing copy when it would be confused with a Pathao account)
+
+**Courier integration**:
+A configured connection between DokanOS and a courier account, used to create, cancel, track, and replace consignments.
+
+**Pickup slip**:
+A printable document that travels with an order and identifies the customer, order contents, charges, brand, selling point, and courier dispatch information.
+
+**Measurement slip**:
+A printable document that carries an order's product and measurement information for production or fitting.
