@@ -4,6 +4,42 @@ All notable changes to DokanOS will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026-10-27]
+
+### Added
+
+- **Brand / Selling Point / Pathao Account identity** (#21, #22, #32) — the three are now distinct, first-class choices everywhere glossary terms apply:
+  - Add Order and Dispatch carry a large identity strip (Brand logo/monogram + name, Selling Point, Pathao Account with account name + pickup store), each changeable inline; mixed-brand carts warn dismissibly and keep the first Brand.
+  - Selection rules: single-brand businesses auto-select and carry the Brand between orders; multi-brand starts clear and the first product picks the Brand; Selling Point resolves default → sole option → filtered selector → blocked with a Stores hint. Orders persist `selling_point_id` with `store_id` kept as the legacy Woo-store binding.
+  - Brand Settings gains per-brand default Selling Point and default Pathao Account (no schema change: `selling_points.is_default` + `pathao_store_links`).
+  - Smart dispatch: every dispatch starts from the brand/Selling Point default Pathao Account; non-default choices warn and are recorded to timeline + audit. Multi-brand batches auto-group per account with overrideable selectors; per-order X-remove trims the batch only.
+  - Order Info can change Brand/Selling Point with the same rules, re-resolving the default Pathao Account and warning (never rebooking) when an active consignment was booked through another account.
+  - Orders list and pickup slips show Brand with a deterministic accent + logo/monogram fallback and the Selling Point.
+- **Create & Dispatch** (#23) — second Add Order action that creates and books the consignment through the selected Pathao Account in one go; on failure the order stays saved with an idempotent Retry dispatch (duplicate creation is impossible). Optional per-Pathao-Account "send product descriptions" (default OFF) puts names + quantities + variation labels into Pathao's `item_description`.
+- **Order merge and split** (#30, #31) — merge same-customer same-state orders (pre-entry only per ADR-0002) with items rollup and payment records moved, never duplicated; split an order into two with the three distinct payment cases (COD / new payment / transferred payment) and per-result-order charge allocation.
+- **Payment gate** (#27) — WooCommerce online-payment orders awaiting confirmation are locked as **Payment Needs Confirmation** (display-only rename; stored values untouched per ADR-0001) against courier entry and status changes across Order Info, row/bulk actions, dispatch and the `pathao-courier` API. Confirmation stays manual and permission-controlled; any recorded payment releases the gate.
+- **Measurements** (#28) — deferred entry with "Measurements pending" markers on slips, category assignment cascade (all / selected / excluded subtrees, resolved live), and per-product never-measure overrides.
+- **Duplicate-order warning** (#29) — warn-only, dismissible: same customer (normalized phone) + same product + same brand within 48h, shown on Add Order and the Orders page.
+- **Fuzzy product search** (#33) — ranked search module (Bangla ↔ Latin folding, scanner-safe exact SKU/barcode short-circuit, typo tolerance, variation attribute text) adopted across Add Order and POS catalogs.
+- **Print upgrades** (#24) — independently toggleable slip elements (brand, Selling Point, source, Pathao Account, dispatch status), strictly monochrome thermal output with a bold-text option, and a one-click daily POS print (thermal + A4).
+- **Settings guard** (#25) — sticky Save/Discard bar and a route-away guard (links, anchors, back/forward) with one Unsaved-changes dialog.
+- **Products preview** (#26) — hover/tap enlarged product image preview with hotlink-safe loading.
+- **Shared variation picker** (#20) — size/variation selection in the Order Info picker and ExchangeDialog via one component; existing size labels unaffected.
+
+### Changed
+
+- Glossary language throughout UI copy: "Payment Needs Confirmation" (replacing "Payment Pending"), "Consignment" (replacing "courier entry"/"parcel"), and the Brand / Selling Point / Pathao Account distinction in selectors, list and slips.
+- Parcel cancel/replace adopted the replace/skip WIP with verified edge cases and envelope-unwrap hardening (#18).
+
+### Fixed
+
+- Add Order product images load (`referrerPolicy` + placeholder fallback) and customer autofill by phone incl. alias-reachable multi-match (#19).
+- City/Area dropdowns match mid-word fragments; address auto-detect uses scoped fuzzy area/zone matching that rejects ambiguous ties (#3).
+- Orders and Analytics lists no longer hide selling-point-only orders (store_id NULL) (#21).
+- Merged orders preserve the payment-gate marker and brand identity — merging can no longer launder a gated order (ADR-0001).
+
+> **Upgrade note:** this patch is schema-free by design (all new configuration lives in existing tables / JSON / KV rows); deploy the app and the updated `pathao-courier` edge function together.
+
 ## [2026-10-01]
 
 ### Added
