@@ -1,4 +1,25 @@
-const CHUNK_RECOVERY_KEY = "omnisync-chunk-recovery-attempted";
+const CHUNK_RECOVERY_KEY = "omnisync-chunk-recovery";
+
+/** Max reloads allowed within the window before we stop and show the error UI. */
+const MAX_RECOVERY_ATTEMPTS = 2;
+const RECOVERY_WINDOW_MS = 60_000;
+
+interface RecoveryState {
+  count: number;
+  firstAttemptAt: number;
+}
+
+function readState(): RecoveryState | null {
+  try {
+    const raw = sessionStorage.getItem(CHUNK_RECOVERY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<RecoveryState>;
+    if (typeof parsed.count !== "number" || typeof parsed.firstAttemptAt !== "number") return null;
+    return { count: parsed.count, firstAttemptAt: parsed.firstAttemptAt };
+  } catch {
+    return null;
+  }
+}
 
 const CHUNK_ERROR_PATTERNS = [
   "failed to fetch dynamically imported module",
@@ -29,9 +50,24 @@ export const clearRuntimeCaches = async () => {
 };
 
 export const recoverFromChunkLoadError = async () => {
-  if (sessionStorage.getItem(CHUNK_RECOVERY_KEY) === "true") return false;
+  const now = Date.now();
+  const prev = readState();
 
-  sessionStorage.setItem(CHUNK_RECOVERY_KEY, "true");
+  // Reset the counter when the previous attempt was long ago.
+  const state: RecoveryState =
+    prev && now - prev.firstAttemptAt < RECOVERY_WINDOW_MS
+      ? prev
+      : { count: 0, firstAttemptAt: now };
+
+  if (state.count >= MAX_RECOVERY_ATTEMPTS) {
+    // Give up — persistent chunk failures get the error UI, not a reload loop.
+    return false;
+  }
+
+  sessionStorage.setItem(
+    CHUNK_RECOVERY_KEY,
+    JSON.stringify({ count: state.count + 1, firstAttemptAt: state.firstAttemptAt } satisfies RecoveryState),
+  );
   await clearRuntimeCaches().catch(() => undefined);
   window.location.reload();
   return true;

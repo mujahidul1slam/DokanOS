@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download, Star, Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,13 @@ import { format } from "date-fns";
 import CategoryFilter from "@/components/CategoryFilter";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useStoresList } from "@/hooks/useStoresList";
+import {
+  hasStoreScope,
+  scopeStoreIds,
+  selectedStoreScope,
+  useActiveBusinessStoreIds,
+} from "@/hooks/useActiveBusinessStoreIds";
 
 interface ProductRow {
   id: string;
@@ -102,6 +109,13 @@ function flattenCategoryTree(nodes: CategoryNode[], depth = 0): { id: string; na
 
 const ProductList = () => {
   const { symbol } = useCurrency();
+  /**
+   * Hybrid tenancy (issue #16): the ACTIVE business's store ids are the only
+   * tenant scope this page may read or write. `useStoresList` supplies the
+   * scoped store rows (names + connection status) from the very same seam.
+   */
+  const businessStoreIds = useActiveBusinessStoreIds();
+  const stores = useStoresList();
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -115,7 +129,6 @@ const ProductList = () => {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editProductId, setEditProductId] = useState<string | null>(null);
   const [dbCategories, setDbCategories] = useState<{ id: string; name: string; parent_id: string | null; store_id: string | null }[]>([]);
-  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [page, setPage] = useState(1);
 
   // Bulk action state
@@ -124,24 +137,70 @@ const ProductList = () => {
   const [selectedBulkCats, setSelectedBulkCats] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  const loadProducts = async () => {
+  /**
+   * The scope the reads below use: an explicit store filter narrows it to that
+   * store, but only when the store belongs to the active business — a filter
+   * left over from the previous business yields an EMPTY scope (fail closed),
+   * never a read of that other store.
+   */
+  const scopedStoreIds = useMemo(
+    () => selectedStoreScope(storeFilter, businessStoreIds).storeIds,
+    [storeFilter, businessStoreIds],
+  );
+
+  /** Rows this page may mutate: only what the scoped read returned. */
+  const scopedProductIds = useMemo(() => new Set(products.map((p) => p.id)), [products]);
+  const scopedCategoryIds = useMemo(() => new Set(dbCategories.map((c) => c.id)), [dbCategories]);
+
+  const loadProducts = useCallback(async () => {
+    // Fail closed BEFORE any query: a business with no mapped stores (or a
+    // store filter that is not one of its stores) has nothing to read — never
+    // "every row the RLS policies happen to allow".
+    if (!hasStoreScope(scopedStoreIds)) {
+      setProducts([]);
+      setDbCategories([]);
+      setProductCatIdMap(new Map());
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
 
-    const [{ data }, { data: pcData }, { data: cats }, { data: storeData }] = await Promise.all([
-      supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id, is_featured, sales_count").order("name"),
-      supabase.from("product_categories").select("product_id, category_id"),
-      supabase.from("categories").select("id, name, parent_id, store_id"),
-      supabase.from("stores").select("id, name"),
+    const [productsRes, categoriesRes] = await Promise.all([
+      scopeStoreIds(
+        supabase.from("products").select("id, name, sku, category, image_url, stock_quantity, manage_stock, stock_status, price, is_active, store_id, is_featured, sales_count").order("name"),
+        scopedStoreIds,
+      ),
+      // Categories belong to a store too: without this predicate the list (and
+      // the bulk-assignment dialog built from it) would offer another
+      // business's categories.
+      scopeStoreIds(
+        supabase.from("categories").select("id, name, parent_id, store_id").order("name"),
+        scopedStoreIds,
+      ),
     ]);
+    const data = productsRes.data;
+    const cats = categoriesRes.data;
 
     setDbCategories((cats || []) as any);
-    setStores(storeData || []);
+
+    // product_categories has no store_id: it is bounded by the tenant-scoped
+    // product ids just read, so another business's links never load.
+    let pcData: { product_id: string; category_id: string }[] = [];
+    const scopedProductRowIds = (data || []).map((p: any) => p.id);
+    if (scopedProductRowIds.length > 0) {
+      const { data: links } = await supabase
+        .from("product_categories")
+        .select("product_id, category_id")
+        .in("product_id", scopedProductRowIds);
+      pcData = (links || []) as typeof pcData;
+    }
 
     const catNameMap = new Map((cats || []).map((c: any) => [c.id, c.name]));
-    const storeNameMap = new Map((storeData || []).map((s: any) => [s.id, s.name]));
+    const storeNameMap = new Map(stores.map((s) => [s.id, s.name]));
     const productCatMap = new Map<string, string[]>();
     const productCatIdMap = new Map<string, Set<string>>();
-    for (const pc of pcData || []) {
+    for (const pc of pcData) {
       const names = productCatMap.get(pc.product_id) || [];
       const catName = catNameMap.get(pc.category_id);
       if (catName) names.push(catName);
@@ -160,9 +219,9 @@ const ProductList = () => {
 
     setProducts(enriched as ProductRow[]);
     setLoading(false);
-  };
+  }, [scopedStoreIds, stores]);
 
-  useEffect(() => { loadProducts(); }, []);
+  useEffect(() => { loadProducts(); }, [loadProducts]);
 
   const scopedDbCategories = useMemo(
     () => storeFilter === "all" ? dbCategories : dbCategories.filter(c => c.store_id === storeFilter),
@@ -218,9 +277,12 @@ const ProductList = () => {
   const openEdit = (id: string) => { setEditProductId(id); setSheetOpen(true); };
 
   const handleDelete = async (id: string) => {
+    // Fail closed: only a product of the active business may be deleted. Its
+    // child rows carry no store_id of their own, so they hang off this check.
+    if (!hasStoreScope(businessStoreIds) || !scopedProductIds.has(id)) return;
     await supabase.from("product_categories").delete().eq("product_id", id);
     await supabase.from("product_variations").delete().eq("product_id", id);
-    await supabase.from("products").delete().eq("id", id);
+    await supabase.from("products").delete().eq("id", id).in("store_id", businessStoreIds);
     toast({ title: "Product deleted" });
     loadProducts();
   };
@@ -228,11 +290,11 @@ const ProductList = () => {
   const handleSyncProducts = async () => {
     setSyncing(true);
     toast({ title: "Syncing products from WooCommerce…" });
-    const { data: connectedStores } = await supabase.from("stores").select("id").eq("status", "connected");
-    if (connectedStores) {
-      for (const s of connectedStores) {
-        await supabase.functions.invoke("woo-sync", { body: { store_id: s.id } });
-      }
+    // Sync targets are the ACTIVE business's connected stores: they come from
+    // the scoped store list, never from an unscoped "connected stores" read.
+    const syncTargets = stores.filter((store) => store.status === "connected");
+    for (const store of syncTargets) {
+      await supabase.functions.invoke("woo-sync", { body: { store_id: store.id } });
     }
     await loadProducts();
     setSyncing(false);
@@ -243,15 +305,23 @@ const ProductList = () => {
   const selectedIds = Array.from(selected);
   const selectedCount = selectedIds.length;
 
+  /**
+   * The ids a bulk action may touch. A selection carried over from the previous
+   * business must never become a write target, so every id is checked against
+   * the rows the scoped read returned.
+   */
+  const tenantTargets = () => selectedIds.filter((id) => scopedProductIds.has(id));
+
   const bulkSetStockStatus = async (status: string) => {
-    if (selectedCount === 0) return;
+    const targets = tenantTargets();
+    if (targets.length === 0) return;
     setBulkBusy(true);
     try {
-      for (const id of selectedIds) {
-        await supabase.from("products").update({ stock_status: status }).eq("id", id);
+      for (const id of targets) {
+        await supabase.from("products").update({ stock_status: status }).eq("id", id).in("store_id", businessStoreIds);
         await supabase.from("product_variations").update({ stock_status: status }).eq("product_id", id);
       }
-      const { data: linkedProducts } = await supabase.from("products").select("id, woo_product_id, store_id").in("id", selectedIds).not("woo_product_id", "is", null);
+      const { data: linkedProducts } = await supabase.from("products").select("id, woo_product_id, store_id").in("id", targets).in("store_id", businessStoreIds).not("woo_product_id", "is", null);
       if (linkedProducts) {
         for (const prod of linkedProducts) {
           if (prod.store_id) {
@@ -259,18 +329,19 @@ const ProductList = () => {
           }
         }
       }
-      toast({ title: `${selectedCount} products updated to ${status.replace(/_/g, " ")}` });
+      toast({ title: `${targets.length} products updated to ${status.replace(/_/g, " ")}` });
       setSelected(new Set());
       await loadProducts();
     } finally { setBulkBusy(false); }
   };
 
   const bulkSetActive = async (isActive: boolean) => {
-    if (selectedCount === 0) return;
+    const targets = tenantTargets();
+    if (targets.length === 0) return;
     setBulkBusy(true);
     try {
-      for (const id of selectedIds) { await supabase.from("products").update({ is_active: isActive }).eq("id", id); }
-      const { data: linkedProducts } = await supabase.from("products").select("id, woo_product_id, store_id").in("id", selectedIds).not("woo_product_id", "is", null);
+      for (const id of targets) { await supabase.from("products").update({ is_active: isActive }).eq("id", id).in("store_id", businessStoreIds); }
+      const { data: linkedProducts } = await supabase.from("products").select("id, woo_product_id, store_id").in("id", targets).in("store_id", businessStoreIds).not("woo_product_id", "is", null);
       if (linkedProducts) {
         for (const prod of linkedProducts) {
           if (prod.store_id) {
@@ -278,22 +349,23 @@ const ProductList = () => {
           }
         }
       }
-      toast({ title: `${selectedCount} products ${isActive ? "activated" : "deactivated"}` });
+      toast({ title: `${targets.length} products ${isActive ? "activated" : "deactivated"}` });
       setSelected(new Set());
       await loadProducts();
     } finally { setBulkBusy(false); }
   };
 
   const bulkDelete = async () => {
-    if (selectedCount === 0) return;
+    const targets = tenantTargets();
+    if (targets.length === 0) return;
     setBulkBusy(true);
     try {
-      for (const id of selectedIds) {
+      for (const id of targets) {
         await supabase.from("product_categories").delete().eq("product_id", id);
         await supabase.from("product_variations").delete().eq("product_id", id);
-        await supabase.from("products").delete().eq("id", id);
+        await supabase.from("products").delete().eq("id", id).in("store_id", businessStoreIds);
       }
-      toast({ title: `${selectedCount} products deleted` });
+      toast({ title: `${targets.length} products deleted` });
       setSelected(new Set());
       setDeleteDialogOpen(false);
       await loadProducts();
@@ -306,17 +378,21 @@ const ProductList = () => {
   };
 
   const bulkAssignCategories = async () => {
-    if (selectedCount === 0 || selectedBulkCats.size === 0) return;
+    const targets = tenantTargets();
+    // Categories of another business can never be assigned, even when a stale
+    // selection still holds one: the ids are checked against the scoped list.
+    const catIds = Array.from(selectedBulkCats).filter((id) => scopedCategoryIds.has(id));
+    if (targets.length === 0 || catIds.length === 0) return;
     setBulkBusy(true);
     try {
-      for (const productId of selectedIds) {
+      for (const productId of targets) {
         await supabase.from("product_categories").delete().eq("product_id", productId);
-        const rows = Array.from(selectedBulkCats).map(catId => ({ product_id: productId, category_id: catId }));
+        const rows = catIds.map(catId => ({ product_id: productId, category_id: catId }));
         await supabase.from("product_categories").insert(rows);
-        const catNames = dbCategories.filter(c => selectedBulkCats.has(c.id)).map(c => c.name);
-        await supabase.from("products").update({ category: catNames.join(", ") }).eq("id", productId);
+        const catNames = dbCategories.filter(c => catIds.includes(c.id)).map(c => c.name);
+        await supabase.from("products").update({ category: catNames.join(", ") }).eq("id", productId).in("store_id", businessStoreIds);
       }
-      toast({ title: `Categories assigned to ${selectedCount} products` });
+      toast({ title: `Categories assigned to ${targets.length} products` });
       setSelected(new Set());
       setCatDialogOpen(false);
       await loadProducts();
@@ -324,11 +400,12 @@ const ProductList = () => {
   };
 
   const bulkSetFeatured = async (featured: boolean) => {
-    if (selectedCount === 0) return;
+    const targets = tenantTargets();
+    if (targets.length === 0) return;
     setBulkBusy(true);
     try {
-      for (const id of selectedIds) { await supabase.from("products").update({ is_featured: featured } as any).eq("id", id); }
-      toast({ title: `${selectedCount} products ${featured ? "marked as featured" : "unmarked"}` });
+      for (const id of targets) { await supabase.from("products").update({ is_featured: featured } as any).eq("id", id).in("store_id", businessStoreIds); }
+      toast({ title: `${targets.length} products ${featured ? "marked as featured" : "unmarked"}` });
       setSelected(new Set());
       await loadProducts();
     } finally { setBulkBusy(false); }
@@ -524,7 +601,7 @@ const ProductList = () => {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => openEdit(p.id)}><Pencil className="h-3.5 w-3.5 mr-2" /> Edit</DropdownMenuItem>
                         <DropdownMenuItem onClick={async () => {
-                          await supabase.from("products").update({ is_featured: !p.is_featured }).eq("id", p.id);
+                          await supabase.from("products").update({ is_featured: !p.is_featured }).eq("id", p.id).in("store_id", businessStoreIds);
                           toast({ title: p.is_featured ? "Removed from featured" : "Marked as featured" });
                           loadProducts();
                         }}>
@@ -621,7 +698,7 @@ const ProductList = () => {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => openEdit(p.id)}><Pencil className="h-3.5 w-3.5 mr-2" /> Edit</DropdownMenuItem>
                       <DropdownMenuItem onClick={async () => {
-                        await supabase.from("products").update({ is_featured: !p.is_featured }).eq("id", p.id);
+                        await supabase.from("products").update({ is_featured: !p.is_featured }).eq("id", p.id).in("store_id", businessStoreIds);
                         toast({ title: p.is_featured ? "Removed from featured" : "Marked as featured" });
                         loadProducts();
                       }}>
@@ -670,7 +747,15 @@ const ProductList = () => {
         </div>
       </div>
 
-      <ProductDetailSheet productId={editProductId} open={sheetOpen} onOpenChange={setSheetOpen} onSaved={loadProducts} />
+      <ProductDetailSheet
+        productId={editProductId}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        onSaved={loadProducts}
+        /* A new product must be created in ONE store of this business; when the
+           filter spans several stores the sheet refuses instead of guessing. */
+        defaultStoreId={scopedStoreIds.length === 1 ? scopedStoreIds[0] : null}
+      />
 
       {/* Bulk Category Dialog */}
       <Dialog open={catDialogOpen} onOpenChange={setCatDialogOpen}>

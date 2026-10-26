@@ -1,0 +1,15 @@
+﻿src/components/AppSidebar.tsx(114,13): error TS2345: Argument of type '"store_id"' is not assignable to parameter of type '"id" | "category_id" | "product_id"'.
+src/components/AppSidebar.tsx(143,22): error TS2339: Property 'name' does not exist on type 'SelectQueryError<"column 'name' does not exist on 'product_categories'.">'.
+src/components/AppSidebar.tsx(144,43): error TS2339: Property 'id' does not exist on type 'SelectQueryError<"column 'name' does not exist on 'product_categories'.">'.
+src/components/storefront-admin/DomainsTab.tsx(49,14): error TS2352: Conversion of type '{ about_md: string; accent_hex: string; contact_email: string; contact_phone: string; created_at: string; currency: string; favicon_url: string; hero_image_url: string; hero_subtitle: string; ... 12 more ...; updated_at: string; }' to type 'Storefront' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Types of property 'nav' are incompatible.
+    Type 'Json' is not comparable to type '{ label: string; href: string; }[]'.
+      Type 'Json[]' is not comparable to type '{ label: string; href: string; }[]'.
+        Type 'Json' is not comparable to type '{ label: string; href: string; }'.
+          Type 'Json[]' is missing the following properties from type '{ label: string; href: string; }': label, href
+src/components/storefront-admin/PagesTab.tsx(65,13): error TS2345: Argument of type 'Record<string, unknown>' is not assignable to parameter of type 'RejectExcessProperties<{ body_md?: string; created_at?: string; id?: string; is_active?: boolean; published_at?: string; published_snapshot?: Json; seo?: Json; slug?: string; status?: string; storefront_id?: string; title?: string; type?: string; updated_at?: string; } | { ...; }, Record<...>>'.
+  Type 'Record<string, unknown>' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'unknown' is not assignable to type 'never'.
+src/pages/StorefrontsPage.tsx(184,28): error TS2339: Property 'id' does not exist on type 'SelectQueryError<"column 'store_currency' does not exist on 'stores'.">'.
+src/pages/StorefrontsPage.tsx(185,28): error TS2339: Property 'store_currency' does not exist on type 'SelectQueryError<"column 'store_currency' does not exist on 'stores'.">'.

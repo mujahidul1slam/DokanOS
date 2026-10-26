@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -13,10 +13,12 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import PermissionGuard from "@/components/PermissionGuard";
 import CommandPalette from "@/components/CommandPalette";
 import DashboardLayout from "./components/DashboardLayout";
+import { BusinessGuards } from "@/components/onboarding/BusinessGuards";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import { Loader2 } from "lucide-react";
 import { markAppLoaded } from "@/lib/chunkRecovery";
+import { invitationPath } from "@/lib/invitationPath";
 import { detectBrand, detectBrandAsync } from "@/storefront/lib/brand";
 
 const StorefrontApp = lazy(() => import("@/storefront/StorefrontApp"));
@@ -34,7 +36,31 @@ const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
+const StorefrontPreviewPage = lazy(() => import("./pages/StorefrontPreviewPage"));
+const StorefrontPreviewSurface = lazy(() => import("./pages/StorefrontPreviewSurface"));
+
+// Preview router: `?surface=` param or `_`-prefixed pageSlugs go to the
+// direct-render StorefrontPreviewSurface (no StorefrontApp catch-all);
+// plain pageSlugs (home, about…) go through the existing StorefrontPreviewPage.
+const StorefrontPreview = lazy(() =>
+  Promise.all([import("./pages/StorefrontPreviewPage"), import("./pages/StorefrontPreviewSurface")]).then(
+    ([Page, Surface]) => ({
+      default: function StorefrontPreviewRouter() {
+        const params = new URLSearchParams(window.location.search);
+        const pageSlug = window.location.pathname.split("/").pop() || "";
+        return params.get("surface") || pageSlug.startsWith("_") ? <Surface.default /> : <Page.default />;
+      },
+    }),
+  ),
+);
 const StoresHub = lazy(() => import("./pages/StoresHub"));
+const Brands = lazy(() => import("./pages/Brands"));
+const BusinessMembers = lazy(() => import("./pages/BusinessMembers"));
+const VisualPageBuilder = lazy(() => import("@/components/storefront-admin/VisualPageBuilder"));
+const Signup = lazy(() => import("./pages/Signup"));
+const CheckEmail = lazy(() => import("./pages/CheckEmail"));
+const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
+const AccountSelection = lazy(() => import("./pages/AccountSelection"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -69,7 +95,14 @@ const PageFallback = () => (
 const AppRoutes = () => {
   const { user, loading } = useAuth();
 
-  markAppLoaded();
+  // Clear the chunk-recovery guard only AFTER the app has rendered for a few
+  // seconds without a chunk failure. Clearing during render — before lazy
+  // chunks resolve — resets the guard too early and causes an infinite
+  // reload loop when a chunk keeps failing.
+  useEffect(() => {
+    const t = setTimeout(() => markAppLoaded(), 5_000);
+    return () => clearTimeout(t);
+  }, []);
 
   if (loading) return <FullScreenLoader label="Loading DokanOS..." />;
 
@@ -77,6 +110,11 @@ const AppRoutes = () => {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/accounts" element={<Navigate to={invitationPath("/login")} replace />} />
+        <Route path="/signup" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Signup /></Suspense>} />
+        <Route path="/check-email" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><CheckEmail /></Suspense>} />
+        <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
+      <Route path="/onboarding" element={<Navigate to="/login" replace />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
@@ -84,28 +122,59 @@ const AppRoutes = () => {
   }
 
   return (
-    <DashboardLayout>
-      <CommandPalette />
-      <Suspense fallback={<PageFallback />}>
-        <Routes>
-          <Route path="/" element={<PermissionGuard permission="dashboard.view"><Dashboard /></PermissionGuard>} />
-          <Route path="/orders" element={<PermissionGuard permission="orders.view"><Orders /></PermissionGuard>} />
-          <Route path="/customers" element={<PermissionGuard permission="customers.view"><Customers /></PermissionGuard>} />
-          <Route path="/products" element={<PermissionGuard permission="products.view"><Products /></PermissionGuard>} />
-          <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />
-          <Route path="/pos/reports" element={<PermissionGuard permission="analytics.view"><PosReports /></PermissionGuard>} />
-          <Route path="/analytics" element={<PermissionGuard permission="analytics.view"><Analytics /></PermissionGuard>} />
-          <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
-          <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
-          <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
-          <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
-          <Route path="/storefronts" element={<PermissionGuard permission="integrations.view"><StorefrontsPage /></PermissionGuard>} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/login" element={<Navigate to="/" replace />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Suspense>
-    </DashboardLayout>
+    <Routes>
+      <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
+      <Route path="/accounts" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AccountSelection /></Suspense>} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/signup" element={<Navigate to={invitationPath("/accounts")} replace />} />
+      <Route path="/check-email" element={<Navigate to={invitationPath("/accounts")} replace />} />
+      {/* Retired legacy combined setup route. Use independent Brands and Stores surfaces. */}
+      <Route path="/onboarding" element={<Navigate to="/" replace />} />
+      {/* Preview routes — FULL-BLEED, chrome-free (fix B): the preview iframe
+          renders the storefront page alone, NOT the admin app. Must sit
+          outside DashboardLayout so no sidebar/palette wraps the preview. */}
+      <Route path="/storefronts/preview/:slug/:pageSlug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
+      <Route path="/storefronts/preview/:slug" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<FullScreenLoader label="Loading…" />}><StorefrontPreview /></Suspense></PermissionGuard>} />
+
+      {/* Standard dashboard routes — AppSidebar shell around everything.
+          The storefront admin panel (2.1) lives INSIDE this shell as an
+          in-content panel: same navigation, no hidden second app. */}
+      <Route path="*" element={
+        <BusinessGuards>
+          <DashboardLayout>
+          <CommandPalette />
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              <Route path="/" element={<PermissionGuard permission="dashboard.view"><Dashboard /></PermissionGuard>} />
+              <Route path="/orders" element={<PermissionGuard permission="orders.view"><Orders /></PermissionGuard>} />
+              <Route path="/customers" element={<PermissionGuard permission="customers.view"><Customers /></PermissionGuard>} />
+              <Route path="/products" element={<PermissionGuard permission="products.view"><Products /></PermissionGuard>} />
+              <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />
+              <Route path="/pos/reports" element={<PermissionGuard permission="analytics.view"><PosReports /></PermissionGuard>} />
+              <Route path="/analytics" element={<PermissionGuard permission="analytics.view"><Analytics /></PermissionGuard>} />
+              <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
+              <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
+              <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
+              <Route path="/brands" element={<Brands />} />
+              <Route path="/members" element={<BusinessMembers />} />
+              <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
+              {/* Wildcard: deep admin URLs (/storefronts/:slug/admin/:surface)
+                  mount StorefrontsPage, which parses the URL itself (fix C). */}
+              <Route path="/storefronts/*" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
+              {/* Visual page builder (fix E): /admin/pages/:pageId/edit — two-pane
+                  palette→canvas editor; own route so it takes over the content
+                  area completely (not nested inside the admin shell panel). */}
+              {/* checkout-fields lives INSIDE the admin shell now (audit fix) —
+                  the standalone route dropped the storefront sidebar + switcher. */}
+              <Route path="/storefronts/:slug/admin/pages/:pageId/edit" element={<PermissionGuard permission="storefronts.view"><Suspense fallback={<PageFallback />}><VisualPageBuilder /></Suspense></PermissionGuard>} />
+              <Route path="/login" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+          </DashboardLayout>
+        </BusinessGuards>
+      } />
+    </Routes>
   );
 };
 
@@ -143,13 +212,13 @@ const Root = () => {
   }
   return (
     <AuthProvider>
-      <PermissionsProvider>
-        <BusinessContextProvider>
+      <BusinessContextProvider>
+        <PermissionsProvider>
           <BusinessProfileProvider>
             <AppRoutes />
           </BusinessProfileProvider>
-        </BusinessContextProvider>
-      </PermissionsProvider>
+        </PermissionsProvider>
+      </BusinessContextProvider>
     </AuthProvider>
   );
 };

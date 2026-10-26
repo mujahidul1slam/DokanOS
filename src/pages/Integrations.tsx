@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { StatsSkeleton } from "@/components/ui/loading-states";
 import WooCommerceDetail from "@/components/integrations/WooCommerceDetail";
 import PathaoDetail from "@/components/integrations/PathaoDetail";
+import { useActiveBusinessStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 interface StoreRow {
   id: string;
@@ -55,10 +56,23 @@ const Integrations = () => {
   const [saving, setSaving] = useState(false);
   const [detailView, setDetailView] = useState<DetailView>(null);
   const { toast } = useToast();
+  const businessStoreIds = useActiveBusinessStoreIds();
 
   const loadData = async () => {
     const [storesRes, pathaoRes] = await Promise.all([
-      supabase.from("stores").select("id, name, url, status, last_synced_at, consumer_key, consumer_secret"),
+      // Scoped to the ACTIVE business's stores. An empty scope means "no
+      // stores readable" (fail closed): skip the query entirely instead of
+      // issuing an unscoped read that would surface other businesses' stores.
+      hasStoreScope(businessStoreIds)
+        ? supabase
+            .from("stores")
+            .select("id, name, url, status, last_synced_at, consumer_key, consumer_secret")
+            .in("id", businessStoreIds)
+        : Promise.resolve({ data: [] as StoreRow[], error: null }),
+      // pathao_integrations is intentionally left unscoped: it is admin-global
+      // (full-row SELECT and all mutations are admin-only by RLS) and has no
+      // business/store tenant column — only indirect pathao_store_links rows
+      // and a numeric allowed_store_ids list that does not map to store ids.
       supabase.from("pathao_integrations").select("*"),
     ]);
 
@@ -75,7 +89,10 @@ const Integrations = () => {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, []);
+  // Re-load whenever the active business's store scope changes. The seam
+  // returns a stable identity per store SET, so this only fires on a real
+  // business switch — never on benign re-emissions.
+  useEffect(() => { loadData(); }, [businessStoreIds]);
 
   // Poll while any store is syncing in the background
   useEffect(() => {
@@ -83,11 +100,13 @@ const Integrations = () => {
     if (!anySyncing) return;
     const id = setInterval(loadData, 5000);
     return () => clearInterval(id);
-  }, [stores]);
+  }, [stores, businessStoreIds]);
 
   const handleAddStore = async () => {
     if (!formData.name || !formData.url) return;
     setSaving(true);
+    // Admin operation: stores INSERT is admin-only by RLS ("Admins can manage
+    // stores"), which is the authoritative authorization gate.
     const { error } = await supabase.from("stores").insert({
       name: formData.name,
       url: formData.url.replace(/\/+$/, ""),
@@ -108,6 +127,7 @@ const Integrations = () => {
   const handleAddPathao = async () => {
     if (!pathaoForm.client_id || !pathaoForm.client_secret || !pathaoForm.username || !pathaoForm.password) return;
     setSaving(true);
+    // Admin-only by RLS; pathao_integrations is admin-global (no tenant column).
     const { error } = await supabase.from("pathao_integrations").insert({
       name: pathaoForm.name || "Pathao Courier",
       client_id: pathaoForm.client_id,
@@ -127,6 +147,9 @@ const Integrations = () => {
   };
 
   const handleSync = async (storeId: string) => {
+    // Fail closed: never sync a store outside the active business's scope
+    // (e.g. a stale detail view left open across a business switch).
+    if (!businessStoreIds.includes(storeId)) return;
     setSyncingId(storeId);
     try {
       const { data, error } = await supabase.functions.invoke("woo-sync", {
@@ -146,6 +169,9 @@ const Integrations = () => {
   };
 
   const handleDeleteStore = async (storeId: string) => {
+    // Fail closed client-side too: only stores of the ACTIVE business can be
+    // deleted here; RLS ("Admins can manage stores") still enforces server-side.
+    if (!businessStoreIds.includes(storeId)) return;
     const { error } = await supabase.from("stores").delete().eq("id", storeId);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -300,7 +326,16 @@ const Integrations = () => {
         ))}
       </div>
 
-      {stores.length === 0 && pathaoIntegrations.length === 0 && (
+      {/* Fail-closed empty state for the stores section: an empty scope means
+          "no stores readable", never an unscoped list. */}
+      {!hasStoreScope(businessStoreIds) && (
+        <div className="flex flex-col items-center justify-center h-32 text-muted-foreground gap-2">
+          <Settings2 className="h-8 w-8" />
+          <p>No stores available for this business.</p>
+        </div>
+      )}
+
+      {stores.length === 0 && pathaoIntegrations.length === 0 && hasStoreScope(businessStoreIds) && (
         <div className="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2">
           <Settings2 className="h-10 w-10" />
           <p>No integrations connected yet.</p>

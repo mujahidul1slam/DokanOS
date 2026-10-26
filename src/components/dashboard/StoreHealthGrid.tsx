@@ -1,9 +1,10 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Store as StoreIcon, CheckCircle2, AlertCircle, ExternalLink, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 import { useCurrency } from "@/hooks/useCurrency";
+import { hasStoreScope, useActiveBusinessStoreIds } from "@/hooks/useActiveBusinessStoreIds";
 
 interface StoreRow {
   id: string;
@@ -26,19 +27,47 @@ interface Props {
 export default function StoreHealthGrid({ orders }: Props) {
   const { symbol } = useCurrency();
   const navigate = useNavigate();
+  /**
+   * Hybrid tenancy (issue #16): this card used to read EVERY store in the
+   * system (`from("stores").select(...).order("name")`, no tenant predicate) and
+   * never re-read on a business switch, so it listed other businesses'
+   * storefronts — and kept listing them after switching. It now reads only the
+   * active business's stores and re-reads when that scope changes.
+   */
+  const businessStoreIds = useActiveBusinessStoreIds();
+  const scoped = hasStoreScope(businessStoreIds);
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Latest-request token: a late response from the previous business never paints. */
+  const loadToken = useRef(0);
 
   useEffect(() => {
+    const token = ++loadToken.current;
+    if (!scoped) {
+      // Fail closed: an empty scope is "no stores readable", not "all stores".
+      // No query at all, and no rows from the previous business left on screen.
+      setStores([]);
+      setLoading(false);
+      return;
+    }
+    let alive = true;
     (async () => {
       const { data } = await supabase
         .from("stores")
         .select("id, name, url, status, last_synced_at")
+        // A row of `stores` IS the tenant row, so the scope predicate is the
+        // primary key here; the seam's `scopeStoreIds` applies `store_id`, which
+        // is the tenant link of the OPERATIONAL tables (orders, products, ...).
+        .in("id", businessStoreIds)
         .order("name");
+      if (!alive || token !== loadToken.current) return; // superseded by a switch
       setStores((data || []) as StoreRow[]);
       setLoading(false);
     })();
-  }, []);
+    return () => {
+      alive = false;
+    };
+  }, [businessStoreIds, scoped]);
 
   const perStore = useMemo(() => {
     const map = new Map<string, { orders: number; revenue: number; series: number[] }>();
@@ -84,7 +113,7 @@ export default function StoreHealthGrid({ orders }: Props) {
   };
 
   if (loading) return null;
-  if (stores.length === 0) return null;
+  if (!scoped || stores.length === 0) return null;
 
   return (
     <div className="rounded-lg border border-border bg-card p-5">

@@ -26,6 +26,10 @@ export interface Storefront {
   policies: Record<string, string>;
   currency: string;
   is_active: boolean;
+  /** Editable nav rows (Phase 1 builder); empty array = legacy hard-coded nav. */
+  nav?: { label: string; href: string }[];
+  /** Checkout/UX settings object (Phase 5). */
+  settings?: Record<string, any>;
 }
 
 // ---------------------------------------------------------------------------

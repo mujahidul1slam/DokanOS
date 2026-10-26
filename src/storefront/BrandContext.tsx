@@ -1,11 +1,24 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { type BrandSlug, type Storefront, loadStorefront } from "./lib/brand";
-import { computeAccentVars, activeBackgroundLightness } from "./lib/theme";
+import { computeAccentVars, activeBackgroundLightness, hexToHslTriplet } from "./lib/theme";
+
+/** Load a Google Fonts family (idempotent per family). */
+function loadGoogleFont(family: string) {
+  const id = `sf-font-${family.toLowerCase().replace(/\s+/g, "-")}`;
+  if (document.getElementById(id)) return;
+  const link = document.createElement("link");
+  link.id = id;
+  link.rel = "stylesheet";
+  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;500;600;700&display=swap`;
+  document.head.appendChild(link);
+}
 
 interface Ctx {
   brand: BrandSlug;
   storefront: Storefront;
+  /** Set only inside the admin preview route — the working-copy page slug being previewed. */
+  draftPageSlug?: string;
 }
 
 const BrandContext = createContext<Ctx | null>(null);
@@ -16,9 +29,28 @@ export function useBrand(): Ctx {
   return v;
 }
 
-export function BrandProvider({ brand, children }: { brand: BrandSlug; children: ReactNode }) {
-  const [sf, setSf] = useState<Storefront | null>(null);
+export function BrandProvider({
+  brand,
+  children,
+  storefrontOverride,
+  draftPageSlug,
+}: {
+  brand: BrandSlug;
+  children: ReactNode;
+  /** Admin preview: skip the anon fetch and use this row (staff-loaded). */
+  storefrontOverride?: Storefront | null;
+  /** Admin preview: render this page's working copy instead of published content. */
+  draftPageSlug?: string;
+}) {
+  const [sf, setSf] = useState<Storefront | null>(storefrontOverride ?? null);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (storefrontOverride !== undefined) {
+      setSf(storefrontOverride);
+      setErr(storefrontOverride ? null : "Storefront not found");
+    }
+  }, [storefrontOverride]);
 
   // Set data-brand attribute for CSS theming
   useEffect(() => {
@@ -64,6 +96,44 @@ export function BrandProvider({ brand, children }: { brand: BrandSlug; children:
         }
         link.href = sf.favicon_url;
       }
+
+      // Overhaul 4.2: theme token customizer — granular tokens override the
+      // theme's CSS values. Fonts load from Google Fonts when a family is set.
+      // Tokens live at settings.tokens (the Tokens editor writes them there);
+      // reading sf.tokens (top-level) never resolved — V8.3/V8.4 fix.
+      const tokens = ((sf as any).settings as any)?.tokens as Record<string, any> | undefined;
+      if (tokens) {
+        const hexVars: Record<string, string> = {
+          "--primary": tokens.color_primary,
+          "--secondary": tokens.color_secondary,
+          "--card": tokens.color_surface,
+          "--background": tokens.color_surface,
+          "--foreground": tokens.color_text,
+          "--muted-foreground": tokens.color_muted,
+          "--border": tokens.color_border,
+          "--sf-accent-hex": tokens.color_accent,
+        };
+        for (const [name, hex] of Object.entries(hexVars)) {
+          if (hex) {
+            document.documentElement.style.setProperty(name, hexToHslTriplet(hex) ?? hex);
+            applied.push(name);
+          }
+        }
+        if (tokens.font_display) {
+          document.documentElement.style.setProperty("--font-display", `"${tokens.font_display}", sans-serif`);
+          applied.push("--font-display");
+          loadGoogleFont(tokens.font_display);
+        }
+        if (tokens.font_body) {
+          document.documentElement.style.setProperty("--font-body", `"${tokens.font_body}", sans-serif`);
+          applied.push("--font-body");
+          loadGoogleFont(tokens.font_body);
+        }
+        if (Number.isFinite(Number(tokens.corner_radius_px))) {
+          document.documentElement.style.setProperty("--radius", `${tokens.corner_radius_px}px`);
+          applied.push("--radius");
+        }
+      }
     }
     return () => {
       document.documentElement.removeAttribute("data-theme");
@@ -72,13 +142,14 @@ export function BrandProvider({ brand, children }: { brand: BrandSlug; children:
   }, [sf, brand]);
 
   useEffect(() => {
+    if (storefrontOverride !== undefined) return; // preview mode: nothing to load
     loadStorefront(brand)
       .then((s) => {
         if (!s) setErr("Storefront not found");
         else setSf(s);
       })
       .catch(() => setErr("Could not load storefront"));
-  }, [brand]);
+  }, [brand, storefrontOverride]);
 
   if (err) {
     return (
@@ -94,5 +165,9 @@ export function BrandProvider({ brand, children }: { brand: BrandSlug; children:
       </div>
     );
   }
-  return <BrandContext.Provider value={{ brand, storefront: sf }}>{children}</BrandContext.Provider>;
+  return (
+    <BrandContext.Provider value={{ brand, storefront: sf, draftPageSlug }}>
+      {children}
+    </BrandContext.Provider>
+  );
 }

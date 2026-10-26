@@ -39,6 +39,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           key: string
@@ -92,6 +110,74 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      brand_stores: {
+        Row: {
+          brand_id: string
+          created_at: string
+          id: string
+          is_published: boolean
+          legacy_location_id: string | null
+          legacy_selling_point_id: string | null
+          legacy_woo_store_id: string | null
+          name: string
+          store_type: string
+          updated_at: string
+        }
+        Insert: {
+          brand_id: string
+          created_at?: string
+          id?: string
+          is_published?: boolean
+          legacy_location_id?: string | null
+          legacy_selling_point_id?: string | null
+          legacy_woo_store_id?: string | null
+          name: string
+          store_type: string
+          updated_at?: string
+        }
+        Update: {
+          brand_id?: string
+          created_at?: string
+          id?: string
+          is_published?: boolean
+          legacy_location_id?: string | null
+          legacy_selling_point_id?: string | null
+          legacy_woo_store_id?: string | null
+          name?: string
+          store_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_stores_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_stores_legacy_location_id_fkey"
+            columns: ["legacy_location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_stores_legacy_selling_point_id_fkey"
+            columns: ["legacy_selling_point_id"]
+            isOneToOne: false
+            referencedRelation: "selling_points"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_stores_legacy_woo_store_id_fkey"
+            columns: ["legacy_woo_store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       brands: {
         Row: {
@@ -151,6 +237,59 @@ export type Database = {
           },
         ]
       }
+      business_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          business_id: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string | null
+          revoked_at: string | null
+          revoked_by: string | null
+          role: string
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          business_id: string
+          created_at?: string
+          email: string
+          expires_at?: string
+          id?: string
+          invited_by?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          role?: string
+          token?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          business_id?: string
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          role?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "business_invitations_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       businesses: {
         Row: {
           address: string | null
@@ -161,6 +300,7 @@ export type Database = {
           is_active: boolean
           logo_url: string | null
           name: string
+          onboarding_completed_at: string | null
           phone: string | null
           slug: string
           timezone: string
@@ -175,6 +315,7 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name: string
+          onboarding_completed_at?: string | null
           phone?: string | null
           slug: string
           timezone?: string
@@ -189,6 +330,7 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name?: string
+          onboarding_completed_at?: string | null
           phone?: string | null
           slug?: string
           timezone?: string
@@ -313,6 +455,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      consent_records: {
+        Row: {
+          accepted_at: string
+          created_at: string
+          doc: string
+          id: string
+          ip: unknown
+          ua: string | null
+          user_id: string | null
+          version: string
+        }
+        Insert: {
+          accepted_at?: string
+          created_at?: string
+          doc: string
+          id?: string
+          ip?: unknown
+          ua?: string | null
+          user_id?: string | null
+          version: string
+        }
+        Update: {
+          accepted_at?: string
+          created_at?: string
+          doc?: string
+          id?: string
+          ip?: unknown
+          ua?: string | null
+          user_id?: string | null
+          version?: string
+        }
+        Relationships: []
       }
       courier_integrations: {
         Row: {
@@ -702,6 +877,18 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      disposable_email_domains: {
+        Row: {
+          domain: string
+        }
+        Insert: {
+          domain: string
+        }
+        Update: {
+          domain?: string
+        }
+        Relationships: []
       }
       held_carts: {
         Row: {
@@ -1151,7 +1338,9 @@ export type Database = {
           product_id: string | null
           product_name: string
           quantity: number
+          stock_ledger: Json | null
           unit_price: number
+          variation_id: string | null
         }
         Insert: {
           created_at?: string
@@ -1162,7 +1351,9 @@ export type Database = {
           product_id?: string | null
           product_name: string
           quantity?: number
+          stock_ledger?: Json | null
           unit_price?: number
+          variation_id?: string | null
         }
         Update: {
           created_at?: string
@@ -1173,7 +1364,9 @@ export type Database = {
           product_id?: string | null
           product_name?: string
           quantity?: number
+          stock_ledger?: Json | null
           unit_price?: number
+          variation_id?: string | null
         }
         Relationships: [
           {
@@ -1188,6 +1381,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_variation_id_fkey"
+            columns: ["variation_id"]
+            isOneToOne: false
+            referencedRelation: "product_variations"
             referencedColumns: ["id"]
           },
         ]
@@ -1305,6 +1505,7 @@ export type Database = {
           discount: number | null
           fulfillment_type: string
           id: string
+          idempotency_key: string | null
           is_exchange: boolean
           item_qty: number | null
           item_type: number | null
@@ -1331,7 +1532,9 @@ export type Database = {
           source: string
           special_instruction: string | null
           status: string
+          stock_restored_at: string | null
           store_id: string | null
+          storefront_id: string | null
           subtotal: number
           tax_amount: number | null
           total: number
@@ -1355,6 +1558,7 @@ export type Database = {
           discount?: number | null
           fulfillment_type?: string
           id?: string
+          idempotency_key?: string | null
           is_exchange?: boolean
           item_qty?: number | null
           item_type?: number | null
@@ -1381,7 +1585,9 @@ export type Database = {
           source?: string
           special_instruction?: string | null
           status?: string
+          stock_restored_at?: string | null
           store_id?: string | null
+          storefront_id?: string | null
           subtotal?: number
           tax_amount?: number | null
           total?: number
@@ -1405,6 +1611,7 @@ export type Database = {
           discount?: number | null
           fulfillment_type?: string
           id?: string
+          idempotency_key?: string | null
           is_exchange?: boolean
           item_qty?: number | null
           item_type?: number | null
@@ -1431,7 +1638,9 @@ export type Database = {
           source?: string
           special_instruction?: string | null
           status?: string
+          stock_restored_at?: string | null
           store_id?: string | null
+          storefront_id?: string | null
           subtotal?: number
           tax_amount?: number | null
           total?: number
@@ -1488,6 +1697,13 @@ export type Database = {
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores_safe"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_storefront_id_fkey"
+            columns: ["storefront_id"]
+            isOneToOne: false
+            referencedRelation: "storefronts"
             referencedColumns: ["id"]
           },
         ]
@@ -2140,6 +2356,7 @@ export type Database = {
           sales_count: number
           short_description: string | null
           sku: string | null
+          slug: string | null
           stock_quantity: number
           stock_status: string
           store_id: string | null
@@ -2173,6 +2390,7 @@ export type Database = {
           sales_count?: number
           short_description?: string | null
           sku?: string | null
+          slug?: string | null
           stock_quantity?: number
           stock_status?: string
           store_id?: string | null
@@ -2206,6 +2424,7 @@ export type Database = {
           sales_count?: number
           short_description?: string | null
           sku?: string | null
+          slug?: string | null
           stock_quantity?: number
           stock_status?: string
           store_id?: string | null
@@ -2332,6 +2551,24 @@ export type Database = {
           },
         ]
       }
+      rate_limit_hits: {
+        Row: {
+          bucket: string
+          count: number
+          key: string
+        }
+        Insert: {
+          bucket: string
+          count?: number
+          key: string
+        }
+        Update: {
+          bucket?: string
+          count?: number
+          key?: string
+        }
+        Relationships: []
+      }
       selling_points: {
         Row: {
           brand_id: string
@@ -2423,6 +2660,39 @@ export type Database = {
           },
         ]
       }
+      signup_events: {
+        Row: {
+          created_at: string
+          email: string | null
+          event: string
+          id: number
+          ip: unknown
+          meta: Json
+          ua: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          event: string
+          id?: never
+          ip?: unknown
+          meta?: Json
+          ua?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          event?: string
+          id?: never
+          ip?: unknown
+          meta?: Json
+          ua?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       storefront_collection_products: {
         Row: {
           collection_id: string
@@ -2499,15 +2769,61 @@ export type Database = {
           },
         ]
       }
+      storefront_page_sections: {
+        Row: {
+          created_at: string
+          id: string
+          is_visible: boolean
+          page_id: string
+          position: number
+          props: Json
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_visible?: boolean
+          page_id: string
+          position?: number
+          props?: Json
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_visible?: boolean
+          page_id?: string
+          position?: number
+          props?: Json
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_page_sections_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "storefront_pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       storefront_pages: {
         Row: {
           body_md: string | null
           created_at: string
           id: string
           is_active: boolean
+          published_at: string | null
+          published_snapshot: Json | null
+          seo: Json
           slug: string
+          status: string
           storefront_id: string
           title: string
+          type: string
           updated_at: string
         }
         Insert: {
@@ -2515,9 +2831,14 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          published_at?: string | null
+          published_snapshot?: Json | null
+          seo?: Json
           slug: string
+          status?: string
           storefront_id: string
           title: string
+          type?: string
           updated_at?: string
         }
         Update: {
@@ -2525,9 +2846,14 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          published_at?: string | null
+          published_snapshot?: Json | null
+          seo?: Json
           slug?: string
+          status?: string
           storefront_id?: string
           title?: string
+          type?: string
           updated_at?: string
         }
         Relationships: [
@@ -2582,6 +2908,7 @@ export type Database = {
         Row: {
           about_md: string | null
           accent_hex: string
+          brand_id: string | null
           contact_email: string | null
           contact_phone: string | null
           created_at: string
@@ -2594,7 +2921,9 @@ export type Database = {
           is_active: boolean
           logo_url: string | null
           name: string
+          nav: Json
           policies: Json
+          settings: Json
           slug: string
           social: Json
           store_id: string | null
@@ -2604,6 +2933,7 @@ export type Database = {
         Insert: {
           about_md?: string | null
           accent_hex?: string
+          brand_id?: string | null
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string
@@ -2616,7 +2946,9 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name: string
+          nav?: Json
           policies?: Json
+          settings?: Json
           slug: string
           social?: Json
           store_id?: string | null
@@ -2626,6 +2958,7 @@ export type Database = {
         Update: {
           about_md?: string | null
           accent_hex?: string
+          brand_id?: string | null
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string
@@ -2638,14 +2971,24 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name?: string
+          nav?: Json
           policies?: Json
+          settings?: Json
           slug?: string
           social?: Json
           store_id?: string | null
           theme?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "storefronts_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stores: {
         Row: {
@@ -3188,10 +3531,28 @@ export type Database = {
       }
     }
     Functions: {
+      accept_business_invitation: { Args: { p_token: string }; Returns: Json }
       bump_store_sync_failure: {
         Args: { p_store_id: string }
         Returns: undefined
       }
+      business_has_other_owner: {
+        Args: { p_business_id: string; p_user: string }
+        Returns: boolean
+      }
+      business_invitation_state: {
+        Args: {
+          p_accepted_at: string
+          p_expires_at: string
+          p_revoked_at: string
+        }
+        Returns: string
+      }
+      can_manage_business_access: {
+        Args: { p_business_id: string; p_user: string }
+        Returns: boolean
+      }
+      canonical_email: { Args: { p_email: string }; Returns: string }
       claim_sync_queue_batch: {
         Args: { p_limit: number }
         Returns: {
@@ -3215,6 +3576,64 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      brand_store_legacy_links_valid: {
+        Args: {
+          p_brand_id: string
+          p_location_id: string
+          p_selling_point_id: string
+          p_woo_store_id: string
+        }
+        Returns: boolean
+      }
+      create_additional_business: {
+        Args: { p_business_name: string; p_user_id: string }
+        Returns: Json
+      }
+      create_brand_store: {
+        Args: { p_brand_id: string; p_name: string; p_store_type: string }
+        Returns: Json
+      }
+      create_business_brand: {
+        Args: { p_business_id: string; p_name: string }
+        Returns: Json
+      }
+      create_business_with_owner: {
+        Args: {
+          p_currency?: string
+          p_logo_url?: string
+          p_name: string
+          p_slug: string
+          p_timezone?: string
+        }
+        Returns: {
+          address: string | null
+          created_at: string
+          currency: string
+          email: string | null
+          id: string
+          is_active: boolean
+          logo_url: string | null
+          name: string
+          onboarding_completed_at: string | null
+          phone: string | null
+          slug: string
+          timezone: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "businesses"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      create_my_brand_store: {
+        Args: { p_business_id: string; p_name: string }
+        Returns: Json
+      }
+      current_business_context: { Args: never; Returns: string }
+      delete_unprovisioned_self: { Args: never; Returns: Json }
+      describe_business_invitation: { Args: { p_token: string }; Returns: Json }
       enqueue_order_push: {
         Args: { p_order_id: string; p_reason?: string }
         Returns: undefined
@@ -3226,6 +3645,50 @@ export type Database = {
       generate_pos_order_number: {
         Args: { p_source?: string; p_store_id?: string }
         Returns: string
+      }
+      get_auth_signup_state: {
+        Args: { p_email: string }
+        Returns: {
+          email: string
+          email_confirmed_at: string
+          id: string
+          invited_at: string
+        }[]
+      }
+      get_member_access: {
+        Args: { p_business: string; p_user: string }
+        Returns: {
+          business_role: string
+          effective_perms: string[]
+          store_ids: string[]
+        }[]
+      }
+      is_signup_open: { Args: never; Returns: boolean }
+      get_my_businesses: {
+        Args: never
+        Returns: {
+          id: string
+          logo_url: string
+          name: string
+          role: string
+          slug: string
+        }[]
+      }
+      get_my_managed_businesses: {
+        Args: never
+        Returns: {
+          id: string
+          logo_url: string
+          name: string
+          slug: string
+        }[]
+      }
+      get_purge_candidates: {
+        Args: never
+        Returns: {
+          id: string
+          reason: string
+        }[]
       }
       get_sync_alert_webhook_url: { Args: never; Returns: string }
       get_sync_worker_cron_token: { Args: never; Returns: string }
@@ -3253,7 +3716,40 @@ export type Database = {
         }
         Returns: boolean
       }
+      invite_business_member: {
+        Args: { p_business_id: string; p_email: string }
+        Returns: Json
+      }
       is_business_member: { Args: { p_business_id: string }; Returns: boolean }
+      leave_business_account: {
+        Args: { p_business_id: string }
+        Returns: Json
+      }
+      list_business_invitations: {
+        Args: { p_business_id: string }
+        Returns: {
+          accepted_at: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string
+          revoked_at: string
+          role: string
+          status: string
+          token: string
+        }[]
+      }
+      list_business_members: {
+        Args: { p_business_id: string }
+        Returns: {
+          email: string
+          full_name: string
+          joined_at: string
+          role: string
+          user_id: string
+        }[]
+      }
       merge_duplicate_customers: {
         Args: never
         Returns: {
@@ -3262,55 +3758,70 @@ export type Database = {
           merged_phone: string
         }[]
       }
+      my_business_role: {
+        Args: { p_business_id: string; p_user: string }
+        Returns: string
+      }
       normalize_bd_phone: { Args: { _phone: string }; Returns: string }
+      provision_owner_business: {
+        Args: { p_nonce: string; p_user_id: string }
+        Returns: Json
+      }
+      publish_my_storefront: {
+        Args: { p_storefront_id?: string }
+        Returns: Json
+      }
       purge_trashed_orders: { Args: never; Returns: undefined }
-      recon_multi_business: { Args: never; Returns: Json }
       recover_orphaned_sync_rows: {
         Args: { p_stale_before: string }
         Returns: number
+      }
+      remove_business_member: {
+        Args: { p_business_id: string; p_user_id: string }
+        Returns: Json
       }
       reset_store_circuit_breaker: {
         Args: { p_store_id: string }
         Returns: undefined
       }
+      revoke_business_invitation: {
+        Args: { p_invitation_id: string }
+        Returns: Json
+      }
+      run_data_retention_cleanup: { Args: never; Returns: Json }
+      set_active_business_context: {
+        Args: { p_business_id: string }
+        Returns: string
+      }
+      set_member_business_role: {
+        Args: { p_business: string; p_role: string; p_user: string }
+        Returns: undefined
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      signup_create_business_core: {
+        Args: { p_business_name: string; p_user_id: string }
+        Returns: Json
+      }
+      storefront_place_order: { Args: { p_payload: Json }; Returns: Json }
+      storefront_restore_stock: {
+        Args: { p_order_id: string }
+        Returns: undefined
+      }
+      transfer_business_ownership: {
+        Args: { p_business_id: string; p_new_owner_id: string }
+        Returns: Json
+      }
+      user_can_access_store: { Args: { p_store_id: string }; Returns: boolean }
       user_has_store_access: {
         Args: { _store_id: string; _user_id: string }
         Returns: boolean
       }
-      get_my_managed_businesses: {
-        Args: never
-        Returns: {
-          id: string
-          name: string
-          slug: string
-          logo_url: string | null
-        }[]
-      }
-      get_member_access: {
-        Args: { p_user: string; p_business: string }
-        Returns: {
-          business_role: string | null
-          store_ids: string[] | null
-          effective_perms: string[] | null
-        }[]
-      }
-      set_member_business_role: {
-        Args: { p_user: string; p_business: string; p_role: string }
-        Returns: undefined
-      }
-      create_business_with_owner: {
-        Args: {
-          p_name: string
-          p_slug: string
-          p_logo_url?: string
-          p_currency?: string
-          p_timezone?: string
-        }
-        Returns: Json
-      }
-      verify_multi_business_foundation: { Args: never; Returns: Json }
+      verify_create_my_brand_store: { Args: never; Returns: Json }
+      verify_member_scoped_rls: { Args: never; Returns: Json }
+      verify_signup_fns: { Args: never; Returns: Json }
+      verify_signup_publish_and_delete_rpcs: { Args: never; Returns: Json }
+      verify_signup_tables: { Args: never; Returns: Json }
     }
     Enums: {
       app_permission:
@@ -3351,6 +3862,7 @@ export type Database = {
         | "team.manage"
         | "audit.view"
         | "orders.attach_courier"
+        | "storefronts.view"
       app_role: "admin" | "staff" | "viewer"
     }
     CompositeTypes: {
@@ -3520,6 +4032,7 @@ export const Constants = {
         "team.manage",
         "audit.view",
         "orders.attach_courier",
+        "storefronts.view",
       ],
       app_role: ["admin", "staff", "viewer"],
     },

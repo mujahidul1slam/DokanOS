@@ -10,6 +10,7 @@ import { printInvoice } from "./InvoicePrint";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import type { Cart, CartItem, Payment } from "./types";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 interface Props {
   open: boolean;
@@ -34,25 +35,33 @@ interface RecentOrder {
 const RecentOrdersDialog = ({ open, onClose }: Props) => {
   const { symbol } = useCurrency();
   const { settings: invoiceSettings } = useInvoiceSettings();
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [orders, setOrders] = useState<RecentOrder[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
+    if (!hasStoreScope(businessStoreIds)) {
+      setOrders([]);
+      return;
+    }
     setLoading(true);
-    const { data } = await supabase
-      .from("orders")
-      .select("id, order_number, total, subtotal, discount, shipping_cost, status, payment_status, source, notes, created_at, customer_id")
-      .eq("source", "pos")
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const { data } = await scopeStoreIds(
+      supabase
+        .from("orders")
+        .select("id, order_number, total, subtotal, discount, shipping_cost, status, payment_status, source, notes, created_at, customer_id")
+        .eq("source", "pos")
+        .order("created_at", { ascending: false })
+        .limit(50),
+      businessStoreIds
+    );
     setOrders((data || []) as RecentOrder[]);
     setLoading(false);
   };
 
   useEffect(() => {
     if (open) load();
-  }, [open]);
+  }, [open, businessStoreIds]);
 
   const filtered = orders.filter((o) =>
     o.order_number.toLowerCase().includes(search.toLowerCase())

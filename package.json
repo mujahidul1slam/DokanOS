@@ -8,10 +8,14 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rls": "supabase db reset && node scripts/run-rls-tests.mjs"
+    "test:rls": "supabase db reset && node scripts/run-rls-tests.mjs",
+    "test:local:personal-signup-api": "node --test scripts/personal-signup-api.test.mjs",
+    "test:local:ownership-transfer-api": "node --test scripts/ownership-transfer-api.test.mjs",
+    "test:local:account-lifecycle-rehearsal": "node --test scripts/account-lifecycle-rehearsal.test.mjs"
   },
   "dependencies": {
     "@fontsource/archivo-black": "^5.2.8",

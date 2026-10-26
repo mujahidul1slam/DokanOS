@@ -1,5 +1,16 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/sitemap.xml",
+      "destination": "https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/storefront-sitemap"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "https://jiwndicvfkiltgageqwv.supabase.co/functions/v1/storefront-robots"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }

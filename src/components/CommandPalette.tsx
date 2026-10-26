@@ -12,6 +12,9 @@ import {
   ShoppingCart, Package, Users, LayoutDashboard, Monitor, Store, Settings, UsersRound,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope,
+} from "@/hooks/useActiveBusinessStoreIds";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -31,6 +34,7 @@ const CommandPalette = () => {
   const [customers, setCustomers] = useState<{ id: string; name: string; phone: string | null }[]>([]);
   const [products, setProducts] = useState<{ id: string; name: string; sku: string | null }[]>([]);
   const navigate = useNavigate();
+  const businessStoreIds = useActiveBusinessStoreIds();
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -50,15 +54,22 @@ const CommandPalette = () => {
       setProducts([]);
       return;
     }
+    // Fail closed: no tenant scope means no cross-table search results at all.
+    if (!hasStoreScope(businessStoreIds)) {
+      setOrders([]);
+      setCustomers([]);
+      setProducts([]);
+      return;
+    }
     const [ordersRes, customersRes, productsRes] = await Promise.all([
-      supabase.from("orders").select("id, order_number, customer_name").or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%`).limit(5),
-      supabase.from("customers").select("id, name, phone").or(`name.ilike.%${q}%,phone.ilike.%${q}%`).limit(5),
-      supabase.from("products").select("id, name, sku").or(`name.ilike.%${q}%,sku.ilike.%${q}%`).limit(5),
+      scopeStoreIds(supabase.from("orders").select("id, order_number, customer_name").or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%`).limit(5), businessStoreIds),
+      scopeStoreIds(supabase.from("customers").select("id, name, phone").or(`name.ilike.%${q}%,phone.ilike.%${q}%`).limit(5), businessStoreIds),
+      scopeStoreIds(supabase.from("products").select("id, name, sku").or(`name.ilike.%${q}%,sku.ilike.%${q}%`).limit(5), businessStoreIds),
     ]);
     setOrders((ordersRes.data || []).map((o: any) => ({ id: o.id, order_number: o.order_number, customer_name: o.customer_name || "" })));
     setCustomers((customersRes.data || []) as any);
     setProducts((productsRes.data || []) as any);
-  }, []);
+  }, [businessStoreIds]);
 
   useEffect(() => {
     const timer = setTimeout(() => search(query), 200);

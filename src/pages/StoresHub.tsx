@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { canCreateBusinessResources } from "@/lib/accounts/rolePresentation";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,8 +13,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   Warehouse, Store as StoreIcon, Plug, Package, Users, Plus, Trash2, Pencil,
-  MapPin, Globe, Truck, Loader2, Building2, Factory,
+  MapPin, Globe, Truck, Loader2, Building2, Factory, ArrowRight,
 } from "lucide-react";
+import { CreateBrandStoreDialog } from "@/components/stores/CreateBrandStoreDialog";
+import type { BrandStore } from "@/lib/brandStores";
 
 /**
  * Multi-business Phase 2: the Stores hub.
@@ -58,13 +62,22 @@ const CONNECTOR_CAT_LABELS: Record<string, string> = {
 };
 
 export default function StoresHub() {
-  const { active, brands, loading: ctxLoading } = useBusinessContext();
+  const { active, brands, brandStores, loading: ctxLoading, myRole } = useBusinessContext();
+  const navigate = useNavigate();
   const [expandedBrand, setExpandedBrand] = useState<string | null>(null);
-  const [tab, setTab] = useState<string>("locations");
+  const [tab, setTab] = useState<string>("stores");
+  const [storeOpen, setStoreOpen] = useState(false);
+  const [storeBrandId, setStoreBrandId] = useState<string | null>(null);
+  const canCreate = canCreateBusinessResources(myRole);
 
   if (ctxLoading) {
     return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
+
+  const openStoreDialog = (brandId: string | null = null) => {
+    setStoreBrandId(brandId);
+    setStoreOpen(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -81,11 +94,26 @@ export default function StoresHub() {
           <Badge variant="secondary" className="ml-auto">
             {brands.length} brand{brands.length === 1 ? "" : "s"}
           </Badge>
+          <Badge variant="outline">
+            {brandStores.length} store{brandStores.length === 1 ? "" : "s"}
+          </Badge>
+          {canCreate && brands.length > 0 && (
+            <Button size="sm" onClick={() => openStoreDialog()}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> New Store
+            </Button>
+          )}
         </div>
         {brands.length === 0 && (
-          <p className="mt-3 text-sm text-muted-foreground">
-            No brands yet. Brands are created automatically when a WooCommerce store is connected.
-          </p>
+          <div className="mt-3 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              No brands yet. Add a brand name first — brands can exist without
+              stores, and connecting a WooCommerce store does not create one
+              automatically.
+            </p>
+            <Button size="sm" onClick={() => navigate("/brands")}>
+              Create a brand
+            </Button>
+          </div>
         )}
       </div>
 
@@ -95,22 +123,33 @@ export default function StoresHub() {
           <BrandCard
             key={brand.id}
             brand={brand}
+            stores={brandStores.filter((store) => store.brand_id === brand.id)}
             expanded={expandedBrand === brand.id}
             onToggle={() => setExpandedBrand(expandedBrand === brand.id ? null : brand.id)}
             tab={tab}
             onTabChange={setTab}
+            canCreate={canCreate}
+            onAddStore={() => openStoreDialog(brand.id)}
           />
         ))}
       </div>
+
+      <CreateBrandStoreDialog
+        open={storeOpen}
+        onOpenChange={setStoreOpen}
+        defaultBrandId={storeBrandId}
+      />
     </div>
   );
 }
 
 function BrandCard({
-  brand, expanded, onToggle, tab, onTabChange,
+  brand, stores, expanded, onToggle, tab, onTabChange, canCreate, onAddStore,
 }: {
   brand: { id: string; name: string; slug: string; woo_store_id: string | null };
+  stores: BrandStore[];
   expanded: boolean; onToggle: () => void; tab: string; onTabChange: (t: string) => void;
+  canCreate: boolean; onAddStore: () => void;
 }) {
   const { toast } = useToast();
   const [wooStore, setWooStore] = useState<{ id: string; name: string; url: string; status: string; last_synced_at: string | null } | null>(null);
@@ -134,9 +173,9 @@ function BrandCard({
     const [loc, sp, conn, psrc, csrc, sup] = await Promise.all([
       supabase.from("locations").select("*").eq("brand_id", brand.id).order("name"),
       supabase.from("selling_points").select("*").eq("brand_id", brand.id).order("name"),
-      supabase.from("connectors").select("*").or(`brand_id.eq.${brand.id},brand_id.is.null`).order("category").order("name"),
-      supabase.from("product_sources").select("*").or(`brand_id.eq.${brand.id},brand_id.is.null`).order("name"),
-      supabase.from("customer_sources").select("*").or(`brand_id.eq.${brand.id},brand_id.is.null`).order("name"),
+      supabase.from("connectors").select("*").eq("brand_id", brand.id).order("category").order("name"),
+      supabase.from("product_sources").select("*").eq("brand_id", brand.id).order("name"),
+      supabase.from("customer_sources").select("*").eq("brand_id", brand.id).order("name"),
       supabase.from("suppliers").select("*").order("name"),
     ]);
     setLocations((loc.data as LocationRow[]) || []);
@@ -165,6 +204,7 @@ function BrandCard({
   };
 
   const TABS = [
+    { id: "stores", label: "Stores", icon: StoreIcon, count: stores.length },
     { id: "locations", label: "Locations", icon: MapPin, count: locations.length },
     { id: "selling", label: "Selling Points", icon: StoreIcon, count: sellingPoints.length },
     { id: "connectors", label: "Connectors", icon: Plug, count: connectors.length },
@@ -183,7 +223,11 @@ function BrandCard({
         <div className="min-w-0">
           <p className="font-heading text-sm font-semibold">{brand.name}</p>
           <p className="text-xs text-muted-foreground truncate">
-            {wooStore ? wooStore.url : "No WooCommerce store linked"}
+            {stores.length > 0
+              ? `${stores.length} ${stores.length === 1 ? "store" : "stores"} · ${wooStore ? wooStore.url : "no WooCommerce link"}`
+              : wooStore
+                ? wooStore.url
+                : "No stores yet"}
           </p>
         </div>
         {wooStore && (
@@ -230,12 +274,97 @@ function BrandCard({
       {/* Panel (visible when brand expanded) */}
       {expanded && (
         <div className="border-t border-border p-4">
+          {tab === "stores" && (
+            <StoresPanel
+              stores={stores}
+              canCreate={canCreate}
+              onAddStore={onAddStore}
+              onConfigure={() => {
+                onTabChange("locations");
+                if (!expanded) onToggle();
+              }}
+            />
+          )}
           {tab === "locations" && <LocationsPanel brandId={brand.id} rows={locations} onChanged={load} />}
           {tab === "selling" && <SellingPointsPanel brandId={brand.id} locations={locations} rows={sellingPoints} onChanged={load} />}
           {tab === "connectors" && <ConnectorsPanel rows={connectors} />}
           {tab === "psources" && <SourcesPanel kind="product" brandId={brand.id} rows={productSources} onChanged={load} />}
           {tab === "csources" && <SourcesPanel kind="customer" brandId={brand.id} rows={customerSources} onChanged={load} />}
           {tab === "suppliers" && <SuppliersPanel rows={suppliers} onChanged={load} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stores panel (issue #12: explicit physical/online store identities)
+// ---------------------------------------------------------------------------
+function StoresPanel({
+  stores, canCreate, onAddStore, onConfigure,
+}: {
+  stores: BrandStore[];
+  canCreate: boolean;
+  onAddStore: () => void;
+  onConfigure: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          Physical outlets and online shops under this brand. Addresses,
+          integrations and storefronts are configured separately.
+        </p>
+        {canCreate && (
+          <Button size="sm" variant="outline" onClick={onAddStore}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> New store
+          </Button>
+        )}
+      </div>
+
+      {stores.length === 0 ? (
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <div>
+            <p className="text-xs font-medium">No stores yet</p>
+            <p className="text-[10px] text-muted-foreground">
+              A brand may have zero stores. Creating one does not publish a website.
+            </p>
+          </div>
+          {canCreate && (
+            <Button size="sm" variant="outline" onClick={onAddStore}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add a store
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {stores.map((store) => (
+            <div
+              key={store.id}
+              className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2"
+            >
+              {store.store_type === "online"
+                ? <Globe className="h-4 w-4 text-muted-foreground" />
+                : <StoreIcon className="h-4 w-4 text-muted-foreground" />}
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium">{store.name}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {store.store_type === "physical" ? "Physical store" : "Online store"}
+                  {store.store_type === "online"
+                    ? store.is_published
+                      ? " · Published"
+                      : " · Unpublished"
+                    : ""}
+                </p>
+              </div>
+              <Badge variant={store.store_type === "online" ? "outline" : "secondary"} className="text-[10px]">
+                {store.store_type === "physical" ? "Physical" : "Online"}
+              </Badge>
+              <Button size="sm" variant="ghost" onClick={onConfigure}>
+                Configure <ArrowRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -275,7 +404,12 @@ function LocationsPanel({ brandId, rows, onChanged }: { brandId: string; rows: L
         </Button>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No locations.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">No locations yet.</p>
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Add a location
+          </Button>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((l) => (
@@ -376,7 +510,12 @@ function SellingPointsPanel({
         </Button>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No selling points.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">No selling points yet.</p>
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Add a selling point
+          </Button>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((sp) => (
@@ -485,7 +624,12 @@ function SuppliersPanel({ rows, onChanged }: { rows: SupplierRow[]; onChanged: (
         </Button>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No suppliers yet.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">No locations yet.</p>
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Add a location
+          </Button>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((s) => (
@@ -565,7 +709,9 @@ function ConnectorsPanel({ rows }: { rows: ConnectorRow[] }) {
         Integrations registered for this brand — WooCommerce channels and couriers (Pathao) today.
       </p>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No connectors.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">No connectors yet.</p>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((c) => (
@@ -596,6 +742,7 @@ function SourcesPanel({
   kind, brandId, rows, onChanged,
 }: { kind: "product" | "customer"; brandId: string; rows: SourceRow[]; onChanged: () => void }) {
   const { active } = useBusinessContext();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", type: "other", sync_direction: "import" });
   const [saving, setSaving] = useState(false);
@@ -633,7 +780,11 @@ function SourcesPanel({
         </Button>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">No sources registered.</p>
+        <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">
+            {kind === "product" ? "No product sources yet." : "No customer sources yet."}
+          </p>
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((s) => (

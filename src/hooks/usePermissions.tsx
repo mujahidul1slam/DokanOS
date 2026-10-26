@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, ReactNode, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
 import type { Database } from "@/integrations/supabase/types";
+import { accountRoleClass } from "@/lib/accounts/rolePresentation";
 
 export type AppPermission = Database["public"]["Enums"]["app_permission"];
 
@@ -20,7 +22,12 @@ interface PermissionsContextType {
 const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
 
 export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
+  // First-release account members hold no legacy user_roles/user_permissions
+  // rows by design (the account membership is the authority). Consult the
+  // active business membership so their reviewed operational baseline resolves
+  // exactly like the sidebar's #11 nav-role mapping.
+  const { active, myRole, loading: businessLoading } = useBusinessContext();
   const [permissions, setPermissions] = useState<AppPermission[]>([]);
   const [storeIds, setStoreIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,18 +58,36 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => { load(); }, [load]);
 
-  const can = useCallback((perm: AppPermission) => isAdmin || permissions.includes(perm), [isAdmin, permissions]);
-  const canAny = useCallback((perms: AppPermission[]) => isAdmin || perms.some((p) => permissions.includes(p)), [isAdmin, permissions]);
+  // Account membership is authoritative for owners/members. Legacy rows remain
+  // a compatibility restriction only for viewers; they cannot narrow members.
+  const membershipBaseline = active ? accountBaselinePermissions(myRole) : null;
+  const roleClass = accountRoleClass(myRole);
+  const effectivePermissions = useMemo<AppPermission[]>(
+    () => !active
+      ? []
+      : roleClass === "owner"
+        ? ALL_PERMISSIONS
+        : roleClass === "operator"
+          ? membershipBaseline ?? []
+          : roleClass === "viewer"
+            ? Array.from(new Set([...VIEWER_BASELINE, ...permissions.filter((permission) => VIEWER_BASELINE.includes(permission))]))
+            : [],
+    [active, permissions, membershipBaseline, roleClass],
+  );
+
+  const can = useCallback((perm: AppPermission) => effectivePermissions.includes(perm), [effectivePermissions]);
+  const canAny = useCallback((perms: AppPermission[]) => perms.some((p) => effectivePermissions.includes(p)), [effectivePermissions]);
   const hasStoreAccess = useCallback((storeId: string | null | undefined) => {
-    if (isAdmin) return true;
+    if (!active || !roleClass) return false;
+    if (roleClass === "owner" || roleClass === "operator") return true;
     if (!storeId) return true;
     if (storeIds.length === 0) return true; // unrestricted
     return storeIds.includes(storeId);
-  }, [isAdmin, storeIds]);
+  }, [active, roleClass, storeIds]);
 
   return (
     <PermissionsContext.Provider
-      value={{ permissions, storeIds, loading, largeDiscountPercent, largeDiscountAmount, can, canAny, hasStoreAccess, refresh: load }}
+      value={{ permissions: effectivePermissions, storeIds, loading: loading || businessLoading, largeDiscountPercent, largeDiscountAmount, can, canAny, hasStoreAccess, refresh: load }}
     >
       {children}
     </PermissionsContext.Provider>
@@ -148,6 +173,10 @@ export const PERMISSION_GROUPS: { group: string; items: { key: AppPermission; la
     ],
   },
   {
+    group: "Storefronts",
+    items: [{ key: "storefronts.view", label: "View storefronts" }],
+  },
+  {
     group: "Settings & Team",
     items: [
       { key: "settings.view", label: "View settings" },
@@ -160,3 +189,34 @@ export const PERMISSION_GROUPS: { group: string; items: { key: AppPermission; la
 ];
 
 export const ALL_PERMISSIONS: AppPermission[] = PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key));
+
+// First release: owners get unrestricted account authority; account members get
+// every operational capability (including refunds, deletes, analytics, store,
+// integration and storefront operations). Exclude only legacy controls whose
+// server authority is owner/platform administration (team, global permission
+// settings, and global audit access); account membership RPCs stay owner-only.
+const STAFF_BASELINE: AppPermission[] = [
+  ...ALL_PERMISSIONS.filter((permission) =>
+    permission !== "team.manage" && permission !== "settings.manage" && permission !== "audit.view"
+  ),
+];
+
+const VIEWER_BASELINE: AppPermission[] = [
+  "dashboard.view", "orders.view", "customers.view", "products.view",
+];
+
+const accountBaselinePermissions = (
+  role: string | null | undefined,
+): AppPermission[] | null => {
+  switch (role) {
+    case "owner":
+      return ALL_PERMISSIONS;
+    case "admin":
+    case "member":
+      return STAFF_BASELINE;
+    case "viewer":
+      return VIEWER_BASELINE;
+    default:
+      return null;
+  }
+};

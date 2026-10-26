@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "tables": {
+    "auth.users": [{ "id": "owner", "row_hash": "person-1" }, { "id": "member", "row_hash": "person-2" }],
+    "businesses": [{ "id": "account", "row_hash": "account-1" }, { "id": "other-account", "row_hash": "account-2" }],
+    "user_business_access": [
+      { "id": "owner-membership", "user_id": "owner", "business_id": "account", "role": "owner", "row_hash": "membership-1" },
+      { "id": "member-membership", "user_id": "member", "business_id": "account", "role": "owner", "row_hash": "membership-2" },
+      { "id": "other-owner", "user_id": "owner", "business_id": "other-account", "role": "owner", "row_hash": "membership-3" }
+    ],
+    "brands": [
+      { "id": "brand", "business_id": "account", "woo_store_id": "woo", "row_hash": "brand-1" },
+      { "id": "other-brand", "business_id": "other-account", "woo_store_id": "woo", "row_hash": "brand-2" }
+    ],
+    "stores": [{ "id": "woo", "row_hash": "store-1" }, { "id": "unlinked", "row_hash": "store-2" }],
+    "storefronts": [],
+    "locations": [{ "id": "warehouse", "business_id": "account", "brand_id": "brand", "type": "warehouse", "row_hash": "location-1" }],
+    "selling_points": [],
+    "user_roles": [{ "id": "global-admin", "user_id": "owner", "role": "admin", "row_hash": "role-1" }],
+    "user_permissions": [{ "id": "global-revoke", "user_id": "member", "permission": "orders.view", "granted": false, "row_hash": "permission-1" }],
+    "user_store_access": [], "user_custom_roles": [], "custom_roles": [], "permission_settings": [], "invitations": [],
+    "orders": [{ "id": "order", "store_id": "woo", "row_hash": "history-1" }]
+  },
+  "references": [{ "table": "orders", "column": "store_id", "target": "stores" }]
+}

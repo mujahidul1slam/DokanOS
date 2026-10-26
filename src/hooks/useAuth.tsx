@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import "@/lib/authCallbackIntent";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 
@@ -9,7 +10,7 @@ interface AuthContextType {
   session: Session | null;
   role: AppRole | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signIn: (email: string, password: string, captchaToken?: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   isAdmin: boolean;
 }
@@ -23,12 +24,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const fetchRole = async (userId: string) => {
+    // maybeSingle: Release-1 blank-slate owners have NO user_roles row
+    // (owner membership lives in user_business_access); .single() would 406.
     const { data } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", userId)
-      .single();
-    setRole((data?.role as AppRole) || null);
+      .maybeSingle();
+    const next = (data?.role as AppRole) || null;
+    setRole((prev) => (prev === next ? prev : next));
   };
 
   useEffect(() => {
@@ -42,7 +46,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
-        setUser(session?.user ?? null);
+        // Stabilize identity: only replace the user object when the actual
+        // identity fields changed. Supabase re-emits events (channel joins,
+        // token refreshes) with fresh-but-equivalent user objects; without
+        // this guard every event creates a new `user` reference, which
+        // re-fires every [user]-dependent effect (permissions fetch,
+        // sync-indicator subscribe) — the resulting re-subscribe emits more
+        // auth events → infinite refetch loop.
+        setUser((prev) => {
+          const next = session?.user ?? null;
+          if (!prev && !next) return prev;
+          if (!prev || !next) return next;
+          return prev.id === next.id && prev.updated_at === next.updated_at ? prev : next;
+        });
         if (session?.user) {
           setTimeout(() => fetchRole(session.user.id), 0);
         } else {
@@ -54,7 +70,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setUser(session?.user ?? null);
+      setUser((prev) => {
+        const next = session?.user ?? null;
+        if (!prev && !next) return prev;
+        if (!prev || !next) return next;
+        return prev.id === next.id && prev.updated_at === next.updated_at ? prev : next;
+      });
       if (session?.user) {
         fetchRole(session.user.id);
       }
@@ -67,8 +88,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const signIn = async (email: string, password: string, captchaToken?: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: captchaToken ? { captchaToken } : undefined,
+    });
     return { error: error as Error | null };
   };
 

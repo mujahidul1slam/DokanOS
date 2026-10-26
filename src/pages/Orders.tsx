@@ -1,6 +1,5 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
@@ -69,6 +68,13 @@ import DuePaymentDialog, { type DuePaymentResult } from "@/components/orders/Due
 import { recordDuePayment } from "@/lib/dueCollection";
 import { matchesTab as matchesTabExt, ALL_TAB_KEYS, type TabKey } from "./orders/tabFilters";
 import { useOrderBulkActions } from "./orders/useOrderBulkActions";
+import { useStoresList } from "@/hooks/useStoresList";
+import {
+  hasStoreScope,
+  scopeStoreIds,
+  selectedStoreScope,
+  useActiveBusinessStoreIds,
+} from "@/hooks/useActiveBusinessStoreIds";
 
 interface OrderRow {
   id: string;
@@ -106,18 +112,23 @@ interface OrderRow {
   isPreOrder: boolean;
 }
 
-interface StoreOption { id: string; name: string }
-
 const PAGE_SIZE = 200;
-
 // TabKey moved to ./orders/tabFilters
 
 const Orders = () => {
-  const { role } = useAuth();
   const { can } = usePermissions();
   const canAttachCourier = can("orders.attach_courier");
   const { settings: invoiceSettings } = useInvoiceSettings();
-  const canWrite = role === "admin" || role === "staff";
+  // Hybrid tenancy (issue #16): the store ids of the ACTIVE business. Every
+  // operational read below is bounded by them, and an empty scope fails closed.
+  // The store selector's options come from the same seam (useStoresList), so
+  // "All stores" can only ever mean this business's stores.
+  const businessStoreIds = useActiveBusinessStoreIds();
+  const stores = useStoresList();
+  // Operational write affordances follow the resolved permission baseline, so
+  // a first-release account member (no legacy user_roles row) can create/edit
+  // orders like staff while a viewer stays read-only.
+  const canWrite = can("orders.create") || can("orders.edit");
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [orderCategoryMap, setOrderCategoryMap] = useState<Map<string, Set<string>>>(new Map());
   const [allCategories, setAllCategories] = useState<{ id: string; name: string; parent_id: string | null; store_id: string | null }[]>([]);
@@ -137,7 +148,6 @@ const Orders = () => {
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("new");
   const preOrderMode = tab === "pre_order";
-  const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const preOrderCategoryIds = usePreOrderCategoryIds();
@@ -203,13 +213,44 @@ const Orders = () => {
     if (changed) setSearchParams(searchParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
+  /**
+   * Latest-request token. A business switch re-runs the loads below while the
+   * previous business's round trips may still be in flight; a late response
+   * from the previous scope must never repaint this one's rows.
+   */
+  const loadToken = useRef(0);
+
   const loadOrders = useCallback(async () => {
-    const { data } = await supabase
+    // Resolve the effective scope INSIDE the callback: the callback identity
+    // depends on it, so switching business (or store) re-issues this read with
+    // the new business's stores, and a stale store filter of another business
+    // resolves to the empty scope instead of becoming a scope of its own.
+    const scope = selectedStoreScope(storeFilter, businessStoreIds);
+    const token = ++loadToken.current;
+
+    // Fail closed BEFORE building a query: an empty scope is "no stores this
+    // business may read", never "all stores".
+    if (!hasStoreScope(scope.storeIds)) {
+      setOrders([]);
+      setOrderCategoryMap(new Map());
+      setLoading(false);
+      return;
+    }
+
+    let listQ = supabase
         .from("orders")
         .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), order_items(id, product_id, product_name, quantity, products(stock_status))")
         .order("created_at", { ascending: false });
+    if (scope.source) listQ = listQ.eq("source", scope.source);
+    const { data } = await scopeStoreIds(listQ, scope.storeIds);
+    if (token !== loadToken.current) return; // superseded by a newer scope
 
-    const mapped = (data || []).map((o: any) => ({
+    // Defence in depth: only rows whose store is inside the active scope are
+    // published, so a row from another business cannot drag its order_items in.
+    const inScope = new Set(scope.storeIds);
+    const visible = (data || []).filter((o: any) => !!o.store_id && inScope.has(o.store_id));
+
+    const mapped = visible.map((o: any) => ({
       ...o,
       itemCount: o.order_items?.length || 0,
       productItems: (o.order_items || [])
@@ -221,20 +262,23 @@ const Orders = () => {
 
     // Build order -> category-id set map for filtering
     const productIds = Array.from(new Set(
-      (data || []).flatMap((o: any) => (o.order_items || []).map((i: any) => i.product_id).filter(Boolean))
+      visible.flatMap((o: any) => (o.order_items || []).map((i: any) => i.product_id).filter(Boolean))
     ));
     if (productIds.length > 0) {
+      // product_categories has no store_id column: it is bounded by the
+      // products of the already-scoped orders above.
       const { data: pcData } = await supabase
         .from("product_categories")
         .select("product_id, category_id")
         .in("product_id", productIds);
+      if (token !== loadToken.current) return; // superseded by a newer scope
       const productCatMap = new Map<string, Set<string>>();
       (pcData || []).forEach((pc: any) => {
         if (!productCatMap.has(pc.product_id)) productCatMap.set(pc.product_id, new Set());
         productCatMap.get(pc.product_id)!.add(pc.category_id);
       });
       const orderCatMap = new Map<string, Set<string>>();
-      (data || []).forEach((o: any) => {
+      visible.forEach((o: any) => {
         const set = new Set<string>();
         (o.order_items || []).forEach((i: any) => {
           const cats = productCatMap.get(i.product_id);
@@ -248,16 +292,22 @@ const Orders = () => {
     }
 
     setLoading(false);
-  }, []);
+  }, [storeFilter, businessStoreIds]);
 
   const loadStores = useCallback(async () => {
-    const [{ data: storeData }, { data: catData }] = await Promise.all([
-      supabase.from("stores").select("id, name").order("name"),
+    // The store selector's options come from useStoresList(), which is already
+    // scoped to the active business and fails closed on its own. The category
+    // selector is read with the same tenant predicate.
+    if (!hasStoreScope(businessStoreIds)) {
+      setAllCategories([]);
+      return;
+    }
+    const { data: catData } = await scopeStoreIds(
       supabase.from("categories").select("id, name, parent_id, store_id").order("name"),
-    ]);
-    setStores(storeData || []);
+      businessStoreIds,
+    );
     setAllCategories((catData || []) as any);
-  }, []);
+  }, [businessStoreIds]);
 
   useEffect(() => { loadOrders(); loadStores(); }, [loadOrders, loadStores]);
 
@@ -295,7 +345,8 @@ const Orders = () => {
       const { error } = await supabase
         .from("orders")
         .update({ status: "pre_order_pending" })
-        .in("id", ids);
+        .in("id", ids)
+        .in("store_id", businessStoreIds);
       if (error) {
         console.warn("Pre-order auto-promotion failed:", error.message);
         return;
@@ -497,6 +548,7 @@ const Orders = () => {
     duePayContext,
     setDuePayContext,
     setDuePayOpen,
+    businessStoreIds,
   });
 
   /* ─── Pathao sync ─── */
@@ -543,13 +595,21 @@ const Orders = () => {
 
   /* ─── Reprint invoice for any order ─── */
   const handleReprintOrder = async (orderId: string) => {
-    const [orderRes, itemsRes, paymentsRes] = await Promise.all([
-      supabase.from("orders").select("id, order_number, total, subtotal, discount, shipping_cost, notes, customer_name, customer_phone, customer_address, customer_city").eq("id", orderId).single(),
+    // Fail closed: without a store scope there is no order this business may read.
+    if (!hasStoreScope(businessStoreIds)) return;
+    // The order is read THROUGH the tenant predicate first; its child rows are
+    // only fetched once it is known to belong to the active business, so a
+    // foreign order id can never pull in that business's items or payments.
+    const orderRes = await scopeStoreIds(
+      supabase.from("orders").select("id, order_number, total, subtotal, discount, shipping_cost, notes, customer_name, customer_phone, customer_address, customer_city").eq("id", orderId),
+      businessStoreIds,
+    ).single();
+    const o = orderRes.data as any;
+    if (!o) return; // outside the active business's stores: nothing to print
+    const [itemsRes, paymentsRes] = await Promise.all([
       supabase.from("order_items").select("*").eq("order_id", orderId),
       supabase.from("order_payments").select("*").eq("order_id", orderId),
     ]);
-    const o = orderRes.data as any;
-    if (!o) return;
     const customer = {
       name: o.customer_name || "",
       phone: o.customer_phone || "",
@@ -597,7 +657,10 @@ const Orders = () => {
       actions.push({
         key: "ready", label: "Mark Ready to Ship", icon: PackageCheck,
         onClick: () => {
-          supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
+          scopeStoreIds(
+            supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id),
+            businessStoreIds,
+          ).then(() => {
             addOrderTimeline({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
             toast({ title: "Marked Ready to Ship" });
             loadOrders();

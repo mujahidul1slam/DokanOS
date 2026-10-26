@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { Building2, Upload, X } from "lucide-react";
+import { Building2, Upload, X, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +19,7 @@ import { useBusinessContext, type Business } from "@/hooks/useBusinessContext";
 import { useAuth } from "@/hooks/useAuth";
 import { useRegisterDirty } from "@/hooks/useSettingsDirty";
 import { SettingsSection, SaveButton, LabelWithHint } from "./SettingsSection";
+import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
 
 const CURRENCIES = ["BDT", "USD", "EUR", "GBP", "INR", "MYR", "SAR", "AED"];
 const TIMEZONES = [
@@ -55,7 +56,7 @@ const draftFromBusiness = (b: Business): BusinessDraft => ({
 });
 
 export default function BusinessAccountTab() {
-  const { active, loading, refresh, myRole } = useBusinessContext();
+  const { active, loading, refresh, myRole, businesses } = useBusinessContext();
   const { isAdmin } = useAuth();
   const setDirty = useRegisterDirty();
   // W1d: members/viewers cannot write the businesses row (RLS) — show read-only.
@@ -65,6 +66,7 @@ export default function BusinessAccountTab() {
   const [original, setOriginal] = useState<BusinessDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [createBizOpen, setCreateBizOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Re-seed the draft when a DIFFERENT business becomes active. Keyed on id so
@@ -182,112 +184,168 @@ export default function BusinessAccountTab() {
   }
 
   if (!active) {
-    return <CreateBusinessForm />;
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center space-y-4 max-w-lg mx-auto my-8">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Building2 className="h-6 w-6" />
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="font-semibold text-lg text-foreground">No Business Account Active</h3>
+          <p className="text-sm text-muted-foreground">
+            You don't have an active business account yet. Create one to organize brands, inventory, and storefronts.
+          </p>
+        </div>
+        <Button onClick={() => setCreateBizOpen(true)} className="gap-2">
+          <Plus className="h-4 w-4" />
+          Create New Business
+        </Button>
+        <CreateBusinessDialog open={createBizOpen} onOpenChange={setCreateBizOpen} />
+      </div>
+    );
   }
 
   return (
-    <SettingsSection
-      title="Business Account"
-      description="Details for the business selected in the sidebar switcher. Used across DokanOS."
-      icon={Building2}
-      footer={<SaveButton saving={saving} disabled={!canEdit} onClick={handleSave} label="Save Business" />}
-    >
-      {!canEdit && (
-        <div className="rounded-md bg-muted/40 border border-border px-3 py-2">
-          <p className="text-xs text-muted-foreground">
-            Business details are managed by the business owner or an admin.
-          </p>
-        </div>
-      )}
-      {/* Logo */}
-      <div className="space-y-2">
-        <Label>Business Logo</Label>
-        <div className="flex items-center gap-4">
-          {draft?.logo_url ? (
-            <div className="relative">
-              <img src={draft.logo_url} alt="Business logo" className="h-16 w-auto rounded-md border border-border object-contain bg-white p-1" />
-              <button
-                onClick={() => update("logo_url", "")}
-                className="absolute -top-2 -right-2 rounded-full bg-destructive p-0.5 text-destructive-foreground"
-                aria-label="Remove logo"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex h-16 w-24 items-center justify-center rounded-md border-2 border-dashed border-border text-muted-foreground">
-              <Building2 className="h-6 w-6" />
-            </div>
-          )}
-          <div>
-            <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()} className="gap-1.5">
-              <Upload className="h-3.5 w-3.5" />
-              {uploading ? "Uploading…" : "Upload Logo"}
-            </Button>
-            <p className="text-xs text-muted-foreground mt-1">PNG or JPG, max 2MB</p>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-lg border border-border bg-card">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Building2 className="h-5 w-5" />
           </div>
-          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm sm:text-base text-foreground truncate">
+                {active.name}
+              </span>
+              {myRole && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-mono uppercase text-muted-foreground font-semibold shrink-0">
+                  {myRole}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {businesses.length > 1
+                ? `You have access to ${businesses.length} businesses. Switch anytime via the top-left sidebar.`
+                : "Manage your active business details below, or create another business."}
+            </p>
+          </div>
         </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setCreateBizOpen(true)}
+          className="gap-2 shrink-0 self-start sm:self-auto"
+        >
+          <Plus className="h-4 w-4" />
+          <span>Create new business</span>
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label>Business Name</Label>
-          <Input value={draft?.name ?? ""} disabled={!canEdit} onChange={(e) => update("name", e.target.value)} />
+      <SettingsSection
+        title="Business Account"
+        description="Details for the business selected in the sidebar switcher. Used across DokanOS."
+        icon={Building2}
+        footer={<SaveButton saving={saving} disabled={!canEdit} onClick={handleSave} label="Save Business" />}
+      >
+        {!canEdit && (
+          <div className="rounded-md bg-muted/40 border border-border px-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Business details are managed by the business owner or an admin.
+            </p>
+          </div>
+        )}
+        {/* Logo */}
+        <div className="space-y-2">
+          <Label>Business Logo</Label>
+          <div className="flex items-center gap-4">
+            {draft?.logo_url ? (
+              <div className="relative">
+                <img src={draft.logo_url} alt="Business logo" className="h-16 w-auto rounded-md border border-border object-contain bg-white p-1" />
+                <button
+                  onClick={() => update("logo_url", "")}
+                  className="absolute -top-2 -right-2 rounded-full bg-destructive p-0.5 text-destructive-foreground"
+                  aria-label="Remove logo"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex h-16 w-24 items-center justify-center rounded-md border-2 border-dashed border-border text-muted-foreground">
+                <Building2 className="h-6 w-6" />
+              </div>
+            )}
+            <div>
+              <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()} className="gap-1.5">
+                <Upload className="h-3.5 w-3.5" />
+                {uploading ? "Uploading…" : "Upload Logo"}
+              </Button>
+              <p className="text-xs text-muted-foreground mt-1">PNG or JPG, max 2MB</p>
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <LabelWithHint hint="Platform identifier. Lowercase letters, numbers and hyphens — must be unique across businesses.">
-            Slug
-          </LabelWithHint>
-          <Input value={draft?.slug ?? ""} disabled={!canEdit} onChange={(e) => update("slug", e.target.value)} />
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label>Currency</Label>
-          <Select value={draft?.currency ?? ""} onValueChange={(v) => update("currency", v)} disabled={!canEdit}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select currency" />
-            </SelectTrigger>
-            <SelectContent>
-              {(draft && !CURRENCIES.includes(draft.currency) ? [draft.currency, ...CURRENCIES] : CURRENCIES).map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Business Name</Label>
+            <Input value={draft?.name ?? ""} disabled={!canEdit} onChange={(e) => update("name", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <LabelWithHint hint="Platform identifier. Lowercase letters, numbers and hyphens — must be unique across businesses.">
+              Slug
+            </LabelWithHint>
+            <Input value={draft?.slug ?? ""} disabled={!canEdit} onChange={(e) => update("slug", e.target.value)} />
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Label>Timezone</Label>
-          <Select value={draft?.timezone ?? ""} onValueChange={(v) => update("timezone", v)} disabled={!canEdit}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select timezone" />
-            </SelectTrigger>
-            <SelectContent>
-              {(draft && !TIMEZONES.includes(draft.timezone) ? [draft.timezone, ...TIMEZONES] : TIMEZONES).map((tz) => (
-                <SelectItem key={tz} value={tz}>{tz}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
 
-      <div className="space-y-1.5">
-        <Label>Address</Label>
-        <Textarea value={draft?.address ?? ""} disabled={!canEdit} onChange={(e) => update("address", e.target.value)} rows={2} />
-      </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Currency</Label>
+            <Select value={draft?.currency ?? ""} onValueChange={(v) => update("currency", v)} disabled={!canEdit}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select currency" />
+              </SelectTrigger>
+              <SelectContent>
+                {(draft && !CURRENCIES.includes(draft.currency) ? [draft.currency, ...CURRENCIES] : CURRENCIES).map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Timezone</Label>
+            <Select value={draft?.timezone ?? ""} onValueChange={(v) => update("timezone", v)} disabled={!canEdit}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select timezone" />
+              </SelectTrigger>
+              <SelectContent>
+                {(draft && !TIMEZONES.includes(draft.timezone) ? [draft.timezone, ...TIMEZONES] : TIMEZONES).map((tz) => (
+                  <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label>Phone</Label>
-          <Input value={draft?.phone ?? ""} disabled={!canEdit} onChange={(e) => update("phone", e.target.value)} />
+          <Label>Address</Label>
+          <Textarea value={draft?.address ?? ""} disabled={!canEdit} onChange={(e) => update("address", e.target.value)} rows={2} />
         </div>
-        <div className="space-y-1.5">
-          <Label>Email</Label>
-          <Input type="email" value={draft?.email ?? ""} disabled={!canEdit} onChange={(e) => update("email", e.target.value)} />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Phone</Label>
+            <Input value={draft?.phone ?? ""} disabled={!canEdit} onChange={(e) => update("phone", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Email</Label>
+            <Input type="email" value={draft?.email ?? ""} disabled={!canEdit} onChange={(e) => update("email", e.target.value)} />
+          </div>
         </div>
-      </div>
-    </SettingsSection>
+      </SettingsSection>
+
+      <CreateBusinessDialog open={createBizOpen} onOpenChange={setCreateBizOpen} />
+    </div>
   );
 }
 

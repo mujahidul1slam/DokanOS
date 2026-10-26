@@ -11,6 +11,11 @@ import { postWooOrderNote } from "@/lib/wooNotes";
 import { kickSyncWorker } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
 import { usePermissions } from "@/hooks/usePermissions";
+import {
+  hasStoreScope,
+  scopeStoreIds,
+  useActiveBusinessStoreIds,
+} from "@/hooks/useActiveBusinessStoreIds";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import { getGlobalStockEnabled } from "@/lib/stockSettings";
 import ExchangeDialog from "./ExchangeDialog";
@@ -74,6 +79,8 @@ interface OrderDetail {
   fulfillment_type: string;
   woo_order_id: number | null;
   store_id: string | null;
+  storefront_id?: string | null;
+  stock_restored_at?: string | null;
   stores: { url: string | null; name?: string | null } | null;
 }
 
@@ -158,6 +165,10 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const canRefund = can("orders.refund");
   const canLogPayment = can("orders.log_payment");
   const canAttachCourier = can("orders.attach_courier");
+  // Hybrid tenancy (issue #16): the store ids of the ACTIVE business. The sheet
+  // reads the order THROUGH this scope and only then its child rows, so an order
+  // of another business can never be opened and its children never fetched.
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
@@ -266,18 +277,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
   const openExchange = useCallback(async () => {
     if (!order) return;
-    const { data } = await supabase
-      .from("orders")
-      .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
-      .eq("id", order.id)
-      .maybeSingle();
+    if (!hasStoreScope(businessStoreIds)) return; // fail closed: nothing to open
+    const { data } = await scopeStoreIds(
+      supabase
+        .from("orders")
+        .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
+        .eq("id", order.id),
+      businessStoreIds,
+    ).maybeSingle();
     if (!data) {
       toast.error("Could not load order details for exchange");
       return;
     }
     setExchangeParent(data);
     setExchangeOpen(true);
-  }, [order]);
+  }, [order, businessStoreIds]);
 
   // Payment form
   const [payMethod, setPayMethod] = useState("bkash");
@@ -298,15 +312,52 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [confirmPayTrxId, setConfirmPayTrxId] = useState("");
   const [confirmingPayment, setConfirmingPayment] = useState(false);
 
+  /** Empties everything the sheet publishes; used by every fail-closed path. */
+  const clearLoadedOrder = useCallback(() => {
+    setOrder(null);
+    setItems([]);
+    setEditedItems([]);
+    setTimeline([]);
+    setPayments([]);
+    setMeasurements([]);
+    setDeletedMeasIds([]);
+    setCourierShipments([]);
+    setLocationOptions([]);
+    setLoading(false);
+  }, []);
+
   const load = useCallback(async () => {
     if (!orderId) return;
+
+    // Fail closed: an empty scope means this business has no stores to read, so
+    // the sheet reads nothing at all — not even the order it was opened for.
+    if (!hasStoreScope(businessStoreIds)) {
+      clearLoadedOrder();
+      return;
+    }
+
     setLoading(true);
-    const [orderRes, itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
+
+    // Step 1 — the order itself, read through the tenant predicate.
+    const orderRes = await scopeStoreIds(
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, location_id, selling_point_id, stores(url, name)")
-        .eq("id", orderId)
-        .single(),
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, stores(url, name)")
+        .eq("id", orderId),
+      businessStoreIds,
+    ).single();
+
+    const o = orderRes.data as unknown as OrderDetail | null;
+    // Step 2 (the child reads below) runs ONLY for an order that is inside the
+    // active business's scope. Otherwise a foreign order id — a deep link, or
+    // state left over from another business — would fetch that business's
+    // order_items, payments, timeline and measurements.
+    if (!o || !o.store_id || !businessStoreIds.includes(o.store_id)) {
+      clearLoadedOrder();
+      return;
+    }
+
+    const [itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
       supabase
         .from("order_items")
         .select("id, product_name, quantity, unit_price, line_total, product_id, products(name)")
@@ -332,8 +383,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .order("created_at", { ascending: false }),
     ]);
 
-    const o = orderRes.data as unknown as OrderDetail | null;
-    if (o) {
+    {
       setOrder(o);
       setStatus(o.status);
       setPaymentStatus(o.payment_status);
@@ -368,17 +418,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
     // Phase 3: locations for the order's brand (via store linkage) for the
     // fulfillment-location picker. Best-effort: empty list hides the picker.
+    // The store comes from the already-verified order above, so no second
+    // (unscoped) read of `orders` is needed.
     try {
-      const { data: oRow } = await supabase
-        .from("orders")
-        .select("store_id")
-        .eq("id", orderId)
-        .single();
-      if (oRow?.store_id) {
+      if (o.store_id) {
         const { data: locs } = await supabase
           .from("locations")
           .select("id, name, type, brand_id, brands!inner(woo_store_id)")
-          .eq("brands.woo_store_id", oRow.store_id)
+          .eq("brands.woo_store_id", o.store_id)
           .order("name");
         setLocationOptions((locs as Array<{ id: string; name: string; type: string }>) || []);
       } else {
@@ -419,25 +466,33 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     );
     setDeletedMeasIds([]);
     setLoading(false);
-  }, [orderId]);
+  }, [orderId, businessStoreIds, clearLoadedOrder]);
 
   useEffect(() => {
     if (open && orderId) load();
   }, [open, orderId, load]);
 
-  // Fetch product list for adding new items
+  // Fetch product list for adding new items — the active business's products
+  // only: the picker must never offer (or read) another business's catalog.
   useEffect(() => {
     if (!open) return;
+    if (!hasStoreScope(businessStoreIds)) {
+      setProductOptions([]);
+      return;
+    }
     (async () => {
-      const { data } = await supabase
-        .from("products")
-        .select("id, name, sku, price")
-        .eq("is_active", true)
-        .order("name")
-        .limit(1000);
+      const { data } = await scopeStoreIds(
+        supabase
+          .from("products")
+          .select("id, name, sku, price")
+          .eq("is_active", true)
+          .order("name")
+          .limit(1000),
+        businessStoreIds,
+      );
       setProductOptions((data || []) as ProductOption[]);
     })();
-  }, [open]);
+  }, [open, businessStoreIds]);
 
   // Resolve preset measurements (e.g. S/M/L size charts) for items that have no
   // measurement rows yet, so they show up — and stay editable — in the sheet.
@@ -565,11 +620,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Save ---------- */
 
   const handleSave = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     setSaving(true);
     try {
-      await supabase
-        .from("orders")
+      await scopeStoreIds(
+        supabase
+          .from("orders")
         .update({
           status,
           payment_status: paymentStatus,
@@ -586,12 +642,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           payment_method: paymentMethod || null,
           location_id: locationId || null,
         })
-        .eq("id", order.id);
+        .eq("id", order.id),
+        businessStoreIds,
+      );
 
       // Delete removed items (only existing DB rows)
       const dbDeletedIds = deletedItemIds.filter((id) => !id.startsWith("new-"));
       if (dbDeletedIds.length > 0) {
-        await supabase.from("order_items").delete().in("id", dbDeletedIds);
+        await supabase
+          .from("order_items")
+        .delete()
+        .in("id", dbDeletedIds)
+        .eq("order_id", order.id);
       }
 
       // Update existing items (qty or price)
@@ -606,7 +668,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               unit_price: item.unit_price,
               line_total: item.quantity * item.unit_price,
             })
-            .eq("id", item.id);
+            .eq("id", item.id)
+            .eq("order_id", order.id);
         }
       }
 
@@ -634,6 +697,22 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           metadata: { from: order.status, to: status },
         });
         await logAction("update", "order_status", order.id, { order_number: order.order_number, changes: { status: { from: order.status, to: status } }, before: { status: order.status }, after: { status } });
+
+        // Phase 6 (§9.3): Cancel storefront order -> invoke storefront-restore-stock edge function
+        if (status === "cancelled" && (order as any).storefront_id && !(order as any).stock_restored_at) {
+          try {
+            const { error: restErr } = await supabase.functions.invoke("storefront-restore-stock", {
+              body: { order_id: order.id },
+            });
+            if (restErr) {
+              toast.error(`Inventory restore failed: ${restErr.message}`);
+            } else {
+              toast.success("Inventory restored");
+            }
+          } catch (e: any) {
+            toast.error(`Inventory restore error: ${e.message}`);
+          }
+        }
       }
 
       if (paymentStatus !== order.payment_status) {
@@ -822,7 +901,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Payment recompute helper ---------- */
 
   const recomputePaymentStatus = async (orderRow: OrderDetail | null) => {
-    if (!orderRow) return;
+    if (!orderRow || !hasStoreScope(businessStoreIds) || !orderRow.store_id || !businessStoreIds.includes(orderRow.store_id)) return;
     const { data: rows } = await supabase
       .from("order_payments")
       .select("amount")
@@ -836,20 +915,23 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         : remaining <= 0.0001
         ? "paid"
         : "partial";
-    await supabase
-      .from("orders")
-      .update({
-        payment_status: newStatus,
-        amount_to_collect: remaining,
-      })
-      .eq("id", orderRow.id);
+    await scopeStoreIds(
+      supabase
+        .from("orders")
+        .update({
+          payment_status: newStatus,
+          amount_to_collect: remaining,
+        })
+        .eq("id", orderRow.id),
+      businessStoreIds,
+    );
     return { totalPaid, remaining, newStatus };
   };
 
   /* ---------- Add payment ---------- */
 
   const addPayment = async () => {
-    if (!order || !payAmount) return;
+    if (!order || !payAmount || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(payAmount);
     await supabase.from("order_payments").insert({
       order_id: order.id,
@@ -894,7 +976,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const saveEditedPayment = async (p: PaymentEntry) => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(editPayAmount);
     if (!Number.isFinite(amt) || amt < 0) {
       toast.error("Enter a valid amount");
@@ -928,7 +1010,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const deletePayment = async (p: PaymentEntry) => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     if (!confirm(`Delete this ${symbol}${Number(p.amount).toLocaleString()} ${p.method} payment?`)) return;
     await supabase.from("order_payments").delete().eq("id", p.id);
     const recomputed = await recomputePaymentStatus(order);
@@ -950,7 +1032,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Confirm pending payment ---------- */
 
   const confirmPendingPayment = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(confirmPayAmount);
     if (!amt || amt <= 0) {
       toast.error("Enter a valid amount");
@@ -1034,7 +1116,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const handleReturn = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     setSaving(true);
     try {
       // Update order status
@@ -1709,7 +1791,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         size="sm"
                         variant="outline"
                         className="gap-1.5"
-                        onClick={() => order && printMeasurementSlip(order.id)}
+                        onClick={() => order && printMeasurementSlip(order.id, businessStoreIds)}
                       >
                         <Printer className="h-3.5 w-3.5" /> Print Slip
                       </Button>

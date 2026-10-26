@@ -27,9 +27,7 @@ export function hexToHsl(hex: string): [number, number, number] | null {
       .map((c) => c + c)
       .join("");
   }
-  if (!/^[0-9a-f]{6}$/i.test(h6)) return null;
-
-  const int = parseInt(h6, 16);
+  if (!/^[0-9a-f]{6}$/i.test(h6)) return null;  const int = parseInt(h6, 16);
   const r = ((int >> 16) & 255) / 255;
   const g = ((int >> 8) & 255) / 255;
   const b = (int & 255) / 255;
@@ -96,4 +94,10 @@ export function computeAccentVars(accentHex: string, bgLightness: number): Accen
     "--accent": triplet,
     "--accent-foreground": fg,
   };
+}
+/** Overhaul 4.2: hex → CSS HSL triplet string ("h s% l%") for token overrides. */
+export function hexToHslTriplet(hex: string): string | null {
+  const hsl = hexToHsl(hex);
+  if (!hsl) return null;
+  return `${hsl[0]} ${hsl[1]}% ${hsl[2]}%`;
 }

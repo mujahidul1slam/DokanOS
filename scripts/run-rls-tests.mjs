@@ -7,11 +7,12 @@
  *   node scripts/run-rls-tests.mjs
  *
  * Seeds fixture users/roles/businesses, then executes supabase/tests/rls/*.sql
- * in filename order as multi-statement batches; fails on the first uncaught
- * SQLSTATE error. Shapes A/A'/B/C guarantee expected errors never escape, so
+ * in filename order as multi-statement batches; reports uncaught SQLSTATE
+ * errors and recovers before the next file. Shapes A/A'/B/C catch expected errors, so
  * an uncaught error is always a real policy bug.
  */
 import { execSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import pg from "pg";
@@ -41,16 +42,865 @@ const ADMIN = "00000000-0000-0000-0000-00000000000a";
 const STAFF_NO = "00000000-0000-0000-0000-00000000000b";
 const STAFF_MGMT = "00000000-0000-0000-0000-00000000000c";
 
-function dbUrl() {
+function localStatus() {
   try {
-    const out = execSync("supabase status", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    const m = out.match(/postgres(?:ql)?:\/\/\S+/);
-    if (!m) throw new Error("no DB URL in supabase status output");
-    return m[0];
-  } catch (e) {
+    const out = execSync("supabase status --output json", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const { DB_URL } = JSON.parse(out);
+    const url = new URL(DB_URL);
+    if (!["postgres:", "postgresql:"].includes(url.protocol) ||
+        !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
+      throw new Error("Refusing non-local Supabase DB URL");
+    }
+    return JSON.parse(out);
+  } catch {
     console.error("FAIL: could not resolve local Supabase DB URL. Is Docker running?");
-    console.error(e.message);
+    // CLI errors may include local credentials; do not echo raw status output.
     process.exit(1);
+  }
+}
+
+function jwtFor(status, userId) {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const header = encode({ alg: "HS256", typ: "JWT" });
+  const payload = encode({
+    aud: "authenticated",
+    exp: Math.floor(Date.now() / 1000) + 300,
+    role: "authenticated",
+    sub: userId,
+  });
+  const signature = createHmac("sha256", status.JWT_SECRET)
+    .update(`${header}.${payload}`)
+    .digest("base64url");
+  return `${header}.${payload}.${signature}`;
+}
+
+async function runApiChecks(client, status) {
+  const storeA = "33333333-0000-0000-0000-000000000011";
+  const storeB = "33333333-0000-0000-0000-000000000012";
+  const productA = "55555555-0000-0000-0000-000000000011";
+  const productB = "55555555-0000-0000-0000-000000000012";
+  await client.query(`
+    INSERT INTO public.stores (id, name, url) VALUES
+      ('${storeA}', 'API Store A', 'https://api-a.test'),
+      ('${storeB}', 'API Store B', 'https://api-b.test')
+    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO public.brands (id, business_id, name, slug, woo_store_id) VALUES
+      ('44444444-0000-0000-0000-000000000011', '${BIZ_A}', 'API Brand A', 'issue-10-api-brand-a', '${storeA}'),
+      ('44444444-0000-0000-0000-000000000012', '${B_OTHER}', 'API Brand B', 'issue-10-api-brand-b', '${storeB}')
+    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO public.products (id, store_id, name) VALUES
+      ('${productA}', '${storeA}', 'API Product A'),
+      ('${productB}', '${storeB}', 'API Product B')
+    ON CONFLICT (id) DO NOTHING;
+  `);
+
+  const headersFor = (userId) => ({
+    apikey: status.ANON_KEY,
+    Authorization: `Bearer ${jwtFor(status, userId)}`,
+    "Content-Type": "application/json",
+  });
+  const productIds = async (userId) => {
+    const response = await fetch(`${status.API_URL}/rest/v1/products?select=id&id=in.(${productA},${productB})`, {
+      headers: headersFor(userId),
+    });
+    if (!response.ok) throw new Error(`API SELECT failed (${response.status})`);
+    return (await response.json()).map((row) => row.id).sort();
+  };
+
+  const brandNames = ["Issue 11 API Brand A", "Issue 11 API Brand B"];
+  const brandsFor = async (userId, businessId) => {
+    const response = await fetch(
+      `${status.API_URL}/rest/v1/brands?select=id,name,business_id,woo_store_id&business_id=eq.${businessId}`,
+      { headers: headersFor(userId) },
+    );
+    if (!response.ok) throw new Error(`brand API SELECT failed (${response.status})`);
+    return response.json();
+  };
+  const createBrand = (userId, businessId, name) => fetch(
+    `${status.API_URL}/rest/v1/rpc/create_business_brand`,
+    {
+      method: "POST",
+      headers: { ...headersFor(userId), Prefer: "return=representation" },
+      body: JSON.stringify({ p_business_id: businessId, p_name: name }),
+    },
+  );
+
+  try {
+    const ownerIds = await productIds(FIXTURE_IDS[3]);
+    const memberIds = await productIds(FIXTURE_IDS[6]);
+    const nonmemberIds = await productIds(FIXTURE_IDS[9]);
+    const globalStaffIds = await productIds(FIXTURE_IDS[1]);
+    if (ownerIds.join() !== productA || memberIds.join() !== productA) {
+      throw new Error("owner/member API read did not stay inside Biz A");
+    }
+    if (nonmemberIds.length || globalStaffIds.length) {
+      throw new Error("nonmember or legacy global role crossed the API account boundary");
+    }
+    const forged = await fetch(`${status.API_URL}/rest/v1/products`, {
+      method: "POST",
+      headers: { ...headersFor(FIXTURE_IDS[6]), Prefer: "return=representation" },
+      body: JSON.stringify({ store_id: storeB, name: "Forged API Product" }),
+    });
+    if (forged.ok) throw new Error("forged cross-account store id was accepted by the API");
+
+    // Issue #11: name-only brand creation and listing through real PostgREST.
+    await client.query(
+      `DELETE FROM public.brands WHERE business_id = '${BIZ_A}' AND name = ANY($1)`,
+      [brandNames],
+    );
+    await client.query(
+      `DELETE FROM public.audit_log
+       WHERE action = 'create_brand' AND details->>'business_id' = '${BIZ_A}'
+         AND details->>'name' = ANY($1)`,
+      [brandNames],
+    );
+    const storesBefore = (await client.query("SELECT count(*)::int AS n FROM public.stores")).rows[0].n;
+    const storefrontsBefore = (await client.query("SELECT count(*)::int AS n FROM public.storefronts")).rows[0].n;
+
+    for (const name of brandNames) {
+      const response = await createBrand(FIXTURE_IDS[6], BIZ_A, name);
+      const payload = response.ok ? await response.json() : null;
+      const brand = Array.isArray(payload) ? payload[0] : payload;
+      if (!response.ok || brand?.name !== name || brand?.business_id !== BIZ_A || brand?.woo_store_id !== null) {
+        throw new Error(`member could not create a name-only own-account brand (${response.status})`);
+      }
+    }
+
+    const memberBrands = await brandsFor(FIXTURE_IDS[6], BIZ_A);
+    const ownerBrands = await brandsFor(FIXTURE_IDS[3], BIZ_A);
+    const ownNames = memberBrands.map((brand) => brand.name).filter((name) => brandNames.includes(name)).sort();
+    const ownerNames = ownerBrands.map((brand) => brand.name).filter((name) => brandNames.includes(name)).sort();
+    if (ownNames.join() !== [...brandNames].sort().join() || ownerNames.join() !== ownNames.join()) {
+      throw new Error("owner/member brand listing did not return both own-account brands");
+    }
+    for (const [label, userId, businessId] of [
+      ["nonmember", FIXTURE_IDS[9], BIZ_A],
+      ["other-account owner", FIXTURE_IDS[8], BIZ_A],
+      ["legacy global role", FIXTURE_IDS[1], BIZ_A],
+      ["platform admin", FIXTURE_IDS[0], BIZ_A],
+    ]) {
+      const visible = (await brandsFor(userId, businessId)).filter((brand) => brandNames.includes(brand.name));
+      if (visible.length) throw new Error(`${label} listed another account's brands`);
+    }
+
+    const forgedBrand = await createBrand(FIXTURE_IDS[6], B_OTHER, "Issue 11 Forged Brand");
+    if (forgedBrand.ok) throw new Error("forged cross-account business parent was accepted by the API");
+    const viewerBrand = await createBrand(FIXTURE_IDS[7], BIZ_A, "Issue 11 Viewer Brand");
+    if (viewerBrand.ok) throw new Error("read-only viewer created a brand through the API");
+    const globalStaffBrand = await createBrand(FIXTURE_IDS[1], BIZ_A, "Issue 11 Staff Brand");
+    if (globalStaffBrand.ok) throw new Error("legacy global role created an account brand through the API");
+    const platformAdminBrand = await createBrand(FIXTURE_IDS[0], BIZ_A, "Issue 11 Platform Admin Brand");
+    if (platformAdminBrand.ok) throw new Error("platform admin without membership created an account brand");
+
+    const storesAfter = (await client.query("SELECT count(*)::int AS n FROM public.stores")).rows[0].n;
+    const storefrontsAfter = (await client.query("SELECT count(*)::int AS n FROM public.storefronts")).rows[0].n;
+    if (storesAfter !== storesBefore || storefrontsAfter !== storefrontsBefore) {
+      throw new Error("brand creation implicitly created a store/storefront");
+    }
+    const auditCount = (await client.query(
+      `SELECT count(*)::int AS n FROM public.audit_log
+       WHERE action = 'create_brand' AND details->>'business_id' = '${BIZ_A}'
+         AND details->>'name' = ANY($1)`,
+      [brandNames],
+    )).rows[0].n;
+    if (auditCount !== brandNames.length) {
+      throw new Error("brand creation did not write the audit trail");
+    }
+    console.log("PASS  account_boundaries_api (owner/member/nonmember + forged id)");
+    console.log("PASS  brand_boundaries_api (member create/list, forged parent, viewer/global denial, no store)");
+  } finally {
+    await client.query(`
+      DELETE FROM public.products WHERE id IN ('${productA}', '${productB}') OR name = 'Forged API Product';
+      DELETE FROM public.brands WHERE id IN (
+        '44444444-0000-0000-0000-000000000011',
+        '44444444-0000-0000-0000-000000000012'
+      ) OR name LIKE 'Issue 11 % Brand%';
+      DELETE FROM public.audit_log
+      WHERE action = 'create_brand' AND details->>'name' LIKE 'Issue 11 % Brand%';
+      DELETE FROM public.stores WHERE id IN ('${storeA}', '${storeB}');
+    `);
+  }
+}
+
+async function runBrandStoreApiChecks(client, status) {
+  const OWNER_A = FIXTURE_IDS[3];
+  const MEMBER_A = FIXTURE_IDS[6];
+  const VIEWER_A = FIXTURE_IDS[7];
+  const OWNER_B = FIXTURE_IDS[8];
+  const LEGACY_STAFF = FIXTURE_IDS[1];
+  const BRAND_NAME = "Issue 12 API Brand A";
+  const STORE_PHYSICAL = "Issue 12 API Outlet";
+  const STORE_ONLINE = "Issue 12 API Online";
+
+  const headersFor = (userId) => ({
+    apikey: status.ANON_KEY,
+    Authorization: `Bearer ${jwtFor(status, userId)}`,
+    "Content-Type": "application/json",
+  });
+  const createBrand = (userId, businessId, name) => fetch(
+    `${status.API_URL}/rest/v1/rpc/create_business_brand`,
+    {
+      method: "POST",
+      headers: { ...headersFor(userId), Prefer: "return=representation" },
+      body: JSON.stringify({ p_business_id: businessId, p_name: name }),
+    },
+  );
+  const createStore = (userId, brandId, name, storeType) => fetch(
+    `${status.API_URL}/rest/v1/rpc/create_brand_store`,
+    {
+      method: "POST",
+      headers: { ...headersFor(userId), Prefer: "return=representation" },
+      body: JSON.stringify({ p_brand_id: brandId, p_name: name, p_store_type: storeType }),
+    },
+  );
+  const storesFor = async (userId, brandId) => {
+    const response = await fetch(
+      `${status.API_URL}/rest/v1/brand_stores?select=id,name,store_type,is_published,brand_id,legacy_location_id,legacy_selling_point_id,legacy_woo_store_id&brand_id=eq.${brandId}`,
+      { headers: headersFor(userId) },
+    );
+    if (!response.ok) throw new Error(`brand_stores API SELECT failed (${response.status})`);
+    return response.json();
+  };
+  const directInsert = (userId, body) => fetch(`${status.API_URL}/rest/v1/brand_stores`, {
+    method: "POST",
+    headers: { ...headersFor(userId), Prefer: "return=representation" },
+    body: JSON.stringify(body),
+  });
+
+  let brandId = null;
+  let otherBrandId = null;
+  try {
+    // A member creates the parent brand through the real API.
+    const brandResponse = await createBrand(MEMBER_A, BIZ_A, BRAND_NAME);
+    const brandPayload = brandResponse.ok ? await brandResponse.json() : null;
+    const brand = Array.isArray(brandPayload) ? brandPayload[0] : brandPayload;
+    if (!brandResponse.ok || !brand?.id || brand?.business_id !== BIZ_A) {
+      throw new Error(`could not create the parent brand through the API (${brandResponse.status})`);
+    }
+    brandId = brand.id;
+
+    // A brand in another account is the forged parent target.
+    const otherResponse = await createBrand(OWNER_B, B_OTHER, "Issue 12 API Brand B");
+    const otherPayload = otherResponse.ok ? await otherResponse.json() : null;
+    const otherBrand = Array.isArray(otherPayload) ? otherPayload[0] : otherPayload;
+    if (!otherResponse.ok || !otherBrand?.id || otherBrand?.business_id !== B_OTHER) {
+      throw new Error(`could not create the other-account brand (${otherResponse.status})`);
+    }
+    otherBrandId = otherBrand.id;
+
+    const countsBefore = (await client.query(`
+      SELECT
+        (SELECT count(*)::int FROM public.stores)       AS stores,
+        (SELECT count(*)::int FROM public.storefronts)  AS storefronts,
+        (SELECT count(*)::int FROM public.brands)       AS brands,
+        (SELECT count(*)::int FROM public.selling_points WHERE type = 'woocommerce') AS woo_points
+    `)).rows[0];
+
+    // Multiple creation under one brand with explicit physical/online types.
+    for (const [name, type] of [[STORE_PHYSICAL, "physical"], [STORE_ONLINE, "online"]]) {
+      const response = await createStore(MEMBER_A, brandId, name, type);
+      const payload = response.ok ? await response.json() : null;
+      const store = Array.isArray(payload) ? payload[0] : payload;
+      if (!response.ok || store?.store_type !== type || store?.brand_id !== brandId || store?.is_published !== false) {
+        throw new Error(`member could not create an explicit ${type} store (${response.status})`);
+      }
+      if (store?.legacy_location_id || store?.legacy_selling_point_id || store?.legacy_woo_store_id) {
+        throw new Error("minimal store creation attached an unreviewed legacy reference");
+      }
+    }
+
+    // Owner and member both see exactly the two own-account stores.
+    for (const [label, userId] of [["owner", OWNER_A], ["member", MEMBER_A], ["viewer", VIEWER_A]]) {
+      const stores = await storesFor(userId, brandId);
+      const names = stores.map((store) => store.name).sort();
+      if (stores.length !== 2 || names.join() !== [STORE_ONLINE, STORE_PHYSICAL].sort().join()) {
+        throw new Error(`${label} did not list both own-account stores`);
+      }
+      if (stores.some((store) => store.is_published !== false)) {
+        throw new Error(`${label} saw an implicitly published store`);
+      }
+    }
+
+    // Another account and a legacy global role see nothing, even with the brand id.
+    for (const [label, userId] of [["other-account owner", OWNER_B], ["legacy global role", LEGACY_STAFF], ["platform admin", FIXTURE_IDS[0]]]) {
+      if ((await storesFor(userId, brandId)).length) {
+        throw new Error(`${label} listed another account's brand stores`);
+      }
+    }
+
+    // No combined/unknown/empty type is accepted, and nothing is created.
+    for (const type of ["both", "physical_online", "hybrid", "PHYSICAL", ""]) {
+      const response = await createStore(MEMBER_A, brandId, `Issue 12 API Invalid ${type}`, type);
+      if (response.ok) throw new Error(`API accepted invalid store type "${type}"`);
+    }
+
+    // Forged parent, viewer and legacy global role are all denied.
+    const forgedParent = await createStore(MEMBER_A, otherBrandId, "Issue 12 API Forged", "physical");
+    if (forgedParent.ok) throw new Error("forged cross-account parent brand was accepted by the API");
+    const forgedOwnerB = await createStore(OWNER_B, brandId, "Issue 12 API Owner B", "online");
+    if (forgedOwnerB.ok) throw new Error("other-account owner created a store under a foreign brand");
+    const viewerStore = await createStore(VIEWER_A, brandId, "Issue 12 API Viewer", "online");
+    if (viewerStore.ok) throw new Error("read-only viewer created a store through the API");
+    const globalStore = await createStore(LEGACY_STAFF, brandId, "Issue 12 API Global", "online");
+    if (globalStore.ok) throw new Error("legacy global role created an account store through the API");
+    const platformAdminStore = await createStore(FIXTURE_IDS[0], brandId, "Issue 12 API Platform Admin", "online");
+    if (platformAdminStore.ok) throw new Error("platform admin without membership created an account store");
+
+    // Direct Data API inserts obey the same type, publication and ownership rules.
+    const direct = await directInsert(MEMBER_A, {
+      brand_id: brandId, name: "Issue 12 API Direct Outlet", store_type: "physical",
+    });
+    if (!direct.ok) throw new Error(`direct valid insert was rejected (${direct.status})`);
+    for (const [label, body] of [
+      ["invalid type", { brand_id: brandId, name: "Issue 12 API Direct Hybrid", store_type: "hybrid" }],
+      ["published", { brand_id: brandId, name: "Issue 12 API Direct Published", store_type: "online", is_published: true }],
+      ["foreign brand", { brand_id: otherBrandId, name: "Issue 12 API Direct Foreign", store_type: "physical" }],
+      ["foreign insert as other account", { brand_id: brandId, name: "Issue 12 API Direct Other", store_type: "physical" }],
+      ["global admin insert", { brand_id: brandId, name: "Issue 12 API Direct Platform Admin", store_type: "online" }],
+    ]) {
+      const actor = label === "foreign insert as other account" ? OWNER_B
+        : label === "global admin insert" ? FIXTURE_IDS[0] : MEMBER_A;
+      const response = await directInsert(actor, body);
+      if (response.ok) throw new Error(`direct insert accepted a ${label} row`);
+    }
+
+    // Creation manufactured no legacy connector, storefront, brand or Woo point.
+    const countsAfter = (await client.query(`
+      SELECT
+        (SELECT count(*)::int FROM public.stores)       AS stores,
+        (SELECT count(*)::int FROM public.storefronts)  AS storefronts,
+        (SELECT count(*)::int FROM public.brands)       AS brands,
+        (SELECT count(*)::int FROM public.selling_points WHERE type = 'woocommerce') AS woo_points
+    `)).rows[0];
+    if (countsAfter.stores !== countsBefore.stores
+        || countsAfter.storefronts !== countsBefore.storefronts
+        || countsAfter.brands !== countsBefore.brands
+        || countsAfter.woo_points !== countsBefore.woo_points) {
+      throw new Error("store creation implicitly created a legacy store, storefront, brand or Woo selling point");
+    }
+
+    // Exactly one audit event per successful RPC store (the two explicit
+    // creation calls; the direct insert is a table write, not an RPC).
+    const audit = (await client.query(
+      `SELECT count(*)::int AS n FROM public.audit_log
+       WHERE action = 'create_brand_store' AND details->>'brand_id' = $1`,
+      [brandId],
+    )).rows[0].n;
+    if (audit !== 2) throw new Error(`brand store audit trail was not written once per RPC store (${audit})`);
+
+    // Legacy operational data (Woo orders/products) stays readable and intact.
+    const legacyReadable = (await client.query(`
+      SELECT
+        (SELECT count(*)::int FROM public.orders)   AS orders,
+        (SELECT count(*)::int FROM public.products) AS products
+    `)).rows[0];
+    if (legacyReadable.orders === null || legacyReadable.products === null) {
+      throw new Error("legacy operational tables became unreadable");
+    }
+
+    console.log("PASS  brand_store_boundaries_api (multi-create, invalid type, forged/viewer/global denial, no publish)");
+    console.log("PASS  brand_store_direct_insert_api (type/publication/ownership parity, audit, legacy intact)");
+  } finally {
+    await client.query(`
+      DELETE FROM public.brand_stores WHERE name LIKE 'Issue 12 API%';
+      DELETE FROM public.audit_log
+       WHERE action = 'create_brand_store' AND details->>'name' LIKE 'Issue 12 API%';
+      DELETE FROM public.brands WHERE name IN ('${BRAND_NAME}', 'Issue 12 API Brand B');
+      DELETE FROM public.audit_log
+       WHERE action = 'create_brand' AND details->>'name' IN ('${BRAND_NAME}', 'Issue 12 API Brand B');
+    `);
+  }
+}
+
+async function runBusinessInvitationApiChecks(client, status) {
+  const OWNER_A = FIXTURE_IDS[3];
+  const UBA_ADMIN_A = FIXTURE_IDS[5];
+  const MEMBER_A = FIXTURE_IDS[6];
+  const VIEWER_A = FIXTURE_IDS[7];
+  const OWNER_B = FIXTURE_IDS[8];
+  const OUTSIDER = FIXTURE_IDS[9];
+
+  // Fresh identities owned by this probe, so nothing depends on incidental
+  // fixture membership left behind by earlier battery files:
+  //   INVITEE     — completed personal registration/verification (a new person)
+  //   OTHER_PERSON— a different, verified person
+  //   UNVERIFIED  — has not confirmed an email address yet
+  const INVITEE = "00000000-0000-0000-0000-000000000021";
+  const OTHER_PERSON = "00000000-0000-0000-0000-000000000022";
+  const UNVERIFIED = "00000000-0000-0000-0000-000000000023";
+  const INVITEE_EMAIL = "issue13-invitee@dokanos.test";
+  const OTHER_EMAIL = "issue13-other@dokanos.test";
+  const UNVERIFIED_EMAIL = "issue13-unverified@dokanos.test";
+  const IDENTITIES = [INVITEE, OTHER_PERSON, UNVERIFIED];
+  const EMAILS = [INVITEE_EMAIL, OTHER_EMAIL, UNVERIFIED_EMAIL];
+
+  const rpc = (userId, fn, body) => fetch(`${status.API_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: {
+      apikey: status.ANON_KEY,
+      Authorization: `Bearer ${jwtFor(status, userId)}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payloadOf = async (response) => (response.ok ? response.json() : null);
+  const reasonOf = async (response) => {
+    if (response.ok) return "";
+    try {
+      return `: ${(await response.json()).message ?? ""}`;
+    } catch {
+      return "";
+    }
+  };
+
+  const invite = (actor, businessId, email) =>
+    rpc(actor, "invite_business_member", { p_business_id: businessId, p_email: email });
+  const accept = (actor, token) => rpc(actor, "accept_business_invitation", { p_token: token });
+  const describe = (actor, token) => rpc(actor, "describe_business_invitation", { p_token: token });
+  const listInvites = (actor, businessId) =>
+    rpc(actor, "list_business_invitations", { p_business_id: businessId });
+  const listMembers = (actor, businessId) =>
+    rpc(actor, "list_business_members", { p_business_id: businessId });
+  const removeMember = (actor, businessId, userId) =>
+    rpc(actor, "remove_business_member", { p_business_id: businessId, p_user_id: userId });
+  const revokeInvite = (actor, invitationId) =>
+    rpc(actor, "revoke_business_invitation", { p_invitation_id: invitationId });
+
+  try {
+    // Personal identities exist independently of any business account.
+    await client.query(`DELETE FROM public.business_invitations WHERE email = ANY($1)`, [EMAILS]);
+    await client.query(`DELETE FROM auth.users WHERE id = ANY($1)`, [IDENTITIES]);
+    await client.query(`
+      INSERT INTO auth.users
+        (id, aud, role, email, encrypted_password, email_confirmed_at,
+         raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+      VALUES
+        ($1, 'authenticated', 'authenticated', $4,
+         'local-fixture-password-never-used-for-login', now(),
+         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+        ($2, 'authenticated', 'authenticated', $5,
+         'local-fixture-password-never-used-for-login', now(),
+         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+        ($3, 'authenticated', 'authenticated', $6,
+         'local-fixture-password-never-used-for-login', NULL,
+         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now())
+    `, [...IDENTITIES, ...EMAILS]);
+
+    // ---- owner-only issuance, carrying the account context and the identity ----
+    const issued = await invite(OWNER_A, BIZ_A, "  Issue13-Invitee@Dokanos.TEST ");
+    const invitation = await payloadOf(issued);
+    if (!issued.ok || invitation?.business_id !== BIZ_A || invitation?.email !== INVITEE_EMAIL
+        || invitation?.role !== "member" || invitation?.status !== "pending"
+        || invitation?.business_name !== "Biz A Fixture" || !invitation?.token) {
+      throw new Error(`owner invitation failed or lost its account context `
+        + `(${issued.status}${await reasonOf(issued)})`);
+    }
+
+    for (const [label, actor, businessId] of [
+      ["account member", MEMBER_A, BIZ_A],
+      ["read-only viewer", VIEWER_A, BIZ_A],
+      ["account admin", UBA_ADMIN_A, BIZ_A],
+      ["nonmember", OUTSIDER, BIZ_A],
+      ["other-account owner", OWNER_B, BIZ_A],
+      ["owner of another account", OWNER_A, B_OTHER],
+    ]) {
+      const response = await invite(actor, businessId, "issue13-denied@dokanos.test");
+      if (response.ok) throw new Error(`the ${label} issued an account invitation through the API`);
+    }
+
+    // ---- the invitation ledger is not a client table ----
+    const authHeaders = (userId, extra = {}) => ({
+      apikey: status.ANON_KEY,
+      Authorization: `Bearer ${jwtFor(status, userId)}`,
+      ...extra,
+    });
+    const directRead = await fetch(`${status.API_URL}/rest/v1/business_invitations?select=token,email`, {
+      headers: authHeaders(OWNER_A),
+    });
+    if (directRead.ok && (await directRead.json()).length) {
+      throw new Error("the invitation ledger was readable through a direct Data API request");
+    }
+    const directInsert = await fetch(`${status.API_URL}/rest/v1/business_invitations`, {
+      method: "POST",
+      headers: authHeaders(OWNER_A, { "Content-Type": "application/json", Prefer: "return=representation" }),
+      body: JSON.stringify({ business_id: BIZ_A, email: "issue13-direct@dokanos.test" }),
+    });
+    if (directInsert.ok) throw new Error("the invitation ledger accepted a direct client insert");
+    const directUpdate = await fetch(
+      `${status.API_URL}/rest/v1/business_invitations?email=eq.${INVITEE_EMAIL}`,
+      {
+        method: "PATCH",
+        headers: authHeaders(OWNER_A, { "Content-Type": "application/json", Prefer: "return=representation" }),
+        body: JSON.stringify({ expires_at: "2099-01-01T00:00:00Z" }),
+      },
+    );
+    if (directUpdate.ok && (await directUpdate.json()).length) {
+      throw new Error("the invitation ledger accepted a direct client update");
+    }
+
+    // ---- describe gives every arrival a clear, honest outcome ----
+    const described = await payloadOf(await describe(INVITEE, invitation.token));
+    if (described?.status !== "pending" || described?.email_matches !== true
+        || described?.business_name !== "Biz A Fixture") {
+      throw new Error("the intended identity did not see a pending matching invitation");
+    }
+    const describedWrong = await payloadOf(await describe(OTHER_PERSON, invitation.token));
+    if (describedWrong?.status !== "pending" || describedWrong?.email_matches !== false) {
+      throw new Error("a different identity was told the invitation matched their email");
+    }
+    const describedUnknown = await payloadOf(await describe(INVITEE, "issue13-unknown-token"));
+    if (describedUnknown?.status !== "invalid" || describedUnknown?.email_matches !== false) {
+      throw new Error("an unknown token was not reported as invalid");
+    }
+
+    // ---- acceptance is bound to the verified intended identity ----
+    const wrongIdentity = await accept(OTHER_PERSON, invitation.token);
+    if (wrongIdentity.ok) throw new Error("the wrong identity accepted an invitation through the API");
+    const wrongMembership = (await client.query(
+      `SELECT count(*)::int AS n FROM public.user_business_access
+        WHERE user_id = $1 AND business_id = $2`, [OTHER_PERSON, BIZ_A],
+    )).rows[0].n;
+    if (wrongMembership !== 0) throw new Error("a refused wrong-email acceptance still created membership");
+    const stillOpen = await payloadOf(await listInvites(OWNER_A, BIZ_A));
+    if (!stillOpen.some((row) => row.email === INVITEE_EMAIL && row.status === "pending")) {
+      throw new Error("a refused wrong-email attempt consumed the invitation");
+    }
+
+    // An unverified identity cannot accept, even with a valid matching token.
+    const unverifiedInvite = await payloadOf(await invite(OWNER_A, BIZ_A, UNVERIFIED_EMAIL));
+    if (!unverifiedInvite?.token) throw new Error("could not open the unverified identity's invitation");
+    const unverifiedAccept = await accept(UNVERIFIED, unverifiedInvite.token);
+    if (unverifiedAccept.ok) throw new Error("an unverified identity accepted an invitation through the API");
+
+    const joined = await payloadOf(await accept(INVITEE, invitation.token));
+    if (joined?.outcome !== "joined" || joined?.role !== "member" || joined?.business_id !== BIZ_A) {
+      throw new Error("the intended identity did not join with account-wide member access");
+    }
+    const grant = (await client.query(`
+      SELECT
+        (SELECT count(*)::int FROM public.user_roles WHERE user_id = $1)        AS roles,
+        (SELECT count(*)::int FROM public.user_store_access WHERE user_id = $1) AS stores,
+        (SELECT count(*)::int FROM public.user_permissions WHERE user_id = $1)  AS perms,
+        (SELECT count(*)::int FROM public.businesses WHERE email = $2)          AS accounts
+    `, [INVITEE, INVITEE_EMAIL])).rows[0];
+    if (grant.roles !== 0 || grant.stores !== 0 || grant.perms !== 0 || grant.accounts !== 0) {
+      throw new Error("joining assigned a platform role, a granular grant or its own business account");
+    }
+
+    // Account-wide operational access: the new member can read the account's
+    // brands and member directory and still cannot cross into another account.
+    const brandsAsMember = await fetch(
+      `${status.API_URL}/rest/v1/brands?select=id,business_id&business_id=eq.${BIZ_A}`,
+      { headers: authHeaders(INVITEE) },
+    );
+    if (!brandsAsMember.ok) throw new Error("a new account member could not read the account's brands");
+    const foreignBrands = await fetch(
+      `${status.API_URL}/rest/v1/brands?select=id&business_id=eq.${B_OTHER}`,
+      { headers: authHeaders(INVITEE) },
+    );
+    if (!foreignBrands.ok || (await foreignBrands.json()).length) {
+      throw new Error("a new account member read another account's brands");
+    }
+    const membersAsMember = await payloadOf(await listMembers(INVITEE, BIZ_A));
+    if (!Array.isArray(membersAsMember)
+        || !membersAsMember.some((row) => row.user_id === INVITEE && row.role === "member")
+        || membersAsMember.some((row) => "token" in row || "email_matches" in row)) {
+      throw new Error("the member directory was unavailable, wrong or exposed invitation data");
+    }
+
+    // ---- acceptance is safely repeatable ----
+    const repeated = await payloadOf(await accept(INVITEE, invitation.token));
+    if (repeated?.outcome !== "already_member" || repeated?.role !== "member") {
+      throw new Error("a repeated acceptance did not report the existing membership");
+    }
+    const membershipRows = (await client.query(
+      `SELECT count(*)::int AS n FROM public.user_business_access
+        WHERE user_id = $1 AND business_id = $2`, [INVITEE, BIZ_A],
+    )).rows[0].n;
+    if (membershipRows !== 1) throw new Error("a repeated acceptance duplicated the membership row");
+
+    // ---- the invitation directory is owner-only ----
+    const ownerDirectory = await payloadOf(await listInvites(OWNER_A, BIZ_A));
+    if (!Array.isArray(ownerDirectory)
+        || !ownerDirectory.some((row) => row.email === INVITEE_EMAIL && row.status === "accepted")) {
+      throw new Error("the owner could not review the account's invitation ledger");
+    }
+    for (const [label, actor] of [
+      ["account member", MEMBER_A],
+      ["read-only viewer", VIEWER_A],
+      ["account admin", UBA_ADMIN_A],
+      ["nonmember", OUTSIDER],
+      ["other-account owner", OWNER_B],
+    ]) {
+      const response = await listInvites(actor, BIZ_A);
+      if (response.ok) throw new Error(`the ${label} listed the account's invitations through the API`);
+    }
+
+    // ---- only the owner withdraws an open invitation ----
+    const revocable = await payloadOf(await invite(OWNER_A, BIZ_A, OTHER_EMAIL));
+    if (!revocable?.id) throw new Error("could not open the invitation used for the revoke probe");
+    for (const [label, actor] of [
+      ["account member", MEMBER_A],
+      ["account admin", UBA_ADMIN_A],
+      ["other-account owner", OWNER_B],
+    ]) {
+      const response = await revokeInvite(actor, revocable.id);
+      if (response.ok) throw new Error(`the ${label} revoked an account invitation through the API`);
+    }
+    const revoked = await payloadOf(await revokeInvite(OWNER_A, revocable.id));
+    if (revoked?.revoked !== true || revoked?.status !== "revoked") {
+      throw new Error("the owner could not withdraw an open invitation");
+    }
+    const revokedDescription = await payloadOf(await describe(OTHER_PERSON, revocable.token));
+    if (revokedDescription?.status !== "revoked") {
+      throw new Error("a withdrawn invitation was not reported as revoked");
+    }
+    const revokedAccept = await accept(OTHER_PERSON, revocable.token);
+    if (revokedAccept.ok) throw new Error("a withdrawn invitation was accepted through the API");
+
+    // ---- owner-only membership management; an owner is never removed ----
+    for (const [label, actor, target] of [
+      ["account member", MEMBER_A, VIEWER_A],
+      ["read-only viewer", VIEWER_A, MEMBER_A],
+      ["account admin", UBA_ADMIN_A, MEMBER_A],
+      ["nonmember", OUTSIDER, MEMBER_A],
+      ["other-account owner", OWNER_B, MEMBER_A],
+    ]) {
+      const response = await removeMember(actor, BIZ_A, target);
+      if (response.ok) throw new Error(`the ${label} removed a member through the API`);
+    }
+    const removedCoOwner = await removeMember(OWNER_A, BIZ_A, FIXTURE_IDS[4]);
+    if (removedCoOwner.ok) throw new Error("the owner removed a co-owner through ordinary member removal");
+    const removedSelf = await removeMember(OWNER_A, BIZ_A, OWNER_A);
+    if (removedSelf.ok) throw new Error("the owner removed themselves through ordinary member removal");
+    const removedMissing = await removeMember(OWNER_A, BIZ_A, OUTSIDER);
+    if (removedMissing.ok) throw new Error("removing a nonmember was reported as success");
+
+    const removed = await payloadOf(await removeMember(OWNER_A, BIZ_A, INVITEE));
+    if (removed?.removed !== true) throw new Error("the owner could not remove an ordinary member");
+    // The removal immediately narrows the person's available account contexts.
+    const afterRemoval = await listMembers(INVITEE, BIZ_A);
+    if (afterRemoval.ok) throw new Error("a removed member still listed the account's members");
+    const remaining = (await client.query(
+      `SELECT count(*)::int AS n FROM public.user_business_access
+        WHERE user_id = $1 AND business_id = $2`, [INVITEE, BIZ_A],
+    )).rows[0].n;
+    if (remaining !== 0) throw new Error("member removal left the membership row behind");
+    const ownerRows = (await client.query(
+      `SELECT count(*)::int AS n FROM public.user_business_access
+        WHERE business_id = $1 AND role = 'owner'`, [BIZ_A],
+    )).rows[0].n;
+    if (ownerRows < 1) throw new Error("member management left the account without an owner");
+
+    console.log("PASS  business_invitation_boundaries_api (owner-only issuance, no direct ledger access, describe)");
+    console.log("PASS  business_invitation_acceptance_api (wrong email, unverified, join, repeat, revoke, refreshed contexts)");
+  } finally {
+    await client.query(`DELETE FROM public.business_invitations WHERE email = ANY($1)`, [EMAILS]);
+    await client.query(
+      `DELETE FROM public.audit_log
+        WHERE action IN ('invite_business_member', 'accept_business_invitation',
+                         'revoke_business_invitation', 'remove_business_member')
+          AND details->>'business_id' IN ($1, $2)`,
+      [BIZ_A, B_OTHER],
+    );
+    await client.query(`DELETE FROM auth.users WHERE id = ANY($1)`, [IDENTITIES]);
+  }
+}
+
+async function runBusinessOwnershipApiChecks(client, status) {
+  // Dedicated identities/accounts for this probe. They are created through the
+  // privileged fixture connection (not an application grant) and removed in
+  // the finally block, so the seeded battery fixtures never change shape.
+  const OWNER = "00000000-0000-0000-0000-000000000031";
+  const CO_OWNER = "00000000-0000-0000-0000-000000000032";
+  const MEMBER = "00000000-0000-0000-0000-000000000033";
+  const MEMBER2 = "00000000-0000-0000-0000-000000000034";
+  const OUTSIDER = "00000000-0000-0000-0000-000000000035";
+  const OTHER_OWNER = "00000000-0000-0000-0000-000000000036";
+  const IDENTITIES = [OWNER, CO_OWNER, MEMBER, MEMBER2, OUTSIDER, OTHER_OWNER];
+  const EMAILS = IDENTITIES.map((_, i) => `issue14-ownership-${i}@dokanos.test`);
+  const BIZ = "11111111-0000-0000-0000-000000000031";
+  const OTHER_BIZ = "11111111-0000-0000-0000-000000000032";
+
+  const rpc = (userId, fn, body) => fetch(`${status.API_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: {
+      apikey: status.ANON_KEY,
+      Authorization: `Bearer ${jwtFor(status, userId)}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(body),
+  });
+  const transfer = (actor, businessId, targetId) =>
+    rpc(actor, "transfer_business_ownership", { p_business_id: businessId, p_new_owner_id: targetId });
+  const leave = (actor, businessId) =>
+    rpc(actor, "leave_business_account", { p_business_id: businessId });
+  const setRole = (actor, businessId, targetId, role) =>
+    rpc(actor, "set_member_business_role", { p_user: targetId, p_business: businessId, p_role: role });
+
+  const roleOf = async (userId, businessId) => {
+    const result = await client.query(
+      "SELECT role FROM public.user_business_access WHERE user_id = $1 AND business_id = $2",
+      [userId, businessId],
+    );
+    return result.rows[0]?.role ?? null;
+  };
+  const resetRoles = async () => {
+    await client.query("DELETE FROM public.user_business_access WHERE business_id = $1", [BIZ]);
+    await client.query(
+      `INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
+         ($1, $5, 'owner'), ($2, $5, 'owner'), ($3, $5, 'member'), ($4, $5, 'member')`,
+      [OWNER, CO_OWNER, MEMBER, MEMBER2, BIZ],
+    );
+  };
+  const expectDenied = async (response, label) => {
+    if (response.ok) throw new Error(`${label} was accepted by the API`);
+  };
+  const ownerCount = async (businessId) => (await client.query(
+    "SELECT count(*)::int AS n FROM public.user_business_access WHERE business_id = $1 AND role = 'owner'",
+    [businessId],
+  )).rows[0].n;
+
+  try {
+    await client.query(`DELETE FROM public.businesses WHERE id = ANY($1)`, [[BIZ, OTHER_BIZ]]);
+    await client.query(`DELETE FROM auth.users WHERE id = ANY($1)`, [IDENTITIES]);
+    await client.query(
+      `INSERT INTO auth.users
+         (id, aud, role, email, encrypted_password, email_confirmed_at,
+          raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+       VALUES
+         ($1, 'authenticated', 'authenticated', $7,  'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($2, 'authenticated', 'authenticated', $8,  'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($3, 'authenticated', 'authenticated', $9,  'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($4, 'authenticated', 'authenticated', $10, 'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($5, 'authenticated', 'authenticated', $11, 'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()),
+         ($6, 'authenticated', 'authenticated', $12, 'local-fixture-password-never-used-for-login', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now())`,
+      [...IDENTITIES, ...EMAILS],
+    );
+    await client.query(
+      `INSERT INTO public.businesses (id, name, slug)
+       VALUES ($1, 'Issue 14 Ownership Account', 'issue-14-ownership-account'),
+              ($2, 'Issue 14 Other Account', 'issue-14-other-account')`,
+      [BIZ, OTHER_BIZ],
+    );
+    await client.query(
+      `INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
+         ($1, $6, 'owner'), ($2, $6, 'owner'), ($3, $6, 'member'), ($4, $6, 'member'),
+         ($5, $7, 'owner')`,
+      [OWNER, CO_OWNER, MEMBER, MEMBER2, OTHER_OWNER, BIZ, OTHER_BIZ],
+    );
+
+    // ---- ordinary members cannot transfer or restrict owner authority ----
+    for (const [label, actor] of [
+      ["account member", MEMBER],
+      ["second account member", MEMBER2],
+      ["nonmember", OUTSIDER],
+      ["owner of another account", OTHER_OWNER],
+      ["platform admin fixture", FIXTURE_IDS[0]],
+    ]) {
+      await expectDenied(await transfer(actor, BIZ, CO_OWNER), `${label} ownership transfer`);
+    }
+    // A nonmember who is not an owner cannot leave an account they do not belong to.
+    await expectDenied(await leave(OUTSIDER, BIZ), "nonmember departure");
+    await expectDenied(await setRole(MEMBER, BIZ, OWNER, "viewer"), "member demotion of an owner");
+    if (await roleOf(OWNER, BIZ) !== "owner" || await roleOf(CO_OWNER, BIZ) !== "owner"
+        || await roleOf(MEMBER, BIZ) !== "member") {
+      throw new Error("unauthorized ownership/role attempts changed the account");
+    }
+
+    // ---- forged cross-account, outsider and self targets are denied ----
+    for (const [label, target] of [
+      ["forged cross-account member", OTHER_OWNER],
+      ["nonmember", OUTSIDER],
+      ["self", OWNER],
+    ]) {
+      await expectDenied(await transfer(OWNER, BIZ, target), `${label} target`);
+    }
+    if (await ownerCount(BIZ) !== 2 || await roleOf(OWNER, BIZ) !== "owner") {
+      throw new Error("a refused transfer changed the owner membership");
+    }
+
+    // ---- owner transfers to an existing same-account member ----
+    const transferred = await transfer(OWNER, BIZ, MEMBER);
+    const transferBody = transferred.ok ? await transferred.json() : null;
+    if (!transferred.ok || transferBody?.transferred !== true
+        || transferBody?.new_owner_id !== MEMBER
+        || transferBody?.previous_owner_id !== OWNER) {
+      throw new Error(`owner transfer failed (${transferred.status})`);
+    }
+    if (await roleOf(MEMBER, BIZ) !== "owner") throw new Error("target did not become owner");
+    if (await roleOf(OWNER, BIZ) !== "member") throw new Error("transferring owner did not become a member");
+    if (await roleOf(CO_OWNER, BIZ) !== "owner") throw new Error("legacy co-owner was not preserved");
+    if (await ownerCount(BIZ) < 1) throw new Error("transfer left the account ownerless");
+    if (await roleOf(MEMBER2, BIZ) !== "member") throw new Error("transfer changed an unrelated member");
+
+    // Repeated transfer and repeated departure are safe.
+    await expectDenied(await transfer(OWNER, BIZ, MEMBER2), "repeated transfer by former owner");
+    const left = await leave(OWNER, BIZ);
+    if (!left.ok) throw new Error(`former owner could not leave after transfer (${left.status})`);
+    if (await roleOf(OWNER, BIZ) !== null) throw new Error("former owner departure left the membership row");
+    await expectDenied(await leave(OWNER, BIZ), "repeated departure");
+    if (await ownerCount(BIZ) < 1) throw new Error("repeated transfer/leave left the account ownerless");
+
+    // ---- owner departure is blocked until ownership is transferred ----
+    await resetRoles();
+    await expectDenied(await leave(OWNER, BIZ), "owner departure without transfer");
+    await expectDenied(await leave(CO_OWNER, BIZ), "legacy co-owner departure without transfer");
+    if (await roleOf(OWNER, BIZ) !== "owner" || await roleOf(CO_OWNER, BIZ) !== "owner") {
+      throw new Error("blocked owner departure changed owner memberships");
+    }
+
+    // ---- concurrent owner requests cannot leave the account ownerless ----
+    await resetRoles();
+    const competingTransfers = await Promise.all([
+      transfer(OWNER, BIZ, MEMBER),
+      transfer(OWNER, BIZ, MEMBER2),
+    ]);
+    const transferWins = competingTransfers.filter((response) => response.ok).length;
+    if (transferWins !== 1) {
+      throw new Error(`competing owner transfers committed ${transferWins} times`);
+    }
+    if (await ownerCount(BIZ) < 1 || await roleOf(OWNER, BIZ) !== "member") {
+      throw new Error("competing transfers did not end with a valid owner and former-owner member");
+    }
+    const winners = [await roleOf(MEMBER, BIZ), await roleOf(MEMBER2, BIZ)].filter((role) => role === "owner");
+    if (winners.length !== 1) throw new Error("competing transfers produced an ambiguous owner set");
+
+    await resetRoles();
+    const [transferRace, leaveRace] = await Promise.all([
+      transfer(OWNER, BIZ, MEMBER),
+      leave(OWNER, BIZ),
+    ]);
+    if (!transferRace.ok) throw new Error("transfer failed in the transfer/leave race");
+    if (leaveRace.ok && await roleOf(OWNER, BIZ) !== null) {
+      throw new Error("successful leave race left the former owner membership behind");
+    }
+    if (!leaveRace.ok && await roleOf(OWNER, BIZ) !== "member") {
+      throw new Error("blocked leave race did not leave the former owner as a member");
+    }
+    if (await ownerCount(BIZ) < 1) throw new Error("transfer/leave race left the account ownerless");
+    if (await roleOf(MEMBER, BIZ) !== "owner") throw new Error("transfer/leave race lost the new owner");
+
+    await resetRoles();
+    const memberLeaves = await Promise.all([leave(MEMBER, BIZ), leave(MEMBER2, BIZ)]);
+    if (memberLeaves.some((response) => !response.ok)) throw new Error("concurrent ordinary-member departure failed");
+    if (await roleOf(OWNER, BIZ) !== "owner" || await roleOf(CO_OWNER, BIZ) !== "owner") {
+      throw new Error("member departures changed the owner memberships");
+    }
+
+    console.log("PASS  business_ownership_transfer_api (owner-only, forged target, legacy co-owner, repeat, concurrent)");
+    console.log("PASS  business_ownership_departure_api (owner blocked until transfer, member leave, transfer/leave race)");
+  } finally {
+    await client.query(`DELETE FROM public.businesses WHERE id = ANY($1)`, [[BIZ, OTHER_BIZ]]);
+    await client.query(
+      `DELETE FROM public.audit_log
+        WHERE details->>'business_id' IN ($1, $2)
+          AND action IN ('transfer_business_ownership', 'leave_business_account',
+                         'update_role', 'remove_business_member')`,
+      [BIZ, OTHER_BIZ],
+    );
+    await client.query(`DELETE FROM auth.users WHERE id = ANY($1)`, [IDENTITIES]);
   }
 }
 
@@ -73,8 +923,9 @@ async function seed(client) {
       [FIXTURE_IDS[i], `${names[i]}@dokanos.test`],
     );
   }
-  // user_roles: wipe handle_new_user's first-user admin side-effect, re-seed deterministically
+  // Legacy signup may provision roles/memberships; replace them deterministically.
   await client.query(`DELETE FROM public.user_roles WHERE user_id = ANY($1)`, [FIXTURE_IDS]);
+  await client.query(`DELETE FROM public.user_business_access WHERE user_id = ANY($1)`, [FIXTURE_IDS]);
   await client.query(
     `INSERT INTO public.user_roles (user_id, role)
      VALUES ($1, 'admin'), ($2, 'staff'), ($3, 'staff'),
@@ -93,14 +944,14 @@ async function seed(client) {
   // user_business_access
   await client.query(
     `INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
-       ($1, $A, 'owner'),   -- OWNER_A
-       ($2, $A, 'owner'),   -- OWNER_A2
-       ($3, $A, 'admin'),   -- UBA_ADMIN_A
-       ($4, $A, 'member'),  -- MEMBER_A
-       ($5, $A, 'viewer'),  -- VIEWER_A
-       ($6, $B, 'owner')    -- OWNER_B
+       ($1, $7, 'owner'),   -- OWNER_A
+       ($2, $7, 'owner'),   -- OWNER_A2
+       ($3, $7, 'admin'),   -- UBA_ADMIN_A
+       ($4, $7, 'member'),  -- MEMBER_A
+       ($5, $7, 'viewer'),  -- VIEWER_A
+       ($6, $8, 'owner')    -- OWNER_B
      ON CONFLICT (user_id, business_id) DO NOTHING`,
-    [FIXTURE_IDS[3], FIXTURE_IDS[4], FIXTURE_IDS[5], FIXTURE_IDS[6], FIXTURE_IDS[7], FIXTURE_IDS[8]],
+    [FIXTURE_IDS[3], FIXTURE_IDS[4], FIXTURE_IDS[5], FIXTURE_IDS[6], FIXTURE_IDS[7], FIXTURE_IDS[8], BIZ_A, B_OTHER],
   );
   // app_settings fixture row (W4 A' survival pins value)
   await client.query(
@@ -114,11 +965,35 @@ async function seed(client) {
      ON CONFLICT (user_id, permission) DO NOTHING`,
     [STAFF_MGMT],
   );
+  // Issue #16 (S3): operational RLS is bound to the server-side active business
+  // context, and the app converges it at login (useBusinessContext). The
+  // fixtures converge the same way, so every battery file keeps exercising
+  // realistic sessions; the A/B probes in active_business_context_test.sql
+  // switch contexts explicitly. Users without a business membership (ADMIN,
+  // STAFF_NO, STAFF_MGMT, OUTSIDER) converge nothing and therefore fail closed
+  // on operational data — exactly as the policies intend.
+  for (const [userId, businessId] of [
+    [FIXTURE_IDS[3], BIZ_A],   // OWNER_A
+    [FIXTURE_IDS[4], BIZ_A],   // OWNER_A2
+    [FIXTURE_IDS[5], BIZ_A],   // UBA_ADMIN_A
+    [FIXTURE_IDS[6], BIZ_A],   // MEMBER_A
+    [FIXTURE_IDS[7], BIZ_A],   // VIEWER_A
+    [FIXTURE_IDS[8], B_OTHER], // OWNER_B
+  ]) {
+    // set_active_business_context is auth.uid()-bound, so the privileged
+    // fixture connection claims the fixture identity for the call (the same
+    // mechanism the *_test.sql files use under SET LOCAL ROLE).
+    await client.query(`SELECT set_config('request.jwt.claims', $1, false)`, [
+      JSON.stringify({ sub: userId, role: "authenticated" }),
+    ]);
+    await client.query(`SELECT public.set_active_business_context($1)`, [businessId]);
+  }
+  await client.query(`SELECT set_config('request.jwt.claims', '', false)`);
 }
 
 async function run() {
-  const url = dbUrl();
-  const client = new Client({ connectionString: url });
+  const status = localStatus();
+  const client = new Client({ connectionString: status.DB_URL });
   await client.connect();
   try {
     await seed(client);
@@ -127,7 +1002,7 @@ async function run() {
       .sort();
     if (files.length === 0) {
       console.log("SKIP: no *_test.sql files found");
-      process.exit(0);
+      return;
     }
     let failures = 0;
     for (const f of files) {
@@ -138,10 +1013,40 @@ async function run() {
       } catch (e) {
         failures++;
         console.log(`FAIL  ${f}: ${e.message}`);
+        // Each file owns transactions. A failed batch can leave one aborted;
+        // recover before running the next file so its verdict is independent.
+        await client.query("ROLLBACK");
+        await client.query("RESET ROLE");
+      }
+    }
+    if (failures === 0) {
+      try {
+        await runApiChecks(client, status);
+      } catch (e) {
+        failures++;
+        console.log(`FAIL  account_boundaries_api: ${e.message}`);
+      }
+      try {
+        await runBrandStoreApiChecks(client, status);
+      } catch (e) {
+        failures++;
+        console.log(`FAIL  brand_store_boundaries_api: ${e.message}`);
+      }
+      try {
+        await runBusinessInvitationApiChecks(client, status);
+      } catch (e) {
+        failures++;
+        console.log(`FAIL  business_invitation_boundaries_api: ${e.message}`);
+      }
+      try {
+        await runBusinessOwnershipApiChecks(client, status);
+      } catch (e) {
+        failures++;
+        console.log(`FAIL  business_ownership_transfer_api: ${e.message}`);
       }
     }
     console.log(failures === 0 ? `\nALL GREEN (${files.length} files)` : `\n${failures} file(s) FAILED`);
-    process.exit(failures === 0 ? 0 : 1);
+    process.exitCode = failures === 0 ? 0 : 1;
   } finally {
     await client.end();
   }
