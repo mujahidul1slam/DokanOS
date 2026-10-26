@@ -804,6 +804,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   const handleCreate = async () => {
     if (!hasStoreScope(businessStoreIds)) { toast.error("No active business scope — cannot create order"); return; }
+    const orderStoreId = storeId && businessStoreIds.includes(storeId) ? storeId : null;
+    if (!orderStoreId) { toast.error("Select a store belonging to the active business"); return; }
     if (items.length === 0) { toast.error("Add at least one product"); return; }
     setSaving(true);
     try {
@@ -821,7 +823,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 city: cities.find(c => c.city_id === selectedCity)?.city_name || undefined,
                 zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || undefined,
                 area: areas.find(a => a.area_id === selectedArea)?.area_name || undefined,
-              }).eq("id", customerId);
+              }).eq("id", customerId).eq("store_id", orderStoreId);
             }
           }
           if (!customerId) {
@@ -833,13 +835,13 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || null,
               area: areas.find(a => a.area_id === selectedArea)?.area_name || null,
               source,
-              store_id: storeId && businessStoreIds.includes(storeId) ? storeId : null,
+              store_id: orderStoreId,
             }).select("id").single();
             customerId = newC?.id || null;
           }
         }
 
-        const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: storeId || null, p_source: "manual" });
+        const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: orderStoreId, p_source: "manual" });
         const orderNumber = (genNum as string) || `ORD-${Date.now().toString(36).toUpperCase()}`;
 
         const paymentStatus =
@@ -857,7 +859,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           customer_phone: normalizedCustomerPhone,
           customer_address: customerAddress || null,
           customer_city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
-          store_id: storeId && businessStoreIds.includes(storeId) ? storeId : null,
+          store_id: orderStoreId,
           subtotal,
           discount,
           shipping_cost: shippingCost,

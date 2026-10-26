@@ -345,7 +345,8 @@ const Orders = () => {
       const { error } = await supabase
         .from("orders")
         .update({ status: "pre_order_pending" })
-        .in("id", ids);
+        .in("id", ids)
+        .in("store_id", businessStoreIds);
       if (error) {
         console.warn("Pre-order auto-promotion failed:", error.message);
         return;
@@ -656,7 +657,10 @@ const Orders = () => {
       actions.push({
         key: "ready", label: "Mark Ready to Ship", icon: PackageCheck,
         onClick: () => {
-          supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
+          scopeStoreIds(
+            supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id),
+            businessStoreIds,
+          ).then(() => {
             addOrderTimeline({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
             toast({ title: "Marked Ready to Ship" });
             loadOrders();

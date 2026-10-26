@@ -94,7 +94,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
         setBulkUpdating(false);
       }
     },
-    [selected, scopedIds, setBulkUpdating, setSelected, loadOrders, toast],
+    [selected, scopedIds, businessStoreIds, setBulkUpdating, setSelected, loadOrders, toast],
   );
 
   const handleMarkReadyToShip = useCallback(
@@ -283,7 +283,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
     if (ids.length === 0) return; // fail closed: nothing of this business selected
     setBulkUpdating(true);
     try {
-      const { printed, skipped } = await printMeasurementSlipsBulk(ids);
+      const { printed, skipped } = await printMeasurementSlipsBulk(ids, businessStoreIds);
       toast({
         title: `Printed ${printed} measurement slip(s)`,
         description:

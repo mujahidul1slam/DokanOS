@@ -217,7 +217,7 @@ describe("useOrderBulkActions scopes every bulk read to the active business's st
     await act(async () => {
       await result.current.handleBulkPrintMeasurementSlips();
     });
-    expect(slipsMock).toHaveBeenCalledWith(["o1"]);
+    expect(slipsMock).toHaveBeenCalledWith(["o1"], ["s1", "s2"]);
 
     mark();
     invokeMock.mockClear();

@@ -620,11 +620,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Save ---------- */
 
   const handleSave = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     setSaving(true);
     try {
-      await supabase
-        .from("orders")
+      await scopeStoreIds(
+        supabase
+          .from("orders")
         .update({
           status,
           payment_status: paymentStatus,
@@ -641,12 +642,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           payment_method: paymentMethod || null,
           location_id: locationId || null,
         })
-        .eq("id", order.id);
+        .eq("id", order.id),
+        businessStoreIds,
+      );
 
       // Delete removed items (only existing DB rows)
       const dbDeletedIds = deletedItemIds.filter((id) => !id.startsWith("new-"));
       if (dbDeletedIds.length > 0) {
-        await supabase.from("order_items").delete().in("id", dbDeletedIds);
+        await supabase
+          .from("order_items")
+        .delete()
+        .in("id", dbDeletedIds)
+        .eq("order_id", order.id);
       }
 
       // Update existing items (qty or price)
@@ -661,7 +668,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               unit_price: item.unit_price,
               line_total: item.quantity * item.unit_price,
             })
-            .eq("id", item.id);
+            .eq("id", item.id)
+            .eq("order_id", order.id);
         }
       }
 
@@ -893,7 +901,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Payment recompute helper ---------- */
 
   const recomputePaymentStatus = async (orderRow: OrderDetail | null) => {
-    if (!orderRow) return;
+    if (!orderRow || !hasStoreScope(businessStoreIds) || !orderRow.store_id || !businessStoreIds.includes(orderRow.store_id)) return;
     const { data: rows } = await supabase
       .from("order_payments")
       .select("amount")
@@ -907,20 +915,23 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         : remaining <= 0.0001
         ? "paid"
         : "partial";
-    await supabase
-      .from("orders")
-      .update({
-        payment_status: newStatus,
-        amount_to_collect: remaining,
-      })
-      .eq("id", orderRow.id);
+    await scopeStoreIds(
+      supabase
+        .from("orders")
+        .update({
+          payment_status: newStatus,
+          amount_to_collect: remaining,
+        })
+        .eq("id", orderRow.id),
+      businessStoreIds,
+    );
     return { totalPaid, remaining, newStatus };
   };
 
   /* ---------- Add payment ---------- */
 
   const addPayment = async () => {
-    if (!order || !payAmount) return;
+    if (!order || !payAmount || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(payAmount);
     await supabase.from("order_payments").insert({
       order_id: order.id,
@@ -965,7 +976,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const saveEditedPayment = async (p: PaymentEntry) => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(editPayAmount);
     if (!Number.isFinite(amt) || amt < 0) {
       toast.error("Enter a valid amount");
@@ -999,7 +1010,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const deletePayment = async (p: PaymentEntry) => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     if (!confirm(`Delete this ${symbol}${Number(p.amount).toLocaleString()} ${p.method} payment?`)) return;
     await supabase.from("order_payments").delete().eq("id", p.id);
     const recomputed = await recomputePaymentStatus(order);
@@ -1021,7 +1032,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Confirm pending payment ---------- */
 
   const confirmPendingPayment = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(confirmPayAmount);
     if (!amt || amt <= 0) {
       toast.error("Enter a valid amount");
@@ -1105,7 +1116,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const handleReturn = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     setSaving(true);
     try {
       // Update order status
@@ -1780,7 +1791,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         size="sm"
                         variant="outline"
                         className="gap-1.5"
-                        onClick={() => order && printMeasurementSlip(order.id)}
+                        onClick={() => order && printMeasurementSlip(order.id, businessStoreIds)}
                       >
                         <Printer className="h-3.5 w-3.5" /> Print Slip
                       </Button>

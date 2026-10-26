@@ -577,7 +577,7 @@ const POS = () => {
           description: "Click to print measurement slip",
           action: (
             <button
-              onClick={() => printMeasurementSlip(order.id)}
+              onClick={() => printMeasurementSlip(order.id, businessStoreIds)}
               className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             >
               Print Slip
