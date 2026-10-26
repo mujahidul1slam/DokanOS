@@ -86,6 +86,9 @@ export function FulfillmentBadge({ status }: { status: string }) {
       return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">Returned</Badge>;
     case "cancelled":
       return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 hover:bg-red-500/25">Cancelled</Badge>;
+    case "merged":
+      // Source order rolled into a merged order (issue #30); visible under All only.
+      return <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/20 hover:bg-violet-500/25">Merged</Badge>;
     default:
       return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">{status}</Badge>;
   }
