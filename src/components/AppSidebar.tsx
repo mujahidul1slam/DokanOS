@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { useActiveBusinessStoreIds } from "@/hooks/useActiveBusinessStoreIds";
 import { navigationRoleForBusinessRole } from "@/lib/accounts/rolePresentation";
 import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
 import { useQuery } from "@tanstack/react-query";
@@ -120,19 +121,26 @@ const AppSidebar = ({
     }
   };
   
-  // Fetch product categories for sidebar
+  // Product categories of the ACTIVE business.
+  //
+  // Hybrid tenancy (issue #16): a category's tenant link is categories.store_id
+  // → a store of the active business. The old predicate compared store_id to
+  // the BUSINESS id, which is a different column entirely, so new-model
+  // businesses (business id ≠ any store id) saw no categories at all. Scope by
+  // the active business's store ids instead, and fail closed on an empty scope.
+  const categoryStoreIds = useActiveBusinessStoreIds();
   const { data: productCategories } = useQuery({
-    queryKey: ['product_categories', active?.id],
+    queryKey: ['product_categories', active?.id, categoryStoreIds],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('categories')
         .select('id, name')
-        .eq('store_id', active?.id)
+        .in('store_id', categoryStoreIds)
         .order('name');
       if (error) throw error;
       return data || [];
     },
-    enabled: !!active?.id,
+    enabled: !!active?.id && categoryStoreIds.length > 0,
   });
 
   const navGroups = useMemo(() => {

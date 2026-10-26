@@ -11,6 +11,7 @@ import { Loader2, Plus } from "lucide-react";
 import { invalidateSlugCache } from "@/storefront/lib/brand";
 import type { Storefront } from "@/storefront/lib/brand";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { useActiveBusinessStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 import { THEME_PRESETS } from "@/components/storefront-admin/shared";
 import StorefrontAdminShell from "@/components/storefront-admin/StorefrontAdminShell";
 import { StorefrontOverview } from "@/components/storefront-admin/AdminPages";
@@ -47,9 +48,21 @@ export default function StorefrontsPage() {
   const [list, setList] = useState<Storefront[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const businessStoreIds = useActiveBusinessStoreIds();
 
   async function reload() {
-    const { data } = await supabase.from("storefronts").select("*").order("name");
+    // Fail closed (issue #16): without the active business's store scope, no
+    // storefronts are readable — an empty scope is "no stores", not "all stores".
+    if (!hasStoreScope(businessStoreIds)) {
+      setList([]);
+      invalidateSlugCache();
+      return [];
+    }
+    const { data } = await supabase
+      .from("storefronts")
+      .select("*")
+      .in("store_id", businessStoreIds)
+      .order("name");
     setList((data as any) || []);
     invalidateSlugCache();
     return data;
@@ -57,7 +70,9 @@ export default function StorefrontsPage() {
 
   useEffect(() => {
     reload().then(() => setLoading(false));
-  }, []);
+    // businessStoreIds has stable identity per store set (see seam docs), so
+    // the list reloads exactly when the active business's scope changes.
+  }, [businessStoreIds]);
 
   // Resolve the active storefront: URL slug → last-used → first
   const active =
@@ -131,6 +146,7 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate, autoOpen }: {
 }) {
   const { active: activeBusiness } = useBusinessContext();
   const businessId = activeBusiness?.id ?? null;
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [theme, setTheme] = useState("editorial");
@@ -194,16 +210,24 @@ function CreateStorefrontDialog({ open, onOpenChange, onCreate, autoOpen }: {
       }
     }
 
-    // Scoped store resolution: pick store linked to brand/business
+    // Scoped store resolution: pick store linked to brand/business.
+    // Fail closed (issue #16): candidate stores must be within the active
+    // business's store scope — never fall back to an unscoped stores read.
     let storeId: string | null = brands.find((b) => b.id === brandId)?.woo_store_id || null;
     if (!storeId) {
-      const activeStoreIds = brands.map((b) => b.woo_store_id).filter(Boolean) as string[];
-      let storeQuery = supabase.from("stores").select("id");
-      if (activeStoreIds.length > 0) {
-        storeQuery = storeQuery.in("id", activeStoreIds);
+      const brandStoreIds = brands.map((b) => b.woo_store_id).filter(Boolean) as string[];
+      const candidateIds = brandStoreIds.length > 0
+        ? brandStoreIds.filter((id) => businessStoreIds.includes(id))
+        : businessStoreIds;
+      if (hasStoreScope(candidateIds)) {
+        const { data: storeData } = await supabase
+          .from("stores")
+          .select("id")
+          .in("id", candidateIds)
+          .limit(1)
+          .maybeSingle();
+        storeId = storeData?.id || null;
       }
-      const { data: storeData } = await storeQuery.limit(1).maybeSingle();
-      storeId = storeData?.id || null;
     }
 
     const { data, error } = await supabase.from("storefronts").insert({

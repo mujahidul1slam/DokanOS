@@ -26,6 +26,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ShoppingCart, X } from "lucide-react";
 import { useCurrency } from "@/hooks/useCurrency";
+import {
+  useActiveBusinessStoreIds,
+  scopeStoreIds,
+  hasStoreScope,
+} from "@/hooks/useActiveBusinessStoreIds";
+import { useStoresListState } from "@/hooks/useStoresList";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
@@ -56,6 +62,15 @@ const POS = () => {
   const { symbol } = useCurrency();
   const { user } = useAuth();
   const { toast } = useToast();
+
+  // Tenant scope (issue #16): fail closed — empty scope means no reads/writes.
+  // `settled` distinguishes "scope still resolving" (loading UI) from "settled
+  // to zero stores" (no-stores UI), so we never flash fail-closed prematurely.
+  // Ids come from the ONE seam (its contract: pages never re-derive them);
+  // the stores list itself is still needed here for the picker's names.
+  const { stores: businessStores, settled: scopeSettled } = useStoresListState();
+  const businessStoreIds = useActiveBusinessStoreIds();
+  const hasScope = hasStoreScope(businessStoreIds);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<{ id: string; name: string; parent_id: string | null; store_id: string | null }[]>([]);
@@ -89,28 +104,39 @@ const POS = () => {
   const { scanBeep, addBeep, errorBeep, successChime } = usePosSound(soundEnabled);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Load current open shift
+  // Load current open shift — scoped to the active business's stores
   useEffect(() => {
-    if (!user) return;
-    supabase
-      .from("pos_shifts" as any)
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("status", "open")
+    if (!user || !hasScope) {
+      // Fail closed: a shift from a previous scope must not survive a scope loss
+      setCurrentShift(null);
+      return;
+    }
+    scopeStoreIds(
+      supabase
+        .from("pos_shifts" as any)
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("status", "open"),
+      businessStoreIds,
+    )
       .order("opened_at", { ascending: false })
       .limit(1)
       .then(({ data }: any) => {
         if (data && data.length > 0) setCurrentShift(data[0]);
       });
-  }, [user]);
+  }, [user, businessStoreIds, hasScope]);
 
-  // Load held count
+  // Load held count — scoped to the active business's stores
   useEffect(() => {
-    supabase
-      .from("held_carts" as any)
-      .select("id", { count: "exact", head: true })
-      .then(({ count }: any) => setHeldCount(count || 0));
-  }, [showHeld]);
+    if (!hasScope) {
+      setHeldCount(0);
+      return;
+    }
+    scopeStoreIds(
+      supabase.from("held_carts" as any).select("id", { count: "exact", head: true }),
+      businessStoreIds,
+    ).then(({ count }: any) => setHeldCount(count || 0));
+  }, [showHeld, businessStoreIds, hasScope]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -174,6 +200,8 @@ const POS = () => {
       (p) => (p as any).barcode === barcode || p.sku === barcode
     );
     if (product) {
+      // product came from the business-scoped catalog, so its variations are
+      // transitively scoped by product_id
       const { data: variations } = await supabase
         .from("product_variations")
         .select("id, barcode, sku")
@@ -204,10 +232,18 @@ const POS = () => {
         toast({ title: `Added: ${product.name}` });
       }
     } else {
+      // Standalone barcode lookup: bound it to the business-scoped product
+      // catalog so a cross-business variation barcode cannot resolve
+      if (!hasScope) {
+        errorBeep();
+        toast({ title: "Product not found", description: `No match for barcode: ${barcode}`, variant: "destructive" });
+        return;
+      }
       const { data: varMatch } = await supabase
         .from("product_variations")
         .select("id, name, price, product_id, barcode, stock_quantity, manage_stock, stock_status")
         .eq("barcode", barcode)
+        .in("product_id", products.map((p) => p.id))
         .limit(1);
 
       if (varMatch && varMatch.length > 0) {
@@ -235,22 +271,46 @@ const POS = () => {
         toast({ title: "Product not found", description: `No match for barcode: ${barcode}`, variant: "destructive" });
       }
     }
-  }, [products, scanBeep, addBeep, errorBeep, globalStockEnabled, toast]));
+  }, [products, scanBeep, addBeep, errorBeep, globalStockEnabled, toast, hasScope]));
 
+  // Catalog load — all reads scoped to the active business's stores.
+  // Fail closed: never query with an empty scope.
   useEffect(() => {
+    if (!hasScope) {
+      // Scope settled to zero stores: clear any previous tenant's data
+      setProducts([]);
+      setCategories([]);
+      setStores([]);
+      setProductCatMap(new Map());
+      setLoading(false);
+      return;
+    }
+    let active = true;
     const load = async () => {
-      const [prodRes, storeRes, catRes, pcRes] = await Promise.all([
-        supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode, is_featured, sales_count, manage_stock, stock_status").eq("is_active", true).order("name"),
-        supabase.from("stores").select("id, name"),
-        supabase.from("categories").select("id, name, parent_id, store_id").order("name"),
+      const [prodRes, catRes, pcRes] = await Promise.all([
+        scopeStoreIds(
+          supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode, is_featured, sales_count, manage_stock, stock_status").eq("is_active", true).order("name"),
+          businessStoreIds,
+        ),
+        scopeStoreIds(
+          supabase.from("categories").select("id, name, parent_id, store_id").order("name"),
+          businessStoreIds,
+        ),
         supabase.from("product_categories").select("product_id, category_id"),
       ]);
+      if (!active) return;
       const prods = (prodRes.data || []) as any[];
       setProducts(prods);
       setCategories((catRes.data || []) as any);
-      setStores((storeRes.data || []) as { id: string; name: string }[]);
+      // Store list comes straight from the business scope seam (already
+      // scoped), so no separate stores query is needed
+      setStores(businessStores.map((s) => ({ id: s.id, name: s.name })));
+      // product_categories has no store_id; keep only links whose product is
+      // in the already-scoped catalog (transitive scoping)
+      const scopedProductIds = new Set(prods.map((p: any) => p.id));
       const map = new Map<string, Set<string>>();
       (pcRes.data || []).forEach((pc: any) => {
+        if (!scopedProductIds.has(pc.product_id)) return;
         if (!map.has(pc.product_id)) map.set(pc.product_id, new Set());
         map.get(pc.product_id)!.add(pc.category_id);
       });
@@ -258,7 +318,10 @@ const POS = () => {
       setLoading(false);
     };
     load();
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [businessStoreIds, businessStores, hasScope]);
 
   const handleSelectProduct = (p: Product) => {
     setSelectedProduct(p);
@@ -322,20 +385,27 @@ const POS = () => {
       return;
     }
 
+    // Fail closed: the held cart's store must belong to the active business
+    const cartStoreId = cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null);
+    if (!cartStoreId || !businessStoreIds.includes(cartStoreId)) {
+      toast({ title: "Cannot hold cart", description: "No active business store selected", variant: "destructive" });
+      return;
+    }
+
     await supabase.from("held_carts" as any).insert({
       label: cart.label,
       cart_data: cart,
       customer_name: cart.customer?.name || null,
       customer_phone: cart.customer?.phone || null,
       notes: cart.notes || null,
-      store_id: selectedStoreId !== "default" ? selectedStoreId : null,
+      store_id: cartStoreId,
       held_by: user?.id || null,
     });
 
     // Reset current cart
     removeCart(cart.id);
     toast({ title: `${cart.label} held` });
-  }, [carts, activeCartId, selectedStoreId, user]);
+  }, [carts, activeCartId, selectedStoreId, user, businessStoreIds, toast, removeCart]);
 
   const recallCart = useCallback((cart: Cart) => {
     setCarts((prev) => [...prev, cart]);
@@ -344,15 +414,31 @@ const POS = () => {
 
   const searchCustomers = useCallback(async (q: string) => {
     if (!q || q.length < 2) { setCustomers([]); return; }
-    const { data } = await supabase
-      .from("customers")
-      .select("id, name, phone, email, address, city, zone, area")
-      .or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
-      .limit(10);
+    if (!hasScope) { setCustomers([]); return; }
+    const { data } = await scopeStoreIds(
+      supabase
+        .from("customers")
+        .select("id, name, phone, email, address, city, zone, area")
+        .or(`name.ilike.%${q}%,phone.ilike.%${q}%`),
+      businessStoreIds,
+    ).limit(10);
     setCustomers((data || []) as CustomerData[]);
-  }, []);
+  }, [businessStoreIds, hasScope]);
 
   const completeOrder = useCallback(async (cart: Cart): Promise<string> => {
+    // Fail closed: no order may be placed without an active business scope
+    if (!hasScope) {
+      toast({ title: "Cannot complete order", description: "No active business store available", variant: "destructive" });
+      return "";
+    }
+
+    // The order's store must belong to the active business
+    const orderStoreId = cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null);
+    if (!orderStoreId || !businessStoreIds.includes(orderStoreId)) {
+      toast({ title: "Cannot complete order", description: "Select a store belonging to the active business", variant: "destructive" });
+      return "";
+    }
+
     const subtotal = cart.items.reduce((s, i) => {
       const lineTotal = i.price * i.qty;
       const itemDiscount = i.discountType === "percent"
@@ -369,8 +455,7 @@ const POS = () => {
     const taxAmount = afterDiscount * cart.taxRate / 100;
     const total = afterDiscount + taxAmount + (cart.fulfillment === "delivery" ? cart.shippingFee : 0);
 
-    const storeIdForNum = cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null);
-    const { data: genNum, error: genErr } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: storeIdForNum, p_source: "pos" });
+    const { data: genNum, error: genErr } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: orderStoreId, p_source: "pos" });
     if (genErr) console.error("generate_pos_order_number failed", genErr);
     const orderNumber = (genNum as string) || `POS-${Date.now().toString(36).toUpperCase()}`;
 
@@ -378,10 +463,12 @@ const POS = () => {
     let customerId: string | null = cart.customer?.id || null;
     if (cart.customer && !cart.customer.id && cart.customer.name) {
       if (normalizedCustomerPhone) {
+        // Customer lookup/update scoped to the order's (validated) store
         const { data: existing } = await supabase
           .from("customers")
           .select("id")
           .eq("phone", normalizedCustomerPhone)
+          .eq("store_id", orderStoreId)
           .maybeSingle();
         if (existing) {
           customerId = existing.id;
@@ -389,13 +476,13 @@ const POS = () => {
             name: cart.customer.name,
             address: cart.customer.address || null,
             phone: normalizedCustomerPhone,
-          }).eq("id", existing.id);
+          }).eq("id", existing.id).eq("store_id", orderStoreId);
         }
       }
       if (!customerId) {
         const { data: newCust } = await supabase
           .from("customers")
-          .insert({ name: cart.customer.name, phone: normalizedCustomerPhone, address: cart.customer.address || null, source: 'pos' })
+          .insert({ name: cart.customer.name, phone: normalizedCustomerPhone, address: cart.customer.address || null, source: 'pos', store_id: orderStoreId })
           .select("id")
           .single();
         if (newCust) customerId = newCust.id;
@@ -426,7 +513,7 @@ const POS = () => {
         customer_address: cart.customer?.address || null,
         customer_city: null,
         notes: cart.notes || null,
-        store_id: cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null),
+        store_id: orderStoreId,
         salesperson_id: cart.salespersonId || user?.id || null,
         salesperson_name: cart.salespersonName || user?.email || null,
         amount_to_collect: dueAmount > 0 ? dueAmount : 0,
@@ -536,37 +623,44 @@ const POS = () => {
           bank_sales: currentShift.bank_sales + bankPaid,
         };
 
-        await supabase.from("pos_shifts" as any).update({
-          total_sales: updated.total_sales,
-          transaction_count: updated.transaction_count,
-          cash_sales: updated.cash_sales,
-          card_sales: updated.card_sales,
-          bkash_sales: updated.bkash_sales,
-          bank_sales: updated.bank_sales,
-        }).eq("id", currentShift.id);
+        // Shift update is scoped: only shift rows belonging to the active
+        // business's stores may be written
+        await scopeStoreIds(
+          supabase.from("pos_shifts" as any).update({
+            total_sales: updated.total_sales,
+            transaction_count: updated.transaction_count,
+            cash_sales: updated.cash_sales,
+            card_sales: updated.card_sales,
+            bkash_sales: updated.bkash_sales,
+            bank_sales: updated.bank_sales,
+          }).eq("id", currentShift.id),
+          businessStoreIds,
+        );
 
         setCurrentShift(updated);
       }
 
-      // Stock reduction — variations track their own stock independently of the parent product
+      // Stock reduction — variations track their own stock independently of the parent product.
+      // Every write is validated against the business scope before executing.
       for (const item of cart.items) {
         if (item.isCustomItem || !item.productId) continue;
+        // Parent product must belong to the active business before any stock write
+        const { data: prod } = await supabase.from("products").select("stock_quantity, woo_product_id, store_id, manage_stock").eq("id", item.productId).single();
+        if (!prod || !prod.store_id || !businessStoreIds.includes(prod.store_id)) continue;
         if (item.variationId) {
-          const { data: v } = await supabase.from("product_variations").select("stock_quantity, manage_stock").eq("id", item.variationId).single();
+          const { data: v } = await supabase.from("product_variations").select("stock_quantity, manage_stock").eq("id", item.variationId).eq("product_id", item.productId).single();
           if (v && (globalStockEnabled || v.manage_stock === true)) {
-            await supabase.from("product_variations").update({ stock_quantity: Math.max(0, v.stock_quantity - item.qty) }).eq("id", item.variationId);
+            await supabase.from("product_variations").update({ stock_quantity: Math.max(0, v.stock_quantity - item.qty) }).eq("id", item.variationId).eq("product_id", item.productId);
           }
           // Still push parent product stock to Woo so the linked store reflects the change
-          const { data: prod } = await supabase.from("products").select("woo_product_id").eq("id", item.productId).single();
-          if (prod?.woo_product_id) {
+          if (prod.woo_product_id) {
             supabase.functions.invoke("woo-push", {
               body: { action: "push_stock", product_id: item.productId },
             }).catch(() => {});
           }
         } else {
-          const { data: prod } = await supabase.from("products").select("stock_quantity, woo_product_id, store_id, manage_stock").eq("id", item.productId).single();
-          if (prod && (globalStockEnabled || prod.manage_stock === true)) {
-            await supabase.from("products").update({ stock_quantity: Math.max(0, prod.stock_quantity - item.qty) }).eq("id", item.productId);
+          if (globalStockEnabled || prod.manage_stock === true) {
+            await supabase.from("products").update({ stock_quantity: Math.max(0, prod.stock_quantity - item.qty) }).eq("id", item.productId).in("store_id", businessStoreIds);
             if (prod.woo_product_id) {
               supabase.functions.invoke("woo-push", {
                 body: { action: "push_stock", product_id: item.productId },
@@ -587,7 +681,7 @@ const POS = () => {
     });
 
     return orderNumber;
-  }, [selectedStoreId, user, currentShift, successChime, globalStockEnabled]);
+  }, [selectedStoreId, user, currentShift, successChime, globalStockEnabled, businessStoreIds, hasScope, toast, symbol]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -623,10 +717,22 @@ const POS = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mobileCartCount, isMobile]);
 
-  if (loading) {
+  // Scope not settled yet: treat as loading — never flash the fail-closed UI
+  // while the business's store list is still resolving.
+  if (!scopeSettled || loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-5rem)] text-muted-foreground">
         <div className="animate-pulse text-lg font-heading">Loading POS...</div>
+      </div>
+    );
+  }
+
+  // Fail closed: scope settled to zero stores — no tenant reads or writes.
+  if (!hasScope) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-5rem)] gap-2 text-muted-foreground">
+        <div className="text-lg font-heading">No stores available</div>
+        <div className="text-sm">The active business has no stores. Select a business with at least one store to use POS.</div>
       </div>
     );
   }

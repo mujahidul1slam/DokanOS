@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { logAction } from "@/lib/auditLog";
 import { useGlobalStockEnabled } from "@/lib/stockSettings";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 interface Props {
   open: boolean;
@@ -26,6 +27,7 @@ interface OrderResult {
   total: number;
   created_at: string;
   customer_name?: string;
+  store_id?: string;
 }
 
 interface OrderItem {
@@ -40,6 +42,7 @@ const ReturnDialog = ({ open, onClose }: Props) => {
   const { symbol } = useCurrency();
   const { toast } = useToast();
   const globalStockEnabled = useGlobalStockEnabled();
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [searchQuery, setSearchQuery] = useState("");
   const [orders, setOrders] = useState<OrderResult[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<OrderResult | null>(null);
@@ -51,14 +54,29 @@ const ReturnDialog = ({ open, onClose }: Props) => {
   const [notes, setNotes] = useState("");
   const [processing, setProcessing] = useState(false);
 
+  // Fail closed on business switch: drop any stale results from the previous business.
+  useEffect(() => {
+    setOrders([]);
+    setSelectedOrder(null);
+    setOrderItems([]);
+    setReturnItems({});
+  }, [businessStoreIds]);
+
   const searchOrders = async () => {
     if (!searchQuery || searchQuery.length < 2) return;
-    const { data } = await supabase
-      .from("orders")
-      .select("id, order_number, total, created_at, customer_id")
-      .or(`order_number.ilike.%${searchQuery}%`)
-      .order("created_at", { ascending: false })
-      .limit(10);
+    if (!hasStoreScope(businessStoreIds)) {
+      setOrders([]);
+      return;
+    }
+    const { data } = await scopeStoreIds(
+      supabase
+        .from("orders")
+        .select("id, order_number, total, created_at, customer_id, store_id")
+        .or(`order_number.ilike.%${searchQuery}%`)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      businessStoreIds
+    );
     
     if (data) {
       const ordersWithCustomers = await Promise.all(
@@ -105,6 +123,7 @@ const ReturnDialog = ({ open, onClose }: Props) => {
 
   const handleReturn = async () => {
     if (!selectedOrder || Object.keys(returnItems).length === 0) return;
+    if (!hasStoreScope(businessStoreIds)) return;
     setProcessing(true);
 
     try {
@@ -128,6 +147,7 @@ const ReturnDialog = ({ open, onClose }: Props) => {
         refund_method: refundMethod,
         restock,
         notes,
+        store_id: selectedOrder.store_id || businessStoreIds[0],
       });
 
       // Restock items if needed

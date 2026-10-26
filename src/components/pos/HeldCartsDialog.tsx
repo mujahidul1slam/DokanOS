@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { Cart } from "./types";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 interface Props {
   open: boolean;
@@ -28,22 +29,30 @@ interface HeldCartRow {
 const HeldCartsDialog = ({ open, onClose, onRecall }: Props) => {
   const { symbol } = useCurrency();
   const { toast } = useToast();
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [heldCarts, setHeldCarts] = useState<HeldCartRow[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
+    if (!hasStoreScope(businessStoreIds)) {
+      setHeldCarts([]);
+      return;
+    }
     setLoading(true);
-    const { data } = await (supabase
-      .from("held_carts" as any)
-      .select("*")
-      .order("created_at", { ascending: false }) as any);
+    const { data } = await (scopeStoreIds(
+      supabase
+        .from("held_carts" as any)
+        .select("*")
+        .order("created_at", { ascending: false }),
+      businessStoreIds
+    ) as any);
     setHeldCarts((data || []) as HeldCartRow[]);
     setLoading(false);
   };
 
   useEffect(() => {
     if (open) load();
-  }, [open]);
+  }, [open, businessStoreIds]);
 
   const handleRecall = async (held: HeldCartRow) => {
     const cart = held.cart_data as Cart;

@@ -35,7 +35,7 @@ describe("useStoresList (fail-closed, R3-a)", () => {
   });
 
   it("fails closed: active business with zero brand-stores returns [] and never issues a stores query", async () => {
-    ctxMock.mockReturnValue({ brands: [], active: { id: "b1" }, loading: false });
+    ctxMock.mockReturnValue({ brands: [], active: { id: "b1" }, loading: false, contextReady: true });
 
     const { result } = renderHook(() => useStoresList());
 
@@ -50,6 +50,7 @@ describe("useStoresList (fail-closed, R3-a)", () => {
       brands: [{ woo_store_id: "s1" }],
       active: { id: "b1" },
       loading: false,
+      contextReady: true,
     });
 
     const { result } = renderHook(() => useStoresList());
@@ -60,7 +61,7 @@ describe("useStoresList (fail-closed, R3-a)", () => {
   });
 
   it("returns [] without querying when there is no business context (null active or outside provider)", async () => {
-    ctxMock.mockReturnValue({ brands: [], active: null, loading: false });
+    ctxMock.mockReturnValue({ brands: [], active: null, loading: false, contextReady: true });
 
     const { result } = renderHook(() => useStoresList());
     await waitFor(() => expect(result.current).toEqual([]));
@@ -72,6 +73,22 @@ describe("useStoresList (fail-closed, R3-a)", () => {
     });
     const outside = renderHook(() => useStoresList());
     await waitFor(() => expect(outside.result.current).toEqual([]));
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it("does not read stores while the server-side context has not converged (issue #16 gate)", async () => {
+    const builder = makeBuilder([{ id: "s1", name: "Store One", status: "connected" }]);
+    fromMock.mockReturnValue(builder);
+    ctxMock.mockReturnValue({
+      brands: [{ woo_store_id: "s1" }],
+      active: { id: "b1" },
+      loading: false,
+      contextReady: false, // login-path convergence still owed
+    });
+
+    const { result } = renderHook(() => useStoresList());
+
+    await waitFor(() => expect(result.current).toEqual([]));
     expect(fromMock).not.toHaveBeenCalled();
   });
 });

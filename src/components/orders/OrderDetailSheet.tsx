@@ -11,6 +11,11 @@ import { postWooOrderNote } from "@/lib/wooNotes";
 import { kickSyncWorker } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
 import { usePermissions } from "@/hooks/usePermissions";
+import {
+  hasStoreScope,
+  scopeStoreIds,
+  useActiveBusinessStoreIds,
+} from "@/hooks/useActiveBusinessStoreIds";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import { getGlobalStockEnabled } from "@/lib/stockSettings";
 import ExchangeDialog from "./ExchangeDialog";
@@ -160,6 +165,10 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const canRefund = can("orders.refund");
   const canLogPayment = can("orders.log_payment");
   const canAttachCourier = can("orders.attach_courier");
+  // Hybrid tenancy (issue #16): the store ids of the ACTIVE business. The sheet
+  // reads the order THROUGH this scope and only then its child rows, so an order
+  // of another business can never be opened and its children never fetched.
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
@@ -268,18 +277,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
   const openExchange = useCallback(async () => {
     if (!order) return;
-    const { data } = await supabase
-      .from("orders")
-      .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
-      .eq("id", order.id)
-      .maybeSingle();
+    if (!hasStoreScope(businessStoreIds)) return; // fail closed: nothing to open
+    const { data } = await scopeStoreIds(
+      supabase
+        .from("orders")
+        .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
+        .eq("id", order.id),
+      businessStoreIds,
+    ).maybeSingle();
     if (!data) {
       toast.error("Could not load order details for exchange");
       return;
     }
     setExchangeParent(data);
     setExchangeOpen(true);
-  }, [order]);
+  }, [order, businessStoreIds]);
 
   // Payment form
   const [payMethod, setPayMethod] = useState("bkash");
@@ -300,15 +312,52 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [confirmPayTrxId, setConfirmPayTrxId] = useState("");
   const [confirmingPayment, setConfirmingPayment] = useState(false);
 
+  /** Empties everything the sheet publishes; used by every fail-closed path. */
+  const clearLoadedOrder = useCallback(() => {
+    setOrder(null);
+    setItems([]);
+    setEditedItems([]);
+    setTimeline([]);
+    setPayments([]);
+    setMeasurements([]);
+    setDeletedMeasIds([]);
+    setCourierShipments([]);
+    setLocationOptions([]);
+    setLoading(false);
+  }, []);
+
   const load = useCallback(async () => {
     if (!orderId) return;
+
+    // Fail closed: an empty scope means this business has no stores to read, so
+    // the sheet reads nothing at all — not even the order it was opened for.
+    if (!hasStoreScope(businessStoreIds)) {
+      clearLoadedOrder();
+      return;
+    }
+
     setLoading(true);
-    const [orderRes, itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
+
+    // Step 1 — the order itself, read through the tenant predicate.
+    const orderRes = await scopeStoreIds(
       supabase
         .from("orders")
         .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, stores(url, name)")
-        .eq("id", orderId)
-        .single(),
+        .eq("id", orderId),
+      businessStoreIds,
+    ).single();
+
+    const o = orderRes.data as unknown as OrderDetail | null;
+    // Step 2 (the child reads below) runs ONLY for an order that is inside the
+    // active business's scope. Otherwise a foreign order id — a deep link, or
+    // state left over from another business — would fetch that business's
+    // order_items, payments, timeline and measurements.
+    if (!o || !o.store_id || !businessStoreIds.includes(o.store_id)) {
+      clearLoadedOrder();
+      return;
+    }
+
+    const [itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
       supabase
         .from("order_items")
         .select("id, product_name, quantity, unit_price, line_total, product_id, products(name)")
@@ -334,8 +383,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .order("created_at", { ascending: false }),
     ]);
 
-    const o = orderRes.data as unknown as OrderDetail | null;
-    if (o) {
+    {
       setOrder(o);
       setStatus(o.status);
       setPaymentStatus(o.payment_status);
@@ -370,17 +418,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
     // Phase 3: locations for the order's brand (via store linkage) for the
     // fulfillment-location picker. Best-effort: empty list hides the picker.
+    // The store comes from the already-verified order above, so no second
+    // (unscoped) read of `orders` is needed.
     try {
-      const { data: oRow } = await supabase
-        .from("orders")
-        .select("store_id")
-        .eq("id", orderId)
-        .single();
-      if (oRow?.store_id) {
+      if (o.store_id) {
         const { data: locs } = await supabase
           .from("locations")
           .select("id, name, type, brand_id, brands!inner(woo_store_id)")
-          .eq("brands.woo_store_id", oRow.store_id)
+          .eq("brands.woo_store_id", o.store_id)
           .order("name");
         setLocationOptions((locs as Array<{ id: string; name: string; type: string }>) || []);
       } else {
@@ -421,25 +466,33 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     );
     setDeletedMeasIds([]);
     setLoading(false);
-  }, [orderId]);
+  }, [orderId, businessStoreIds, clearLoadedOrder]);
 
   useEffect(() => {
     if (open && orderId) load();
   }, [open, orderId, load]);
 
-  // Fetch product list for adding new items
+  // Fetch product list for adding new items — the active business's products
+  // only: the picker must never offer (or read) another business's catalog.
   useEffect(() => {
     if (!open) return;
+    if (!hasStoreScope(businessStoreIds)) {
+      setProductOptions([]);
+      return;
+    }
     (async () => {
-      const { data } = await supabase
-        .from("products")
-        .select("id, name, sku, price")
-        .eq("is_active", true)
-        .order("name")
-        .limit(1000);
+      const { data } = await scopeStoreIds(
+        supabase
+          .from("products")
+          .select("id, name, sku, price")
+          .eq("is_active", true)
+          .order("name")
+          .limit(1000),
+        businessStoreIds,
+      );
       setProductOptions((data || []) as ProductOption[]);
     })();
-  }, [open]);
+  }, [open, businessStoreIds]);
 
   // Resolve preset measurements (e.g. S/M/L size charts) for items that have no
   // measurement rows yet, so they show up — and stay editable — in the sheet.

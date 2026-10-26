@@ -3631,6 +3631,7 @@ export type Database = {
         Args: { p_business_id: string; p_name: string }
         Returns: Json
       }
+      current_business_context: { Args: never; Returns: string }
       delete_unprovisioned_self: { Args: never; Returns: Json }
       describe_business_invitation: { Args: { p_token: string }; Returns: Json }
       enqueue_order_push: {
@@ -3788,6 +3789,10 @@ export type Database = {
         Returns: Json
       }
       run_data_retention_cleanup: { Args: never; Returns: Json }
+      set_active_business_context: {
+        Args: { p_business_id: string }
+        Returns: string
+      }
       set_member_business_role: {
         Args: { p_business: string; p_role: string; p_user: string }
         Returns: undefined

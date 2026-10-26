@@ -8,6 +8,7 @@ import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, 
 import { supabase } from "@/integrations/supabase/client";
 import { parseVariationAttributes as parseVariationAttributesShared, getProductVariations } from "@/lib/variations";
 import { fetchAllRows } from "@/lib/supabasePage";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
@@ -226,6 +227,7 @@ function ProductSearchResultRow({ product, variations, onAdd }: ProductSearchRes
 
 export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props) {
   const { symbol } = useCurrency();
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [productCatMap, setProductCatMap] = useState<Map<string, Set<string>>>(new Map());
@@ -281,13 +283,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   useEffect(() => {
     if (!open) return;
+    if (!hasStoreScope(businessStoreIds)) return; // fail closed — no scope, no read
     // product_variations exceeds the Supabase REST server-side max-rows cap
     // (1180 rows vs 1000): an unpaginated fetch silently truncated at 1000,
     // so variable products whose variations fell past the boundary lost their
     // variation selector or showed only some sizes. Fetch paged until
     // exhausted; never silent on error.
     Promise.all([
-      supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode, is_featured, sales_count, manage_stock, stock_status").eq("is_active", true).order("name"),
+      scopeStoreIds(supabase.from("products").select("id, name, sku, price, stock_quantity, image_url, category, description, store_id, created_at, barcode, is_featured, sales_count, manage_stock, stock_status").eq("is_active", true), businessStoreIds).order("name"),
       fetchAllRows((range) =>
         supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes").range(range.from, range.to),
       ),
@@ -296,12 +299,15 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
       supabase.from("invoice_settings" as any).select("pos_custom_measurements_enabled, shipping_inside_dhaka, shipping_outside_dhaka").limit(1).maybeSingle(),
-      supabase.from("stores").select("id, name").order("name"),
-      supabase.from("categories").select("id, name, parent_id, store_id").order("name"),
+      supabase.from("stores").select("id, name").in("id", businessStoreIds).order("name"),
+      scopeStoreIds(supabase.from("categories").select("id, name, parent_id, store_id"), businessStoreIds).order("name"),
       supabase.from("product_categories").select("product_id, category_id"),
     ]).then(([pRes, vRes, sRes, cRes, zRes, aRes, isRes, stRes, catRes, pcRes]) => {
-      setProducts(pRes.data || []);
-      setVariations(vRes as VariationRow[]);
+      const loadedProducts = pRes.data || [];
+      setProducts(loadedProducts);
+      // Filter wholesale-loaded variations to only those belonging to scoped products
+      const scopedProductIds = new Set(loadedProducts.map((p: any) => p.id));
+      setVariations((vRes as VariationRow[]).filter((v) => scopedProductIds.has(v.product_id)));
       const srcs = (sRes.data || []) as any[];
       setSources(srcs);
       const def = srcs.find((s) => s.is_default);
@@ -317,6 +323,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       setCategories((catRes.data || []) as any[]);
       const map = new Map<string, Set<string>>();
       (pcRes.data || []).forEach((pc: any) => {
+        if (!scopedProductIds.has(pc.product_id)) return; // skip non-scoped products
         if (!map.has(pc.product_id)) map.set(pc.product_id, new Set());
         map.get(pc.product_id)!.add(pc.category_id);
       });
@@ -329,7 +336,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       toast.error(err?.message || "Failed to load product catalog");
     });
 
-  }, [open]);
+  }, [open, businessStoreIds]);
 
   // When a new product is added to the cart, lazy-load its measurement groups.
   useEffect(() => {
@@ -796,6 +803,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
 
   const handleCreate = async () => {
+    if (!hasStoreScope(businessStoreIds)) { toast.error("No active business scope — cannot create order"); return; }
     if (items.length === 0) { toast.error("Add at least one product"); return; }
     setSaving(true);
     try {
@@ -803,7 +811,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         const normalizedCustomerPhone = normalizeBdPhone(customerPhone);
         if (customerName || normalizedCustomerPhone) {
           if (normalizedCustomerPhone) {
-            const { data: existing } = await supabase.from("customers").select("id").eq("phone", normalizedCustomerPhone).limit(1).maybeSingle();
+            const { data: existing } = await scopeStoreIds(supabase.from("customers").select("id").eq("phone", normalizedCustomerPhone), businessStoreIds).limit(1).maybeSingle();
             if (existing) {
               customerId = existing.id;
               await supabase.from("customers").update({
@@ -825,6 +833,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || null,
               area: areas.find(a => a.area_id === selectedArea)?.area_name || null,
               source,
+              store_id: storeId && businessStoreIds.includes(storeId) ? storeId : null,
             }).select("id").single();
             customerId = newC?.id || null;
           }
@@ -848,7 +857,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           customer_phone: normalizedCustomerPhone,
           customer_address: customerAddress || null,
           customer_city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
-          store_id: storeId || null,
+          store_id: storeId && businessStoreIds.includes(storeId) ? storeId : null,
           subtotal,
           discount,
           shipping_cost: shippingCost,

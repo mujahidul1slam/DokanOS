@@ -21,6 +21,9 @@ import { TableSkeleton } from "@/components/ui/loading-states";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useCurrency } from "@/hooks/useCurrency";
+import {
+  useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope,
+} from "@/hooks/useActiveBusinessStoreIds";
 
 interface AliasRow { id?: string; type: "name" | "email" | "address"; value: string; source_store_id: string | null; }
 
@@ -52,6 +55,7 @@ const PAGE_SIZE = 200;
 
 const Customers = () => {
   const { symbol } = useCurrency();
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [customers, setCustomers] = useState<UnifiedCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -68,14 +72,26 @@ const Customers = () => {
   const storeName = useCallback((id: string | null) => stores.find((s) => s.id === id)?.name || "—", [stores]);
 
   const loadCustomers = useCallback(async () => {
+    setLoading(true);
+    // Fail closed: with no tenant scope, show an empty list — never query unscoped.
+    if (!hasStoreScope(businessStoreIds)) {
+      setCustomers([]);
+      setLoading(false);
+      return;
+    }
     // Paginated fetch to bypass Supabase 1000-row default limit
     const fetchAll = async <T,>(table: string, columns: string): Promise<T[]> => {
       const PAGE = 1000;
       let from = 0;
       const all: T[] = [];
+      // customer_aliases has no store_id column: it is scoped server-side via its
+      // parent customer's store (RLS), so only customers/orders get the client filter.
+      const applyScope = table === "customers" || table === "orders";
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        const { data, error } = await supabase.from(table as any).select(columns).range(from, from + PAGE - 1);
+        let query = supabase.from(table as any).select(columns).range(from, from + PAGE - 1);
+        if (applyScope) query = scopeStoreIds(query, businessStoreIds);
+        const { data, error } = await query;
         if (error || !data || data.length === 0) break;
         all.push(...(data as T[]));
         if (data.length < PAGE) break;
@@ -128,19 +144,29 @@ const Customers = () => {
 
     setCustomers(rows);
     setLoading(false);
-  }, []);
+  }, [businessStoreIds]);
 
   const loadStores = useCallback(async () => {
-    const { data } = await supabase.from("stores").select("id, name").order("name");
+    // Fail closed: only the active business's stores may appear as filter options.
+    if (!hasStoreScope(businessStoreIds)) {
+      setStores([]);
+      return;
+    }
+    const { data } = await supabase.from("stores").select("id, name").in("id", businessStoreIds).order("name");
     setStores(data || []);
-  }, []);
+  }, [businessStoreIds]);
 
   useEffect(() => { loadCustomers(); loadStores(); }, [loadCustomers, loadStores]);
 
   const handleSyncCustomers = async () => {
     setSyncing(true);
     try {
-      const { data: storeRows } = await supabase.from("stores").select("id, name");
+      // Fail closed: sync may only touch the active business's stores.
+      if (!hasStoreScope(businessStoreIds)) {
+        toast({ title: "No stores connected", variant: "destructive" });
+        return;
+      }
+      const { data: storeRows } = await supabase.from("stores").select("id, name").in("id", businessStoreIds);
       if (!storeRows || storeRows.length === 0) {
         toast({ title: "No stores connected", variant: "destructive" });
         return;
@@ -166,11 +192,20 @@ const Customers = () => {
   const openDetail = async (c: UnifiedCustomer) => {
     setSelected(c);
     setOrdersLoading(true);
-    const { data } = await supabase
-      .from("orders")
-      .select("id, order_number, total, status, source, payment_status, created_at")
-      .eq("customer_id", c.id)
-      .order("created_at", { ascending: false });
+    // Fail closed: no tenant scope means no order history is readable.
+    if (!hasStoreScope(businessStoreIds)) {
+      setCustomerOrders([]);
+      setOrdersLoading(false);
+      return;
+    }
+    const { data } = await scopeStoreIds(
+      supabase
+        .from("orders")
+        .select("id, order_number, total, status, source, payment_status, created_at")
+        .eq("customer_id", c.id)
+        .order("created_at", { ascending: false }),
+      businessStoreIds,
+    );
     setCustomerOrders((data || []) as CustomerOrder[]);
     setOrdersLoading(false);
   };

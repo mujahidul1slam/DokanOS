@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { kickSyncWorker } from "@/lib/wooNotes";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -19,6 +19,11 @@ import { usePermissions } from "@/hooks/usePermissions";
 import SizePresetsEditor from "@/components/measurements/SizePresetsEditor";
 import { getGroupsForProduct, type MeasurementGroup } from "@/lib/measurements";
 import { useCurrency } from "@/hooks/useCurrency";
+import {
+  hasStoreScope,
+  scopeStoreIds,
+  useActiveBusinessStoreIds,
+} from "@/hooks/useActiveBusinessStoreIds";
 
 /* ---------- types ---------- */
 interface Variation {
@@ -89,12 +94,31 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
+  /**
+   * Store a NEW product is created in. Callers pass it when the active business's
+   * scope resolves to exactly one store; `null` means "cannot tell", in which
+   * case the sheet refuses to insert rather than creating a storeless product
+   * (products.store_id is the tenant link — RLS rejects such a row).
+   */
+  defaultStoreId?: string | null;
 }
 
 /* ========== Component ========== */
-const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) => {
+const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultStoreId = null }: Props) => {
   const { symbol } = useCurrency();
   const { can } = usePermissions();
+  /**
+   * Hybrid tenancy (issue #16): the ACTIVE business's store ids gate every read
+   * and write this sheet performs. Empty means "nothing here is readable", never
+   * "everything RLS allows".
+   */
+  const businessStoreIds = useActiveBusinessStoreIds();
+  const newProductStoreId =
+    defaultStoreId && businessStoreIds.includes(defaultStoreId)
+      ? defaultStoreId
+      : businessStoreIds.length === 1
+        ? businessStoreIds[0]
+        : null;
   const canViewCost = can("products.view_cost");
   const canEditCost = can("products.edit_cost");
   const [form, setForm] = useState<ProductForm>(emptyForm);
@@ -107,6 +131,19 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   // category tree from DB
   const [catTree, setCatTree] = useState<CatNode[]>([]);
   const [selectedCatIds, setSelectedCatIds] = useState<Set<string>>(new Set());
+
+  /** Ids of the loaded (tenant-scoped) category tree: the only assignable ones. */
+  const assignableCatIds = useMemo(() => {
+    const ids = new Set<string>();
+    const walk = (nodes: CatNode[]) => {
+      for (const node of nodes) {
+        ids.add(node.id);
+        walk(node.children);
+      }
+    };
+    walk(catTree);
+    return ids;
+  }, [catTree]);
 
   // attribute / variation generation
   const [attrKeys, setAttrKeys] = useState<string[]>(["Size", "Color"]);
@@ -125,9 +162,10 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
   useEffect(() => {
     if (!open) return;
-    loadCategories();
     setWooUrl(null);
     if (productId) {
+      // loadProduct loads the assignable category tree first, so the links it
+      // seeds are already checked against this business's categories.
       loadProduct(productId);
     } else {
       setForm(emptyForm);
@@ -135,15 +173,31 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
       setSelectedCatIds(new Set());
       setAttrKeys(["Size", "Color"]);
       setAttrValues({ Size: [], Color: [] });
+      loadCategories();
     }
-  }, [open, productId]);
+    // Re-runs when the active business (and with it the store scope) changes: an
+    // open sheet must never keep showing the previous business's product.
+  }, [open, productId, businessStoreIds]);
 
-  const loadCategories = async () => {
-    const { data: cats } = await supabase
-      .from("categories")
-      .select("id, name, slug, parent_id, woo_category_id")
-      .order("name");
-    if (!cats) return;
+  /**
+   * Loads the categories this business may assign and returns their ids, so a
+   * caller can drop links to another business's categories instead of writing
+   * them back. Returns null when there is nothing in scope.
+   */
+  const loadCategories = async (): Promise<Set<string> | null> => {
+    if (!hasStoreScope(businessStoreIds)) {
+      // Fail closed: no store in this business, nothing is assignable.
+      setCatTree([]);
+      return null;
+    }
+    const { data: cats } = await scopeStoreIds(
+      supabase
+        .from("categories")
+        .select("id, name, slug, parent_id, woo_category_id")
+        .order("name"),
+      businessStoreIds,
+    );
+    if (!cats) return null;
 
     // Build tree
     const nodeMap = new Map<string, CatNode>();
@@ -160,46 +214,83 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
       }
     }
     setCatTree(roots);
+    return new Set(cats.map((c) => c.id));
+  };
+
+  /** Drops a draft that does not belong to the active business. */
+  const resetDraft = () => {
+    setForm(emptyForm);
+    setVariations([]);
+    setSelectedCatIds(new Set());
   };
 
   const loadProduct = async (id: string) => {
     setLoading(true);
     setWooUrl(null);
-    const { data: p } = await supabase.from("products").select("*").eq("id", id).single();
-    if (p) {
-      setForm({
-        id: p.id, name: p.name, sku: p.sku || "", price: Number(p.price),
-        regular_price: p.regular_price != null ? Number(p.regular_price) : Number(p.price),
-        sale_price: p.sale_price != null ? Number(p.sale_price) : 0,
-        cost_price: Number(p.cost_price || 0),
-        description: p.description || "",
-        short_description: (p as any).short_description || "",
-        category: p.category || "", image_url: p.image_url || "", barcode: p.barcode || "",
-        manage_stock: p.manage_stock ?? true, stock_quantity: p.stock_quantity,
-        stock_status: normalizeStockStatus(p.stock_status || "in_stock"), is_active: p.is_active,
-        weight: (p as any).weight != null ? String((p as any).weight) : "",
-      });
+    if (!hasStoreScope(businessStoreIds)) {
+      // Fail closed: with no store in this business there is no product to open.
+      resetDraft();
+      setProductGroups([]);
+      setLoading(false);
+      return;
+    }
+    const { data: p } = await supabase
+      .from("products")
+      .select("*")
+      .eq("id", id)
+      .in("store_id", businessStoreIds)
+      .single();
+    if (!p) {
+      // Another business's product (or one this business may not read): close
+      // instead of opening an editor over rows it does not own.
+      resetDraft();
+      setProductGroups([]);
+      setLoading(false);
+      toast({ title: "Product not found in this business", variant: "destructive" });
+      onOpenChange(false);
+      return;
+    }
+    const assignableIds = (await loadCategories()) ?? new Set<string>();
+    setForm({
+      id: p.id, name: p.name, sku: p.sku || "", price: Number(p.price),
+      regular_price: p.regular_price != null ? Number(p.regular_price) : Number(p.price),
+      sale_price: p.sale_price != null ? Number(p.sale_price) : 0,
+      cost_price: Number(p.cost_price || 0),
+      description: p.description || "",
+      short_description: (p as any).short_description || "",
+      category: p.category || "", image_url: p.image_url || "", barcode: p.barcode || "",
+      manage_stock: p.manage_stock ?? true, stock_quantity: p.stock_quantity,
+      stock_status: normalizeStockStatus(p.stock_status || "in_stock"), is_active: p.is_active,
+      weight: (p as any).weight != null ? String((p as any).weight) : "",
+    });
 
-      // Build WooCommerce product URL if linked
-      if (p.woo_product_id && p.store_id) {
-        const { data: store } = await supabase.from("stores").select("url").eq("id", p.store_id).single();
-        if (store?.url) {
-          const base = store.url.replace(/\/$/, "");
-          setWooUrl(`${base}/?p=${p.woo_product_id}`);
-        }
+    // Build WooCommerce product URL if linked. The store id was read through
+    // the tenant-scoped product row, so only its own store can be resolved.
+    if (p.woo_product_id && p.store_id && businessStoreIds.includes(p.store_id)) {
+      const { data: store } = await supabase.from("stores").select("url").eq("id", p.store_id).single();
+      if (store?.url) {
+        const base = store.url.replace(/\/$/, "");
+        setWooUrl(`${base}/?p=${p.woo_product_id}`);
       }
-
-      setWooAttributes(Array.isArray((p as any).attributes) ? (p as any).attributes : []);
-      setWooTags(Array.isArray((p as any).tags) ? (p as any).tags : []);
     }
 
-    // Load product categories
+    setWooAttributes(Array.isArray((p as any).attributes) ? (p as any).attributes : []);
+    setWooTags(Array.isArray((p as any).tags) ? (p as any).tags : []);
+
+    // Load product categories — only links this business may assign survive,
+    // so nothing of another business can be re-saved as this product's.
     const { data: pcData } = await supabase
       .from("product_categories")
       .select("category_id")
       .eq("product_id", id);
     if (pcData) {
-      setSelectedCatIds(new Set(pcData.map((pc: any) => pc.category_id)));
+      setSelectedCatIds(
+        new Set(
+          pcData
+            .map((pc: any) => pc.category_id as string)
+            .filter((catId: string) => assignableIds.has(catId)),
+        ),
+      );
     }
 
     const { data: vars } = await supabase.from("product_variations").select("*").eq("product_id", id).order("created_at");
@@ -223,6 +314,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
           setAttrValues(vals);
         }
       }
+    } else {
+      setVariations([]);
     }
     // Load measurement groups for this product (direct + via categories)
     setGroupsLoading(true);
@@ -248,14 +341,15 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
       setVariations(prev => prev.map(v => ({ ...v, stock_status: normalizedStatus })));
     }
 
-    if (!form.id) return;
+    if (!form.id || !hasStoreScope(businessStoreIds)) return;
 
     setPushingStock(true);
     try {
       await supabase
         .from("products")
         .update({ stock_status: normalizedStatus })
-        .eq("id", form.id);
+        .eq("id", form.id)
+        .in("store_id", businessStoreIds);
 
       if (variations.length > 0) {
         await supabase
@@ -264,7 +358,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
           .eq("product_id", form.id);
       }
 
-      const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", form.id).single();
+      const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", form.id).in("store_id", businessStoreIds).single();
       if (prod?.woo_product_id && prod?.store_id) {
         const { error } = await supabase.functions.invoke("woo-push", {
           body: { action: "push_stock", product_id: form.id },
@@ -287,13 +381,27 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   /* ---------- save ---------- */
   const handleSave = async () => {
     if (!form.name.trim()) { toast({ title: "Product name is required", variant: "destructive" }); return; }
+    // Fail closed (issue #16): the write must land in a store of the ACTIVE
+    // business. No store scope — or no single store to create in — means no write.
+    if (!hasStoreScope(businessStoreIds)) {
+      toast({ title: "No store in this business — nothing was saved", variant: "destructive" });
+      return;
+    }
+    const isNew = !form.id;
+    if (isNew && !newProductStoreId) {
+      toast({ title: "Pick a store in the Products filter before adding a product", variant: "destructive" });
+      return;
+    }
     setSaving(true);
 
-    // Build category string from selected categories for backward compat
+    // Build category string from selected categories for backward compat.
+    // ONLY categories of this business are assignable: a link that came from
+    // another business (or a stale selection) is dropped, never written back.
+    const assignedCatIds = Array.from(selectedCatIds).filter((catId) => assignableCatIds.has(catId));
     const selectedLabels: string[] = [];
     const collectLabels = (nodes: CatNode[]) => {
       for (const n of nodes) {
-        if (selectedCatIds.has(n.id)) selectedLabels.push(n.label);
+        if (assignedCatIds.includes(n.id)) selectedLabels.push(n.label);
         collectLabels(n.children);
       }
     };
@@ -316,9 +424,13 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     let savedId = form.id;
     const isUpdate = !!form.id;
     if (form.id) {
-      await supabase.from("products").update(payload).eq("id", form.id);
+      await supabase.from("products").update(payload).eq("id", form.id).in("store_id", businessStoreIds);
     } else {
-      const { data } = await supabase.from("products").insert(payload).select("id").single();
+      const { data } = await supabase
+        .from("products")
+        .insert({ ...payload, store_id: newProductStoreId })
+        .select("id")
+        .single();
       savedId = data?.id;
     }
     if (savedId) {
@@ -331,8 +443,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
     if (savedId) {
       // Save product_categories
       await supabase.from("product_categories").delete().eq("product_id", savedId);
-      if (selectedCatIds.size > 0) {
-        const pcRows = Array.from(selectedCatIds).map(catId => ({ product_id: savedId!, category_id: catId }));
+      if (assignedCatIds.length > 0) {
+        const pcRows = assignedCatIds.map(catId => ({ product_id: savedId!, category_id: catId }));
         await supabase.from("product_categories").insert(pcRows);
       }
 
@@ -353,7 +465,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
 
     // Push to WooCommerce if product is linked to a store
     if (savedId) {
-      const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", savedId).single();
+      const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", savedId).in("store_id", businessStoreIds).single();
       if (prod?.woo_product_id && prod?.store_id) {
         try {
           const { error } = await supabase.functions.invoke("woo-push", {
@@ -387,9 +499,15 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved }: Props) =
   };
 
   const syncCategories = async () => {
+    if (!hasStoreScope(businessStoreIds)) return;
     toast({ title: "Syncing categories…" });
-    // Trigger a sync for all stores to refresh categories
-    const { data: stores } = await supabase.from("stores").select("id").eq("status", "connected");
+    // Sync targets are the ACTIVE business's connected stores. The stores table's
+    // tenant key is `id`, so the scope is applied as an id predicate.
+    const { data: stores } = await supabase
+      .from("stores")
+      .select("id")
+      .eq("status", "connected")
+      .in("id", businessStoreIds);
     if (stores) {
       for (const s of stores) {
         await supabase.functions.invoke("woo-sync", { body: { store_id: s.id } });

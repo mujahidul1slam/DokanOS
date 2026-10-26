@@ -30,6 +30,7 @@ import CashSection from "@/pages/posReports/CashSection";
 import FulfillmentSection from "@/pages/posReports/FulfillmentSection";
 import { AgingCard } from "@/pages/posReports/cards";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 interface PosOrder {
   id: string;
@@ -97,6 +98,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const PosReports = () => {
   const { symbol } = useCurrency();
+  const businessStoreIds = useActiveBusinessStoreIds();
   // ---- filters ----
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
@@ -121,6 +123,22 @@ const PosReports = () => {
 
   useEffect(() => {
     const load = async () => {
+      if (!hasStoreScope(businessStoreIds)) {
+        setOrders([]);
+        setPrevOrders([]);
+        setItems([]);
+        setProducts([]);
+        setPaymentsInPeriod([]);
+        setPaymentsByOrderId(new Map());
+        setParentOrderMap(new Map());
+        setOrderAllocMap(new Map());
+        setReturnsInPeriod([]);
+        setArOrders([]);
+        setArPaidMap(new Map());
+        setStores([]);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       const { from, to, days } = resolveRange(datePreset, customRange);
       const prevFrom = from && days ? subDays(from, days) : null;
@@ -129,22 +147,22 @@ const PosReports = () => {
       const baseSelect = "id, order_number, total, subtotal, discount, shipping_cost, tax_amount, status, payment_status, payment_method, created_at, customer_name, customer_phone, customer_address, customer_city, customer_email, salesperson_name, store_id, fulfillment_type";
 
       // current orders (in period, by order date)
-      let curQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).order("created_at", { ascending: false }).limit(10000);
+      let curQ = scopeStoreIds(supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).order("created_at", { ascending: false }).limit(10000), businessStoreIds);
       // previous period orders (for deltas)
-      let prevQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).limit(10000);
+      let prevQ = scopeStoreIds(supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).limit(10000), businessStoreIds);
       // AR orders: not fully paid, not cancelled, last 12 months
-      let arQ = supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null)
+      let arQ = scopeStoreIds(supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null)
         .neq("payment_status", "paid").neq("status", "cancelled")
-        .gte("created_at", arWindowStart).order("created_at", { ascending: true }).limit(10000);
+        .gte("created_at", arWindowStart).order("created_at", { ascending: true }).limit(10000), businessStoreIds);
       // payments in period (by payment created_at) - filtered for POS and non-cancelled orders
-      let payInPeriodQ = supabase.from("order_payments")
+      let payInPeriodQ = scopeStoreIds(supabase.from("order_payments")
         .select("id, method, amount, order_id, created_at, notes, orders!inner(source, status, store_id)")
         .eq("orders.source", "pos")
         .neq("orders.status", "cancelled")
         .is("orders.deleted_at", null)
-        .limit(20000);
+        .limit(20000), businessStoreIds);
       // returns in period (by return created_at)
-      let retInPeriodQ = supabase.from("pos_returns").select("id, order_id, refund_amount, refund_method, created_at, store_id").limit(10000);
+      let retInPeriodQ = scopeStoreIds(supabase.from("pos_returns").select("id, order_id, refund_amount, refund_method, created_at, store_id").limit(10000), businessStoreIds);
 
       if (storeFilter !== "all") {
         curQ = curQ.eq("store_id", storeFilter);
@@ -173,7 +191,7 @@ const PosReports = () => {
 
       const [curRes, prevRes, arRes, payRes, retRes, storesRes] = await Promise.all([
         curQ, prevQ, arQ, payInPeriodQ, retInPeriodQ,
-        supabase.from("stores").select("id, name"),
+        supabase.from("stores").select("id, name").in("id", businessStoreIds),
       ]);
 
       const curData = (curRes.data || []) as PosOrder[];
@@ -204,8 +222,8 @@ const PosReports = () => {
 
         const productIds = Array.from(new Set(itemRows.map((i) => i.product_id).filter(Boolean))) as string[];
         if (productIds.length > 0) {
-          const { data: prodData } = await supabase.from("products")
-            .select("id, store_id, woo_product_id").in("id", productIds);
+          const { data: prodData } = await scopeStoreIds(supabase.from("products")
+            .select("id, store_id, woo_product_id").in("id", productIds), businessStoreIds);
           setProducts((prodData || []) as ProductRow[]);
         } else setProducts([]);
       } else {
@@ -216,8 +234,8 @@ const PosReports = () => {
       // All payments on the in-period orders (any date) — for due/paid per order in ledger
       const allPaymentsMap = new Map<string, PaymentRow[]>();
       if (curIds.length > 0) {
-        const { data: allPays } = await supabase.from("order_payments")
-          .select("id, method, amount, order_id, created_at, notes").in("order_id", curIds).limit(50000);
+        const { data: allPays } = await scopeStoreIds(supabase.from("order_payments")
+          .select("id, method, amount, order_id, created_at, notes").in("order_id", curIds).limit(50000), businessStoreIds);
         for (const p of (allPays || []) as PaymentRow[]) {
           const arr = allPaymentsMap.get(p.order_id) || [];
           arr.push(p);
@@ -231,8 +249,8 @@ const PosReports = () => {
       const parentMap = new Map<string, { created_at: string; order_number: string }>();
       const allocM = new Map<string, { shipping: number; total: number }>();
       if (payOrderIds.length > 0) {
-        const { data: parents } = await supabase.from("orders")
-          .select("id, created_at, order_number, shipping_cost, total, fulfillment_type").in("id", payOrderIds).limit(10000);
+        const { data: parents } = await scopeStoreIds(supabase.from("orders")
+          .select("id, created_at, order_number, shipping_cost, total, fulfillment_type").in("id", payOrderIds).limit(10000), businessStoreIds);
         for (const o of (parents || []) as any[]) {
           parentMap.set(o.id, { created_at: o.created_at, order_number: o.order_number });
           allocM.set(o.id, { shipping: Number(o.shipping_cost || 0), total: Number(o.total || 0) });
@@ -253,8 +271,8 @@ const PosReports = () => {
       const arPaidM = new Map<string, number>();
       const arIds = arData.map((o) => o.id);
       if (arIds.length > 0) {
-        const { data: arPays } = await supabase.from("order_payments")
-          .select("order_id, amount").in("order_id", arIds).limit(50000);
+        const { data: arPays } = await scopeStoreIds(supabase.from("order_payments")
+          .select("order_id, amount").in("order_id", arIds).limit(50000), businessStoreIds);
         for (const p of (arPays || []) as any[]) {
           arPaidM.set(p.order_id, (arPaidM.get(p.order_id) || 0) + Number(p.amount));
         }
@@ -264,7 +282,7 @@ const PosReports = () => {
       setLoading(false);
     };
     load();
-  }, [datePreset, customRange, storeFilter]);
+  }, [datePreset, customRange, storeFilter, businessStoreIds]);
 
   const resolved = resolveRange(datePreset, customRange);
 

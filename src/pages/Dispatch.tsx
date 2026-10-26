@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import StatusBadge from "@/components/StatusBadge";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 /* ─── Types ─── */
 interface DispatchOrder {
@@ -74,6 +75,7 @@ interface Area { area_id: number; area_name: string }
 const Dispatch = () => {
   const { symbol } = useCurrency();
   const { can } = usePermissions();
+  const businessStoreIds = useActiveBusinessStoreIds();
   const canDispatch = can("orders.dispatch");
   const [tab, setTab] = useState("pending");
   const [orders, setOrders] = useState<DispatchOrder[]>([]);
@@ -113,18 +115,30 @@ const Dispatch = () => {
 
   /* ─── Load orders ─── */
   const loadOrders = useCallback(async () => {
+    if (!hasStoreScope(businessStoreIds)) {
+      setOrders([]);
+      setShippedOrders([]);
+      setLoading(false);
+      return;
+    }
     const [{ data: pending }, { data: shipped }] = await Promise.all([
-      supabase
-        .from("orders")
-        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, stores(name), order_items(id)")
-        .eq("status", "processing")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("orders")
-        .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, stores(name), order_items(id)")
-        .not("consignment_id", "is", null)
-        .not("status", "in", '("delivered","cancelled","returned")')
-        .order("created_at", { ascending: false }),
+      scopeStoreIds(
+        supabase
+          .from("orders")
+          .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, stores(name), order_items(id)")
+          .eq("status", "processing")
+          .order("created_at", { ascending: false }),
+        businessStoreIds
+      ),
+      scopeStoreIds(
+        supabase
+          .from("orders")
+          .select("id, order_number, total, status, store_id, consignment_id, tracking_status, amount_to_collect, pathao_store_id, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, stores(name), order_items(id)")
+          .not("consignment_id", "is", null)
+          .not("status", "in", '("delivered","cancelled","returned")')
+          .order("created_at", { ascending: false }),
+        businessStoreIds
+      ),
     ]);
 
     const mapOrders = (data: any[]) =>
@@ -137,13 +151,13 @@ const Dispatch = () => {
     setOrders(mapOrders(pending || []));
     setShippedOrders(mapOrders(shipped || []));
     setLoading(false);
-  }, []);
+  }, [businessStoreIds]);
 
   /* ─── Load Pathao integrations + linked stores ─── */
   const loadPathaoData = useCallback(async () => {
     const [{ data: integrations }, { data: links }] = await Promise.all([
       supabase.from("pathao_integrations_safe" as any).select("id, name, is_active").eq("is_active", true).order("name"),
-      supabase.from("pathao_store_links").select("woo_store_id, pathao_integration_id, default_pathao_store_id"),
+      supabase.from("pathao_store_links").select("woo_store_id, pathao_integration_id, default_pathao_store_id").in("woo_store_id", businessStoreIds),
     ]);
     const integrationsList = (integrations || []) as unknown as PathaoIntegration[];
     setPathaoIntegrations(integrationsList);
@@ -151,7 +165,7 @@ const Dispatch = () => {
     if (integrationsList.length > 0 && !selectedIntegration) {
       setSelectedIntegration(integrationsList[0].id);
     }
-  }, [selectedIntegration]);
+  }, [selectedIntegration, businessStoreIds]);
 
   /* ─── Load Pathao merchant stores for selected integration ─── */
   const loadPathaoStores = useCallback(async (integrationId: string) => {
@@ -182,7 +196,7 @@ const Dispatch = () => {
     loadOrders();
     loadPathaoData();
     loadCities();
-  }, [loadOrders, loadPathaoData, loadCities]);
+  }, [loadOrders, loadPathaoData, loadCities, businessStoreIds]);
 
   // Reload merchant stores whenever the selected integration changes
   useEffect(() => {

@@ -26,6 +26,13 @@ interface Params<T extends BulkOrder> {
   duePayContext: { ids: string[]; totalDue: number };
   setDuePayContext: (c: { ids: string[]; totalDue: number }) => void;
   setDuePayOpen: (b: boolean) => void;
+  /**
+   * Hybrid tenancy (issue #16): the store ids of the ACTIVE business. Bulk
+   * actions may only read and write rows inside that scope — an id from another
+   * business (stale selection, a foreign row that slipped into the list)
+   * contributes nothing, and an empty scope fails every handler closed.
+   */
+  businessStoreIds: string[];
 }
 
 export function useOrderBulkActions<T extends BulkOrder>({
@@ -38,13 +45,35 @@ export function useOrderBulkActions<T extends BulkOrder>({
   duePayContext,
   setDuePayContext,
   setDuePayOpen,
+  businessStoreIds,
 }: Params<T>) {
+  /**
+   * The requested order ids that really belong to the active business. This is
+   * the only source of ids for the reads and writes below, so a child read
+   * (order_payments) or a bulk write can never be widened to another business's
+   * rows by whatever the caller passed in.
+   */
+  const scopedIds = useCallback(
+    (candidateIds: Iterable<string>): string[] => {
+      if (businessStoreIds.length === 0) return [];
+      const scope = new Set(businessStoreIds);
+      const allowed = new Set(
+        orders.filter((o) => !!o.store_id && scope.has(o.store_id)).map((o) => o.id),
+      );
+      return Array.from(candidateIds).filter((id) => allowed.has(id));
+    },
+    [orders, businessStoreIds],
+  );
+
   const runBulkStatus = useCallback(
     async (newStatus: string, description: string, toastTitle: string, pushWoo = true) => {
       if (selected.size === 0) return;
+      const ids = scopedIds(selected);
+      // Fail closed: nothing in this business is selected, so nothing is read,
+      // written or pushed.
+      if (ids.length === 0) return;
       setBulkUpdating(true);
       try {
-        const ids = Array.from(selected);
         await supabase.from("orders").update({ status: newStatus }).in("id", ids);
         await addOrderTimeline(
           ids.map((id) => ({ order_id: id, event: "status_changed", description })),
@@ -65,7 +94,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
         setBulkUpdating(false);
       }
     },
-    [selected, setBulkUpdating, setSelected, loadOrders, toast],
+    [selected, scopedIds, setBulkUpdating, setSelected, loadOrders, toast],
   );
 
   const handleMarkReadyToShip = useCallback(
@@ -75,7 +104,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
 
   const handleBulkCancel = useCallback(
     async () => {
-      const ids = Array.from(selected);
+      const ids = scopedIds(selected);
       // Phase 6 (§9.3): Bulk cancel - invoke storefront-restore-stock for storefront orders
       if (ids.length > 0) {
         try {
@@ -83,6 +112,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
             .from("orders")
             .select("id")
             .in("id", ids)
+            .in("store_id", businessStoreIds)
             .not("storefront_id", "is", null)
             .is("stock_restored_at", null);
 
@@ -103,7 +133,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
       }
       return runBulkStatus("cancelled", "Cancelled", "{n} order(s) cancelled", false);
     },
-    [selected, runBulkStatus],
+    [selected, scopedIds, businessStoreIds, runBulkStatus],
   );
 
   const handleBulkStatusChange = useCallback(
@@ -116,7 +146,8 @@ export function useOrderBulkActions<T extends BulkOrder>({
 
   const handleBulkMarkPaid = useCallback(async () => {
     if (selected.size === 0) return;
-    const ids = Array.from(selected);
+    const ids = scopedIds(selected);
+    if (ids.length === 0) return; // fail closed: nothing of this business selected
     const { data: pays } = await supabase
       .from("order_payments")
       .select("order_id, amount")
@@ -134,11 +165,12 @@ export function useOrderBulkActions<T extends BulkOrder>({
     }
     setDuePayContext({ ids, totalDue });
     setDuePayOpen(true);
-  }, [orders, selected, setDuePayContext, setDuePayOpen, toast]);
+  }, [orders, selected, scopedIds, setDuePayContext, setDuePayOpen, toast]);
 
   const handleConfirmBulkDuePayment = useCallback(
     async (result: DuePaymentResult) => {
-      const { ids } = duePayContext;
+      const ids = scopedIds(duePayContext.ids);
+      if (ids.length === 0) return; // fail closed: nothing of this business to collect
       setBulkUpdating(true);
       try {
         const { data: pays } = await supabase
@@ -177,25 +209,26 @@ export function useOrderBulkActions<T extends BulkOrder>({
         setBulkUpdating(false);
       }
     },
-    [duePayContext, orders, setBulkUpdating, setSelected, loadOrders, toast],
+    [duePayContext, orders, scopedIds, setBulkUpdating, setSelected, loadOrders, toast],
   );
 
   const handleTrashOrders = useCallback(
     async (ids: string[]) => {
-      if (ids.length === 0) return;
+      const allowed = scopedIds(ids);
+      if (allowed.length === 0) return;
       setBulkUpdating(true);
       try {
         const now = new Date().toISOString();
-        await supabase.from("orders").update({ deleted_at: now } as any).in("id", ids);
+        await supabase.from("orders").update({ deleted_at: now } as any).in("id", allowed);
         await addOrderTimeline(
-          ids.map((id) => ({
+          allowed.map((id) => ({
             order_id: id,
             event: "trashed",
             description: "Order moved to trash",
             metadata: { skip_woo_note: true },
           })),
         );
-        const wooOrders = orders.filter((o) => ids.includes(o.id) && o.woo_order_id && o.store_id);
+        const wooOrders = orders.filter((o) => allowed.includes(o.id) && o.woo_order_id && o.store_id);
         for (const o of wooOrders) {
           try {
             await postWooOrderNote(o.id, "[DokanOS] Order moved to trash");
@@ -204,8 +237,8 @@ export function useOrderBulkActions<T extends BulkOrder>({
             });
           } catch {}
         }
-        await logAction("delete", "order_trash_bulk", undefined, { ids });
-        toast({ title: `${ids.length} order(s) moved to trash` });
+        await logAction("delete", "order_trash_bulk", undefined, { ids: allowed });
+        toast({ title: `${allowed.length} order(s) moved to trash` });
         setSelected(new Set());
         loadOrders();
       } catch {
@@ -214,24 +247,25 @@ export function useOrderBulkActions<T extends BulkOrder>({
         setBulkUpdating(false);
       }
     },
-    [orders, setBulkUpdating, setSelected, loadOrders, toast],
+    [orders, scopedIds, setBulkUpdating, setSelected, loadOrders, toast],
   );
 
   const handleRestoreOrders = useCallback(
     async (ids: string[]) => {
-      if (ids.length === 0) return;
+      const allowed = scopedIds(ids);
+      if (allowed.length === 0) return;
       setBulkUpdating(true);
       try {
-        await supabase.from("orders").update({ deleted_at: null } as any).in("id", ids);
+        await supabase.from("orders").update({ deleted_at: null } as any).in("id", allowed);
         await addOrderTimeline(
-          ids.map((id) => ({
+          allowed.map((id) => ({
             order_id: id,
             event: "restored",
             description: "Order restored from trash",
           })),
         );
-        await logAction("update", "order_restore_bulk", undefined, { ids });
-        toast({ title: `${ids.length} order(s) restored` });
+        await logAction("update", "order_restore_bulk", undefined, { ids: allowed });
+        toast({ title: `${allowed.length} order(s) restored` });
         setSelected(new Set());
         loadOrders();
       } catch {
@@ -240,14 +274,15 @@ export function useOrderBulkActions<T extends BulkOrder>({
         setBulkUpdating(false);
       }
     },
-    [setBulkUpdating, setSelected, loadOrders, toast],
+    [scopedIds, setBulkUpdating, setSelected, loadOrders, toast],
   );
 
   const handleBulkPrintMeasurementSlips = useCallback(async () => {
     if (selected.size === 0) return;
+    const ids = scopedIds(selected);
+    if (ids.length === 0) return; // fail closed: nothing of this business selected
     setBulkUpdating(true);
     try {
-      const ids = Array.from(selected);
       const { printed, skipped } = await printMeasurementSlipsBulk(ids);
       toast({
         title: `Printed ${printed} measurement slip(s)`,
@@ -261,14 +296,16 @@ export function useOrderBulkActions<T extends BulkOrder>({
     } finally {
       setBulkUpdating(false);
     }
-  }, [selected, setBulkUpdating, setSelected, loadOrders, toast]);
+  }, [selected, scopedIds, setBulkUpdating, setSelected, loadOrders, toast]);
 
   const handleBulkTrackSelected = useCallback(async () => {
     if (selected.size === 0) return;
+    const allowed = new Set(scopedIds(selected));
+    if (allowed.size === 0) return; // fail closed: no parcel of this business selected
     setBulkUpdating(true);
     try {
       const selectedWithConsignment = orders.filter(
-        (o) => selected.has(o.id) && o.consignment_id,
+        (o) => allowed.has(o.id) && o.consignment_id,
       );
       let updated = 0;
       for (const o of selectedWithConsignment) {
@@ -289,7 +326,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
     } finally {
       setBulkUpdating(false);
     }
-  }, [orders, selected, setBulkUpdating, setSelected, loadOrders, toast]);
+  }, [orders, selected, scopedIds, setBulkUpdating, setSelected, loadOrders, toast]);
 
   return {
     handleMarkReadyToShip,

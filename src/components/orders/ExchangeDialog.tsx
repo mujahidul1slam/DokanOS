@@ -14,6 +14,7 @@ import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 /**
  * ExchangeDialog
@@ -80,6 +81,7 @@ export default function ExchangeDialog({
   open, onOpenChange, parentOrder: parentProp, pickerMode = false, onCreated,
 }: Props) {
   const { toast } = useToast();
+  const businessStoreIds = useActiveBusinessStoreIds();
 
   const [parent, setParent] = useState<ParentOrder | null>(parentProp ?? null);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -195,24 +197,28 @@ export default function ExchangeDialog({
   /* ─── Picker search (standalone mode) ─── */
   useEffect(() => {
     if (!pickerMode || !open) return;
+    if (!hasStoreScope(businessStoreIds)) { setPickerResults([]); return; } // fail closed
     const q = pickerQuery.trim();
     if (q.length < 2) { setPickerResults([]); return; }
     const t = setTimeout(async () => {
       setPickerLoading(true);
-      const { data } = await supabase
-        .from("orders")
-        .select(
-          "id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status"
-        )
-        .or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%`)
-        .eq("status", "delivered")
+      const { data } = await scopeStoreIds(
+        supabase
+          .from("orders")
+          .select(
+            "id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status"
+          )
+          .or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%`)
+          .eq("status", "delivered"),
+        businessStoreIds,
+      )
         .order("created_at", { ascending: false })
         .limit(10);
       setPickerResults((data || []) as ParentOrder[]);
       setPickerLoading(false);
     }, 250);
     return () => clearTimeout(t);
-  }, [pickerQuery, pickerMode, open]);
+  }, [pickerQuery, pickerMode, open, businessStoreIds]);
 
   /* ─── Helpers ─── */
   const cityOptions = useMemo(
@@ -235,8 +241,16 @@ export default function ExchangeDialog({
     (pickupDescription.trim() || deliverDescription.trim());
 
   const handleSubmit = async () => {
+    if (!hasStoreScope(businessStoreIds)) {
+      toast({ title: "No active business scope", description: "Cannot create an exchange without an active business.", variant: "destructive" });
+      return;
+    }
     if (!parent) {
       toast({ title: "Pick a parent order first", variant: "destructive" });
+      return;
+    }
+    if (parent.store_id && !businessStoreIds.includes(parent.store_id)) {
+      toast({ title: "Order outside business scope", description: "The selected parent order does not belong to the active business.", variant: "destructive" });
       return;
     }
     if (!canSubmit) {

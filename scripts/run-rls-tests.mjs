@@ -965,6 +965,30 @@ async function seed(client) {
      ON CONFLICT (user_id, permission) DO NOTHING`,
     [STAFF_MGMT],
   );
+  // Issue #16 (S3): operational RLS is bound to the server-side active business
+  // context, and the app converges it at login (useBusinessContext). The
+  // fixtures converge the same way, so every battery file keeps exercising
+  // realistic sessions; the A/B probes in active_business_context_test.sql
+  // switch contexts explicitly. Users without a business membership (ADMIN,
+  // STAFF_NO, STAFF_MGMT, OUTSIDER) converge nothing and therefore fail closed
+  // on operational data — exactly as the policies intend.
+  for (const [userId, businessId] of [
+    [FIXTURE_IDS[3], BIZ_A],   // OWNER_A
+    [FIXTURE_IDS[4], BIZ_A],   // OWNER_A2
+    [FIXTURE_IDS[5], BIZ_A],   // UBA_ADMIN_A
+    [FIXTURE_IDS[6], BIZ_A],   // MEMBER_A
+    [FIXTURE_IDS[7], BIZ_A],   // VIEWER_A
+    [FIXTURE_IDS[8], B_OTHER], // OWNER_B
+  ]) {
+    // set_active_business_context is auth.uid()-bound, so the privileged
+    // fixture connection claims the fixture identity for the call (the same
+    // mechanism the *_test.sql files use under SET LOCAL ROLE).
+    await client.query(`SELECT set_config('request.jwt.claims', $1, false)`, [
+      JSON.stringify({ sub: userId, role: "authenticated" }),
+    ]);
+    await client.query(`SELECT public.set_active_business_context($1)`, [businessId]);
+  }
+  await client.query(`SELECT set_config('request.jwt.claims', '', false)`);
 }
 
 async function run() {

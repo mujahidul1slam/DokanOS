@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 interface Props {
   open: boolean;
@@ -21,6 +22,7 @@ interface Props {
 const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
   const { symbol } = useCurrency();
   const { user } = useAuth();
+  const businessStoreIds = useActiveBusinessStoreIds();
   const { toast } = useToast();
   const [openingFloat, setOpeningFloat] = useState("");
   const [closingBalance, setClosingBalance] = useState("");
@@ -28,7 +30,7 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
   const [loading, setLoading] = useState(false);
 
   const openShift = async () => {
-    if (!user) return;
+    if (!user || !hasStoreScope(businessStoreIds)) return;
     setLoading(true);
     const { data } = await supabase
       .from("pos_shifts" as any)
@@ -37,6 +39,7 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
         user_email: user.email,
         opening_float: parseFloat(openingFloat) || 0,
         status: "open",
+        store_id: businessStoreIds[0],
       })
       .select()
       .single();
@@ -50,21 +53,24 @@ const ShiftDialog = ({ open, onClose, currentShift, onShiftChange }: Props) => {
   };
 
   const closeShift = async () => {
-    if (!currentShift) return;
+    if (!currentShift || !hasStoreScope(businessStoreIds)) return;
     setLoading(true);
     const closing = parseFloat(closingBalance) || 0;
     const expected = currentShift.opening_float + currentShift.cash_sales - currentShift.total_returns;
 
-    await supabase
-      .from("pos_shifts" as any)
-      .update({
-        status: "closed",
-        closing_balance: closing,
-        expected_balance: expected,
-        notes: closingNotes || null,
-        closed_at: new Date().toISOString(),
-      })
-      .eq("id", currentShift.id);
+    await scopeStoreIds(
+      supabase
+        .from("pos_shifts" as any)
+        .update({
+          status: "closed",
+          closing_balance: closing,
+          expected_balance: expected,
+          notes: closingNotes || null,
+          closed_at: new Date().toISOString(),
+        })
+        .eq("id", currentShift.id),
+      businessStoreIds
+    );
 
     onShiftChange(null);
     toast({ title: "Shift closed", description: `Closing: ${symbol}${closing} | Expected: ${symbol}${expected}` });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { useStoresList } from "@/hooks/useStoresList";
+import {
+  hasStoreScope,
+  scopeStoreIds,
+  useActiveBusinessStoreIds,
+} from "@/hooks/useActiveBusinessStoreIds";
 
 interface Category {
   id: string;
@@ -20,15 +26,15 @@ interface Category {
   created_at: string;
 }
 
-interface Store {
-  id: string;
-  name: string;
-  status: string;
-}
-
 const CategoriesTab = () => {
+  /**
+   * Hybrid tenancy (issue #16): the ACTIVE business's store ids are the only
+   * tenant scope this tab may read or write, and `useStoresList` supplies the
+   * scope's own store rows (names + connection status).
+   */
+  const businessStoreIds = useActiveBusinessStoreIds();
+  const stores = useStoresList();
   const [categories, setCategories] = useState<Category[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -41,18 +47,27 @@ const CategoriesTab = () => {
   const [parentId, setParentId] = useState<string>("none");
   const [selectedStores, setSelectedStores] = useState<Set<string>>(new Set());
 
+  /** The loaded (tenant-scoped) ids: the only categories this tab may touch. */
+  const inScopeCategoryIds = useMemo(() => new Set(categories.map((c) => c.id)), [categories]);
+
   const loadData = async () => {
+    // Fail closed BEFORE any query: a business with no mapped stores has nothing
+    // to list — never "every category the RLS policies happen to allow".
+    if (!hasStoreScope(businessStoreIds)) {
+      setCategories([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const [{ data: cats }, { data: storeData }] = await Promise.all([
+    const { data: cats } = await scopeStoreIds(
       supabase.from("categories").select("*").order("name"),
-      supabase.from("stores").select("id, name, status"),
-    ]);
-    setCategories(cats || []);
-    setStores(storeData || []);
+      businessStoreIds,
+    );
+    setCategories((cats || []) as Category[]);
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [businessStoreIds]);
 
   const handleSyncCategories = async () => {
     setSyncing(true);
@@ -86,38 +101,54 @@ const CategoriesTab = () => {
 
   const handleSave = async () => {
     if (!name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return; }
+    // Fail closed (issue #16): only a store of the ACTIVE business may receive
+    // the category — every write is gated by the scope first.
+    if (!hasStoreScope(businessStoreIds)) {
+      toast({ title: "No store in this business — nothing was saved", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     const catSlug = slug.trim() || name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    const parentVal = parentId === "none" ? null : parentId;
-
-    // For each selected store, create/update category
-    const storeIds = Array.from(selectedStores);
-    if (storeIds.length === 0) storeIds.push(""); // at least save once with no store
+    // A stale or foreign store selection can never become the write target.
+    const storeIds = Array.from(selectedStores).filter((sid) => businessStoreIds.includes(sid));
+    // A parent of another business must never be linked: an out-of-scope parent
+    // becomes top-level rather than a cross-business reference.
+    const parentVal = parentId === "none" || !inScopeCategoryIds.has(parentId) ? null : parentId;
 
     if (editId) {
-      await supabase.from("categories").update({ name: name.trim(), slug: catSlug, parent_id: parentVal }).eq("id", editId);
+      await supabase
+        .from("categories")
+        .update({ name: name.trim(), slug: catSlug, parent_id: parentVal })
+        .eq("id", editId)
+        .in("store_id", businessStoreIds);
 
-      // Push to WooCommerce for connected stores
+      // Push to WooCommerce for the selected stores of this business
       for (const sid of storeIds) {
-        if (sid) {
-          try {
-            await supabase.functions.invoke("woo-push", {
-              body: { store_id: sid, type: "category", action: "update", payload: { name: name.trim(), slug: catSlug, parent_id: parentVal, category_id: editId } },
-            });
-          } catch { /* ignore push errors */ }
-        }
+        try {
+          await supabase.functions.invoke("woo-push", {
+            body: { store_id: sid, type: "category", action: "update", payload: { name: name.trim(), slug: catSlug, parent_id: parentVal, category_id: editId } },
+          });
+        } catch { /* ignore push errors */ }
       }
       toast({ title: "Category updated" });
     } else {
-      // Create category for each selected store
+      // categories.store_id is the tenant link (RLS requires it), so a category
+      // without one of this business's stores would be unreadable to every
+      // business: refuse instead of writing an orphan row.
+      if (storeIds.length === 0) {
+        setSaving(false);
+        toast({ title: "Select at least one store to create this category", variant: "destructive" });
+        return;
+      }
+
+      // Create the category in each selected store
       for (const sid of storeIds) {
-        const insertData: any = { name: name.trim(), slug: catSlug, parent_id: parentVal };
-        if (sid) insertData.store_id = sid;
+        const insertData: any = { name: name.trim(), slug: catSlug, parent_id: parentVal, store_id: sid };
 
         const { data: newCat } = await supabase.from("categories").insert(insertData).select().single();
 
         // Push to WooCommerce
-        if (sid && newCat) {
+        if (newCat) {
           try {
             await supabase.functions.invoke("woo-push", {
               body: { store_id: sid, type: "category", action: "create", payload: { name: name.trim(), slug: catSlug, parent_id: parentVal, category_id: newCat.id } },
@@ -134,8 +165,11 @@ const CategoriesTab = () => {
   };
 
   const handleDelete = async (id: string) => {
+    // Fail closed: only a category this tab loaded for the active business may
+    // be deleted (its product_categories cleanup hangs off the same check).
+    if (!hasStoreScope(businessStoreIds) || !inScopeCategoryIds.has(id)) return;
     await supabase.from("product_categories").delete().eq("category_id", id);
-    await supabase.from("categories").delete().eq("id", id);
+    await supabase.from("categories").delete().eq("id", id).in("store_id", businessStoreIds);
     toast({ title: "Category deleted" });
     loadData();
   };
