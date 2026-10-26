@@ -1,9 +1,10 @@
-import { ReactNode } from "react";
+import { ReactNode, useId, useRef } from "react";
 import { Info } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useRegisterSettingsSave } from "@/lib/settingsSaveRegistry";
 
 /**
  * Card wrapper for a settings tab. Standardizes padding, header treatment,
@@ -95,10 +96,22 @@ export const SaveButton = ({
 }: {
   saving?: boolean;
   disabled?: boolean;
-  onClick: () => void;
+  onClick: () => void | Promise<void>;
   label?: string;
-}) => (
-  <Button onClick={onClick} disabled={saving || disabled} size="sm" className="min-w-[120px]">
-    {saving ? "Saving…" : label}
-  </Button>
-);
+}) => {
+  const id = useId();
+  const onClickRef = useRef(onClick);
+  onClickRef.current = onClick;
+  // Issue #25: register this save handler so the sticky save bar (and the
+  // route-away dialog) can save generically, without tabs knowing about them.
+  useRegisterSettingsSave(id, {
+    label,
+    disabled: Boolean(saving || disabled),
+    run: () => onClickRef.current(),
+  });
+  return (
+    <Button onClick={onClick} disabled={saving || disabled} size="sm" className="min-w-[120px]">
+      {saving ? "Saving…" : label}
+    </Button>
+  );
+};
