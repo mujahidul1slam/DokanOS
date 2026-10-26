@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download, Star, Box } from "lucide-react";
+import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download, Star, Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import ProductDetailSheet from "@/components/products/ProductDetailSheet";
+import ProductImagePreview from "@/components/products/ProductImagePreview";
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { downloadCsv } from "@/lib/exportCsv";
 import { format } from "date-fns";
@@ -500,13 +501,7 @@ const ProductList = () => {
               <div onClick={e => e.stopPropagation()} className="pt-1">
                 <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleOne(p.id)} className="h-5 w-5" />
               </div>
-              <div className="h-12 w-12 rounded-md bg-muted flex items-center justify-center overflow-hidden shrink-0">
-                {p.image_url ? (
-                  <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
-                ) : (
-                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                )}
-              </div>
+              <ProductImagePreview src={p.image_url} alt={p.name} className="h-12 w-12" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="font-medium text-foreground truncate flex items-center gap-1.5">
@@ -574,30 +569,7 @@ const ProductList = () => {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-md bg-muted flex items-center justify-center overflow-hidden shrink-0 relative">
-                      {p.image_url ? (
-                        <>
-                          <img
-                            src={p.image_url}
-                            alt={p.name}
-                            className="h-full w-full object-cover"
-                            referrerPolicy="no-referrer"
-                            loading="lazy"
-                            onError={(e) => {
-                              const img = e.currentTarget;
-                              img.style.display = "none";
-                              const fb = img.nextElementSibling as HTMLElement | null;
-                              if (fb) fb.style.display = "flex";
-                            }}
-                          />
-                          <span className="hidden absolute inset-0 items-center justify-center bg-muted">
-                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                          </span>
-                        </>
-                      ) : (
-                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
+                    <ProductImagePreview src={p.image_url} alt={p.name} className="h-9 w-9" />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="font-medium text-foreground truncate">{p.name}</p>
