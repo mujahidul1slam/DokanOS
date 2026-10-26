@@ -15,6 +15,9 @@ import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import { getGlobalStockEnabled } from "@/lib/stockSettings";
 import ExchangeDialog from "./ExchangeDialog";
 import AttachParcelDialog from "./AttachParcelDialog";
+import ProductVariationPicker, { type PickableVariation, type VariationPick } from "./ProductVariationPicker";
+import { getProductVariations } from "@/lib/variations";
+import { fetchAllRows } from "@/lib/supabasePage";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -184,6 +187,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [fulfillmentType, setFulfillmentType] = useState<string>("delivery");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [variationOptions, setVariationOptions] = useState<PickableVariation[]>([]);
+  const [variationPickerProductId, setVariationPickerProductId] = useState<string | null>(null);
   const [addProductId, setAddProductId] = useState<string>("");
   // Multi-business Phase 3: fulfillment location (warehouse/showroom)
   const [locationId, setLocationId] = useState<string>("");
@@ -436,17 +441,34 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     if (open && orderId) load();
   }, [open, orderId, load]);
 
-  // Fetch product list for adding new items
+  // Fetch products + variations for adding new items. Both are paged because
+  // the hosted REST cap silently truncates at 1000 rows (variation tables in
+  // particular exceed it) — which used to hide variation selectors.
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const { data } = await supabase
-        .from("products")
-        .select("id, name, sku, price")
-        .eq("is_active", true)
-        .order("name")
-        .limit(1000);
-      setProductOptions((data || []) as ProductOption[]);
+      try {
+        const [products, variations] = await Promise.all([
+          fetchAllRows<ProductOption>(({ from, to }) =>
+            supabase
+              .from("products")
+              .select("id, name, sku, price")
+              .eq("is_active", true)
+              .order("name")
+              .range(from, to),
+          ),
+          fetchAllRows<PickableVariation>(({ from, to }) =>
+            supabase
+              .from("product_variations")
+              .select("id, product_id, name, sku, price, stock_quantity, manage_stock, attributes")
+              .range(from, to),
+          ),
+        ]);
+        setProductOptions(products);
+        setVariationOptions(variations);
+      } catch (e) {
+        console.warn("Failed to load product catalog for order edits:", e);
+      }
     })();
   }, [open]);
 
@@ -545,32 +567,52 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     setDeletedItemIds((prev) => [...prev, id]);
   };
 
-  const addProductToOrder = (productId: string) => {
-    const p = productOptions.find((o) => o.id === productId);
-    if (!p) return;
-    // If same product (non-new) already exists, bump its qty instead
+  const addOrderLine = (pick: VariationPick) => {
     const existing = editedItems.find(
-      (i) => !i._isNew && i.product_id === productId && !deletedItemIds.includes(i.id)
+      (i) =>
+        !i._isNew &&
+        i.product_id === pick.product.id &&
+        i.product_name === pick.lineName &&
+        !deletedItemIds.includes(i.id),
     );
     if (existing) {
       updateItemQty(existing.id, existing.quantity + 1);
-    } else {
-      const tempId = `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      setEditedItems((prev) => [
-        ...prev,
-        {
-          id: tempId,
-          product_name: p.name,
-          quantity: 1,
-          unit_price: Number(p.price) || 0,
-          line_total: Number(p.price) || 0,
-          product_id: p.id,
-          base_product_name: p.name,
-          _isNew: true,
-        },
-      ]);
+      return;
     }
+    const tempId = `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setEditedItems((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        product_name: pick.lineName,
+        quantity: 1,
+        unit_price: pick.price,
+        line_total: pick.price,
+        product_id: pick.product.id,
+        base_product_name: pick.product.name,
+        _isNew: true,
+      },
+    ]);
+  };
+
+  const addProductToOrder = (productId: string) => {
+    const p = productOptions.find((o) => o.id === productId);
+    if (!p) return;
     setAddProductId("");
+    // Variable products go through the shared size picker instead of being
+    // added as a base product with no size (issue #20).
+    const hasVariations = getProductVariations(productId, variationOptions).length > 0;
+    if (hasVariations) {
+      setVariationPickerProductId(productId);
+      return;
+    }
+    addOrderLine({
+      product: p,
+      variation: null,
+      lineName: p.name,
+      attributes: [],
+      price: Number(p.price) || 0,
+    });
   };
 
   /* ---------- Save ---------- */
@@ -1678,6 +1720,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       </div>
                     </div>
                   )}
+
+                  <ProductVariationPicker
+                    open={!!variationPickerProductId}
+                    onOpenChange={(next) => { if (!next) setVariationPickerProductId(null); }}
+                    products={productOptions}
+                    variations={variationOptions}
+                    lockProductId={variationPickerProductId}
+                    onPick={addOrderLine}
+                    title="Add product & size"
+                    description="Pick the variation for this order line — the size label is kept in the item name."
+                  />
 
                   {/* Summary */}
                   <div className="mt-4 space-y-2 text-sm">
