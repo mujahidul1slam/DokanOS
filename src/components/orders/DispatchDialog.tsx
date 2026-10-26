@@ -37,6 +37,7 @@ import {
   fetchPathaoAccountData,
   recordPathaoAccountOverride,
 } from "@/lib/dispatchAccountsData";
+import { splitGatedOrders, gateLockedMessage } from "@/lib/paymentGateWiring";
 import {
   BatchOrderChip,
   BrandAvatar,
@@ -139,6 +140,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   const [groupAccountKeys, setGroupAccountKeys] = useState<Record<string, string>>({});
   const [overrideDismissed, setOverrideDismissed] = useState<Set<string>>(new Set());
   const autoFilledKeyRef = useRef<string>("");
+  const dispatchableOrderIdsRef = useRef<Set<string> | null>(null);
   const { toast } = useToast();
 
   // Batch-only removal (issue #22): drops an order from THIS dispatch batch
@@ -521,8 +523,17 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
 
   const handleDispatch = async () => {
     if (visibleOrders.length === 0) return;
+
+    // Apply the payment gate to the live batch before any account validation or
+    // replace/skip prompt. Gated orders never reach create_bulk.
+    const { allowed, skipped } = splitGatedOrders(visibleOrders, "courier");
+    if (skipped.length > 0) toast({ title: gateLockedMessage(skipped), variant: "destructive" });
+    if (allowed.length === 0) return;
+    dispatchableOrderIdsRef.current = new Set(allowed.map((o) => o.id));
+
     // Each brand/account group dispatches through its own Pathao Account.
     for (const group of groups) {
+      if (!group.orderIds.some((id) => allowed.some((o) => o.id === id))) continue;
       if (!accountForGroup(group)) {
         toast({
           title: "Select a Pathao Account",
@@ -532,7 +543,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         return;
       }
     }
-    for (const o of visibleOrders) {
+    for (const o of allowed) {
       const ov = orderOverrides[o.id];
       if (!ov?.recipient_name || !ov?.recipient_phone || !ov?.recipient_address || !ov?.city_id || !ov?.zone_id) {
         toast({ title: "Missing info", description: `Order #${o.order_number} is missing details`, variant: "destructive" }); return;
@@ -542,9 +553,10 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     // If any selected order already has a courier entry, show the "This order
     // already has a courier entry" dialog first so the user can choose Replace
     // (cancel previous + dispatch new) or Don't create (skip that order).
-    if (ordersWithExisting.length > 0) {
-      setExistingOrders(ordersWithExisting);
-      setReplaceOrderIds(new Set(ordersWithExisting.map((o) => o.id)));
+    const allowedExistingOrders = ordersWithExisting.filter((o) => dispatchableOrderIdsRef.current?.has(o.id));
+    if (allowedExistingOrders.length > 0) {
+      setExistingOrders(allowedExistingOrders);
+      setReplaceOrderIds(new Set(allowedExistingOrders.map((o) => o.id)));
       return;
     }
 
@@ -557,9 +569,13 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
       const BATCH_SIZE = 20;
       // Orders the user chose NOT to replace (had an existing courier entry and
       // they picked "Don't create") are excluded from the payload entirely.
-      const toDispatch = replaceFilters
-        ? visibleOrders.filter((o) => !o.consignment_id || replaceFilters.has(o.id))
+      const gateAllowedIds = dispatchableOrderIdsRef.current;
+      const gateAllowedOrders = gateAllowedIds
+        ? visibleOrders.filter((o) => gateAllowedIds.has(o.id))
         : visibleOrders;
+      const toDispatch = replaceFilters
+        ? gateAllowedOrders.filter((o) => !o.consignment_id || replaceFilters.has(o.id))
+        : gateAllowedOrders;
 
       const allResults: any[] = [];
       // Non-default Pathao Account choices actually used, per group, so each

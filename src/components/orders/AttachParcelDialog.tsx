@@ -28,6 +28,18 @@ interface PathaoIntegration {
   is_active: boolean;
 }
 
+/** Edge-function responses are normally wrapped as { data: result }, but the
+ * client also receives the result directly in some Supabase error paths. */
+export function unwrapPathaoPayload(data: unknown): Record<string, any> {
+  if (!data || typeof data !== "object") return {};
+  const value = data as Record<string, any>;
+  return value.data && typeof value.data === "object" ? value.data : value;
+}
+
+export function isPathaoCancellationFailure(payload: unknown): boolean {
+  return unwrapPathaoPayload(payload).pathao_failed === true;
+}
+
 interface AttachParcelDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -143,9 +155,9 @@ export default function AttachParcelDialog({
       // The edge function wraps its payload as { data: result }. Read the flags off
       // the unwrapped payload — reading them off the top level always yields
       // undefined, so the pathao-failed fallback never triggered.
-      const payload = (data?.data ?? data) as any;
+      const payload = unwrapPathaoPayload(data);
 
-      if (payload?.pathao_failed) {
+      if (isPathaoCancellationFailure(payload)) {
         setConfirmChoiceOpen(false);
         setPathaoFailDialog({
           open: true,
