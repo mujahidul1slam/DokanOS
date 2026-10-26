@@ -62,6 +62,10 @@ export function buildMergedOrderRow(
     payment_status: merged.totals.payment_status,
     customer_name: merged.customer_name,
     customer_phone: merged.customer_phone,
+    // Sources are same-customer/same-state; retain identity from the first source row.
+    source: merged.source,
+    store_id: merged.store_id,
+    selling_point_id: merged.selling_point_id,
     subtotal: merged.totals.subtotal,
     discount: merged.totals.discount,
     shipping_cost: merged.totals.shipping_cost,

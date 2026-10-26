@@ -59,6 +59,10 @@ export interface MergeOrder {
   total: number;
   items: MergeItem[];
   payments: MergePayment[];
+  payment_status?: "paid" | "partial" | "unpaid" | "online" | null;
+  source?: string | null;
+  store_id?: string | null;
+  selling_point_id?: string | null;
 }
 
 /**
@@ -234,7 +238,7 @@ export interface MergedOrderTotals {
   total_paid: number;
   /** max(total - total_paid, 0) — what is left to collect. */
   amount_to_collect: number;
-  payment_status: "paid" | "partial" | "unpaid";
+  payment_status: "paid" | "partial" | "unpaid" | "online";
 }
 
 export interface MergedOrder {
@@ -243,6 +247,9 @@ export interface MergedOrder {
   customer_key: string;
   customer_name: string | null;
   customer_phone: string | null;
+  source: string | null;
+  store_id: string | null;
+  selling_point_id: string | null;
   /** The shared source state (status) the merged order keeps. */
   state: string;
   items: MergedItem[];
@@ -342,12 +349,15 @@ export function mergeOrders(orders: MergeOrder[]): MergeOutcome {
   const total = orders.reduce((s, o) => s + o.total, 0);
   const total_paid = payments.reduce((s, p) => s + p.amount, 0);
   const amount_to_collect = Math.max(total - total_paid, 0);
+  const hasOnlineGate = orders.some((order) => order.payment_status === "online");
   const payment_status: MergedOrderTotals["payment_status"] =
-    total_paid <= PAYMENT_EPSILON
-      ? "unpaid"
-      : amount_to_collect <= PAYMENT_EPSILON
-        ? "paid"
-        : "partial";
+    total_paid <= PAYMENT_EPSILON && hasOnlineGate
+      ? "online"
+      : total_paid <= PAYMENT_EPSILON
+        ? "unpaid"
+        : amount_to_collect <= PAYMENT_EPSILON
+          ? "paid"
+          : "partial";
 
   return {
     ok: true,
@@ -357,6 +367,9 @@ export function mergeOrders(orders: MergeOrder[]): MergeOutcome {
       customer_key: customerKeyOf(orders[0])!,
       customer_name: orders[0].customer_name ?? null,
       customer_phone: orders[0].customer_phone ?? null,
+      source: orders[0].source ?? null,
+      store_id: orders[0].store_id ?? null,
+      selling_point_id: orders[0].selling_point_id ?? null,
       state: orders[0].status,
       items,
       payments,

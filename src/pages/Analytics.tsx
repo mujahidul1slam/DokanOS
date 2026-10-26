@@ -24,6 +24,7 @@ import OperationalMetrics from "@/components/analytics/OperationalMetrics";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 import { useCurrency } from "@/hooks/useCurrency";
 import { useStoresList } from "@/hooks/useStoresList";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
 
 interface OrderRow {
   id: string;
@@ -76,8 +77,18 @@ const COLORS = [
 
 const Analytics = () => {
   const { symbol } = useCurrency();
+  const { active } = useBusinessContext();
   const businessStores = useStoresList();
   const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
+  const [businessSellingPointIds, setBusinessSellingPointIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!active?.id) { setBusinessSellingPointIds([]); return; }
+    let cancelled = false;
+    supabase.from("selling_points").select("id").eq("business_id", active.id).then(({ data }) => {
+      if (!cancelled) setBusinessSellingPointIds((data || []).map((row: { id: string }) => row.id));
+    });
+    return () => { cancelled = true; };
+  }, [active?.id]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [prevOrders, setPrevOrders] = useState<OrderRow[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([]);
@@ -93,7 +104,7 @@ const Analytics = () => {
     // Fail closed: no brand-store links (or no business context) means the
     // business has no Selling Points to report on — never fall back to all
     // readable stores.
-    if (businessStoreIds.length === 0) {
+    if (businessStoreIds.length === 0 && businessSellingPointIds.length === 0) {
       setOrders([]);
       setPrevOrders([]);
       setOrderItems([]);
@@ -109,11 +120,16 @@ const Analytics = () => {
       const { from: dateFrom, to: dateTo, days } = resolveRange(datePreset, customRange);
       const prevFrom = dateFrom && days ? subDays(dateFrom, days) : null;
 
-      const baseSelect = "id, total, subtotal, discount, shipping_cost, tax_amount, source, status, payment_status, created_at, customer_id, customer_name, customer_city, consignment_id, salesperson_name, store_id";
+      const baseSelect = "id, total, subtotal, discount, shipping_cost, tax_amount, source, status, payment_status, created_at, customer_id, customer_name, customer_city, consignment_id, salesperson_name, store_id, selling_point_id";
+      const scope = businessStoreIds.length > 0 && businessSellingPointIds.length > 0
+        ? `store_id.in.(${businessStoreIds.join(",")}),selling_point_id.in.(${businessSellingPointIds.join(",")})`
+        : businessStoreIds.length > 0
+          ? `store_id.in.(${businessStoreIds.join(",")})`
+          : `selling_point_id.in.(${businessSellingPointIds.join(",")})`;
 
-      let ordersQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null).in("store_id", businessStoreIds)
+      let ordersQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null).or(scope)
        .order("created_at", { ascending: false });
-      let prevQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null).in("store_id", businessStoreIds);
+      let prevQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null).or(scope);
       let returnsQuery = supabase.from("pos_returns").select("refund_amount, created_at").in("store_id", businessStoreIds);
 
       if (dateFrom) {
@@ -136,7 +152,7 @@ const Analytics = () => {
         prevQuery,
         supabase.from("products").select("id, name, price, cost_price, stock_quantity, stock_status, manage_stock, sales_count, updated_at").in("store_id", businessStoreIds),
         returnsQuery,
-        supabase.from("orders").select("customer_id, customer_name, total, created_at").is("deleted_at", null).in("store_id", businessStoreIds),
+        supabase.from("orders").select("customer_id, customer_name, total, created_at").is("deleted_at", null).or(scope),
       ]);
 
       const ordersData = (ordersRes.data || []) as OrderRow[];

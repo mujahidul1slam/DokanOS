@@ -76,6 +76,7 @@ import { groupOrdersForMerge, type MergeGroup, type MergeOrder } from "@/lib/ord
 import { getActiveCurrency, symbolFor } from "@/lib/currency";
 import { matchesTab as matchesTabExt, ALL_TAB_KEYS, type TabKey } from "./orders/tabFilters";
 import { useOrderBulkActions } from "./orders/useOrderBulkActions";
+import { findDuplicateOrders } from "@/lib/duplicateOrder";
 
 interface OrderBrand {
   id: string;
@@ -239,6 +240,7 @@ const Orders = () => {
   // Due payment dialog (bulk Mark Paid)
   const [duePayOpen, setDuePayOpen] = useState(false);
   const [duePayContext, setDuePayContext] = useState<{ ids: string[]; totalDue: number }>({ ids: [], totalDue: 0 });
+  const [duplicateNoticeDismissed, setDuplicateNoticeDismissed] = useState(false);
 
   const { toast } = useToast();
 
@@ -601,6 +603,17 @@ const Orders = () => {
     }
   };
 
+  const duplicateMatches = useMemo(() => {
+    const matches = new Set<string>();
+    const candidates = orders.map((order) => ({ orderNumber: order.order_number, createdAt: order.created_at, customerPhone: order.customer_phone, brandId: order.brand?.id, items: order.productItems.map((item) => ({ productName: item.name })) }));
+    for (const candidate of candidates) {
+      for (const match of findDuplicateOrders(candidate, candidates).matches) {
+        matches.add(`${candidate.orderNumber} and ${match.orderNumber}`);
+      }
+    }
+    return Array.from(matches);
+  }, [orders]);
+
   const dispatchOrders = useMemo(() =>
     orders.filter((o) => dispatchOrderIds.includes(o.id)),
     [orders, dispatchOrderIds]
@@ -829,6 +842,13 @@ const Orders = () => {
         </div>
       </div>
 
+      {!duplicateNoticeDismissed && duplicateMatches.length > 0 && (
+        <div className="flex items-start justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <div><strong>Possible duplicate orders:</strong> {duplicateMatches.join(", ")}</div>
+          <button aria-label="Dismiss duplicate warning" onClick={() => setDuplicateNoticeDismissed(true)}><X className="h-4 w-4" /></button>
+        </div>
+      )}
+
       {/* Action Bar — shown when any orders are selected */}
       <OrderBulkActionsBar
         selectedCount={selected.size}
@@ -997,6 +1017,10 @@ const Orders = () => {
         onOpenChange={setDispatchDialogOpen}
         orders={dispatchOrders}
         onDispatched={() => { setSelected(new Set()); loadOrders(); }}
+        onRemoveOrder={(id) => {
+          setDispatchOrderIds((current) => current.filter((orderId) => orderId !== id));
+          setSelected((current) => { const next = new Set(current); next.delete(id); return next; });
+        }}
       />
 
       <AddOrderDialog

@@ -26,6 +26,9 @@ import { matchesTab, type TabKey } from "@/pages/orders/tabFilters";
 function makeOrder(over: Partial<MergeOrder> & { id: string }): MergeOrder {
   return {
     order_number: `ORD-${over.id.toUpperCase()}`,
+    source: "woo",
+    store_id: "store-1",
+    selling_point_id: "point-1",
     status: "processing",
     consignment_id: null,
     deleted_at: null,
@@ -83,6 +86,9 @@ describe("buildMergedOrderRow", () => {
     expect(row.payment_status).toBe(merged.totals.payment_status);
     expect(row.customer_name).toBe(merged.customer_name);
     expect(row.customer_phone).toBe(merged.customer_phone);
+    expect(row.source).toBe("woo");
+    expect(row.store_id).toBe("store-1");
+    expect(row.selling_point_id).toBe("point-1");
     // The merged total is the money-exact sum of the source totals (100 + 200).
     expect(row.total).toBe(300);
   });

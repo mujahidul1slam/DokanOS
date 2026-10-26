@@ -60,6 +60,14 @@ function makeOrder(over: Partial<MergeOrder> & { id: string }): MergeOrder {
 }
 
 describe("orderMerge - eligibility (pre-entry only, same customer by normalized phone)", () => {
+  it("preserves an online payment gate when merging Woo orders with no recorded payment", () => {
+    const merged = mergedOf([
+      makeOrder({ id: "a", payment_status: "online" }),
+      makeOrder({ id: "b", payment_status: "unpaid" }),
+    ]);
+    expect(merged.totals.payment_status).toBe("online");
+  });
+
   it("allows merging two not-entered orders of the same customer", () => {
     const eligibility = checkMergeEligibility([
       makeOrder({ id: "a" }),
