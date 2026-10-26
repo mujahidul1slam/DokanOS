@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   DollarSign, ShoppingCart, Truck, Wallet, Download, Receipt, Store, Package, Coins,
-  CheckCircle2, Clock, RotateCcw, Banknote, CreditCard, AlertTriangle, TrendingUp, TrendingDown,
+  CheckCircle2, Clock, RotateCcw, Banknote, CreditCard, AlertTriangle, TrendingUp, TrendingDown, Printer,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -30,6 +30,12 @@ import CashSection from "@/pages/posReports/CashSection";
 import FulfillmentSection from "@/pages/posReports/FulfillmentSection";
 import { AgingCard } from "@/pages/posReports/cards";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
+import { openPrintWindow } from "@/lib/printWindow";
+import { buildPosDailyPrintDocument, type PosDailySummaryData } from "@/pages/posReports/posDailyPrint";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface PosOrder {
   id: string;
@@ -97,6 +103,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const PosReports = () => {
   const { symbol } = useCurrency();
+  const { settings: invoiceSettings } = useInvoiceSettings();
   // ---- filters ----
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
@@ -558,6 +565,55 @@ const PosReports = () => {
     downloadCsv(`pos-receivables-${datePreset}.csv`, headers, rows);
   };
 
+  // ---- Daily print (issue #24) -------------------------------------------------
+  // DAILY ONLY: the summary covers exactly one day. Weekly/monthly summaries are
+  // explicitly deferred, so the control is disabled for multi-day ranges.
+  const isSingleDay = Boolean(resolved.from) && resolved.days === 1;
+
+  const printDailySummary = (printFormat: "thermal" | "a4") => {
+    if (!resolved.from) return;
+    const summary: PosDailySummaryData = {
+      dateLabel: format(resolved.from, "MMM d, yyyy"),
+      businessName: invoiceSettings.business_name || "DokanOS",
+      storeLabel: storeFilter === "all" ? "All Stores" : stores.find((s) => s.id === storeFilter)?.name || null,
+      currencySymbol: symbol,
+      sales: {
+        orderCount: salesStats.orderCount,
+        gross: salesStats.gross,
+        discounts: salesStats.discounts,
+        returns: salesStats.returnsTotal,
+        net: salesStats.net,
+        shipping: salesStats.shipping,
+        tax: salesStats.tax,
+        totalInvoiced: salesStats.totalInvoiced,
+      },
+      cash: {
+        collectedTotal: cashStats.collectedTotal,
+        onPriorOrders: cashStats.onPriorOrders,
+        refundsTotal: cashStats.refundsTotal,
+        netCash: cashStats.netCash,
+        byMethod: cashByMethod,
+      },
+      fulfillment: {
+        walkinDelivered: fulfillStats.walkinDelivered,
+        pickupPending: fulfillStats.pickupPending,
+        pickupCompleted: fulfillStats.pickupCompleted,
+        deliveryPending: fulfillStats.deliveryPending,
+        deliveryCompleted: fulfillStats.deliveryCompleted,
+        cancelled: fulfillStats.cancelled,
+        returned: fulfillStats.returned,
+      },
+      topProducts: topProducts.slice(0, 8),
+    };
+    // Through the existing printWindow pattern (PRINT_BOOTSTRAP prints once).
+    // Thermal follows the POS print settings' "Bold thermal text" option.
+    openPrintWindow(
+      buildPosDailyPrintDocument(summary, printFormat, {
+        bold: invoiceSettings.invoice_template?.bold_thermal_text !== false,
+      }),
+    );
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -593,6 +649,29 @@ const PosReports = () => {
           <Button variant="outline" size="sm" onClick={exportOrdersCsv} className="gap-1.5">
             <Download className="h-4 w-4" /> Export Orders
           </Button>
+          {isSingleDay ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <Printer className="h-4 w-4" /> Print Daily
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => printDailySummary("thermal")}>Thermal (80mm)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => printDailySummary("a4")}>A4</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              className="gap-1.5"
+              title="The daily summary prints a single day — select Today, Yesterday, or a one-day custom range."
+            >
+              <Printer className="h-4 w-4" /> Print Daily
+            </Button>
+          )}
         </div>
       </div>
 

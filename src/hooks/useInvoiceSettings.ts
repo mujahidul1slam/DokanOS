@@ -24,6 +24,12 @@ export interface InvoiceTemplateConfig {
   show_fulfillment: boolean;
   show_due: boolean;
   show_barcode: boolean;
+  /**
+   * Render every thermal-format line bold (issue #24, "Bold thermal text").
+   * Opt-out: undefined reads as true so templates stored before this option
+   * existed keep their thermal look. A4 always keeps its current styling.
+   */
+  bold_thermal_text?: boolean;
   custom_fields: { label: string; value: string }[];
   sizing: InvoiceSizing;
 }
@@ -94,6 +100,25 @@ export interface PickupSlipTemplateConfig {
   show_total: boolean;
   show_due: boolean;
   show_notes: boolean;
+  /**
+   * Independently toggleable slip elements (issue #24). All opt-out: a template
+   * stored before these existed keeps rendering every element.
+   */
+  /** Brand name + logo/monogram block in the slip header. */
+  show_brand?: boolean;
+  /** Selling Point line (glossary: the place/channel the order was taken at). */
+  show_selling_point?: boolean;
+  /** Order source (WooCommerce / POS / Manual / Exchange). */
+  show_source?: boolean;
+  /** Pathao Account name + Pathao mark (default account marked "(default)"). */
+  show_pathao_account?: boolean;
+  /** Dispatch status line, where dispatch information is known. */
+  show_dispatch_status?: boolean;
+  /**
+   * Render every thermal-format line bold (issue #24, "Bold thermal text").
+   * Opt-out: undefined reads as true. A4 always keeps its current styling.
+   */
+  bold_thermal_text?: boolean;
   title: string;
   custom_fields: { label: string; value: string }[];
   sizing: PickupSlipSizing;
@@ -150,6 +175,7 @@ export const defaultInvoiceTemplate: InvoiceTemplateConfig = {
   show_footer: true, show_order_date: true, show_fulfillment: true,
   show_due: true,
   show_barcode: false,
+  bold_thermal_text: true,
   custom_fields: [],
   sizing: defaultInvoiceSizing,
 };
@@ -179,6 +205,10 @@ const defaultPickupSlipTemplate: PickupSlipTemplateConfig = {
   show_order_number: true, show_customer_name: true, show_customer_phone: true,
   show_customer_address: true, show_items: true, show_item_qty: true,
   show_total: true, show_due: true, show_notes: false, title: "PICKUP SLIP",
+  // Slip elements (issue #24): everything visible by default, each hidable.
+  show_brand: true, show_selling_point: true, show_source: true,
+  show_pathao_account: true, show_dispatch_status: true,
+  bold_thermal_text: true,
   custom_fields: [],
   sizing: defaultPickupSlipSizing,
 };

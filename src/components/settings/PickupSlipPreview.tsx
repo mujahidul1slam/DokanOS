@@ -28,6 +28,14 @@ const sampleOrders: SlipOrderData[] = [
       { name: "Slim Fit Chinos — 32 / Khaki", qty: 2 },
       { name: "Leather Belt — Brown", qty: 1 },
     ],
+    // Pre-dispatch: the brand/Selling Point DEFAULT Pathao Account with the
+    // "(default)" marker (issue #24).
+    brand: { id: "b1", name: "Nuvia Fashion", accent: "#0f766e" },
+    sellingPointName: "Banani Showroom",
+    sourceLabel: "WooCommerce",
+    pathaoAccount: { name: "Nuvia Courier", pickupStoreName: "Banani Hub", isDefault: true },
+    dispatched: false,
+    consignmentId: null,
   },
   {
     order_number: "DKN-12848",
@@ -39,6 +47,13 @@ const sampleOrders: SlipOrderData[] = [
     productItems: [
       { name: "Linen Kurti — M / Olive", qty: 1 },
     ],
+    // Dispatched: the ACTUAL Pathao Account, no "(default)" marker.
+    brand: { id: "b1", name: "Nuvia Fashion", accent: "#0f766e" },
+    sellingPointName: "Facebook Page",
+    sourceLabel: "POS",
+    pathaoAccount: { name: "Nuvia Courier", pickupStoreName: "Dhanmondi Hub", isDefault: false },
+    dispatched: true,
+    consignmentId: "PTH-903211",
   },
   {
     order_number: "DKN-12849",
@@ -56,6 +71,13 @@ const sampleOrders: SlipOrderData[] = [
       { name: "Leather Loafers — 42 / Tan", qty: 1 },
       { name: "Cufflinks — Silver", qty: 1 },
     ],
+    // Nothing configured: the slip states "Pathao Account not selected".
+    brand: { id: "b2", name: "Aarong Tailors", accent: "#b45309" },
+    sellingPointName: "Faridpur Outlet",
+    sourceLabel: "Manual",
+    pathaoAccount: null,
+    dispatched: false,
+    consignmentId: null,
   },
   {
     order_number: "DKN-12850",
@@ -68,6 +90,12 @@ const sampleOrders: SlipOrderData[] = [
       { name: "Cotton T-Shirt — M / White", qty: 2 },
       { name: "Denim Cap — Blue", qty: 1 },
     ],
+    brand: { id: "b2", name: "Aarong Tailors", accent: "#b45309" },
+    sellingPointName: "Faridpur Outlet",
+    sourceLabel: "Exchange",
+    pathaoAccount: { name: "Aarong Logistics", pickupStoreName: "Faridpur Hub", isDefault: true },
+    dispatched: false,
+    consignmentId: null,
   },
 ];
 
@@ -142,7 +170,8 @@ function buildA4Preview(tpl: PickupSlipTemplateConfig, css: string, panelWidth: 
   const slipW = Math.min(tpl.sizing.a4_slip_width_mm, A4_MAX_SLIP_W_MM);
 
   const allSlips = sampleOrders.flatMap((o) =>
-    buildSlipPagesHtml(o, tpl).map((h) => `<div class="slip">${h}</div>`),
+    // A4 preview keeps full color exactly like the A4 printer output.
+    buildSlipPagesHtml(o, tpl, undefined, { mono: false }).map((h) => `<div class="slip">${h}</div>`),
   );
 
   // For preview purposes, show ~6 slips per sheet (3 columns × ~2 rows).
@@ -208,7 +237,8 @@ function buildThermalPreview(tpl: PickupSlipTemplateConfig, css: string): string
   const heightMm = tpl.sizing.thermal_height_mm;
   const slipsHtml = sampleOrders
     .flatMap((o) =>
-      buildSlipPagesHtml(o, tpl).map((h) => `<div class="slip-wrap"><div class="slip">${h}</div></div>`),
+      // Thermal preview is monochrome, matching the thermal printer output.
+      buildSlipPagesHtml(o, tpl, undefined, { mono: true }).map((h) => `<div class="slip-wrap"><div class="slip">${h}</div></div>`),
     )
     .join("");
 

@@ -3,8 +3,10 @@ import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type Captur
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
+import { thermalTextCss } from "@/lib/pickupSlipHtml";
 import { PRINT_BOOTSTRAP, openPrintWindow } from "@/lib/printWindow";
 import { parseVariationAttributes } from "@/lib/variations";
+import { fetchSlipOrderDetails, type SlipOrderDetail } from "./PickupSlipPrint";
 
 /**
  * If the order is currently in pre_order_pending status, promote it to
@@ -69,6 +71,15 @@ interface SlipTpl {
   show_product_name?: boolean;
   show_product_sku?: boolean;
   show_notes?: boolean;
+  /** Brand line (issue #24). Opt-out: undefined keeps the line visible. */
+  show_brand?: boolean;
+  /** Pathao Account line (issue #24). Opt-out: undefined keeps it visible. */
+  show_pathao_account?: boolean;
+  /**
+   * "Bold thermal text" (issue #24): render every thermal-format line bold.
+   * Opt-out; A4 keeps its current styling.
+   */
+  bold_thermal_text?: boolean;
   footer_text?: string;
 }
 
@@ -79,7 +90,7 @@ interface OrderInfo {
   customer_phone: string | null;
 }
 
-interface ProductLine {
+export interface ProductLine {
   product_name: string;
   sku?: string | null;
   measurements: CapturedMeasurement[];
@@ -98,6 +109,127 @@ function renderMeasurement(m: CapturedMeasurement, override: SlipTpl["default_fo
       <td style="padding:5px 6px;font-size:18px;font-weight:700;border-bottom:1px dashed #d5d5d5;">${v.value}${m.unit ? ` ${m.unit}` : ""}</td>
     </tr>`).join("")}
   </table>`;
+}
+
+export interface MeasurementSlipRenderData {
+  orderNumber: string;
+  /** created_at — rendered with toLocaleDateString/toLocaleTimeString. */
+  orderDate: string | Date;
+  customerName: string | null;
+  customerPhone: string | null;
+  businessName: string;
+  productLines: ProductLine[];
+  orphans: CapturedMeasurement[];
+  /** Brand + Pathao Account lookup result (issue #24). */
+  detail?: SlipOrderDetail | null;
+}
+
+/** Escape external metadata (brand/Pathao names) before it enters the document. */
+function esc(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * The measurement slip document — extracted so the layout is testable and so
+ * the print popup and any preview render the same thing.
+ *
+ * Issue #24 adds the brand and Pathao Account lines: the default account
+ * carries a "(default)" marker before dispatch, the actual account shows once
+ * dispatched, and nothing configured reads "Pathao Account not selected".
+ * Thermal output is strictly monochrome (every text color collapses to the
+ * neutral scale) and renders all-bold unless the per-document "Bold thermal
+ * text" option is off. A4 keeps its current styling.
+ */
+export function buildMeasurementSlipHtml(data: MeasurementSlipRenderData, tpl: SlipTpl): string {
+  const fmt = tpl.print_format || "thermal";
+  const isThermal = fmt === "thermal";
+  // Must fit the @page printable area (sheet minus margins), with border-box
+  // below so the padding counts against that width rather than adding to it.
+  // A4 210mm - 2x15mm = 180mm; thermal 80mm - 2x4mm = 72mm. The old hardcoded
+  // 210mm plus content-box padding overflowed onto extra pages.
+  const width = isThermal ? "72mm" : "100%";
+  const date = new Date(data.orderDate);
+
+  const headerInfo: string[] = [];
+  if (tpl.show_order_number !== false) headerInfo.push(`<div><strong>Order:</strong> #${esc(data.orderNumber)}</div>`);
+  if (tpl.show_order_date !== false) headerInfo.push(`<div style="color:#666;font-size:11px;">${date.toLocaleDateString()} · ${date.toLocaleTimeString()}</div>`);
+  if (tpl.show_customer_name !== false && data.customerName) headerInfo.push(`<div><strong>Customer:</strong> ${esc(data.customerName)}</div>`);
+  if (tpl.show_customer_phone !== false && data.customerPhone) headerInfo.push(`<div><strong>Phone:</strong> ${esc(data.customerPhone)}</div>`);
+
+  const productSections = data.productLines.map((line) => `
+    <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
+      ${tpl.show_product_name !== false ? `<div style="font-weight:700;font-size:13px;">${line.product_name}</div>` : ""}
+      ${tpl.show_product_sku && line.sku ? `<div style="font-family:monospace;font-size:10px;color:#666;">SKU: ${line.sku}</div>` : ""}
+      ${line.measurements.map((m) => `
+        <div style="margin-top:10px;">
+          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
+          ${renderMeasurement(m, tpl.default_format)}
+          ${tpl.show_notes !== false && m.notes ? `<div style="font-size:12px;color:#555;margin-top:4px;font-style:italic;">${m.notes}</div>` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `).join("");
+
+  const orphanSection = data.orphans.length > 0 ? `
+    <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
+      <div style="font-weight:700;font-size:13px;">General Measurements</div>
+      ${data.orphans.map((m) => `
+        <div style="margin-top:10px;">
+          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
+          ${renderMeasurement(m, tpl.default_format)}
+        </div>
+      `).join("")}
+    </div>
+  ` : "";
+
+  // Identity lines (issue #24). `undefined` Pathao data means the lookup did
+  // not resolve one — the line stays hidden instead of claiming none exists;
+  // `null` is known-none and reads "Pathao Account not selected".
+  const detail = data.detail ?? null;
+  const identityRows: string[] = [];
+  if (tpl.show_brand !== false && detail?.brand) {
+    identityRows.push(
+      `<div class="identity-row"><span class="identity-label">Brand</span><span>${esc(detail.brand.name)}</span></div>`,
+    );
+  }
+  if (tpl.show_pathao_account !== false && detail?.pathaoAccount !== undefined) {
+    const acct = detail?.pathaoAccount;
+    identityRows.push(
+      acct?.name
+        ? `<div class="identity-row"><span class="identity-label">Pathao Account</span><span>${esc(acct.name)}${acct.pickupStoreName ? ` · ${esc(acct.pickupStoreName)}` : ""}${acct.isDefault && detail?.dispatched !== true ? ' <span class="identity-note">(default)</span>' : ""}</span></div>`
+        : `<div class="identity-row"><span class="identity-label">Pathao Account</span><span>Pathao Account not selected</span></div>`,
+    );
+  }
+  const identitySection = identityRows.length > 0 ? `<div class="identity">${identityRows.join("")}</div>` : "";
+
+  return `<!DOCTYPE html><html><head><title>Measurement Slip - ${esc(data.orderNumber)}</title>
+    <style>
+      * { box-sizing: border-box; }
+      @page { size: ${isThermal ? "80mm auto" : "A4"}; margin: ${isThermal ? "4mm" : "15mm"}; }
+      body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; margin: 0; padding: 0; }
+      .slip { max-width: ${width}; margin: 0 auto; padding: ${isThermal ? "8px" : "20px"}; }
+      .title { text-align: center; font-size: ${isThermal ? "14px" : "20px"}; font-weight: 800; letter-spacing: 2px; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 10px; }
+      .biz { text-align: center; font-size: ${isThermal ? "11px" : "13px"}; color: #666; margin-bottom: 4px; }
+      .footer { text-align:center; margin-top: 16px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 10px; color:#888; }
+      .identity { margin-bottom: 8px; }
+      .identity-row { display: flex; justify-content: space-between; gap: 8px; font-size: ${isThermal ? "11px" : "12px"}; line-height: 1.5; }
+      .identity-label { color: #666; text-transform: uppercase; letter-spacing: 0.6px; font-size: ${isThermal ? "10px" : "11px"}; }
+      .identity-note { color: #666; font-size: 10px; }
+      ${isThermal ? thermalTextCss(".slip", { bold: tpl.bold_thermal_text !== false, grayClasses: [".biz", ".footer", ".identity-label", ".identity-note"] }) : ""}
+    </style></head><body><div class="slip">
+      <div class="biz">${esc(data.businessName)}</div>
+      <div class="title">${tpl.title || "MEASUREMENT SLIP"}</div>
+      ${identitySection}
+      <div style="font-size:12px;line-height:1.5;">${headerInfo.join("")}</div>
+      ${productSections}
+      ${orphanSection}
+      ${tpl.footer_text ? `<div class="footer">${tpl.footer_text}</div>` : ""}
+    </div>${PRINT_BOOTSTRAP}</body></html>`;
 }
 
 export async function printMeasurementSlip(orderId: string) {
@@ -254,63 +386,24 @@ export async function printMeasurementSlip(orderId: string) {
     return;
   }
 
+  // Brand + Pathao Account lines (issue #24) resolve per order, best-effort:
+  // a failed lookup leaves them off rather than claiming "not selected".
+  const detailMap = await fetchSlipOrderDetails([orderId]);
   const fmt = tpl.print_format || "thermal";
-  // Must fit the @page printable area (sheet minus margins), with border-box
-  // below so the padding counts against that width rather than adding to it.
-  // A4 210mm - 2x15mm = 180mm; thermal 80mm - 2x4mm = 72mm. The old hardcoded
-  // 210mm plus content-box padding overflowed onto extra pages.
-  const width = fmt === "thermal" ? "72mm" : "100%";
-  const date = new Date(order.created_at);
 
-  const headerInfo: string[] = [];
-  if (tpl.show_order_number !== false) headerInfo.push(`<div><strong>Order:</strong> #${order.order_number}</div>`);
-  if (tpl.show_order_date !== false) headerInfo.push(`<div style="color:#666;font-size:11px;">${date.toLocaleDateString()} · ${date.toLocaleTimeString()}</div>`);
-  if (tpl.show_customer_name !== false && order.customer_name) headerInfo.push(`<div><strong>Customer:</strong> ${order.customer_name}</div>`);
-  if (tpl.show_customer_phone !== false && order.customer_phone) headerInfo.push(`<div><strong>Phone:</strong> ${order.customer_phone}</div>`);
-
-  const productSections = productLines.map((line) => `
-    <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
-      ${tpl.show_product_name !== false ? `<div style="font-weight:700;font-size:13px;">${line.product_name}</div>` : ""}
-      ${tpl.show_product_sku && line.sku ? `<div style="font-family:monospace;font-size:10px;color:#666;">SKU: ${line.sku}</div>` : ""}
-      ${line.measurements.map((m) => `
-        <div style="margin-top:10px;">
-          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
-          ${renderMeasurement(m, tpl.default_format)}
-          ${tpl.show_notes !== false && m.notes ? `<div style="font-size:12px;color:#555;margin-top:4px;font-style:italic;">${m.notes}</div>` : ""}
-        </div>
-      `).join("")}
-    </div>
-  `).join("");
-
-  const orphanSection = orphans.length > 0 ? `
-    <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
-      <div style="font-weight:700;font-size:13px;">General Measurements</div>
-      ${orphans.map((m) => `
-        <div style="margin-top:10px;">
-          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
-          ${renderMeasurement(m, tpl.default_format)}
-        </div>
-      `).join("")}
-    </div>
-  ` : "";
-
-  const html = `<!DOCTYPE html><html><head><title>Measurement Slip - ${order.order_number}</title>
-    <style>
-      * { box-sizing: border-box; }
-      @page { size: ${fmt === "thermal" ? "80mm auto" : "A4"}; margin: ${fmt === "thermal" ? "4mm" : "15mm"}; }
-      body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; margin: 0; padding: 0; }
-      .slip { max-width: ${width}; margin: 0 auto; padding: ${fmt === "thermal" ? "8px" : "20px"}; }
-      .title { text-align: center; font-size: ${fmt === "thermal" ? "14px" : "20px"}; font-weight: 800; letter-spacing: 2px; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 10px; }
-      .biz { text-align: center; font-size: ${fmt === "thermal" ? "11px" : "13px"}; color: #666; margin-bottom: 4px; }
-      .footer { text-align:center; margin-top: 16px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 10px; color:#888; }
-    </style></head><body><div class="slip">
-      <div class="biz">${businessName}</div>
-      <div class="title">${tpl.title || "MEASUREMENT SLIP"}</div>
-      <div style="font-size:12px;line-height:1.5;">${headerInfo.join("")}</div>
-      ${productSections}
-      ${orphanSection}
-      ${tpl.footer_text ? `<div class="footer">${tpl.footer_text}</div>` : ""}
-    </div>${PRINT_BOOTSTRAP}</body></html>`;
+  const html = buildMeasurementSlipHtml(
+    {
+      orderNumber: order.order_number,
+      orderDate: order.created_at,
+      customerName: order.customer_name,
+      customerPhone: order.customer_phone,
+      businessName,
+      productLines,
+      orphans,
+      detail: detailMap.get(orderId) ?? null,
+    },
+    tpl,
+  );
 
   openPrintWindow(html);
 

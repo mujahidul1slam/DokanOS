@@ -2,6 +2,24 @@ import type { Cart } from "./types";
 import { defaultInvoiceTemplate, type InvoiceSettings, type InvoiceTemplateConfig } from "@/hooks/useInvoiceSettings";
 import { openPrintWindow } from "@/lib/printWindow";
 import { buildInvoicePrintDocument, type InvoiceBizInfo } from "@/lib/invoiceHtml";
+import { thermalTextCss } from "@/lib/pickupSlipHtml";
+
+/**
+ * Post-process a built invoice document for thermal output (issue #24).
+ *
+ * The shared invoice builder (src/lib/invoiceHtml.ts) is format-agnostic and
+ * also serves the settings live preview, so the thermal-only rules layer on
+ * here: strictly monochrome text — every color collapses to the neutral scale,
+ * the red due row and blue custom tag included — plus the per-document "Bold
+ * thermal text" option (opt-out). A4 documents are returned untouched.
+ */
+export function applyThermalInvoiceStyles(html: string, opts: { bold?: boolean } = {}): string {
+  const css = thermalTextCss(".invoice", {
+    bold: opts.bold !== false,
+    grayClasses: [".meta", ".variation", ".custom-tag", ".terms", ".footer"],
+  });
+  return html.replace("</head>", `<style>${css}</style></head>`);
+}
 
 interface InvoiceData {
   orderNumber: string;
@@ -46,8 +64,12 @@ export const printInvoice = (data: InvoiceData, format: "thermal" | "a4") => {
   };
 
   // Layout comes from the shared builder (src/lib/invoiceHtml.ts) so the print
-  // popup and the settings live preview always agree.
-  const html = buildInvoicePrintDocument({ orderNumber, cart, subtotal, total }, tpl, biz, format);
+  // popup and the settings live preview always agree. Thermal output then gets
+  // the issue #24 rules (monochrome + "Bold thermal text"); A4 keeps styling.
+  let html = buildInvoicePrintDocument({ orderNumber, cart, subtotal, total }, tpl, biz, format);
+  if (format === "thermal") {
+    html = applyThermalInvoiceStyles(html, { bold: tpl.bold_thermal_text !== false });
+  }
 
   openPrintWindow(html);
 };
