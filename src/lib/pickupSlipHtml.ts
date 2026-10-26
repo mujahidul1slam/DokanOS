@@ -2,8 +2,17 @@ import type { PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
 import { makeBarcodeSvg } from "./barcodeSvg";
 import { PRINT_BOOTSTRAP } from "./printWindow";
 import { getActiveCurrency, symbolFor } from "./currency";
+import { brandMonogram } from "./brandIdentity";
+
+export interface SlipBrandData {
+  id: string;
+  name: string;
+  logo_url?: string | null;
+  accent?: string | null;
+}
 
 export interface SlipOrderData {
+  id?: string;
   order_number: string;
   total: number;
   amount_to_collect?: number | null;
@@ -12,6 +21,8 @@ export interface SlipOrderData {
   customer_address?: string | null;
   special_instruction?: string | null;
   productItems: { name: string; qty: number }[];
+  brand?: SlipBrandData | null;
+  sellingPointName?: string | null;
 }
 
 /*
@@ -86,6 +97,16 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+/** Escape values inserted into the print document so brand metadata cannot inject markup. */
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function buildSlipInnerHtml(order: SlipOrderData, tpl: PickupSlipTemplateConfig, currency: string = getActiveCurrency()): string {
   // Single-page render (used by preview for first page)
   return buildSlipPagesHtml(order, tpl, currency).join("");
@@ -110,9 +131,21 @@ export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplate
     const isLast = idx === totalPages - 1;
     const pageBadge = totalPages > 1 ? `<span class="page-badge">${idx + 1}/${totalPages}</span>` : "";
 
+    const brand = order.brand;
+    const brandIdentityHtml = brand
+      ? `<div class="brand-identity" style="--brand-accent:${brand.accent || "#334155"}">
+          ${brand.logo_url
+            ? `<img class="brand-logo" src="${escapeHtml(brand.logo_url)}" alt="" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex';" />`
+            : ""}
+          <span class="brand-monogram" style="${brand.logo_url ? "display:none;" : ""}">${escapeHtml(brandMonogram(brand.name))}</span>
+          <span class="brand-copy"><strong>${escapeHtml(brand.name)}</strong>${order.sellingPointName ? `<small>${escapeHtml(order.sellingPointName)}</small>` : ""}</span>
+        </div>`
+      : (order.sellingPointName ? `<div class="brand-identity legacy-brand"><span class="brand-copy"><strong>Selling Point</strong><small>${escapeHtml(order.sellingPointName)}</small></span></div>` : "");
+
     const header = `<div class="header">
-      <h2>${tpl.title || "PICKUP SLIP"} ${pageBadge}</h2>
-      ${tpl.show_order_number ? `<div class="order-num">#${order.order_number}</div>${barcodeSvg ? `<div class="barcode">${barcodeSvg}</div>` : ""}` : ""}
+      ${brandIdentityHtml}
+      <h2>${escapeHtml(tpl.title || "PICKUP SLIP")} ${pageBadge}</h2>
+      ${tpl.show_order_number ? `<div class="order-num">#${escapeHtml(order.order_number)}</div>${barcodeSvg ? `<div class="barcode">${barcodeSvg}</div>` : ""}` : ""}
     </div>`;
 
     const customer = (tpl.show_customer_name || tpl.show_customer_phone || tpl.show_customer_address) ? `<div class="section customer-section">
@@ -154,7 +187,13 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
     }
     .slip:last-child { page-break-after: auto; }
     .header { text-align: center; padding-bottom: ${isA4 ? 2 : 4}px; margin-bottom: ${isA4 ? 3 : 5}px; border-bottom: 1px solid #ddd; }
-    .header h2 { font-size: ${s.title_size}px; font-weight: 700; line-height: 1.1; }
+    .brand-identity { display: flex; align-items: center; justify-content: center; gap: 5px; margin-bottom: ${isA4 ? 2 : 4}px; color: var(--brand-accent, #334155); }
+     .brand-logo, .brand-monogram { width: ${isA4 ? 18 : 22}px; height: ${isA4 ? 18 : 22}px; border-radius: 4px; object-fit: cover; border: 1px solid var(--brand-accent, #334155); }
+     .brand-monogram { display: inline-flex; align-items: center; justify-content: center; color: #fff; background: var(--brand-accent, #334155); font-size: ${isA4 ? 8 : 9}px; line-height: 1; }
+     .brand-copy { display: flex; flex-direction: column; min-width: 0; max-width: 85%; text-align: left; line-height: 1.05; }
+     .brand-copy strong { font-size: ${isA4 ? 10 : 11}px; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+     .brand-copy small { font-size: ${isA4 ? 8 : 9}px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+     .header h2 { font-size: ${s.title_size}px; font-weight: 700; line-height: 1.1; }
     .header .order-num { font-size: ${s.order_number_size}px; font-weight: 700; margin-top: ${isA4 ? 1 : 2}px; line-height: 1.1; }
     .page-badge { font-size: ${Math.max(9, Math.round(s.section_title_size * 0.85))}px; font-weight: 600; color: #555; margin-left: 4px; }
     .barcode { margin-top: ${isA4 ? 2 : 4}px; display: flex; justify-content: center; line-height: 0; }

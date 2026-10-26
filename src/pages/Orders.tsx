@@ -2,6 +2,8 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useStoresList } from "@/hooks/useStoresList";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { brandAccent, deriveBrandForStore } from "@/lib/brandIdentity";
 import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
@@ -71,6 +73,21 @@ import { recordDuePayment } from "@/lib/dueCollection";
 import { matchesTab as matchesTabExt, ALL_TAB_KEYS, type TabKey } from "./orders/tabFilters";
 import { useOrderBulkActions } from "./orders/useOrderBulkActions";
 
+interface OrderBrand {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  woo_store_id: string | null;
+  accent: string;
+}
+
+interface OrderSellingPoint {
+  id: string;
+  name: string;
+  brand_id: string;
+  brands: Omit<OrderBrand, "accent"> | null;
+}
+
 interface OrderRow {
   id: string;
   order_number: string;
@@ -92,6 +109,9 @@ interface OrderRow {
   item_weight: number | null;
   special_instruction: string | null;
   store_id: string | null;
+  selling_point_id: string | null;
+  selling_points: OrderSellingPoint | null;
+  brand: (OrderBrand & { accent: string }) | null;
   woo_order_id: number | null;
   customer_id: string | null;
   customer_name: string | null;
@@ -115,6 +135,7 @@ const PAGE_SIZE = 200;
 
 const Orders = () => {
   const { role } = useAuth();
+  const { brands } = useBusinessContext();
   const businessStores = useStoresList();
   const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
   const { can } = usePermissions();
@@ -215,18 +236,28 @@ const Orders = () => {
     }
     const { data } = await supabase
         .from("orders")
-        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), order_items(id, product_id, product_name, quantity, products(stock_status))")
+        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, selling_point_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), selling_points(id, name, brand_id, brands(id, name, logo_url, woo_store_id)), order_items(id, product_id, product_name, quantity, products(stock_status))")
         .in("store_id", businessStoreIds)
         .order("created_at", { ascending: false });
 
-    const mapped = (data || []).map((o: any) => ({
-      ...o,
-      itemCount: o.order_items?.length || 0,
-      productItems: (o.order_items || [])
-        .filter((i: any) => i.product_name)
-        .map((i: any) => ({ name: i.product_name, qty: i.quantity || 1 })),
-      isPreOrder: false, // recomputed reactively from category settings
-    }));
+    const mapped = (data || []).map((o: any) => {
+      const canonicalBrand = o.selling_points?.brands
+        ? { ...o.selling_points.brands, accent: brandAccent(o.selling_points.brands.id) }
+        : undefined;
+      const legacyBrand = canonicalBrand || (() => {
+        const fallback = deriveBrandForStore(brands, o.store_id);
+        return fallback ? { ...fallback, accent: brandAccent(fallback.id) } : undefined;
+      })();
+      return {
+        ...o,
+        brand: legacyBrand || null,
+        itemCount: o.order_items?.length || 0,
+        productItems: (o.order_items || [])
+          .filter((i: any) => i.product_name)
+          .map((i: any) => ({ name: i.product_name, qty: i.quantity || 1 })),
+        isPreOrder: false, // recomputed reactively from category settings
+      };
+    });
     setOrders(mapped as OrderRow[]);
 
     // Build order -> category-id set map for filtering
@@ -258,7 +289,7 @@ const Orders = () => {
     }
 
     setLoading(false);
-  }, [businessStoreIds]);
+  }, [businessStoreIds, brands]);
 
   const loadStores = useCallback(async () => {
     const [{ data: storeData }, { data: catData }] = await Promise.all([
@@ -588,7 +619,11 @@ const Orders = () => {
   );
 
   /* ─── Selected order data for slip printing ─── */
-  const selectedOrders = orders.filter((o) => selected.has(o.id));
+  const selectedOrders = orders.filter((o) => selected.has(o.id)).map((o) => ({
+    ...o,
+    brand: o.brand ? { id: o.brand.id, name: o.brand.name, logo_url: o.brand.logo_url, accent: o.brand.accent } : null,
+    sellingPointName: o.selling_points?.name || o.stores?.name || null,
+  }));
 
   /* ─── Determine which action buttons to show ─── */
   const hasSelection = selected.size > 0;

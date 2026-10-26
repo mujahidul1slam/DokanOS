@@ -9,6 +9,7 @@ import {
 } from "@/components/orders/OrderBadges";
 import { ReactNode } from "react";
 import { useCurrency } from "@/hooks/useCurrency";
+import { BrandPresentation, type OrderBrandPresentation } from "@/components/orders/OrderTable";
 
 interface OrderCardProps {
   order: {
@@ -30,6 +31,8 @@ interface OrderCardProps {
     pickup_slip_printed_at?: string | null;
     measurement_slip_printed_at?: string | null;
     stores: { name: string } | null;
+    selling_points?: { name: string } | null;
+    brand?: OrderBrandPresentation | null;
     productItems: { name: string; qty: number }[];
   };
   selected: boolean;
@@ -58,7 +61,14 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
           </div>
           <div className="text-[11px] text-muted-foreground">
             {format(new Date(order.created_at), "MMM d, h:mm a")}
-            {order.stores?.name ? ` · ${order.stores.name}` : order.source === "pos" ? " · POS" : ""}
+          </div>
+          <div className="mt-1">
+            <BrandPresentation
+              brand={order.brand}
+              sellingPointName={order.selling_points?.name}
+              storeName={order.stores?.name || (order.source === "pos" ? "POS" : null)}
+              compact
+            />
           </div>
 
           <div className="mt-2 text-sm text-foreground truncate">{order.customer_name || "—"}</div>
