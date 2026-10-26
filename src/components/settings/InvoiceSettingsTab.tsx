@@ -339,6 +339,7 @@ const InvoiceSettingsTab = () => {
             ["show_footer", "Footer Text"],
             ["show_due", "Due Amount"],
             ["show_barcode", "Order Number Barcode"],
+             ["bold_thermal_text", "Bold thermal text (thermal)"],
           ] as [keyof InvoiceTemplateConfig, string][]).map(([key, label]) => (
             <div key={key} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
               <span className="text-sm">{label}</span>
@@ -502,6 +503,12 @@ const InvoiceSettingsTab = () => {
             ["show_total", "Order Total"],
             ["show_due", "Due Amount"],
             ["show_notes", "Special Instruction"],
+            ["show_brand", "Brand name & logo"],
+            ["show_selling_point", "Selling Point"],
+            ["show_source", "Order Source"],
+            ["show_pathao_account", "Pathao Account"],
+            ["show_dispatch_status", "Dispatch Status"],
+            ["bold_thermal_text", "Bold thermal text (thermal)"],
           ] as [keyof PickupSlipTemplateConfig, string][]).map(([key, label]) => (
             <div key={key} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
               <span className="text-sm">{label}</span>

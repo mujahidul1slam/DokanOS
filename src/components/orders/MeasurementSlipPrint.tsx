@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type CapturedMeasurement } from "@/lib/measurements";
+import { formatMeasurementPendingMarker, getMeasurementEntryStatus, getMissingMeasurementGroups, type ExpectedGroupRef } from "@/lib/measurementRules";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
@@ -94,6 +95,7 @@ export interface ProductLine {
   product_name: string;
   sku?: string | null;
   measurements: CapturedMeasurement[];
+  pendingNote?: string;
 }
 
 function renderMeasurement(m: CapturedMeasurement, override: SlipTpl["default_format"]) {
@@ -163,8 +165,9 @@ export function buildMeasurementSlipHtml(data: MeasurementSlipRenderData, tpl: S
 
   const productSections = data.productLines.map((line) => `
     <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
-      ${tpl.show_product_name !== false ? `<div style="font-weight:700;font-size:13px;">${line.product_name}</div>` : ""}
-      ${tpl.show_product_sku && line.sku ? `<div style="font-family:monospace;font-size:10px;color:#666;">SKU: ${line.sku}</div>` : ""}
+      ${tpl.show_product_name !== false ? `<div style="font-weight:700;font-size:13px;">${esc(line.product_name)}</div>` : ""}
+      ${line.pendingNote ? `<div style="font-size:12px;font-weight:700;color:#555;margin-top:4px;">${esc(line.pendingNote)}</div>` : ""}
+      ${tpl.show_product_sku && line.sku ? `<div style="font-family:monospace;font-size:10px;color:#666;">SKU: ${esc(line.sku)}</div>` : ""}
       ${line.measurements.map((m) => `
         <div style="margin-top:10px;">
           <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
@@ -282,6 +285,7 @@ export async function printMeasurementSlip(orderId: string) {
   const productLines: ProductLine[] = [];
   for (const i of items) {
     let measurements = measByItem.get(i.id) || [];
+    const expectedGroups = i.product_id ? await getGroupsForProduct(i.product_id) : [];
 
     // Custom measurements always win — only resolve presets when nothing was captured.
     if (measurements.length === 0 && i.product_id) {
@@ -353,10 +357,9 @@ export async function printMeasurementSlip(orderId: string) {
 
       if (sizeLabel) {
         // 2. Look up assigned measurement groups for this product
-        const groups = await getGroupsForProduct(i.product_id);
         // 3. Resolve a preset for each group + size
         const resolved: CapturedMeasurement[] = [];
-        for (const g of groups) {
+        for (const g of expectedGroups) {
           const preset = await resolveSizePreset(g.id, i.product_id, sizeLabel);
           if (preset && preset.values.length > 0) {
             resolved.push({
@@ -372,11 +375,20 @@ export async function printMeasurementSlip(orderId: string) {
       }
     }
 
-    if (measurements.length > 0) {
+    const expected: ExpectedGroupRef[] = expectedGroups.map((g) => ({ id: g.id, name: g.name }));
+    const captured = measurements.map((m) => ({ groupId: m.groupId, groupName: m.groupName, values: m.values }));
+    const status = getMeasurementEntryStatus(expected, captured);
+    const missing = getMissingMeasurementGroups(expected, captured);
+    const pendingNote = formatMeasurementPendingMarker(status, missing.map((g) => g.name)) || undefined;
+
+    // Keep every item that has expected groups or captured values. An item with
+    // neither is the only case that should not make the slip printable.
+    if (expected.length > 0 || measurements.length > 0) {
       productLines.push({
         product_name: i.product_name,
         sku: skuMap.get(i.product_id),
         measurements,
+        pendingNote,
       });
     }
   }

@@ -40,7 +40,7 @@ export interface SlipOrderData {
   customer_phone?: string | null;
   customer_address?: string | null;
   special_instruction?: string | null;
-  productItems: { name: string; qty: number }[];
+  productItems: { name: string; qty: number; pendingNote?: string }[];
   brand?: SlipBrandData | null;
   sellingPointName?: string | null;
   /** Display label for the order source; the raw `source` is the fallback. */
@@ -296,7 +296,7 @@ export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplate
 
     const items = tpl.show_items && pageItems.length > 0 ? `<div class="section"><div class="section-title">Items${totalPages > 1 ? ` (cont.)` : ""}</div>
       <table><thead><tr><th>Product</th>${tpl.show_item_qty ? '<th class="qty">Qty</th>' : ""}</tr></thead><tbody>
-      ${pageItems.map((item) => `<tr><td>${item.name}</td>${tpl.show_item_qty ? `<td class="qty">${item.qty}</td>` : ""}</tr>`).join("")}
+      ${pageItems.map((item) => `<tr><td>${escapeHtml(item.name)}${item.pendingNote ? `<div style="color:#555;font-size:${Math.max(9, s.section_title_size - 1)}px;font-weight:600;margin-top:2px;">${escapeHtml(item.pendingNote)}</div>` : ""}</td>${tpl.show_item_qty ? `<td class="qty">${item.qty}</td>` : ""}</tr>`).join("")}
       </tbody></table></div>` : "";
 
     // The special instruction is what whoever packs or collects the order needs

@@ -699,6 +699,9 @@ const MeasurementsTab = () => {
             ["show_product_name", "Product Name"],
             ["show_product_sku", "Product SKU"],
             ["show_notes", "Measurement Notes"],
+             ["show_brand", "Brand name & logo"],
+             ["show_pathao_account", "Pathao Account"],
+             ["bold_thermal_text", "Bold thermal text (thermal)"],
           ].map(([key, label]) => (
             <label key={key} className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">{label}</span>
