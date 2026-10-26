@@ -5,9 +5,14 @@ import { addOrderTimeline } from "@/lib/orderTimeline";
 import { postWooOrderNote, kickSyncWorker } from "@/lib/wooNotes";
 import { printMeasurementSlipsBulk } from "@/components/orders/MeasurementSlipPrint";
 import { recordDuePayment } from "@/lib/dueCollection";
+import {
+  splitGatedOrders,
+  gateLockedMessage,
+  type GateWiringOrder,
+} from "@/lib/paymentGateWiring";
 import type { DuePaymentResult } from "@/components/orders/DuePaymentDialog";
 
-interface BulkOrder {
+interface BulkOrder extends GateWiringOrder {
   id: string;
   order_number: string;
   total: number;
@@ -42,22 +47,38 @@ export function useOrderBulkActions<T extends BulkOrder>({
   const runBulkStatus = useCallback(
     async (newStatus: string, description: string, toastTitle: string, pushWoo = true) => {
       if (selected.size === 0) return;
+      // Issue #27: gated orders ("Payment Needs Confirmation") may not change
+      // status — skip them with the lock toast instead of failing silently.
+      const ids = Array.from(selected);
+      const { skipped } = splitGatedOrders(
+        ids.map((id) => orders.find((o) => o.id === id)).filter((o): o is T => !!o),
+        "status",
+      );
+      const skippedIds = new Set(skipped.map((o) => o.id));
+      const runIds = ids.filter((id) => !skippedIds.has(id));
+      if (runIds.length === 0) {
+        if (skipped.length > 0) toast({ title: gateLockedMessage(skipped) });
+        return;
+      }
       setBulkUpdating(true);
       try {
-        const ids = Array.from(selected);
-        await supabase.from("orders").update({ status: newStatus }).in("id", ids);
+        await supabase.from("orders").update({ status: newStatus }).in("id", runIds);
         await addOrderTimeline(
-          ids.map((id) => ({ order_id: id, event: "status_changed", description })),
+          runIds.map((id) => ({ order_id: id, event: "status_changed", description })),
         );
-        await logAction("update", "order_status_bulk", undefined, { ids, to: newStatus });
+        await logAction("update", "order_status_bulk", undefined, { ids: runIds, to: newStatus });
 
         // The DB trigger enqueued one push per order; drain them now so the
         // Woo status flips within seconds (Issue 2: manual/bulk status changes
         // must reach WooCommerce without waiting on the throttled cron).
         void kickSyncWorker();
 
-        toast({ title: toastTitle.replace("{n}", String(ids.length)) });
-        setSelected(new Set());
+        toast({
+          title: toastTitle.replace("{n}", String(runIds.length)),
+          description: skipped.length > 0 ? gateLockedMessage(skipped) : undefined,
+        });
+        // Skipped (locked) orders stay selected so they can be payment-confirmed next.
+        setSelected(new Set(skipped.map((o) => o.id)));
         loadOrders();
       } catch {
         toast({ title: "Update failed", variant: "destructive" });
@@ -65,7 +86,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
         setBulkUpdating(false);
       }
     },
-    [selected, setBulkUpdating, setSelected, loadOrders, toast],
+    [selected, orders, setBulkUpdating, setSelected, loadOrders, toast],
   );
 
   const handleMarkReadyToShip = useCallback(
@@ -291,6 +312,25 @@ export function useOrderBulkActions<T extends BulkOrder>({
     }
   }, [orders, selected, setBulkUpdating, setSelected, loadOrders, toast]);
 
+  /**
+   * Issue #27: courier-entry gate for the bulk-bar "Dispatch" path (which
+   * opens DispatchDialog from Orders.tsx). Drops gated orders from the id
+   * list and names them in the lock toast; callers should only open the
+   * dispatch dialog when the returned list is non-empty.
+   */
+  const filterGatedForCourier = useCallback(
+    (ids: string[]): string[] => {
+      const { skipped } = splitGatedOrders(
+        ids.map((id) => orders.find((o) => o.id === id)).filter((o): o is T => !!o),
+        "courier",
+      );
+      if (skipped.length > 0) toast({ title: gateLockedMessage(skipped) });
+      const skippedIds = new Set(skipped.map((o) => o.id));
+      return ids.filter((id) => !skippedIds.has(id));
+    },
+    [orders, toast],
+  );
+
   return {
     handleMarkReadyToShip,
     handleBulkMarkPaid,
@@ -301,5 +341,6 @@ export function useOrderBulkActions<T extends BulkOrder>({
     handleRestoreOrders,
     handleBulkPrintMeasurementSlips,
     handleBulkTrackSelected,
+    filterGatedForCourier,
   };
 }
