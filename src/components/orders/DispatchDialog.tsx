@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Send, Loader2 } from "lucide-react";
+import { Send, Loader2, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,16 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/useCurrency";
@@ -21,6 +31,8 @@ interface DispatchOrder {
   order_number: string;
   total: number;
   itemCount: number;
+  status: string | null;
+  consignment_id?: string | null;
   customer_name: string | null;
   customer_phone: string | null;
   customer_address: string | null;
@@ -75,6 +87,16 @@ interface DispatchDialogProps {
 export default function DispatchDialog({ open, onOpenChange, orders, onDispatched }: DispatchDialogProps) {
   const { symbol } = useCurrency();
   const [dispatching, setDispatching] = useState(false);
+
+  // "This order already has a courier entry" confirm-replace dialog.
+  const [existingOrders, setExistingOrders] = useState<DispatchOrder[]>([]);
+  const [replaceOrderIds, setReplaceOrderIds] = useState<Set<string>>(new Set());
+
+  const ordersWithExisting = orders.filter(
+    (o) => !!o.consignment_id && String(o.consignment_id).trim() !== "",
+  );
+  const existingConfirmOpen = existingOrders.length > 0;
+  const skipCount = existingOrders.length - replaceOrderIds.size;
   const [pathaoStores, setPathaoStores] = useState<PathaoStore[]>([]);
   const [selectedPathaoStore, setSelectedPathaoStore] = useState("");
   const [cities, setCities] = useState<City[]>([]);
@@ -90,7 +112,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   const { toast } = useToast();
 
   // Reset auto-fill guard whenever the dialog closes so reopening triggers it again.
-  useEffect(() => { if (!open) autoFilledKeyRef.current = ""; }, [open]);
+  useEffect(() => { if (!open) { autoFilledKeyRef.current = ""; setExistingOrders([]); } }, [open]);
 
 
   useEffect(() => {
@@ -407,13 +429,34 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         toast({ title: "Missing info", description: `Order #${o.order_number} is missing details`, variant: "destructive" }); return;
       }
     }
+
+    // If any selected order already has a courier entry, show the "This order
+    // already has a courier entry" dialog first so the user can choose Replace
+    // (cancel previous + dispatch new) or Don't create (skip that order).
+    if (ordersWithExisting.length > 0) {
+      setExistingOrders(ordersWithExisting);
+      setReplaceOrderIds(new Set(ordersWithExisting.map((o) => o.id)));
+      return;
+    }
+
+    await doDispatch(null);
+  };
+
+  const doDispatch = async (replaceFilters: Set<string> | null) => {
     setDispatching(true);
     try {
       const BATCH_SIZE = 20;
-      const allPayloads = orders.map((o) => {
+      // Orders the user chose NOT to replace (had an existing courier entry and
+      // they picked "Don't create") are excluded from the payload entirely.
+      const toDispatch = replaceFilters
+        ? orders.filter((o) => !o.consignment_id || replaceFilters.has(o.id))
+        : orders;
+      const allPayloads = toDispatch.map((o) => {
         const ov = orderOverrides[o.id];
+        const wantingReplace = !!o.consignment_id && replaceFilters?.has(o.id);
         return {
           order_id: o.id,
+          ...(wantingReplace ? { replace: true, force: false } : {}),
           order_payload: {
             store_id: Number(selectedPathaoStore),
             merchant_order_id: o.order_number,
@@ -449,6 +492,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
       } else {
         toast({ title: `${succeeded} order(s) dispatched to Pathao!` });
       }
+      setExistingOrders([]);
       onOpenChange(false);
       onDispatched();
     } catch (err: any) {
@@ -459,6 +503,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   };
 
   return (
+    <>
     <ResponsiveDialog
       open={open}
       onOpenChange={onOpenChange}
@@ -585,5 +630,79 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           })}
         </div>
     </ResponsiveDialog>
+
+      {/* "This order already has a courier entry" — Replace or Don't create */}
+      <AlertDialog
+        open={existingConfirmOpen}
+        onOpenChange={(open) => !open && setExistingOrders([])}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              <AlertDialogTitle>This order already has a courier entry</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="space-y-2 pt-2">
+              <p className="text-sm text-muted-foreground">
+                {existingOrders.length === 1
+                  ? `Order #${existingOrders[0].order_number} already has courier consignment ${existingOrders[0].consignment_id}.`
+                  : `${existingOrders.length} of the selected orders already have a courier entry.`}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Choose <strong className="text-foreground">Replace</strong> to cancel the previous parcel on Pathao and dispatch a new one, or{" "}
+                <strong className="text-foreground">Don't create</strong> to skip that order.
+              </p>
+              <div className="rounded-lg border border-border bg-background/30 p-2 space-y-2 mt-1 max-h-52 overflow-y-auto">
+                {existingOrders.map((o) => {
+                  const checked = replaceOrderIds.has(o.id);
+                  return (
+                    <label
+                      key={o.id}
+                      className="flex items-start gap-2.5 cursor-pointer rounded-md p-1.5 hover:bg-muted"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const next = new Set(replaceOrderIds);
+                          if (next.has(o.id)) next.delete(o.id);
+                          else next.add(o.id);
+                          setReplaceOrderIds(next);
+                        }}
+                        className="mt-1"
+                      />
+                      <span className="text-xs text-foreground">
+                        #{o.order_number}
+                        <span className="text-muted-foreground"> — {o.consignment_id}</span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {checked ? "Replace (cancel previous + dispatch new)" : "Don't create (skip this order)"}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setExistingOrders([])} disabled={dispatching}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={dispatching || replaceOrderIds.size === 0}
+              onClick={() => doDispatch(replaceOrderIds)}
+              className="bg-amber-600 hover:bg-amber-500 text-amber-50"
+            >
+              {dispatching ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              {replaceOrderIds.size > 0 && skipCount > 0
+                ? `Replace ${replaceOrderIds.size} & skip ${skipCount}`
+                : replaceOrderIds.size > 0
+                ? `Replace ${replaceOrderIds.size} & Dispatch`
+                : "Dispatch"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

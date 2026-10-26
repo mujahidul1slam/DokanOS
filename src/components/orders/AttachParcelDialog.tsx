@@ -140,25 +140,30 @@ export default function AttachParcelDialog({
         throw error;
       }
 
-      if (data?.pathao_failed) {
+      // The edge function wraps its payload as { data: result }. Read the flags off
+      // the unwrapped payload — reading them off the top level always yields
+      // undefined, so the pathao-failed fallback never triggered.
+      const payload = (data?.data ?? data) as any;
+
+      if (payload?.pathao_failed) {
         setConfirmChoiceOpen(false);
         setPathaoFailDialog({
           open: true,
-          reason: data.reason || data.error || "Order cancellation rejected by Pathao",
-          consignmentId: data.consignment_id || existingConsignmentId || "",
+          reason: payload.reason || payload.error || "Order cancellation rejected by Pathao",
+          consignmentId: payload.consignment_id || existingConsignmentId || "",
         });
         return;
       }
 
-      if (data?.error) {
-        if (data.has_existing) {
+      if (payload?.error) {
+        if (payload.has_existing) {
           setConfirmChoiceOpen(true);
           return;
         }
-        throw new Error(data.error);
+        throw new Error(payload.error);
       }
 
-      const info = data?.data || data;
+      const info = payload;
       const title =
         mode === "replace"
           ? "Previous parcel cancelled & new parcel attached"

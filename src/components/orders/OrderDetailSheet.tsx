@@ -238,20 +238,29 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         throw error;
       }
 
-      if (data?.pathao_failed) {
+      // The edge function wraps its payload as { data: result }, so unwrap before
+      // reading flags — reading them off the top level silently always yields
+      // undefined (which is why the success toast never mentioned Pathao).
+      const payload = (data?.data ?? data) as any;
+
+      if (payload?.pathao_failed) {
         setDeleteConfirmOpen(false);
         setDeletePathaoFail({
           open: true,
-          reason: data.reason || data.error || "Cancellation rejected by Pathao",
+          reason: payload.reason || payload.error || "Cancellation rejected by Pathao",
           shipment,
         });
         return;
       }
 
-      if (data?.error) throw new Error(data.error);
+      if (payload?.error) throw new Error(payload.error);
 
+      const noop = payload?.pathao_cancel_noop;
+      const cancelledOnPathao = payload?.pathao_cancelled;
       toast.success(
-        `Courier entry ${shipment.consignment_id} deleted${data?.pathao_cancelled ? " and cancelled on Pathao" : ""}.`
+        noop
+          ? `Courier entry ${shipment.consignment_id} deleted — the parcel was already in a terminal state on Pathao (nothing left to cancel).`
+          : `Courier entry ${shipment.consignment_id} deleted${cancelledOnPathao ? " and cancelled on Pathao" : " (cancelled locally only)"}.`,
       );
 
       setDeleteConfirmOpen(false);
