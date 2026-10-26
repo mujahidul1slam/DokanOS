@@ -36,6 +36,8 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { brandAccent, brandMonogram, deriveBrandForProduct } from "@/lib/brandIdentity";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
@@ -73,6 +75,16 @@ interface SearchResult {
   variationLabel?: string;
   sku: string | null;
   price: number;
+}
+
+interface SellingPointRow {
+  id: string;
+  name: string;
+  type: string;
+  brand_id: string;
+  woo_store_id: string | null;
+  is_active: boolean;
+  is_default: boolean;
 }
 
 interface OrderItem {
@@ -266,6 +278,8 @@ const withHintOption = (
 
 export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props) {
   const { symbol } = useCurrency();
+  const { active, brands } = useBusinessContext();
+  const activeBrands = useMemo(() => brands.filter((brand) => brand.is_active), [brands]);
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [productCatMap, setProductCatMap] = useState<Map<string, Set<string>>>(new Map());
@@ -280,6 +294,13 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [sources, setSources] = useState<{ id: string; name: string; is_default?: boolean }[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [storeId, setStoreId] = useState<string>(localStorage.getItem("last_selected_store_id") || "");
+  const [sellingPoints, setSellingPoints] = useState<SellingPointRow[]>([]);
+  const [selectedBrandId, setSelectedBrandId] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("last_selected_order_brand_id") || "";
+  });
+  const [selectedSellingPointId, setSelectedSellingPointId] = useState("");
+  const [brandWarningDismissed, setBrandWarningDismissed] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
   const [showVariationModal, setShowVariationModal] = useState(false);
 
@@ -376,6 +397,90 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     });
 
   }, [open]);
+
+  // Load active Selling Points for the active business. Selling Points are the
+  // canonical brand-owned identity; the legacy Woo store binding is kept only
+  // for order numbering/sync compatibility.
+  useEffect(() => {
+    if (!open || !active?.id) return;
+    let mounted = true;
+    supabase
+      .from("selling_points")
+      .select("id, name, type, brand_id, woo_store_id, is_active, is_default")
+      .eq("business_id", active.id)
+      .eq("is_active", true)
+      .order("name")
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) {
+          toast.error(error.message || "Could not load Selling Points");
+          setSellingPoints([]);
+          return;
+        }
+        setSellingPoints((data || []) as SellingPointRow[]);
+      });
+    return () => { mounted = false; };
+  }, [open, active?.id]);
+
+  // A single active brand is always carried between orders. Multi-brand
+  // businesses intentionally start each order clear and select a brand when
+  // the first product identifies one.
+  useEffect(() => {
+    if (!open) return;
+    setSelectedBrandId((previous) => {
+      const single = activeBrands.length === 1 ? activeBrands[0].id : "";
+      if (single) {
+        localStorage.setItem("last_selected_order_brand_id", single);
+        return single;
+      }
+      // Multi-brand orders intentionally start without a remembered Brand;
+      // the first catalog product establishes it for this order only.
+      return "";
+    });
+  }, [open, activeBrands]);
+
+  const brandSellingPoints = useMemo(
+    () => sellingPoints.filter((point) => point.brand_id === selectedBrandId && point.is_active),
+    [sellingPoints, selectedBrandId],
+  );
+
+  // Resolve the brand default, or the only available Selling Point. Multiple
+  // points with no default deliberately remain unresolved so the operator must
+  // choose rather than silently attributing the order.
+  useEffect(() => {
+    if (!selectedBrandId) {
+      setSelectedSellingPointId("");
+      return;
+    }
+    setSelectedSellingPointId((previous) => {
+      if (brandSellingPoints.some((point) => point.id === previous)) return previous;
+      const preferred = brandSellingPoints.find((point) => point.is_default) ||
+        (brandSellingPoints.length === 1 ? brandSellingPoints[0] : undefined);
+      return preferred?.id || "";
+    });
+  }, [selectedBrandId, brandSellingPoints]);
+
+  const cartBrands = useMemo(() => {
+    const resolved = items
+      .map((item) => products.find((product) => product.id === item.productId))
+      .map((product) => deriveBrandForProduct(activeBrands, product))
+      .filter((brand): brand is (typeof activeBrands)[number] => Boolean(brand));
+    return Array.from(new Map(resolved.map((brand) => [brand.id, brand])).values());
+  }, [items, products, activeBrands]);
+
+  const cartHasMixedBrands = cartBrands.length > 1;
+  const hasBrandMismatch = Boolean(
+    selectedBrandId && cartBrands.some((brand) => brand.id !== selectedBrandId),
+  );
+  const selectedBrand = activeBrands.find((brand) => brand.id === selectedBrandId) || null;
+  const selectedSellingPoint = brandSellingPoints.find((point) => point.id === selectedSellingPointId) || null;
+  const identityBlocked = activeBrands.length > 0 && (
+    !selectedBrandId || !selectedSellingPoint || brandSellingPoints.length === 0
+  );
+
+  useEffect(() => {
+    setBrandWarningDismissed(false);
+  }, [selectedBrandId, cartBrands.map((brand) => brand.id).join(",")]);
 
   // When a new product is added to the cart, lazy-load its measurement groups.
   useEffect(() => {
@@ -736,6 +841,17 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   );
 
   const addItem = (result: SearchResult) => {
+    const product = products.find((candidate) => candidate.id === result.productId);
+    const productBrand = deriveBrandForProduct(activeBrands, product);
+    // In a multi-brand business the first catalog product establishes the
+    // Brand. A deliberate selection is never replaced; later mismatches are
+    // surfaced as a dismissible warning instead.
+    if (!selectedBrandId && productBrand) {
+      setSelectedBrandId(productBrand.id);
+      if (activeBrands.length === 1) {
+        localStorage.setItem("last_selected_order_brand_id", productBrand.id);
+      }
+    }
     const uid = result.variationId ? `${result.productId}_${result.variationId}` : result.productId;
     setItems(prev => {
       const existing = prev.find(i => i.uid === uid);
@@ -833,6 +949,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   const resetForm = () => {
     setItems([]); setCustomerName(""); setCustomerPhone(""); setCustomerAddress("");
+    setSelectedBrandId(activeBrands.length === 1 ? activeBrands[0].id : "");
+    setSelectedSellingPointId("");
+    setBrandWarningDismissed(false);
     setFulfillment("delivery");
     const def = sources.find((s) => (s as any).is_default);
     setSource(def ? def.name : "phone");
@@ -993,6 +1112,18 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   const handleCreate = async () => {
     if (items.length === 0) { toast.error("Add at least one product"); return; }
+    if (activeBrands.length > 0 && !selectedBrandId) {
+      toast.error("Choose a Brand before creating the order");
+      return;
+    }
+    if (activeBrands.length > 0 && brandSellingPoints.length === 0) {
+      toast.error("Configure a Selling Point for this Brand in Stores");
+      return;
+    }
+    if (activeBrands.length > 0 && !selectedSellingPoint) {
+      toast.error("Choose a Selling Point before creating the order");
+      return;
+    }
     setSaving(true);
     try {
         const cityName = cities.find(c => c.city_id === selectedCity)?.city_name || locationHints.city || null;
@@ -1029,7 +1160,10 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           }
         }
 
-        const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: storeId || null, p_source: "manual" });
+        const legacyStoreId = selectedSellingPoint?.woo_store_id ||
+          activeBrands.find((brand) => brand.id === selectedBrandId)?.woo_store_id ||
+          storeId || null;
+        const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: legacyStoreId, p_source: "manual" });
         const orderNumber = (genNum as string) || `ORD-${Date.now().toString(36).toUpperCase()}`;
 
         const paymentStatus =
@@ -1047,7 +1181,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           customer_phone: normalizedCustomerPhone,
           customer_address: customerAddress || null,
           customer_city: cityName || null,
-          store_id: storeId || null,
+          selling_point_id: selectedSellingPoint?.id || null,
+          store_id: legacyStoreId,
           subtotal,
           discount,
           shipping_cost: shippingCost,
@@ -1136,14 +1271,62 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
         <>
           <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
-          <Button onClick={handleCreate} disabled={saving || items.length === 0}>
+          <Button onClick={handleCreate} disabled={saving || items.length === 0 || identityBlocked}>
             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Create Order
           </Button>
         </>
       }
     >
-      <div className="flex flex-col lg:flex-row gap-6">
+      <div className="space-y-4">
+        {activeBrands.length > 0 && (
+          <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className="flex h-8 w-8 items-center justify-center rounded-md text-xs font-bold text-white"
+                style={{ backgroundColor: selectedBrand ? brandAccent(selectedBrand.id) : "hsl(var(--primary))" }}
+                aria-hidden="true"
+              >
+                {selectedBrand?.logo_url ? (
+                  <img src={selectedBrand.logo_url} alt="" className="h-full w-full rounded-md object-cover" />
+                ) : brandMonogram(selectedBrand)}
+              </span>
+              <div className="min-w-[150px] flex-1">
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Brand</Label>
+                <Select value={selectedBrandId} onValueChange={(value) => {
+                  setSelectedBrandId(value);
+                  setSelectedSellingPointId("");
+                  setBrandWarningDismissed(false);
+                  if (activeBrands.length === 1) localStorage.setItem("last_selected_order_brand_id", value);
+                }}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Choose Brand" /></SelectTrigger>
+                  <SelectContent>
+                    {activeBrands.map((brand) => <SelectItem key={brand.id} value={brand.id}>{brand.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-[190px] flex-1">
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Selling Point</Label>
+                <Select value={selectedSellingPointId} onValueChange={setSelectedSellingPointId} disabled={!selectedBrandId || brandSellingPoints.length === 0}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={brandSellingPoints.length === 0 ? "Configure in Stores" : "Choose Selling Point"} /></SelectTrigger>
+                  <SelectContent>
+                    {brandSellingPoints.map((point) => <SelectItem key={point.id} value={point.id}>{point.name}{point.is_default ? " · Default" : ""}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {brandSellingPoints.length === 0 && selectedBrandId && (
+              <p className="text-[11px] text-destructive">No active Selling Point is configured for this Brand. Add one in Stores.</p>
+            )}
+            {(cartHasMixedBrands || hasBrandMismatch) && !brandWarningDismissed && (
+              <div className="flex items-start justify-between gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-800 dark:text-amber-200">
+                <span>{cartHasMixedBrands ? "This order contains products from multiple Brands; the selected Brand remains the order identity." : "The selected Brand does not match one or more products in this order."}</span>
+                <button type="button" className="shrink-0 underline" onClick={() => setBrandWarningDismissed(true)}>Dismiss</button>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="flex flex-col lg:flex-row gap-6">
         {/* Left Column: Product Selection */}
         <div className="flex-1 space-y-4">
           <div className="flex items-center justify-between">
@@ -1160,6 +1343,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               productCatMap={productCatMap}
               stores={stores}
               onSelectProduct={(p) => {
+                const productBrand = deriveBrandForProduct(activeBrands, p);
+                if (!selectedBrandId && productBrand) setSelectedBrandId(productBrand.id);
                 // Resolve variations the same way the database does (trimmed +
                 // case-insensitive UUID match) so a variable product never gets
                 // added straight to the cart without a size being chosen.
@@ -1496,14 +1681,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             </div>
             {stores.length > 0 && (
               <div className="space-y-1">
-                <Label className="text-xs">Store</Label>
-                <Select 
-                  value={storeId} 
+                <Label className="text-xs">Legacy Woo store (optional)</Label>
+                <Select
+                  value={storeId}
                   onValueChange={(v) => { setStoreId(v); localStorage.setItem("last_selected_store_id", v); }}
                 >
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Store" /></SelectTrigger>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Use Selling Point binding" /></SelectTrigger>
                   <SelectContent>
-                    {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    {stores.map((store) => <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -1542,6 +1727,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-xs min-h-[50px]" />
           </div>
         </div>
+      </div>
       </div>
 
     </ResponsiveDialog>

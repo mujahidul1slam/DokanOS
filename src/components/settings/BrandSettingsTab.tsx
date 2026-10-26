@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { Image as ImageIcon, Plus, Upload, X } from "lucide-react";
+import { Image as ImageIcon, Loader2, Plus, Upload, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -240,15 +240,17 @@ export default function BrandSettingsTab() {
 
       <div className="space-y-3">
         {brands.map((brand) => (
-          <BrandCard
-            key={brand.id}
-            brand={brand}
-            draft={drafts[brand.id]}
-            dirty={isDirty(brand.id)}
-            saving={savingId === brand.id}
-            onField={updateField}
-            onSave={() => handleSave(brand)}
-          />
+          <div key={brand.id} className="space-y-3">
+            <BrandCard
+              brand={brand}
+              draft={drafts[brand.id]}
+              dirty={isDirty(brand.id)}
+              saving={savingId === brand.id}
+              onField={updateField}
+              onSave={() => handleSave(brand)}
+            />
+            <BrandIdentityDefaults brand={brand} />
+          </div>
         ))}
       </div>
     </SettingsSection>
@@ -362,6 +364,294 @@ function BrandCard({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface IdentitySellingPoint {
+  id: string;
+  name: string;
+  type: string;
+  woo_store_id: string | null;
+  is_active: boolean;
+  is_default: boolean;
+}
+
+interface IdentityPathaoIntegration {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
+interface IdentityPathaoStore {
+  pathao_store_id: number;
+  store_name: string;
+}
+
+interface IdentityPathaoLink {
+  id: string;
+  woo_store_id: string;
+  pathao_integration_id: string;
+  default_pathao_store_id: number | null;
+}
+
+/**
+ * Existing-table defaults used by order entry and courier dispatch.
+ * Selling Point defaults live on selling_points; Pathao defaults live on the
+ * existing Woo-store-to-Pathao mapping.
+ */
+function BrandIdentityDefaults({ brand }: { brand: Brand }) {
+  const [sellingPoints, setSellingPoints] = useState<IdentitySellingPoint[]>([]);
+  const [integrations, setIntegrations] = useState<IdentityPathaoIntegration[]>([]);
+  const [pathaoStores, setPathaoStores] = useState<IdentityPathaoStore[]>([]);
+  const [pathaoLink, setPathaoLink] = useState<IdentityPathaoLink | null>(null);
+  const [selectedSellingPoint, setSelectedSellingPoint] = useState("");
+  const [selectedIntegration, setSelectedIntegration] = useState("");
+  const [selectedPathaoStore, setSelectedPathaoStore] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadingStores, setLoadingStores] = useState(false);
+  const [savingSellingPoint, setSavingSellingPoint] = useState(false);
+  const [savingPathao, setSavingPathao] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      const [{ data: spData }, { data: integrationData }] = await Promise.all([
+        supabase
+          .from("selling_points")
+          .select("id, name, type, woo_store_id, is_active, is_default")
+          .eq("brand_id", brand.id)
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("pathao_integrations_safe" as any)
+          .select("id, name, is_active")
+          .eq("is_active", true)
+          .order("name"),
+      ]);
+      if (cancelled) return;
+
+      const rows = (spData || []) as IdentitySellingPoint[];
+      const activeIntegrations = (integrationData || []) as unknown as IdentityPathaoIntegration[];
+      let link: IdentityPathaoLink | null = null;
+      if (brand.woo_store_id) {
+        const { data } = await supabase
+          .from("pathao_store_links")
+          .select("id, woo_store_id, pathao_integration_id, default_pathao_store_id")
+          .eq("woo_store_id", brand.woo_store_id)
+          .maybeSingle();
+        link = (data || null) as IdentityPathaoLink | null;
+      }
+
+      setSellingPoints(rows);
+      setIntegrations(activeIntegrations);
+      setPathaoLink(link);
+      const serverDefault = rows.find((row) => row.is_default);
+      setSelectedSellingPoint(serverDefault?.id || (rows.length === 1 ? rows[0].id : ""));
+
+      const linkedIntegration = link && activeIntegrations.some((item) => item.id === link!.pathao_integration_id)
+        ? link.pathao_integration_id
+        : "";
+      setSelectedIntegration(linkedIntegration);
+      setSelectedPathaoStore(
+        linkedIntegration && link?.default_pathao_store_id != null
+          ? String(link.default_pathao_store_id)
+          : "",
+      );
+      setLoading(false);
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [brand.id, brand.woo_store_id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedIntegration) {
+      setPathaoStores([]);
+      setLoadingStores(false);
+      return () => { cancelled = true; };
+    }
+    setLoadingStores(true);
+    void (async () => {
+      const { data } = await supabase
+        .from("pathao_stores")
+        .select("pathao_store_id, store_name")
+        .eq("integration_id", selectedIntegration)
+        .eq("is_active", true)
+        .order("store_name");
+      if (cancelled) return;
+      const stores = (data || []) as IdentityPathaoStore[];
+      setPathaoStores(stores);
+      setSelectedPathaoStore((current) =>
+        current && stores.some((store) => String(store.pathao_store_id) === current) ? current : "",
+      );
+      setLoadingStores(false);
+    })();
+    return () => { cancelled = true; };
+  }, [selectedIntegration]);
+
+  const saveSellingPoint = async () => {
+    if (!selectedSellingPoint || !sellingPoints.some((row) => row.id === selectedSellingPoint)) {
+      toast.error("Choose an active Selling Point first");
+      return;
+    }
+    setSavingSellingPoint(true);
+    const clearResult = await supabase
+      .from("selling_points")
+      .update({ is_default: false })
+      .eq("brand_id", brand.id);
+    if (clearResult.error) {
+      setSavingSellingPoint(false);
+      toast.error(clearResult.error.message || "Could not clear the previous Selling Point default");
+      return;
+    }
+    const setResult = await supabase
+      .from("selling_points")
+      .update({ is_default: true })
+      .eq("id", selectedSellingPoint)
+      .eq("brand_id", brand.id)
+      .eq("is_active", true);
+    setSavingSellingPoint(false);
+    if (setResult.error) {
+      toast.error(setResult.error.message || "Could not save the Selling Point default");
+      return;
+    }
+    setSellingPoints((current) => current.map((row) => ({ ...row, is_default: row.id === selectedSellingPoint })));
+    toast.success("Default Selling Point saved");
+  };
+
+  const savePathaoDefault = async () => {
+    if (!brand.woo_store_id) {
+      toast.error("Connect a WooCommerce store to configure a default Pathao Account");
+      return;
+    }
+    if (!selectedIntegration) {
+      toast.error("Choose a Pathao Account first");
+      return;
+    }
+    setSavingPathao(true);
+    const payload = {
+      woo_store_id: brand.woo_store_id,
+      pathao_integration_id: selectedIntegration,
+      default_pathao_store_id: selectedPathaoStore ? Number(selectedPathaoStore) : null,
+    };
+    const result = pathaoLink
+      ? await supabase
+          .from("pathao_store_links")
+          .update({
+            pathao_integration_id: payload.pathao_integration_id,
+            default_pathao_store_id: payload.default_pathao_store_id,
+          })
+          .eq("id", pathaoLink.id)
+          .select("id, woo_store_id, pathao_integration_id, default_pathao_store_id")
+          .maybeSingle()
+      : await supabase
+          .from("pathao_store_links")
+          .insert(payload)
+          .select("id, woo_store_id, pathao_integration_id, default_pathao_store_id")
+          .single();
+    setSavingPathao(false);
+    if (result.error) {
+      toast.error(
+        result.error.code === "42501"
+          ? "You do not have permission to change Pathao defaults. Ask a platform admin."
+          : result.error.message || "Could not save the Pathao Account default",
+      );
+      return;
+    }
+    if (result.data) setPathaoLink(result.data as IdentityPathaoLink);
+    toast.success("Default Pathao Account saved");
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-card/60 p-4 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold">Order identity defaults</h3>
+        <p className="text-xs text-muted-foreground">
+          Defaults used by Add Order and courier dispatch. Brand, Selling Point and Pathao Account remain separate choices.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading identity defaults…
+        </div>
+      ) : (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Default Selling Point</Label>
+            {sellingPoints.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                No active Selling Points. Add one under Stores → Selling Points before creating orders.
+              </p>
+            ) : (
+              <div className="flex items-center gap-2">
+                <select
+                  className="flex h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                  value={selectedSellingPoint}
+                  onChange={(event) => setSelectedSellingPoint(event.target.value)}
+                >
+                  {sellingPoints.length > 1 && <option value="">Choose a Selling Point…</option>}
+                  {sellingPoints.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+                </select>
+                <Button size="sm" onClick={saveSellingPoint} disabled={savingSellingPoint || !selectedSellingPoint}>
+                  {savingSellingPoint ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Default Pathao Account</Label>
+            {!brand.woo_store_id ? (
+              <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                Connect a WooCommerce store to this brand before linking its default Pathao Account.
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="flex h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                    value={selectedIntegration}
+                    onChange={(event) => setSelectedIntegration(event.target.value)}
+                    disabled={integrations.length === 0}
+                  >
+                    <option value="">Choose a Pathao Account…</option>
+                    {integrations.map((integration) => <option key={integration.id} value={integration.id}>{integration.name}</option>)}
+                  </select>
+                  <Button size="sm" onClick={savePathaoDefault} disabled={savingPathao || !selectedIntegration}>
+                    {savingPathao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                  </Button>
+                </div>
+                {integrations.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No active Pathao Accounts. Add one under Integrations.</p>
+                )}
+                {selectedIntegration && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Default pickup store (optional)</Label>
+                    <select
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={selectedPathaoStore}
+                      onChange={(event) => setSelectedPathaoStore(event.target.value)}
+                      disabled={loadingStores}
+                    >
+                      <option value="">Choose later</option>
+                      {pathaoStores.map((store) => <option key={store.pathao_store_id} value={String(store.pathao_store_id)}>{store.store_name}</option>)}
+                    </select>
+                    {pathaoStores.length === 0 && !loadingStores && (
+                      <p className="text-xs text-muted-foreground">No active pickup stores cached for this account. Refresh its Pathao data under Integrations.</p>
+                    )}
+                  </div>
+                )}
+                {pathaoLink && !integrations.some((integration) => integration.id === pathaoLink.pathao_integration_id) && (
+                  <p className="text-xs text-amber-600">The saved Pathao Account is inactive or unavailable; choose an active account to replace it.</p>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
