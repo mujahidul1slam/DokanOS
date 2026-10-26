@@ -510,7 +510,7 @@ const Customers = () => {
                               <div className="font-medium text-sm">{symbol}{Number(o.total).toLocaleString()}</div>
                               <div className="flex items-center gap-1.5 justify-end">
                                 <FulfillmentBadge status={o.status} />
-                                <PaymentBadge status={o.payment_status} />
+                                <PaymentBadge status={o.payment_status} source={o.source} />
                               </div>
                             </div>
                           </div>

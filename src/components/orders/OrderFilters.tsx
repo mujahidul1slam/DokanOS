@@ -13,6 +13,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import CategoryFilter from "@/components/CategoryFilter";
 import { cn } from "@/lib/utils";
+import { PAYMENT_NEEDS_CONFIRMATION_LABEL } from "@/lib/paymentGate";
 
 export interface StoreOption {
   id: string;
@@ -120,7 +121,7 @@ function OrderFiltersImpl(props: OrderFiltersProps) {
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="processing">New Order</SelectItem>
-                  <SelectItem value="payment_pending">Payment Pending</SelectItem>
+                  <SelectItem value="payment_pending">{PAYMENT_NEEDS_CONFIRMATION_LABEL}</SelectItem>
                   <SelectItem value="pre_order_pending">Pre-Order</SelectItem>
                   <SelectItem value="pre_order_making">Making</SelectItem>
                   <SelectItem value="pre_order_ready">Pre-Order Ready</SelectItem>

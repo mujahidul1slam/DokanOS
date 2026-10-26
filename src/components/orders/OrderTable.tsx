@@ -200,7 +200,7 @@ function OrderTable<T extends OrderRowLike>({
                   <div className="text-xs text-amber-400">Due: {symbol}{Number(order.amount_to_collect).toLocaleString()}</div>
                 )}
                 <div className="mt-0.5 flex flex-col items-end gap-0.5">
-                  <PaymentBadge status={order.payment_status} />
+                  <PaymentBadge status={order.payment_status} source={order.source} paymentMethod={order.payment_method} />
                   {order.payment_method && order.payment_status !== "cod" && (
                     <span className="text-[11px] text-muted-foreground">{order.payment_method}</span>
                   )}

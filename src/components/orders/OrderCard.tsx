@@ -89,7 +89,7 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
             <SourceBadge source={order.source} storeName={order.stores?.name} />
             <FulfillmentBadge status={order.status} />
             <DeliveryBadge type={order.fulfillment_type} />
-            <PaymentBadge status={order.payment_status} />
+            <PaymentBadge status={order.payment_status} source={order.source} paymentMethod={order.payment_method} />
             {order.payment_method && order.payment_status !== "cod" && (
               <span className="text-[11px] text-muted-foreground">{order.payment_method}</span>
             )}

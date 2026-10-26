@@ -26,7 +26,7 @@ All-in-one shop OS purpose-built for Bangladeshi e-commerce: deep WooCommerce sy
 - **WooCommerce Integration:** Full bidirectional sync — orders, products (with variations), categories, customers. Real-time webhook processing plus bulk sync.
 - **Pathao Courier:** Bulk dispatch, auto-fill city/zone/area from customer address, tracking status sync, COD remittance handling.
 - **POS:** Walk-in sales, barcode scanning, cash/card/mobile payments, due collection tracking.
-- **Order Management:** Tabbed pipeline (New, Pre-Order, Payment Pending, Shipped, Delivered, Cancelled), detail sheets with timeline, exchange/return workflows, pickup slip printing.
+- **Order Management:** Tabbed pipeline (New, Pre-Order, Payment Needs Confirmation, Shipped, Delivered, Cancelled), detail sheets with timeline, exchange/return workflows, pickup slip printing.
 - **Products:** Synced from WooCommerce with stock management, variations, categories, low-stock alerts.
 - **Customers:** Global phone-based identity, alias resolution across stores, order history.
 - **Analytics & Reports:** Revenue trends, source mix, payment method breakdown, top products, fulfillment funnel, POS cash reports.

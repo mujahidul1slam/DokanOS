@@ -29,7 +29,7 @@ Built Bangladesh-native by default: currency in Bangladeshi Taka (BDT), native P
 - **WooCommerce Integration** - Bidirectional sync of orders, products (with variations), categories, and customers; real-time webhook processing plus bulk sync.
 - **Pathao Courier** - Bulk parcel dispatch, auto-filled city / zone / area from customer addresses, tracking status sync, and COD remittance handling.
 - **Point of Sale (POS)** - Walk-in sales, barcode scanning, cash / card / mobile payments, due-collection tracking, and daily cash reports.
-- **Order Management** - Tabbed pipeline (New, Pre-Order, Payment Pending, Shipped, Delivered, Cancelled), per-order timelines, exchange / return workflows, and pickup slip printing.
+- **Order Management** - Tabbed pipeline (New, Pre-Order, Payment Needs Confirmation, Shipped, Delivered, Cancelled), per-order timelines, exchange / return workflows, and pickup slip printing.
 - **Products and Inventory** - WooCommerce-synced catalog with stock management, variations, categories, and low-stock alerts.
 - **Customers** - Global phone-based identity with cross-store alias resolution and complete order history.
 - **Analytics and Reports** - Revenue trends, order source mix, payment-method breakdown, top products, fulfillment funnel, and POS cash reports.
