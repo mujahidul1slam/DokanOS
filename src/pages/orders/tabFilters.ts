@@ -111,6 +111,13 @@ export function matchesTab(
   if (tabKey === "trash") return !!o.deleted_at;
   if (o.deleted_at) return false;
 
+  // Merged source orders (issue #30): absorbed into a merged order and marked
+  // status "merged" WITHOUT deleted_at (trash auto-purges after 15 days).
+  // They are historical records — shown ONLY under the "all" tab (where the
+  // row is badged by its raw "merged" status), never in an active tab — so
+  // this check must run before the cancelled/pre-order rules below.
+  if (o.status === "merged") return tabKey === "all";
+
   // Cancelled orders are surfaced ONLY in the cancelled tab (and "all").
   const cancelled = isOrderCancelled(o);
   if (tabKey !== "cancelled" && tabKey !== "all" && cancelled) return false;

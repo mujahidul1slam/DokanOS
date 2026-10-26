@@ -10,6 +10,7 @@ import {
   RefreshCw, Loader2, MapPin, Package, Truck, ShoppingCart, CheckSquare,
   PackageCheck, Clock, AlertTriangle, CheckCircle2, Undo2, XCircle, CreditCard, BadgeCheck, Printer, Plus,
   Trash2, RotateCcw, Hourglass, Tags, Ruler, Sparkles, Wrench, SlidersHorizontal, ChevronDown, X, Pencil, Link2,
+  Combine,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
@@ -70,6 +71,9 @@ import { Settings as SettingsIcon } from "lucide-react";
 import PreOrderCategoriesDialog from "@/components/settings/PreOrderCategoriesDialog";
 import DuePaymentDialog, { type DuePaymentResult } from "@/components/orders/DuePaymentDialog";
 import { recordDuePayment } from "@/lib/dueCollection";
+import MergeOrdersDialog, { fetchMergeOrderDetails, MergeBlockList } from "@/components/orders/MergeOrdersDialog";
+import { groupOrdersForMerge, type MergeGroup, type MergeOrder } from "@/lib/orderMerge";
+import { getActiveCurrency, symbolFor } from "@/lib/currency";
 import { matchesTab as matchesTabExt, ALL_TAB_KEYS, type TabKey } from "./orders/tabFilters";
 import { useOrderBulkActions } from "./orders/useOrderBulkActions";
 
@@ -113,6 +117,8 @@ interface OrderRow {
   selling_points: OrderSellingPoint | null;
   brand: (OrderBrand & { accent: string }) | null;
   woo_order_id: number | null;
+  /** Issue #30: on merged source orders this points at the merged order. */
+  parent_order_id: string | null;
   customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
@@ -128,6 +134,33 @@ interface OrderRow {
 }
 
 interface StoreOption { id: string; name: string }
+
+/** Extra display fields the merge group panel wants alongside MergeOrder. */
+type GroupableOrder = MergeOrder & { created_at: string };
+
+/**
+ * Minimal MergeOrder view of a list row (issue #30): groupOrdersForMerge and
+ * checkMergeEligibility only touch id/status/customer-phone/consignment
+ * fields. Money, items and payments are fetched when the merge dialog opens
+ * (fetchMergeOrderDetails) — the grouping UI never needs them.
+ */
+const toMergeGroupOrder = (o: OrderRow): GroupableOrder => ({
+  id: o.id,
+  order_number: o.order_number,
+  status: o.status,
+  consignment_id: o.consignment_id,
+  deleted_at: o.deleted_at,
+  customer_name: o.customer_name,
+  customer_phone: o.customer_phone,
+  subtotal: 0,
+  discount: 0,
+  shipping_cost: 0,
+  tax_amount: 0,
+  total: o.total,
+  items: [],
+  payments: [],
+  created_at: o.created_at,
+});
 
 const PAGE_SIZE = 200;
 
@@ -192,6 +225,8 @@ const Orders = () => {
   const [exchangeOpen, setExchangeOpen] = useState(false);
   // Attach / replace parcel
   const [attachParcelOrder, setAttachParcelOrder] = useState<OrderRow | null>(null);
+  // Merge dialog (issue #30) — full source orders, fetched when a group opens it
+  const [mergeDialogOrders, setMergeDialogOrders] = useState<MergeOrder[] | null>(null);
 
   // Tracking
   const [trackingLoading, setTrackingLoading] = useState(false);
@@ -254,7 +289,7 @@ const Orders = () => {
     }
     const orderQuery = supabase
         .from("orders")
-        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, selling_point_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), selling_points(id, name, brand_id, brands(id, name, logo_url, woo_store_id)), order_items(id, product_id, product_name, quantity, products(stock_status))");
+        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, selling_point_id, woo_order_id, parent_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), selling_points(id, name, brand_id, brands(id, name, logo_url, woo_store_id)), order_items(id, product_id, product_name, quantity, products(stock_status))");
     // A business order is in scope through its legacy Woo store binding OR its
     // canonical Selling Point — selling-point-only orders (store_id NULL) must
     // not disappear from the list.
@@ -465,6 +500,19 @@ const Orders = () => {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  /* ─── Same-customer merge groups (issue #30) ───
+     2+ orders of one customer (normalized phone) in one state form a
+     collapsible group whose Merge action is gated by checkMergeEligibility.
+     Already-"merged" source rows are history, not merge candidates, so they
+     are excluded here. Trashed and missing-phone orders are skipped inside
+     groupOrdersForMerge. */
+  const mergeGroups = useMemo(() => {
+    const groupable = paginated
+      .filter((o) => o.status !== "merged")
+      .map(toMergeGroupOrder);
+    return groupOrdersForMerge(groupable);
+  }, [paginated]);
+
   useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, dateRange, tab]);
 
   // When store filter changes, drop category selections that no longer belong
@@ -537,6 +585,22 @@ const Orders = () => {
     setDispatchDialogOpen(true);
   };
 
+  /* ─── Merge dialog (issue #30) ───
+     Load the full money/items/payments picture for the group's orders, then
+     open the confirmation dialog with its merged preview. */
+  const openMergeDialog = async (groupOrders: MergeOrder[]) => {
+    try {
+      const full = await fetchMergeOrderDetails(groupOrders.map((o) => o.id));
+      if (full.length < 2) {
+        toast({ title: "Merge unavailable", description: "Could not load these orders.", variant: "destructive" });
+        return;
+      }
+      setMergeDialogOrders(full);
+    } catch (e: any) {
+      toast({ title: "Merge failed", description: e?.message ? String(e.message) : String(e), variant: "destructive" });
+    }
+  };
+
   const dispatchOrders = useMemo(() =>
     orders.filter((o) => dispatchOrderIds.includes(o.id)),
     [orders, dispatchOrderIds]
@@ -553,6 +617,7 @@ const Orders = () => {
     handleRestoreOrders,
     handleBulkPrintMeasurementSlips,
     handleBulkTrackSelected,
+    filterGatedForCourier,
   } = useOrderBulkActions({
     orders,
     selected,
@@ -663,6 +728,17 @@ const Orders = () => {
       if (canWrite) actions.push({ key: "restore", label: "Restore", icon: RotateCcw, onClick: () => handleRestoreOrders([order.id]) });
       return actions;
     }
+    // Merged source orders (issue #30) are read-only history: jump to the
+    // merged order instead of offering active-list actions.
+    if (order.status === "merged") {
+      if (order.parent_order_id) {
+        actions.push({
+          key: "view_merged", label: "View merged order", icon: Combine,
+          onClick: () => setDetailOrderId(order.parent_order_id!),
+        });
+      }
+      return actions;
+    }
     if ((tab === "new" || tab === "all") && order.status === "processing" && !order.consignment_id && canWrite) {
       actions.push({
         key: "ready", label: "Mark Ready to Ship", icon: PackageCheck,
@@ -701,7 +777,7 @@ const Orders = () => {
   };
 
   const renderActionButtons = (order: OrderRow, max: number) => (
-    <OrderRowActions actions={getQuickActions(order)} max={max} />
+    <OrderRowActions actions={getQuickActions(order)} max={max} order={order} />
   );
 
   return (
@@ -763,7 +839,7 @@ const Orders = () => {
         tab={tab}
         onBulkStatusChange={handleBulkStatusChange}
         onBulkPrintMeasurementSlips={handleBulkPrintMeasurementSlips}
-        onDispatch={() => openDispatch(Array.from(selected))}
+        onDispatch={() => { const ids = filterGatedForCourier(Array.from(selected)); if (ids.length) openDispatch(ids); }}
         onBulkTrack={handleBulkTrackSelected}
         onBulkMarkPaid={handleBulkMarkPaid}
         onRestore={() => handleRestoreOrders(Array.from(selected))}
@@ -838,6 +914,29 @@ const Orders = () => {
           onCategoryFilterChange={setCategoryFilter}
         />
 
+        {/* ── Same-customer merge groups (issue #30) ──
+            Collapsible; the Merge action lives inside each group and is gated
+            by checkMergeEligibility (block reasons render when ineligible). */}
+        {mergeGroups.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <Combine className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">Same-customer groups</h2>
+              <span className="text-xs text-muted-foreground">
+                2+ orders of one customer in one state — merge each group into a single order (pre-entry only)
+              </span>
+            </div>
+            {mergeGroups.map((g) => (
+              <MergeGroupPanel
+                key={`${g.customer_key}\u0000${g.state}`}
+                group={g}
+                canWrite={canWrite}
+                onMerge={openMergeDialog}
+                onOpenOrder={setDetailOrderId}
+              />
+            ))}
+          </div>
+        )}
 
         {/* ── Shared Table ── */}
         {paginated.length === 0 ? (
@@ -943,9 +1042,106 @@ const Orders = () => {
           onAttached={() => { setAttachParcelOrder(null); loadOrders(); }}
         />
       )}
+
+      {mergeDialogOrders && (
+        <MergeOrdersDialog
+          open
+          onOpenChange={(v) => { if (!v) setMergeDialogOrders(null); }}
+          orders={mergeDialogOrders}
+          onMerged={() => { setMergeDialogOrders(null); loadOrders(); }}
+        />
+      )}
     </div>
   );
 };
+
+/* ─── Same-customer merge group (issue #30) ───
+   One collapsible panel per customer+state group. The Merge action lives
+   inside the group and is enabled only when checkMergeEligibility passes;
+   otherwise the block reasons (e.g. "entered" — pre-entry only, ADR-0002)
+   are rendered in its place. */
+function MergeGroupPanel({
+  group,
+  canWrite,
+  onMerge,
+  onOpenOrder,
+}: {
+  group: MergeGroup;
+  canWrite: boolean;
+  onMerge: (orders: MergeOrder[]) => void;
+  onOpenOrder: (orderId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const orders = group.orders as GroupableOrder[];
+  const sym = symbolFor(getActiveCurrency());
+  const money = (n: number) => `${sym}${Number(n).toLocaleString()}`;
+  const combinedTotal = orders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+  const orderNumberById = new Map(orders.map((o) => [o.id, o.order_number]));
+  const eligible = group.eligibility.eligible;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="rounded-lg border border-border bg-card">
+      <CollapsibleTrigger className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-accent/50 rounded-lg">
+        <div className="flex items-center gap-2 min-w-0">
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+          <Combine className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <div className="text-sm font-medium truncate">
+              {group.orders[0].customer_name || group.customer_key}
+              {group.orders[0].customer_name && (
+                <span className="ml-1.5 text-xs text-muted-foreground">{group.orders[0].customer_phone}</span>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {orders.length} orders in &ldquo;{group.state}&rdquo; · combined {money(combinedTotal)}
+            </div>
+          </div>
+        </div>
+        <Badge variant={eligible ? "secondary" : "outline"} className="shrink-0">
+          {eligible ? "Merge possible" : "Merge blocked"}
+        </Badge>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="px-4 pb-4 space-y-3">
+        <div className="rounded-md border divide-y">
+          {orders.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => onOpenOrder(o.id)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-sm hover:bg-accent/50"
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="font-medium">#{o.order_number}</span>
+                <span className="text-xs text-muted-foreground">
+                  {format(new Date(o.created_at), "MMM d, yyyy")}
+                </span>
+                {o.consignment_id && (
+                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">Entered</Badge>
+                )}
+              </span>
+              <span className="font-medium whitespace-nowrap">{money(o.total)}</span>
+            </button>
+          ))}
+        </div>
+
+        {eligible ? (
+          canWrite && (
+            <Button size="sm" onClick={() => onMerge(orders)} className="gap-1.5">
+              <Combine className="h-4 w-4" /> Merge {orders.length} orders
+            </Button>
+          )
+        ) : (
+          <div className="space-y-2">
+            <MergeBlockList blocks={group.eligibility.blocks} orderNumberById={orderNumberById} />
+            <Button size="sm" disabled className="gap-1.5">
+              <Combine className="h-4 w-4" /> Merge {orders.length} orders
+            </Button>
+          </div>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
 /* ─── Empty State ─── */
 function EmptyState({ tab }: { tab: TabKey }) {
