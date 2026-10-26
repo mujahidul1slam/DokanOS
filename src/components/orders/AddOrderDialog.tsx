@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Fuse from "fuse.js";
-import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search, Package, ShoppingCart, Tag, User } from "lucide-react";
+import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search, Package, ShoppingCart, Tag, User, Check } from "lucide-react";
 
 
 
@@ -37,7 +37,24 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useCurrency } from "@/hooks/useCurrency";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
-import { brandAccent, brandMonogram, deriveBrandForProduct } from "@/lib/brandIdentity";
+import { deriveBrandForProduct } from "@/lib/brandIdentity";
+import {
+  isAccountOverride,
+  resolveDefaultAccount,
+  type PathaoAccountOption,
+  type PathaoStoreLinkRow,
+} from "@/lib/dispatchAccounts";
+import { fetchPathaoAccountData, recordPathaoAccountOverride } from "@/lib/dispatchAccountsData";
+import {
+  BrandAvatar,
+  IdentitySegment,
+  IdentityStripCard,
+  MixedBrandItemChips,
+  PathaoMark,
+  StripWarning,
+  type MixedBrandChip,
+} from "@/lib/identityStrip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
@@ -301,6 +318,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   });
   const [selectedSellingPointId, setSelectedSellingPointId] = useState("");
   const [brandWarningDismissed, setBrandWarningDismissed] = useState(false);
+  // Pathao Account identity (issue #22): selectable accounts + the per-brand
+  // default links (brand -> woo_store_id -> pathao_store_links).
+  const [pathaoAccounts, setPathaoAccounts] = useState<PathaoAccountOption[]>([]);
+  const [pathaoLinks, setPathaoLinks] = useState<PathaoStoreLinkRow[]>([]);
+  const [selectedAccountKey, setSelectedAccountKey] = useState("");
+  const [accountWarningDismissed, setAccountWarningDismissed] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
   const [showVariationModal, setShowVariationModal] = useState(false);
 
@@ -422,6 +445,18 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     return () => { mounted = false; };
   }, [open, active?.id]);
 
+  // Pathao Account options + per-brand default links for the identity strip.
+  useEffect(() => {
+    if (!open) return;
+    let mounted = true;
+    fetchPathaoAccountData().then(({ accounts, links }) => {
+      if (!mounted) return;
+      setPathaoAccounts(accounts);
+      setPathaoLinks(links);
+    });
+    return () => { mounted = false; };
+  }, [open]);
+
   // A single active brand is always carried between orders. Multi-brand
   // businesses intentionally start each order clear and select a brand when
   // the first product identifies one.
@@ -474,6 +509,47 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   );
   const selectedBrand = activeBrands.find((brand) => brand.id === selectedBrandId) || null;
   const selectedSellingPoint = brandSellingPoints.find((point) => point.id === selectedSellingPointId) || null;
+  // Brand default Pathao Account (brand -> woo_store_id -> pathao_store_links),
+  // resolved through the Selling Point binding first when it has one.
+  const defaultAccount = useMemo(
+    () => resolveDefaultAccount(pathaoAccounts, pathaoLinks, [
+      selectedSellingPoint?.woo_store_id,
+      selectedBrand?.woo_store_id,
+    ]),
+    [pathaoAccounts, pathaoLinks, selectedSellingPoint, selectedBrand],
+  );
+  const selectedAccount = pathaoAccounts.find((account) => account.key === selectedAccountKey) || null;
+  const accountOverridden = isAccountOverride(selectedAccountKey, defaultAccount?.key);
+
+  // Every identity change — and every dialog open — restarts from the Brand
+  // default Pathao Account, never from the last manual choice (issue #22).
+  useEffect(() => {
+    setSelectedAccountKey(defaultAccount?.key ?? "");
+    setAccountWarningDismissed(false);
+  }, [defaultAccount?.key, selectedBrandId, selectedSellingPointId, open]);
+
+  // Per-brand item chips shown inside the strip for mixed-brand orders.
+  const mixedBrandChips = useMemo<MixedBrandChip[]>(() => {
+    const chipMap = new Map<string, MixedBrandChip>();
+    for (const item of items) {
+      const product = products.find((candidate) => candidate.id === item.productId);
+      const brand = deriveBrandForProduct(activeBrands, product);
+      const key = brand?.id ?? "";
+      let chip = chipMap.get(key);
+      if (!chip) {
+        chip = {
+          brandId: brand?.id ?? null,
+          brandName: brand?.name ?? "No Brand",
+          itemLabels: [],
+        };
+        chipMap.set(key, chip);
+      }
+      chip.itemLabels.push(
+        `${item.name}${item.variationLabel ? ` - ${item.variationLabel}` : ""} ×${item.qty}`,
+      );
+    }
+    return Array.from(chipMap.values());
+  }, [items, products, activeBrands]);
   const identityBlocked = activeBrands.length > 0 && (
     !selectedBrandId || !selectedSellingPoint || brandSellingPoints.length === 0
   );
@@ -952,6 +1028,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setSelectedBrandId(activeBrands.length === 1 ? activeBrands[0].id : "");
     setSelectedSellingPointId("");
     setBrandWarningDismissed(false);
+    setAccountWarningDismissed(false);
     setFulfillment("delivery");
     const def = sources.find((s) => (s as any).is_default);
     setSource(def ? def.name : "phone");
@@ -1249,6 +1326,20 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         order_number: orderNumber, source,
       });
 
+      // Non-default Pathao Account chosen in the identity strip (issue #22):
+      // record the override in the timeline + audit log as the intended
+      // dispatch account for this order.
+      if (accountOverridden && selectedAccount && defaultAccount) {
+        await recordPathaoAccountOverride({
+          orderIds: [order.id],
+          orderNumbers: { [order.id]: orderNumber },
+          brandName: selectedBrand?.name ?? null,
+          defaultAccount,
+          selectedAccount,
+          context: "created",
+        });
+      }
+
       toast.success(`Order ${orderNumber} created`);
       resetForm();
       onOpenChange(false);
@@ -1268,64 +1359,174 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       title="Add New Order"
       desktopMaxWidth="max-w-6xl"
       footer={
-
-        <>
-          <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
-          <Button onClick={handleCreate} disabled={saving || items.length === 0 || identityBlocked}>
-            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Create Order
-          </Button>
-        </>
+        <div className="w-full space-y-3">
+          {activeBrands.length > 0 && (
+            <IdentityStripCard>
+              <div className="flex flex-wrap items-stretch gap-2">
+                {/* Brand — logo-or-monogram + name, click to change */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <IdentitySegment
+                      label="Brand"
+                      value={selectedBrand?.name ?? "Choose Brand"}
+                      icon={
+                        <BrandAvatar
+                          brandId={selectedBrand?.id ?? null}
+                          brandName={selectedBrand?.name ?? null}
+                          logoUrl={selectedBrand?.logo_url ?? null}
+                        />
+                      }
+                      onClick={() => {}}
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent align="start" side="top" className="w-[280px] p-1">
+                    {activeBrands.map((brand) => (
+                      <button
+                        key={brand.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedBrandId(brand.id);
+                          setSelectedSellingPointId("");
+                          setBrandWarningDismissed(false);
+                          if (activeBrands.length === 1) localStorage.setItem("last_selected_order_brand_id", brand.id);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent"
+                      >
+                        <BrandAvatar brandId={brand.id} brandName={brand.name} logoUrl={brand.logo_url} className="h-6 w-6" />
+                        <span className="flex-1 truncate">{brand.name}</span>
+                        {brand.id === selectedBrandId && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+                {/* Selling Point — click to change (a disabled segment must not
+                    open its popover, so it renders outside one) */}
+                {!selectedBrandId || brandSellingPoints.length === 0 ? (
+                  <IdentitySegment
+                    label="Selling Point"
+                    value={
+                      selectedSellingPoint?.name ??
+                      (brandSellingPoints.length === 0 ? "Configure in Stores" : "Choose Selling Point")
+                    }
+                    subValue={selectedSellingPoint?.is_default ? "Default Selling Point" : undefined}
+                    disabled
+                  />
+                ) : (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <IdentitySegment
+                      label="Selling Point"
+                      value={
+                        selectedSellingPoint?.name ??
+                        (brandSellingPoints.length === 0 ? "Configure in Stores" : "Choose Selling Point")
+                      }
+                      subValue={selectedSellingPoint?.is_default ? "Default Selling Point" : undefined}
+                      onClick={() => {}}
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent align="start" side="top" className="w-[280px] p-1">
+                    {brandSellingPoints.map((point) => (
+                      <button
+                        key={point.id}
+                        type="button"
+                        onClick={() => setSelectedSellingPointId(point.id)}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent"
+                      >
+                        <span className="flex-1 truncate">{point.name}{point.is_default ? " · Default" : ""}</span>
+                        {point.id === selectedSellingPointId && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+                )}
+                {/* Pathao Account — mark + account name + pickup store, click to change */}
+                {pathaoAccounts.length === 0 ? (
+                  <IdentitySegment
+                    label="Pathao Account"
+                    value="Unavailable"
+                    icon={<PathaoMark />}
+                    disabled
+                  />
+                ) : (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <IdentitySegment
+                      label="Pathao Account"
+                      value={
+                        selectedAccount?.accountName ??
+                        "Choose Pathao Account"
+                      }
+                      subValue={
+                        selectedAccount
+                          ? `Pickup: ${selectedAccount.pickupStoreName}`
+                          : defaultAccount
+                            ? `Default: ${defaultAccount.accountName}`
+                            : undefined
+                      }
+                      icon={<PathaoMark />}
+                      onClick={() => {}}
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent align="start" side="top" className="w-[300px] p-1">
+                    {pathaoAccounts.map((account) => (
+                      <button
+                        key={account.key}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAccountKey(account.key);
+                          setAccountWarningDismissed(false);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent"
+                      >
+                        <PathaoMark className="h-6 w-6" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{account.accountName}</span>
+                          <span className="block truncate text-[10px] text-muted-foreground">
+                            Pickup: {account.pickupStoreName}
+                          </span>
+                        </span>
+                        {account.key === defaultAccount?.key && (
+                          <Badge variant="outline" className="text-[9px]">Default</Badge>
+                        )}
+                        {account.key === selectedAccountKey && <Check className="h-3.5 w-3.5 shrink-0" />}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+                )}
+              </div>
+              {brandSellingPoints.length === 0 && selectedBrandId && (
+                <p className="text-[11px] text-destructive">No active Selling Point is configured for this Brand. Add one in Stores.</p>
+              )}
+              {/* Mixed-brand orders: per-brand item chips + warning inside the strip */}
+              {cartHasMixedBrands && <MixedBrandItemChips chips={mixedBrandChips} />}
+              {(cartHasMixedBrands || hasBrandMismatch) && !brandWarningDismissed && (
+                <StripWarning
+                  message={cartHasMixedBrands
+                    ? "This order contains products from multiple Brands; the selected Brand remains the order identity."
+                    : "The selected Brand does not match one or more products in this order."}
+                  onDismiss={() => setBrandWarningDismissed(true)}
+                />
+              )}
+              {accountOverridden && !accountWarningDismissed && (
+                <StripWarning
+                  message={`This order will dispatch through a non-default Pathao Account (${selectedAccount?.accountName} · ${selectedAccount?.pickupStoreName}).`}
+                  onDismiss={() => setAccountWarningDismissed(true)}
+                />
+              )}
+            </IdentityStripCard>
+          )}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={saving || items.length === 0 || identityBlocked}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Create Order
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="space-y-4">
-        {activeBrands.length > 0 && (
-          <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className="flex h-8 w-8 items-center justify-center rounded-md text-xs font-bold text-white"
-                style={{ backgroundColor: selectedBrand ? brandAccent(selectedBrand.id) : "hsl(var(--primary))" }}
-                aria-hidden="true"
-              >
-                {selectedBrand?.logo_url ? (
-                  <img src={selectedBrand.logo_url} alt="" className="h-full w-full rounded-md object-cover" />
-                ) : brandMonogram(selectedBrand)}
-              </span>
-              <div className="min-w-[150px] flex-1">
-                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Brand</Label>
-                <Select value={selectedBrandId} onValueChange={(value) => {
-                  setSelectedBrandId(value);
-                  setSelectedSellingPointId("");
-                  setBrandWarningDismissed(false);
-                  if (activeBrands.length === 1) localStorage.setItem("last_selected_order_brand_id", value);
-                }}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Choose Brand" /></SelectTrigger>
-                  <SelectContent>
-                    {activeBrands.map((brand) => <SelectItem key={brand.id} value={brand.id}>{brand.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="min-w-[190px] flex-1">
-                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Selling Point</Label>
-                <Select value={selectedSellingPointId} onValueChange={setSelectedSellingPointId} disabled={!selectedBrandId || brandSellingPoints.length === 0}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={brandSellingPoints.length === 0 ? "Configure in Stores" : "Choose Selling Point"} /></SelectTrigger>
-                  <SelectContent>
-                    {brandSellingPoints.map((point) => <SelectItem key={point.id} value={point.id}>{point.name}{point.is_default ? " · Default" : ""}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {brandSellingPoints.length === 0 && selectedBrandId && (
-              <p className="text-[11px] text-destructive">No active Selling Point is configured for this Brand. Add one in Stores.</p>
-            )}
-            {(cartHasMixedBrands || hasBrandMismatch) && !brandWarningDismissed && (
-              <div className="flex items-start justify-between gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-800 dark:text-amber-200">
-                <span>{cartHasMixedBrands ? "This order contains products from multiple Brands; the selected Brand remains the order identity." : "The selected Brand does not match one or more products in this order."}</span>
-                <button type="button" className="shrink-0 underline" onClick={() => setBrandWarningDismissed(true)}>Dismiss</button>
-              </div>
-            )}
-          </div>
-        )}
         <div className="flex flex-col lg:flex-row gap-6">
         {/* Left Column: Product Selection */}
         <div className="flex-1 space-y-4">

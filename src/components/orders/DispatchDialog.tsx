@@ -1,13 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Send, Loader2, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Send, Loader2, AlertTriangle, Check, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -25,6 +23,28 @@ import {
 import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import {
+  isAccountOverride,
+  groupOrdersForDispatch,
+  type DispatchBrandGroup,
+  type DispatchOrderIdentity,
+  type PathaoAccountOption,
+  type PathaoStoreLinkRow,
+} from "@/lib/dispatchAccounts";
+import {
+  fetchDispatchOrderIdentity,
+  fetchPathaoAccountData,
+  recordPathaoAccountOverride,
+} from "@/lib/dispatchAccountsData";
+import {
+  BatchOrderChip,
+  BrandAvatar,
+  IdentitySegment,
+  IdentityStripCard,
+  PathaoMark,
+  StripWarning,
+} from "@/lib/identityStrip";
 
 interface DispatchOrder {
   id: string;
@@ -43,12 +63,13 @@ interface DispatchOrder {
   amount_to_collect: number | null;
   item_weight: number | null;
   special_instruction: string | null;
+  /** Legacy Woo store binding — fallback for the brand default lookup. */
+  store_id?: string | null;
 }
 
 interface City { city_id: number; city_name: string }
 interface Zone { zone_id: number; zone_name: string; city_id: number }
 interface Area { area_id: number; area_name: string }
-interface PathaoStore { pathao_store_id: number; store_name: string; integration_id: string | null }
 
 const LOCATION_WORD_BLACKLIST = new Set([
   "address", "area", "bari", "bazar", "block", "building", "city", "district", "door", "flat",
@@ -82,23 +103,22 @@ interface DispatchDialogProps {
   onOpenChange: (open: boolean) => void;
   orders: DispatchOrder[];
   onDispatched: () => void;
+  /**
+   * Remove one order from the CURRENT batch only (no order, payment, status or
+   * consignment changes). The parent deselects the order; the dialog drops it
+   * locally even when this is not wired. Optional — no confirmation is shown.
+   */
+  onRemoveOrder?: (orderId: string) => void;
 }
 
-export default function DispatchDialog({ open, onOpenChange, orders, onDispatched }: DispatchDialogProps) {
+export default function DispatchDialog({ open, onOpenChange, orders, onDispatched, onRemoveOrder }: DispatchDialogProps) {
   const { symbol } = useCurrency();
+  const { brands } = useBusinessContext();
   const [dispatching, setDispatching] = useState(false);
 
   // "This order already has a courier entry" confirm-replace dialog.
   const [existingOrders, setExistingOrders] = useState<DispatchOrder[]>([]);
   const [replaceOrderIds, setReplaceOrderIds] = useState<Set<string>>(new Set());
-
-  const ordersWithExisting = orders.filter(
-    (o) => !!o.consignment_id && String(o.consignment_id).trim() !== "",
-  );
-  const existingConfirmOpen = existingOrders.length > 0;
-  const skipCount = existingOrders.length - replaceOrderIds.size;
-  const [pathaoStores, setPathaoStores] = useState<PathaoStore[]>([]);
-  const [selectedPathaoStore, setSelectedPathaoStore] = useState("");
   const [cities, setCities] = useState<City[]>([]);
   const [allZones, setAllZones] = useState<Zone[]>([]);
   const [zonesMap, setZonesMap] = useState<Record<number, Zone[]>>({});
@@ -108,29 +128,107 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     amount_to_collect: string; item_weight: string; special_instruction: string;
     recipient_name: string; recipient_phone: string; recipient_address: string;
   }>>({});
+  // Branded Pathao Account dispatch (issue #22): account options + per-brand
+  // default links, per-order identity, batch-only removals, and per-group
+  // account overrides. An override lives only for this dialog session — every
+  // dispatch starts from the default, never the last manual choice.
+  const [accountOptions, setAccountOptions] = useState<PathaoAccountOption[]>([]);
+  const [storeLinks, setStoreLinks] = useState<PathaoStoreLinkRow[]>([]);
+  const [identityMap, setIdentityMap] = useState<Record<string, DispatchOrderIdentity>>({});
+  const [removedOrderIds, setRemovedOrderIds] = useState<Set<string>>(new Set());
+  const [groupAccountKeys, setGroupAccountKeys] = useState<Record<string, string>>({});
+  const [overrideDismissed, setOverrideDismissed] = useState<Set<string>>(new Set());
   const autoFilledKeyRef = useRef<string>("");
   const { toast } = useToast();
 
-  // Reset auto-fill guard whenever the dialog closes so reopening triggers it again.
-  useEffect(() => { if (!open) { autoFilledKeyRef.current = ""; setExistingOrders([]); } }, [open]);
+  // Batch-only removal (issue #22): drops an order from THIS dispatch batch
+  // without any order, payment, status or consignment change. No confirmation.
+  const visibleOrders = useMemo(
+    () => orders.filter((o) => !removedOrderIds.has(o.id)),
+    [orders, removedOrderIds],
+  );
 
+  const identityForOrder = useCallback(
+    (o: DispatchOrder): DispatchOrderIdentity =>
+      identityMap[o.id] ?? {
+        id: o.id,
+        brandId: null,
+        brandName: null,
+        brandLogoUrl: null,
+        brandWooStoreId: null,
+        sellingPointName: null,
+        sellingPointWooStoreId: null,
+        legacyStoreId: o.store_id ?? null,
+      },
+    [identityMap],
+  );
+
+  // Auto-group the batch per brand/account; each group gets its own
+  // overrideable Pathao Account selector (issue #22).
+  const groups = useMemo(
+    () => groupOrdersForDispatch(visibleOrders.map(identityForOrder), storeLinks, accountOptions),
+    [visibleOrders, identityForOrder, storeLinks, accountOptions],
+  );
+
+  const accountKeyForGroup = (group: DispatchBrandGroup) =>
+    groupAccountKeys[group.key] ?? group.defaultAccountKey ?? "";
+  const accountForGroup = (group: DispatchBrandGroup) =>
+    accountOptions.find((account) => account.key === accountKeyForGroup(group)) ?? null;
+
+  const handleRemoveOrder = (orderId: string) => {
+    // Batch-only and immediate — the parent deselects the order when
+    // onRemoveOrder is wired; the dialog drops it locally regardless.
+    setRemovedOrderIds((prev) => new Set(prev).add(orderId));
+    onRemoveOrder?.(orderId);
+  };
+
+  const ordersWithExisting = visibleOrders.filter(
+    (o) => !!o.consignment_id && String(o.consignment_id).trim() !== "",
+  );
+  const existingConfirmOpen = existingOrders.length > 0;
+  const skipCount = existingOrders.length - replaceOrderIds.size;
+
+  // Reset auto-fill guard whenever the dialog closes so reopening triggers it again.
+  useEffect(() => {
+    if (!open) {
+      autoFilledKeyRef.current = "";
+      setExistingOrders([]);
+      // Batch-only removals and account overrides never leak into the next
+      // dispatch — each dispatch starts from the default (issue #22).
+      setRemovedOrderIds(new Set());
+      setGroupAccountKeys({});
+      setOverrideDismissed(new Set());
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
+    let mounted = true;
     (async () => {
-      const [{ data: stores }, { data: citiesData }, { data: zonesData }] = await Promise.all([
-        supabase.from("pathao_stores").select("pathao_store_id, store_name, integration_id").eq("is_active", true),
+      const [accountData, { data: citiesData }, { data: zonesData }] = await Promise.all([
+        fetchPathaoAccountData(),
         supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
         supabase.from("pathao_zones").select("zone_id, zone_name, city_id").order("zone_name"),
       ]);
-      setPathaoStores((stores || []) as PathaoStore[]);
+      if (!mounted) return;
+      setAccountOptions(accountData.accounts);
+      setStoreLinks(accountData.links);
       setCities(citiesData || []);
       setAllZones(zonesData || []);
-      if (stores?.length && !selectedPathaoStore) {
-        setSelectedPathaoStore(String(stores[0].pathao_store_id));
-      }
     })();
+    return () => { mounted = false; };
   }, [open]);
+
+  // Per-order Brand/Selling Point identity for the auto-grouped dispatch.
+  useEffect(() => {
+    if (!open || orders.length === 0) return;
+    let mounted = true;
+    fetchDispatchOrderIdentity(orders.map((o) => o.id), brands).then((identities) => {
+      if (!mounted) return;
+      setIdentityMap(Object.fromEntries(identities.map((identity) => [identity.id, identity])));
+    });
+    return () => { mounted = false; };
+  }, [open, orders, brands]);
 
   const normalizeLocationText = useCallback((value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""), []);
 
@@ -422,8 +520,19 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   };
 
   const handleDispatch = async () => {
-    if (!selectedPathaoStore) { toast({ title: "Select a Pathao store first", variant: "destructive" }); return; }
-    for (const o of orders) {
+    if (visibleOrders.length === 0) return;
+    // Each brand/account group dispatches through its own Pathao Account.
+    for (const group of groups) {
+      if (!accountForGroup(group)) {
+        toast({
+          title: "Select a Pathao Account",
+          description: `Choose a Pathao Account for ${group.brandName}`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    for (const o of visibleOrders) {
       const ov = orderOverrides[o.id];
       if (!ov?.recipient_name || !ov?.recipient_phone || !ov?.recipient_address || !ov?.city_id || !ov?.zone_id) {
         toast({ title: "Missing info", description: `Order #${o.order_number} is missing details`, variant: "destructive" }); return;
@@ -449,44 +558,94 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
       // Orders the user chose NOT to replace (had an existing courier entry and
       // they picked "Don't create") are excluded from the payload entirely.
       const toDispatch = replaceFilters
-        ? orders.filter((o) => !o.consignment_id || replaceFilters.has(o.id))
-        : orders;
-      const allPayloads = toDispatch.map((o) => {
-        const ov = orderOverrides[o.id];
-        const wantingReplace = !!o.consignment_id && replaceFilters?.has(o.id);
-        return {
-          order_id: o.id,
-          ...(wantingReplace ? { replace: true, force: false } : {}),
-          order_payload: {
-            store_id: Number(selectedPathaoStore),
-            merchant_order_id: o.order_number,
-            recipient_name: ov.recipient_name,
-            recipient_phone: ov.recipient_phone,
-            recipient_address: ov.recipient_address,
-            recipient_city: Number(ov.city_id),
-            recipient_zone: Number(ov.zone_id),
-            recipient_area: ov.area_id ? Number(ov.area_id) : undefined,
-            delivery_type: 48, item_type: 2,
-            item_quantity: o.itemCount || 1,
-            item_weight: Number(ov.item_weight) || 0.5,
-            amount_to_collect: Number(ov.amount_to_collect) || 0,
-            special_instruction: ov.special_instruction || undefined,
-          },
-        };
-      });
-      const selectedStore = pathaoStores.find((s) => String(s.pathao_store_id) === selectedPathaoStore);
-      const integrationId = selectedStore?.integration_id || undefined;
+        ? visibleOrders.filter((o) => !o.consignment_id || replaceFilters.has(o.id))
+        : visibleOrders;
+
       const allResults: any[] = [];
-      for (let i = 0; i < allPayloads.length; i += BATCH_SIZE) {
-        const batch = allPayloads.slice(i, i + BATCH_SIZE);
-        const { data, error } = await supabase.functions.invoke("pathao-courier", { body: { action: "create_bulk", orders: batch, integration_id: integrationId } });
-        if (error) throw error;
-        const batchResults = data?.data?.results || [];
-        allResults.push(...batchResults);
+      // Non-default Pathao Account choices actually used, per group, so each
+      // override can be recorded on its orders (timeline + audit log).
+      const overrideGroups: Array<{
+        group: DispatchBrandGroup;
+        account: PathaoAccountOption;
+        orderIds: string[];
+      }> = [];
+
+      // One create_bulk call per brand/account group (chunked), each booking
+      // through its own group's Pathao Account (issue #22).
+      for (const group of groups) {
+        const groupOrders = toDispatch.filter((o) => group.orderIds.includes(o.id));
+        if (groupOrders.length === 0) continue;
+        const account = accountForGroup(group);
+        if (!account) continue;
+
+        const allPayloads = groupOrders.map((o) => {
+          const ov = orderOverrides[o.id];
+          const wantingReplace = !!o.consignment_id && replaceFilters?.has(o.id);
+          return {
+            order_id: o.id,
+            ...(wantingReplace ? { replace: true, force: false } : {}),
+            order_payload: {
+              store_id: account.pathaoStoreId,
+              merchant_order_id: o.order_number,
+              recipient_name: ov.recipient_name,
+              recipient_phone: ov.recipient_phone,
+              recipient_address: ov.recipient_address,
+              recipient_city: Number(ov.city_id),
+              recipient_zone: Number(ov.zone_id),
+              recipient_area: ov.area_id ? Number(ov.area_id) : undefined,
+              delivery_type: 48, item_type: 2,
+              item_quantity: o.itemCount || 1,
+              item_weight: Number(ov.item_weight) || 0.5,
+              amount_to_collect: Number(ov.amount_to_collect) || 0,
+              special_instruction: ov.special_instruction || undefined,
+            },
+          };
+        });
+
+        for (let i = 0; i < allPayloads.length; i += BATCH_SIZE) {
+          const batch = allPayloads.slice(i, i + BATCH_SIZE);
+          const { data, error } = await supabase.functions.invoke("pathao-courier", {
+            body: {
+              action: "create_bulk",
+              orders: batch,
+              integration_id: account.integrationId ?? undefined,
+            },
+          });
+          if (error) throw error;
+          const batchResults = data?.data?.results || [];
+          allResults.push(...batchResults);
+        }
+
+        if (isAccountOverride(accountKeyForGroup(group), group.defaultAccountKey)) {
+          overrideGroups.push({ group, account, orderIds: groupOrders.map((o) => o.id) });
+        }
       }
+
       const results = allResults;
       const succeeded = results.filter((r: any) => r.success).length;
       const failed = results.filter((r: any) => !r.success);
+
+      // Record every non-default Pathao Account actually used, on each order
+      // it dispatched (issue #22).
+      const dispatchedIds = new Set(
+        results.filter((r: any) => r.success && r.order_id).map((r: any) => r.order_id as string),
+      );
+      for (const overrideGroup of overrideGroups) {
+        const okIds = dispatchedIds.size > 0
+          ? overrideGroup.orderIds.filter((id) => dispatchedIds.has(id))
+          : overrideGroup.orderIds;
+        if (okIds.length === 0) continue;
+        await recordPathaoAccountOverride({
+          orderIds: okIds,
+          orderNumbers: Object.fromEntries(
+            okIds.map((id) => [id, visibleOrders.find((o) => o.id === id)?.order_number ?? ""]),
+          ),
+          brandName: overrideGroup.group.brandName,
+          defaultAccount: overrideGroup.group.defaultAccount,
+          selectedAccount: overrideGroup.account,
+        });
+      }
+
       if (failed.length > 0) {
         toast({ title: `${succeeded} dispatched, ${failed.length} failed`, description: failed.map((f: any) => f.error).join("; ").slice(0, 200), variant: failed.length === results.length ? "destructive" : "default" });
       } else {
@@ -507,35 +666,136 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     <ResponsiveDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={`Dispatch to Pathao (${orders.length} order${orders.length > 1 ? "s" : ""})`}
+      title={`Dispatch to Pathao (${visibleOrders.length} order${visibleOrders.length === 1 ? "" : "s"})`}
       desktopMaxWidth="max-w-3xl"
       footer={
-        <>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleDispatch} disabled={dispatching} className="gap-2">
-            {dispatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Dispatch {orders.length} Order(s)
-          </Button>
-        </>
+        <div className="w-full space-y-3">
+          {/* Branded identity selector per brand/account group, directly above
+              the action buttons; replaces the old Pathao Store dropdown
+              (issue #22). */}
+          {groups.map((group) => {
+            const accountKey = accountKeyForGroup(group);
+            const account = accountForGroup(group);
+            const overridden = isAccountOverride(accountKey, group.defaultAccountKey);
+            const warningKey = `${group.key}|${accountKey}`;
+            return (
+              <IdentityStripCard key={group.key}>
+                <div className="flex flex-wrap items-stretch gap-2">
+                  {/* Brand — logo-or-monogram + name (this group's order identity) */}
+                  <IdentitySegment
+                    label="Brand"
+                    value={group.brandName}
+                    icon={
+                      <BrandAvatar
+                        brandId={group.brandId}
+                        brandName={group.brandName}
+                        logoUrl={group.brandLogoUrl}
+                      />
+                    }
+                  />
+                  {/* Selling Point(s) covered by this group */}
+                  <IdentitySegment
+                    label="Selling Point"
+                    value={group.sellingPointNames.join(", ") || "—"}
+                    subValue={`${group.orderIds.length} order${group.orderIds.length === 1 ? "" : "s"}`}
+                  />
+                  {/* Pathao Account — account name + pickup store, click to change */}
+                  {accountOptions.length === 0 ? (
+                    <IdentitySegment
+                      label="Pathao Account"
+                      value="Unavailable"
+                      icon={<PathaoMark />}
+                      disabled
+                    />
+                  ) : (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <IdentitySegment
+                          label="Pathao Account"
+                          value={account?.accountName ?? "Choose Pathao Account"}
+                          subValue={
+                            account
+                              ? `Pickup: ${account.pickupStoreName}`
+                              : group.defaultAccount
+                                ? `Default: ${group.defaultAccount.accountName}`
+                                : undefined
+                          }
+                          icon={<PathaoMark />}
+                          onClick={() => {}}
+                        />
+                      </PopoverTrigger>
+                      <PopoverContent align="start" side="top" className="w-[300px] p-1">
+                        {accountOptions.map((option) => (
+                          <button
+                            key={option.key}
+                            type="button"
+                            onClick={() => {
+                              setGroupAccountKeys((prev) => ({ ...prev, [group.key]: option.key }));
+                              // A new choice re-arms the override warning.
+                              setOverrideDismissed((prev) =>
+                                new Set(Array.from(prev).filter((key) => !key.startsWith(`${group.key}|`))),
+                              );
+                            }}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent"
+                          >
+                            <PathaoMark className="h-6 w-6" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium">{option.accountName}</span>
+                              <span className="block truncate text-[10px] text-muted-foreground">
+                                Pickup: {option.pickupStoreName}
+                              </span>
+                            </span>
+                            {option.key === group.defaultAccountKey && (
+                              <Badge variant="outline" className="text-[9px]">Default</Badge>
+                            )}
+                            {option.key === accountKey && <Check className="h-3.5 w-3.5 shrink-0" />}
+                          </button>
+                        ))}
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+                {/* Per-order chips with batch-only X / remove (issue #22) */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {group.orderIds.map((orderId) => {
+                    const order = visibleOrders.find((o) => o.id === orderId);
+                    if (!order) return null;
+                    return (
+                      <BatchOrderChip
+                        key={orderId}
+                        label={`#${order.order_number}`}
+                        onRemove={() => handleRemoveOrder(orderId)}
+                        removeTitle={`Remove order #${order.order_number} from this batch`}
+                      />
+                    );
+                  })}
+                </div>
+                {overridden && account && !overrideDismissed.has(warningKey) && (
+                  <StripWarning
+                    message={`This group will dispatch through a non-default Pathao Account (${account.accountName} · ${account.pickupStoreName}).`}
+                    onDismiss={() =>
+                      setOverrideDismissed((prev) => new Set(prev).add(warningKey))
+                    }
+                  />
+                )}
+              </IdentityStripCard>
+            );
+          })}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button onClick={handleDispatch} disabled={dispatching || visibleOrders.length === 0} className="gap-2">
+              {dispatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Dispatch {visibleOrders.length} Order(s)
+            </Button>
+          </div>
+        </div>
       }
     >
-        {/* Pathao store selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 pb-2">
-          <Label className="text-sm font-medium whitespace-nowrap">Pathao Store:</Label>
-          <Select value={selectedPathaoStore} onValueChange={setSelectedPathaoStore}>
-            <SelectTrigger className="w-full sm:w-[320px]"><SelectValue placeholder="Select Pathao store" /></SelectTrigger>
-            <SelectContent>
-              {pathaoStores.map((s) => (
-                <SelectItem key={`${s.integration_id || "env"}-${s.pathao_store_id}`} value={String(s.pathao_store_id)}>
-                  {s.store_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="space-y-6">
-          {orders.map((order) => {
+          {visibleOrders.length === 0 && (
+            <p className="text-sm text-muted-foreground">No orders in this batch.</p>
+          )}
+          {visibleOrders.map((order) => {
             const ov = orderOverrides[order.id] || { city_id: "", zone_id: "", area_id: "", amount_to_collect: "", item_weight: "", special_instruction: "", recipient_name: "", recipient_phone: "", recipient_address: "" };
             const cityId = ov.city_id ? Number(ov.city_id) : 0;
             const zoneId = ov.zone_id ? Number(ov.zone_id) : 0;
@@ -549,7 +809,19 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
                     <span className="font-medium text-foreground">#{order.order_number}</span>
                     <span className="ml-2 text-sm text-muted-foreground">— {symbol}{Number(order.total).toLocaleString()}</span>
                   </div>
-                  <Badge variant="outline">{order.itemCount} item(s)</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{order.itemCount} item(s)</Badge>
+                    {/* Per-order X / remove — batch only, no confirmation (issue #22) */}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveOrder(order.id)}
+                      title={`Remove order #${order.order_number} from this batch`}
+                      aria-label={`Remove order #${order.order_number} from this batch`}
+                      className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
