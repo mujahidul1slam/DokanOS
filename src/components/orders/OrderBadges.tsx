@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { ShoppingBag, Package, Truck } from "lucide-react";
+import { evaluatePaymentGate, PAYMENT_NEEDS_CONFIRMATION_LABEL } from "@/lib/paymentGate";
 
 export function DeliveryBadge({ type }: { type: string }) {
   switch (type) {
@@ -32,22 +33,33 @@ export function SourceBadge({ source, storeName }: { source: string; storeName?:
   );
 }
 
-export function PaymentBadge({ status }: { status: string }) {
+export function PaymentBadge({ status, source, paymentMethod }: { status: string; source?: string | null; paymentMethod?: string | null }) {
+  // Issue #27 (display-only): labels come from the payment gate decision so a
+  // WooCommerce order awaiting its online payment reads "Payment Needs
+  // Confirmation" (GLOSSARY.md). Stored values are never changed here.
+  const { gated, displayLabel } = evaluatePaymentGate({
+    source,
+    payment_method: paymentMethod,
+    payment_status: status,
+  });
+  if (gated) {
+    return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">{displayLabel}</Badge>;
+  }
   switch (status) {
     case "paid":
-      return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/25">Paid</Badge>;
+      return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/25">{displayLabel}</Badge>;
     case "cod":
-      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">COD</Badge>;
+      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">{displayLabel}</Badge>;
     case "online":
-      return <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/20 hover:bg-sky-500/25">Online</Badge>;
+      return <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/20 hover:bg-sky-500/25">{displayLabel}</Badge>;
     case "partial":
-      return <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/20 hover:bg-orange-500/25">Partial</Badge>;
-    case "pending_payment":
-      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">Pending Payment</Badge>;
+      return <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/20 hover:bg-orange-500/25">{displayLabel}</Badge>;
     case "refunded":
-      return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">Refunded</Badge>;
+      return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">{displayLabel}</Badge>;
     default:
-      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">Unpaid</Badge>;
+      // Covers "unpaid" and the retired "pending_payment" alias alike — one
+      // concept, one label, matching the edit dropdown (issue #27 cleanup).
+      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">{displayLabel}</Badge>;
   }
 }
 
@@ -56,7 +68,8 @@ export function FulfillmentBadge({ status }: { status: string }) {
     case "processing":
       return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">New Order</Badge>;
     case "payment_pending":
-      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">Payment Pending</Badge>;
+      // Display-only rename (issue #27): stored value stays "payment_pending".
+      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">{PAYMENT_NEEDS_CONFIRMATION_LABEL}</Badge>;
     case "ready_to_ship":
       return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/25">Ready to Ship</Badge>;
     case "pre_order_pending":

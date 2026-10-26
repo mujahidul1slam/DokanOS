@@ -10,6 +10,7 @@ import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset } from "@/li
 import { postWooOrderNote } from "@/lib/wooNotes";
 import { kickSyncWorker } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
+import { evaluatePaymentGate, PAYMENT_NEEDS_CONFIRMATION_LABEL } from "@/lib/paymentGate";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import { getGlobalStockEnabled } from "@/lib/stockSettings";
@@ -164,6 +165,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const canLogPayment = can("orders.log_payment");
   const canAttachCourier = can("orders.attach_courier");
   const [order, setOrder] = useState<OrderDetail | null>(null);
+
+  // Issue #27: WooCommerce online-payment gate (docs/adr/0001-woo-online-payment-gate.md).
+  // While an order is gated it cannot be entered with a courier or moved between
+  // statuses; the permission-controlled confirm-payment flow below is the only
+  // sanctioned exit. Order creation and ordinary edits are never blocked.
+  const gate = order ? evaluatePaymentGate(order) : null;
+  const paymentGateLocked = !!gate?.gated;
+  const canEnterCourierNow = canAttachCourier && !paymentGateLocked;
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
@@ -621,11 +630,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     if (!order) return;
     setSaving(true);
     try {
+      // Issue #27: while the gate is on, ordinary saves must not move the order
+      // out of Payment Needs Confirmation. Status and payment status stay at
+      // their stored values; only recording a payment releases the gate.
+      const gateLockedNow = evaluatePaymentGate(order).gated;
+      const saveStatus = gateLockedNow ? order.status : status;
+      const savePaymentStatus = gateLockedNow ? order.payment_status : paymentStatus;
       await supabase
         .from("orders")
         .update({
-          status,
-          payment_status: paymentStatus,
+          status: saveStatus,
+          payment_status: savePaymentStatus,
           customer_name: customerName || null,
           customer_phone: customerPhone || null,
           customer_address: customerAddress || null,
@@ -679,17 +694,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       }
 
       // Add timeline entry for status change
-      if (status !== order.status) {
+      if (saveStatus !== order.status) {
         await addOrderTimeline({
           order_id: order.id,
           event: "status_changed",
-          description: `Status changed from "${order.status}" to "${status}"`,
-          metadata: { from: order.status, to: status },
+          description: `Status changed from "${order.status}" to "${saveStatus}"`,
+          metadata: { from: order.status, to: saveStatus },
         });
-        await logAction("update", "order_status", order.id, { order_number: order.order_number, changes: { status: { from: order.status, to: status } }, before: { status: order.status }, after: { status } });
+        await logAction("update", "order_status", order.id, { order_number: order.order_number, changes: { status: { from: order.status, to: saveStatus } }, before: { status: order.status }, after: { status: saveStatus } });
 
         // Phase 6 (§9.3): Cancel storefront order -> invoke storefront-restore-stock edge function
-        if (status === "cancelled" && (order as any).storefront_id && !(order as any).stock_restored_at) {
+        if (saveStatus === "cancelled" && (order as any).storefront_id && !(order as any).stock_restored_at) {
           try {
             const { error: restErr } = await supabase.functions.invoke("storefront-restore-stock", {
               body: { order_id: order.id },
@@ -705,14 +720,14 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         }
       }
 
-      if (paymentStatus !== order.payment_status) {
+      if (savePaymentStatus !== order.payment_status) {
         await addOrderTimeline({
           order_id: order.id,
           event: "payment_status_changed",
-          description: `Payment status changed from "${order.payment_status}" to "${paymentStatus}"`,
-          metadata: { from: order.payment_status, to: paymentStatus },
+          description: `Payment status changed from "${order.payment_status}" to "${savePaymentStatus}"`,
+          metadata: { from: order.payment_status, to: savePaymentStatus },
         });
-        await logAction("update", "order_payment_status", order.id, { order_number: order.order_number, changes: { payment_status: { from: order.payment_status, to: paymentStatus } }, before: { payment_status: order.payment_status }, after: { payment_status: paymentStatus } });
+        await logAction("update", "order_payment_status", order.id, { order_number: order.order_number, changes: { payment_status: { from: order.payment_status, to: savePaymentStatus } }, before: { payment_status: order.payment_status }, after: { payment_status: savePaymentStatus } });
       }
 
       // Customer info changes
@@ -793,8 +808,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       // orders.update; kick the worker so the push lands within seconds
       // instead of waiting for the throttled scheduler.
       if (
-        status !== order.status ||
-        paymentStatus !== order.payment_status ||
+        saveStatus !== order.status ||
+        savePaymentStatus !== order.payment_status ||
         custChanges.length > 0 ||
         totalsChanges.length > 0
       ) {
@@ -901,7 +916,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const remaining = Math.max(orderTotal - totalPaid, 0);
     const newStatus =
       totalPaid <= 0.0001
-        ? "unpaid"
+        ? // Issue #27: keep the unconfirmed Woo online-payment marker — the gate
+          // is released by recording a payment, not by recomputation side effects.
+          orderRow.payment_status === "online"
+          ? "online"
+          : "unpaid"
         : remaining <= 0.0001
         ? "paid"
         : "partial";
@@ -1207,7 +1226,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       ({courierShipments.filter(s => !s.cancelled_at).length} active, {courierShipments.length} total)
                     </span>
                   )}
-                  {canAttachCourier && (
+                  {canEnterCourierNow && (
                     <button
                       onClick={() => setAttachParcelOpen(true)}
                       className="ml-2 text-xs text-muted-foreground hover:text-primary underline"
@@ -1216,7 +1235,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     </button>
                   )}
                 </>
-              ) : canAttachCourier ? (
+              ) : canEnterCourierNow ? (
                 <button
                   onClick={() => setAttachParcelOpen(true)}
                   className="ml-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
@@ -1224,6 +1243,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   <Link2 className="h-3 w-3" />
                   Attach Pathao Parcel
                 </button>
+              ) : paymentGateLocked && canAttachCourier ? (
+                <span className="ml-2 inline-flex items-center gap-1 text-xs text-amber-400">
+                  <Link2 className="h-3 w-3" />
+                  Courier entry locked — {PAYMENT_NEEDS_CONFIRMATION_LABEL}
+                </span>
               ) : null}
             </p>
           )}
@@ -1260,7 +1284,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     ? "Online Payment Failed"
                     : isPartial
                       ? "Partial Payment Received"
-                      : "Payment Awaiting Confirmation";
+                      : PAYMENT_NEEDS_CONFIRMATION_LABEL;
                   const subtext = isFailed
                     ? `The online payment via ${order.payment_method || "the gateway"} did not complete. Log a new payment attempt or collect the full ${symbol}${orderTotal.toLocaleString()} on delivery.`
                     : isPartial
@@ -1349,7 +1373,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Method</Label>
-                      <Select value={paymentMethod || "none"} onValueChange={(v) => setPaymentMethod(v === "none" ? "" : v)}>
+                      <Select value={paymentMethod || "none"} onValueChange={(v) => setPaymentMethod(v === "none" ? "" : v)} disabled={paymentGateLocked}>
                         <SelectTrigger className="h-9">
                           <SelectValue placeholder="N/A" />
                         </SelectTrigger>
@@ -1367,7 +1391,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Status</Label>
-                      <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                      {/* Issue #27: while gated, only recording a payment (confirm
+                          flow / payment log) may change the payment state. */}
+                      <Select value={paymentStatus} onValueChange={setPaymentStatus} disabled={paymentGateLocked}>
                         <SelectTrigger className="h-9">
                           <SelectValue />
                         </SelectTrigger>
@@ -1428,7 +1454,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         {courierShipments.some((s) => s.cancelled_at) && ` · ${courierShipments.length} total`}
                       </Badge>
                     </div>
-                    {canAttachCourier && (
+                    {canEnterCourierNow ? (
                       <Button
                         type="button"
                         variant="outline"
@@ -1439,7 +1465,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         <Plus className="h-3.5 w-3.5" />
                         {courierShipments.length > 0 ? "Add Courier Entry" : "Attach Parcel"}
                       </Button>
-                    )}
+                    ) : paymentGateLocked && canAttachCourier ? (
+                      <span className="text-xs text-amber-400">
+                        Locked — confirm the payment to enter with a courier
+                      </span>
+                    ) : null}
                   </div>
 
                   {courierShipments.length === 0 ? (
@@ -1447,7 +1477,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       <p className="text-xs text-muted-foreground">
                         No courier entries attached to this order yet.
                       </p>
-                      {canAttachCourier && (
+                      {paymentGateLocked && canAttachCourier ? (
+                        <p className="text-xs text-amber-400">
+                          {PAYMENT_NEEDS_CONFIRMATION_LABEL} — courier entry stays locked until the payment is confirmed.
+                        </p>
+                      ) : canEnterCourierNow ? (
                         <Button
                           type="button"
                           variant="secondary"
@@ -1458,7 +1492,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                           <Link2 className="h-3.5 w-3.5" />
                           Attach Pathao Parcel
                         </Button>
-                      )}
+                      ) : null}
                     </div>
                   ) : (
                     <div className="space-y-2.5">
@@ -2025,12 +2059,15 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         <SheetFooter className="px-6 py-4 border-t border-border shrink-0 flex-row items-center justify-between gap-3 sm:justify-between">
           <div className="flex items-center gap-2">
             <Label className="text-xs whitespace-nowrap">Status:</Label>
-            <Select value={status} onValueChange={setStatus}>
+            {/* Issue #27: gated orders may not be moved to another status —
+                the confirm-payment flow is the only sanctioned exit. */}
+            <Select value={status} onValueChange={setStatus} disabled={paymentGateLocked}>
               <SelectTrigger className="w-[140px] h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="payment_pending">{PAYMENT_NEEDS_CONFIRMATION_LABEL}</SelectItem>
                 <SelectItem value="processing">New Order</SelectItem>
                 <SelectItem value="pre_order_pending">Pre-Order</SelectItem>
                 <SelectItem value="pre_order_making">Making</SelectItem>
@@ -2042,6 +2079,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
+            {paymentGateLocked && (
+              <span className="text-xs text-amber-400 whitespace-nowrap">
+                Locked — {PAYMENT_NEEDS_CONFIRMATION_LABEL}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {order && order.status === "delivered" && canEdit && (
@@ -2161,6 +2203,9 @@ function FulfillmentBadge({ status }: { status: string }) {
   switch (status) {
     case "processing":
       return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">New Order</Badge>;
+    case "payment_pending":
+      // Display-only rename (issue #27): stored value stays "payment_pending".
+      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20">{PAYMENT_NEEDS_CONFIRMATION_LABEL}</Badge>;
     case "ready_to_ship":
       return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20">Ready to Ship</Badge>;
     case "pre_order_pending":
