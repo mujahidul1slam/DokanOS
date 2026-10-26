@@ -251,7 +251,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [categories, setCategories] = useState<any[]>([]);
   const [productCatMap, setProductCatMap] = useState<Map<string, Set<string>>>(new Map());
   const [variations, setVariations] = useState<VariationRow[]>([]);
-  const [productSearch, setProductSearch] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -807,79 +806,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setCustomerMatches([]);
   };
 
-  // Per-product search index (one row per product, even if it has variations).
-  // Variations contribute to searchText so users can still find a product by
-  // typing a variation attribute (e.g. "blue", "L").
-  interface ProductSearchRow {
-    productId: string;
-    name: string;
-    sku: string | null;
-    price: number;
-    hasVariations: boolean;
-    searchText: string;
-  }
-
-  const productIndex = useMemo((): ProductSearchRow[] => {
-    return products.map((p) => {
-      const productVariations = getProductVariations(p.id, variations);
-      const variationText = productVariations
-        .map((v) => {
-          const label =
-            typeof v.attributes === "string"
-              ? v.attributes
-              : Array.isArray(v.attributes)
-              ? v.attributes.map((a: any) => Object.values(a).join(": ")).join(", ")
-              : v.name;
-          return `${label} ${v.sku || ""}`;
-        })
-        .join(" ");
-      return {
-        productId: p.id,
-        name: p.name,
-        sku: p.sku,
-        price: p.price,
-        hasVariations: productVariations.length > 0,
-        searchText: `${p.name} ${p.sku || ""} ${variationText}`,
-      };
-    });
-  }, [products, variations]);
-
-  const fuse = useMemo(
-    () =>
-      new Fuse(productIndex, {
-        keys: [
-          { name: "name", weight: 0.55 },
-          { name: "sku", weight: 0.2 },
-          { name: "searchText", weight: 0.25 },
-        ],
-        threshold: 0.4,
-        ignoreLocation: true,
-        minMatchCharLength: 2,
-        includeScore: true,
-      }),
-    [productIndex],
-  );
-
-  const productSearchResults = useMemo((): ProductSearchRow[] => {
-    const q = productSearch.trim().toLowerCase();
-    if (!q) return [];
-    // Exact SKU match (product or any variation) wins
-    const exactProduct = productIndex.filter((r) => (r.sku || "").toLowerCase() === q);
-    if (exactProduct.length > 0) return exactProduct.slice(0, 20);
-    // Exact variation-SKU match wins. Compare with the same case-insensitive
-    // normalization the variation lookup uses so a product is not dropped when
-    // the SKU belongs to a variation whose product_id casing differs.
-    const exactVarProductIds = new Set(
-      variations
-        .filter((v) => (v.sku || "").toLowerCase() === q)
-        .map((v) => (v.product_id || "").trim().toLowerCase()),
-    );
-    if (exactVarProductIds.size > 0) {
-      return productIndex.filter((r) => exactVarProductIds.has((r.productId || "").trim().toLowerCase())).slice(0, 20);
-    }
-    return fuse.search(q).slice(0, 20).map((r) => r.item);
-  }, [productIndex, fuse, productSearch, variations]);
-
   // Backwards-compatible flat index used by the AI-parse hint matcher: every
   // product (and every variation) is searchable as an addable result.
   const searchIndex = useMemo((): (SearchResult & { searchText: string })[] => {
@@ -1057,7 +983,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setDiscount(0);
     setPaidAmount(0);
     setPaymentMethod("cash");
-    setNotes(""); setProductSearch("");
+    setNotes("");
     setSelectedCity(null); setSelectedZone(null); setSelectedArea(null);
     setLocationHints(EMPTY_LOCATION_HINTS);
     setCustomerMatches([]);
@@ -1780,7 +1706,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               </p>
               <p className="text-xs text-muted-foreground">
                 Consignment: <span className="font-mono text-foreground">{dispatchPhase.consignmentId}</span>
-                {dispatchPhase.reused && " (this order already had that courier entry)"}
+                {dispatchPhase.reused && " (this order already had that consignment)"}
               </p>
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button onClick={closeAfterDispatch}>Done</Button>

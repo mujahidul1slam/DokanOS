@@ -338,8 +338,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       const cancelledOnPathao = payload?.pathao_cancelled;
       toast.success(
         noop
-          ? `Courier entry ${shipment.consignment_id} deleted — the parcel was already in a terminal state on Pathao (nothing left to cancel).`
-          : `Courier entry ${shipment.consignment_id} deleted${cancelledOnPathao ? " and cancelled on Pathao" : " (cancelled locally only)"}.`,
+          ? `Consignment ${shipment.consignment_id} deleted — it was already in a terminal state on Pathao (nothing left to cancel).`
+          : `Consignment ${shipment.consignment_id} deleted${cancelledOnPathao ? " and cancelled on Pathao" : " (cancelled locally only)"}.`,
       );
 
       setDeleteConfirmOpen(false);
@@ -348,7 +348,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       load();
       onSaved?.();
     } catch (err: any) {
-      toast.error(`Failed to delete courier entry: ${err.message}`);
+      toast.error(`Failed to delete consignment: ${err.message}`);
     } finally {
       setDeleteLoading(false);
     }
@@ -1521,12 +1521,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   className="ml-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
                   <Link2 className="h-3 w-3" />
-                  Attach Pathao Parcel
+                  Attach Pathao Consignment
                 </button>
               ) : paymentGateLocked && canAttachCourier ? (
                 <span className="ml-2 inline-flex items-center gap-1 text-xs text-amber-400">
                   <Link2 className="h-3 w-3" />
-                  Courier entry locked — {PAYMENT_NEEDS_CONFIRMATION_LABEL}
+                  Consignment locked — {PAYMENT_NEEDS_CONFIRMATION_LABEL}
                 </span>
               ) : null}
             </p>
@@ -1732,7 +1732,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                           </>
                         ) : null}
                         . Saving will <strong>not</strong> rebook or rewrite the courier record — cancel the booking
-                        and attach the parcel again to dispatch through the new account.
+                        and attach the consignment again to dispatch through the new account.
                       </p>
                     </div>
                   )}
@@ -1842,7 +1842,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         className="h-8 gap-1.5 text-xs"
                       >
                         <Plus className="h-3.5 w-3.5" />
-                        {courierShipments.length > 0 ? "Add Courier Entry" : "Attach Parcel"}
+                        {courierShipments.length > 0 ? "Add Consignment" : "Attach Consignment"}
                       </Button>
                     ) : paymentGateLocked && canAttachCourier ? (
                       <span className="text-xs text-amber-400">
@@ -1854,11 +1854,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   {courierShipments.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-border p-4 text-center space-y-2">
                       <p className="text-xs text-muted-foreground">
-                        No courier entries attached to this order yet.
+                        No consignments attached to this order yet.
                       </p>
                       {paymentGateLocked && canAttachCourier ? (
                         <p className="text-xs text-amber-400">
-                          {PAYMENT_NEEDS_CONFIRMATION_LABEL} — courier entry stays locked until the payment is confirmed.
+                          {PAYMENT_NEEDS_CONFIRMATION_LABEL} — consignment stays locked until the payment is confirmed.
                         </p>
                       ) : canEnterCourierNow ? (
                         <Button
@@ -1869,7 +1869,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                           className="h-7 text-xs gap-1.5"
                         >
                           <Link2 className="h-3.5 w-3.5" />
-                          Attach Pathao Parcel
+                          Attach Pathao Consignment
                         </Button>
                       ) : null}
                     </div>
@@ -1989,7 +1989,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                     setDeleteConfirmOpen(true);
                                   }}
                                   className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                                  title="Delete or cancel this courier entry"
+                                  title="Delete or cancel this consignment"
                                 >
                                   <Trash2 className="h-3.5 w-3.5 mr-1" />
                                   <span className="text-xs">Delete</span>
@@ -2526,21 +2526,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         />
       )}
 
-      {/* Delete Courier Entry Confirmation Dialog */}
+      {/* Delete Consignment Confirmation Dialog */}
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <div className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-5 w-5" />
-              <AlertDialogTitle>Delete Courier Entry</AlertDialogTitle>
+              <AlertDialogTitle>Delete Consignment</AlertDialogTitle>
             </div>
             <AlertDialogDescription className="space-y-2 pt-2">
               <p className="text-sm text-muted-foreground">
-                Are you sure you want to delete courier entry{" "}
+                Are you sure you want to delete consignment{" "}
                 <strong className="font-mono text-foreground">{deletingShipment?.consignment_id}</strong>?
               </p>
               <p className="text-xs text-muted-foreground">
-                This will call the Pathao API to cancel the parcel and mark it as cancelled in DokanOS.
+                This will call the Pathao API to cancel the consignment and mark it as cancelled in DokanOS.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -2571,7 +2571,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
             </div>
             <AlertDialogDescription className="space-y-2 pt-2">
               <p className="text-sm text-muted-foreground">
-                Pathao refused to cancel parcel{" "}
+                Pathao refused to cancel consignment{" "}
                 <strong className="font-mono text-foreground">{deletePathaoFail?.shipment.consignment_id}</strong>:
               </p>
               <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2.5 text-xs text-destructive font-mono">

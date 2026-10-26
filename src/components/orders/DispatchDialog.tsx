@@ -928,16 +928,16 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           <AlertDialogHeader>
             <div className="flex items-center gap-2 text-amber-600">
               <AlertTriangle className="h-5 w-5" />
-              <AlertDialogTitle>This order already has a courier entry</AlertDialogTitle>
+              <AlertDialogTitle>This order already has a consignment</AlertDialogTitle>
             </div>
             <AlertDialogDescription className="space-y-2 pt-2">
               <p className="text-sm text-muted-foreground">
                 {existingOrders.length === 1
                   ? `Order #${existingOrders[0].order_number} already has courier consignment ${existingOrders[0].consignment_id}.`
-                  : `${existingOrders.length} of the selected orders already have a courier entry.`}
+                  : `${existingOrders.length} of the selected orders already have a consignment.`}
               </p>
               <p className="text-xs text-muted-foreground">
-                Choose <strong className="text-foreground">Replace</strong> to cancel the previous parcel on Pathao and dispatch a new one, or{" "}
+                Choose <strong className="text-foreground">Replace</strong> to cancel the previous consignment on Pathao and dispatch a new one, or{" "}
                 <strong className="text-foreground">Don't create</strong> to skip that order.
               </p>
               <div className="rounded-lg border border-border bg-background/30 p-2 space-y-2 mt-1 max-h-52 overflow-y-auto">

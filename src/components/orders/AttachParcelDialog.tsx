@@ -178,10 +178,10 @@ export default function AttachParcelDialog({
       const info = payload;
       const title =
         mode === "replace"
-          ? "Previous parcel cancelled & new parcel attached"
+          ? "Previous consignment cancelled & new consignment attached"
           : mode === "add_new"
-          ? "New courier entry added"
-          : "Parcel attached";
+          ? "New consignment added"
+          : "Consignment attached";
 
       toast({
         title,
@@ -193,7 +193,7 @@ export default function AttachParcelDialog({
       onOpenChange(false);
       onAttached();
     } catch (err: any) {
-      toast({ title: "Failed to attach parcel", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to attach consignment", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -205,12 +205,12 @@ export default function AttachParcelDialog({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {hasExistingEntries ? "Attach Additional / Replace Courier Entry" : "Attach Pathao Parcel"} — #{orderNumber}
+              {hasExistingEntries ? "Attach Additional / Replace Consignment" : "Attach Pathao Consignment"} — #{orderNumber}
             </DialogTitle>
             <DialogDescription>
               {hasExistingEntries
                 ? `Order has existing courier entries (current: ${existingConsignmentId || "active"}). Enter the consignment ID below.`
-                : "Enter the Pathao consignment ID to link this order to a courier parcel."}
+                : "Enter the Pathao consignment ID to link this order to a consignment."}
             </DialogDescription>
           </DialogHeader>
 
@@ -220,11 +220,11 @@ export default function AttachParcelDialog({
                 <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>
-                    This order already has an active courier entry:{" "}
+                    This order already has an active consignment:{" "}
                     <strong className="text-foreground">{existingConsignmentId || "attached"}</strong>.
                   </p>
                   <p>
-                    When you proceed, you will be prompted to either <strong>overwrite</strong> (cancel previous parcel) or <strong>add as a new entry</strong>.
+                    When you proceed, you will be prompted to either <strong>overwrite</strong> (cancel the previous consignment) or <strong>add as a new consignment</strong>.
                   </p>
                 </div>
               </div>
@@ -271,7 +271,7 @@ export default function AttachParcelDialog({
             </Button>
             <Button onClick={handleInitialSubmit} disabled={loading || !consignmentId.trim()} className="gap-2">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-              {hasExistingEntries ? "Continue..." : "Attach Parcel"}
+              {hasExistingEntries ? "Continue..." : "Attach Consignment"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -283,7 +283,7 @@ export default function AttachParcelDialog({
           <AlertDialogHeader>
             <div className="flex items-center gap-2 text-amber-500">
               <AlertTriangle className="h-5 w-5" />
-              <AlertDialogTitle>Courier Entry Already Exists</AlertDialogTitle>
+              <AlertDialogTitle>Consignment Already Exists</AlertDialogTitle>
             </div>
             <AlertDialogDescription className="space-y-2 pt-2 text-foreground">
               <p className="text-sm text-muted-foreground">
@@ -306,7 +306,7 @@ export default function AttachParcelDialog({
               <div>
                 <p className="text-sm font-semibold text-foreground">Overwrite Previous Entry</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Attempts to cancel the previous parcel on Pathao, marks it cancelled in DokanOS, and makes this new consignment the active entry.
+                  Attempts to cancel the previous consignment on Pathao, marks it cancelled in DokanOS, and makes this new consignment active.
                 </p>
               </div>
             </button>
@@ -319,7 +319,7 @@ export default function AttachParcelDialog({
             >
               <PlusCircle className="h-4 w-4 text-primary mt-0.5 shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-foreground">Add as New Courier Entry</p>
+                <p className="text-sm font-semibold text-foreground">Add as New Consignment</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Keeps the previous courier entries intact in history and records this consignment as an additional entry.
                 </p>
@@ -346,13 +346,13 @@ export default function AttachParcelDialog({
             </div>
             <AlertDialogDescription className="space-y-2 pt-2">
               <p className="text-sm text-muted-foreground">
-                Pathao rejected cancellation of parcel <strong className="font-mono text-foreground">{pathaoFailDialog?.consignmentId}</strong>:
+                Pathao rejected cancellation of consignment <strong className="font-mono text-foreground">{pathaoFailDialog?.consignmentId}</strong>:
               </p>
               <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2.5 text-xs text-destructive font-mono">
                 {pathaoFailDialog?.reason}
               </div>
               <p className="text-xs text-muted-foreground">
-                Do you want to proceed anyway and mark the previous parcel cancelled locally in DokanOS?
+                Do you want to proceed anyway and mark the previous consignment cancelled locally in DokanOS?
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
