@@ -17,6 +17,22 @@ export interface SearchableSelectOption {
   label: string;
 }
 
+/**
+ * Contains-matching for dropdown search.
+ *
+ * cmdk's built-in scorer is token/prefix oriented: typing a mid-word fragment
+ * ("sector 7" in "Uttara Sector 7") often yields "No results". Stripping
+ * whitespace and punctuation before a plain substring check makes location
+ * names behave the way users type them.
+ */
+export const matchesSearch = (label: string, value: string, query: string): boolean => {
+  const q = normalizeSearch(query);
+  if (!q) return true;
+  return normalizeSearch(label).includes(q) || normalizeSearch(value).includes(q);
+};
+
+const normalizeSearch = (v: string) => v.toLowerCase().replace(/[^a-z0-9\u0980-\u09FF]+/g, "");
+
 interface SearchableSelectProps {
   options: SearchableSelectOption[];
   value?: string;
@@ -39,10 +55,29 @@ export function SearchableSelect({
   className,
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
   const selected = options.find((o) => o.value === value);
 
+  // Contains-matching, ranked so labels starting with the query stay on top.
+  const filtered = React.useMemo(() => {
+    const q = normalizeSearch(query);
+    if (!q) return options;
+    const hits = options.filter((o) => matchesSearch(o.label, o.value, query));
+    return hits.sort((a, b) => {
+      const aStarts = normalizeSearch(a.label).startsWith(q) ? 0 : 1;
+      const bStarts = normalizeSearch(b.label).startsWith(q) ? 0 : 1;
+      return aStarts - bStarts;
+    });
+  }, [options, query]);
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery("");
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -61,12 +96,16 @@ export function SearchableSelect({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
-          <CommandInput placeholder={searchPlaceholder} />
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={searchPlaceholder}
+            value={query}
+            onValueChange={setQuery}
+          />
           <CommandList>
             <CommandEmpty>{emptyText}</CommandEmpty>
             <CommandGroup>
-              {options.map((opt) => (
+              {filtered.map((opt) => (
                 <CommandItem
                   key={opt.value}
                   value={`${opt.label} ${opt.value}`}
