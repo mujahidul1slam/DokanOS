@@ -135,9 +135,25 @@ const PAGE_SIZE = 200;
 
 const Orders = () => {
   const { role } = useAuth();
-  const { brands } = useBusinessContext();
+  const { brands, active } = useBusinessContext();
   const businessStores = useStoresList();
   const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
+  // Selling-point scoping companion: orders whose Selling Point has no
+  // Woo-store binding get store_id NULL, so store_id scoping alone would hide
+  // them. They stay visible through their selling_point_id instead.
+  const [businessSellingPointIds, setBusinessSellingPointIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!active?.id) { setBusinessSellingPointIds([]); return; }
+    let cancelled = false;
+    supabase
+      .from("selling_points")
+      .select("id")
+      .eq("business_id", active.id)
+      .then(({ data }) => {
+        if (!cancelled) setBusinessSellingPointIds((data || []).map((row: { id: string }) => row.id));
+      });
+    return () => { cancelled = true; };
+  }, [active?.id]);
   const { can } = usePermissions();
   const canAttachCourier = can("orders.attach_courier");
   const { settings: invoiceSettings } = useInvoiceSettings();
@@ -228,17 +244,26 @@ const Orders = () => {
   }, [searchParams, setSearchParams]);
 
   const loadOrders = useCallback(async () => {
-    if (businessStoreIds.length === 0) {
+    const hasStoreScope = businessStoreIds.length > 0;
+    const hasSellingPointScope = businessSellingPointIds.length > 0;
+    if (!hasStoreScope && !hasSellingPointScope) {
       setOrders([]);
       setOrderCategoryMap(new Map());
       setLoading(false);
       return;
     }
-    const { data } = await supabase
+    const orderQuery = supabase
         .from("orders")
-        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, selling_point_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), selling_points(id, name, brand_id, brands(id, name, logo_url, woo_store_id)), order_items(id, product_id, product_name, quantity, products(stock_status))")
-        .in("store_id", businessStoreIds)
-        .order("created_at", { ascending: false });
+        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, selling_point_id, woo_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), selling_points(id, name, brand_id, brands(id, name, logo_url, woo_store_id)), order_items(id, product_id, product_name, quantity, products(stock_status))");
+    // A business order is in scope through its legacy Woo store binding OR its
+    // canonical Selling Point — selling-point-only orders (store_id NULL) must
+    // not disappear from the list.
+    const scopedQuery = hasStoreScope && hasSellingPointScope
+      ? orderQuery.or(`store_id.in.(${businessStoreIds.join(",")}),selling_point_id.in.(${businessSellingPointIds.join(",")})`)
+      : hasStoreScope
+        ? orderQuery.in("store_id", businessStoreIds)
+        : orderQuery.in("selling_point_id", businessSellingPointIds);
+    const { data } = await scopedQuery.order("created_at", { ascending: false });
 
     const mapped = (data || []).map((o: any) => {
       const canonicalBrand = o.selling_points?.brands
@@ -289,7 +314,7 @@ const Orders = () => {
     }
 
     setLoading(false);
-  }, [businessStoreIds, brands]);
+  }, [businessStoreIds, businessSellingPointIds, brands]);
 
   const loadStores = useCallback(async () => {
     const [{ data: storeData }, { data: catData }] = await Promise.all([
