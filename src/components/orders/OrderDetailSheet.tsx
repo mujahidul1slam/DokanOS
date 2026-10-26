@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { format } from "date-fns";
 import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw, Link2, Truck, Copy, AlertTriangle, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +19,28 @@ import AttachParcelDialog from "./AttachParcelDialog";
 import ProductVariationPicker, { type PickableVariation, type VariationPick } from "./ProductVariationPicker";
 import { getProductVariations } from "@/lib/variations";
 import { fetchAllRows } from "@/lib/supabasePage";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { deriveBrandForStore } from "@/lib/brandIdentity";
+import {
+  consignmentAccountConflict,
+  describeIdentityChange,
+  identityChangeBlocked,
+  identityChanged,
+  legacyStoreIdFor,
+  resolveSellingPoint,
+  sellingPointsForBrand,
+  SELLING_POINT_CONFIGURE_HINT,
+  type IdentityBrand,
+  type IdentitySnapshot,
+  type IdentitySellingPoint,
+} from "@/lib/orderIdentity";
+import {
+  pathaoAccountKey,
+  resolveDefaultAccount,
+  type PathaoAccountOption,
+  type PathaoStoreLinkRow,
+} from "@/lib/dispatchAccounts";
+import { fetchPathaoAccountData } from "@/lib/dispatchAccountsData";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -78,9 +100,30 @@ interface OrderDetail {
   fulfillment_type: string;
   woo_order_id: number | null;
   store_id: string | null;
+  selling_point_id: string | null;
+  pathao_integration_id: string | null;
+  pathao_store_id: number | null;
+  selling_points: {
+    id: string;
+    name: string | null;
+    brand_id: string | null;
+    woo_store_id: string | null;
+    is_default: boolean | null;
+    brands: { id: string; name: string | null; woo_store_id: string | null } | null;
+  } | null;
   storefront_id?: string | null;
   stock_restored_at?: string | null;
   stores: { url: string | null; name?: string | null } | null;
+}
+
+/** Stored identity of the order, snapshotted at load for change detection (issue #32). */
+interface InitialIdentity {
+  brandId: string | null;
+  brandName: string | null;
+  brandWooStoreId: string | null;
+  sellingPointId: string | null;
+  sellingPointName: string | null;
+  sellingPointWooStoreId: string | null;
 }
 
 interface LineItem {
@@ -164,6 +207,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const canRefund = can("orders.refund");
   const canLogPayment = can("orders.log_payment");
   const canAttachCourier = can("orders.attach_courier");
+  const { active, brands } = useBusinessContext();
+  // load() must not re-run when the brand list refreshes, but it needs the
+  // current list to derive a legacy brand — keep a ref alongside state.
+  const brandsRef = useRef(brands);
+  useEffect(() => { brandsRef.current = brands; }, [brands]);
   const [order, setOrder] = useState<OrderDetail | null>(null);
 
   // Issue #27: WooCommerce online-payment gate (docs/adr/0001-woo-online-payment-gate.md).
@@ -202,6 +250,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   // Multi-business Phase 3: fulfillment location (warehouse/showroom)
   const [locationId, setLocationId] = useState<string>("");
   const [locationOptions, setLocationOptions] = useState<Array<{ id: string; name: string; type: string }>>([]);
+
+  // Order identity (issue #32): editable Brand + Selling Point on Order Info,
+  // resolved with the same rules as Add Order (issue #21). The default Pathao
+  // Account derives from the selection (issue #22) and is never written back
+  // over an existing courier booking.
+  const [identityPoints, setIdentityPoints] = useState<IdentitySellingPoint[]>([]);
+  const [pathaoAccounts, setPathaoAccounts] = useState<PathaoAccountOption[]>([]);
+  const [pathaoLinks, setPathaoLinks] = useState<PathaoStoreLinkRow[]>([]);
+  const [brandId, setBrandId] = useState("");
+  const [sellingPointId, setSellingPointId] = useState("");
+  const [initialIdentity, setInitialIdentity] = useState<InitialIdentity | null>(null);
 
   // Exchange dialog
   const [exchangeOpen, setExchangeOpen] = useState(false);
@@ -329,7 +388,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const [orderRes, itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, stores(url, name)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, pathao_integration_id, pathao_store_id, selling_points(id, name, brand_id, woo_store_id, is_default, brands(id, name, woo_store_id)), stores(url, name)")
         .eq("id", orderId)
         .single(),
       supabase
@@ -372,6 +431,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setFulfillmentType(o.fulfillment_type || "delivery");
       setPaymentMethod(o.payment_method || "");
       setLocationId((o as { location_id?: string | null }).location_id || "");
+
+      // Identity snapshot (issue #32): same derivation as the Orders page brand
+      // column — selling_points->brands first, legacy store binding as fallback.
+      const currentSp = o.selling_points ?? null;
+      const derivedBrand: IdentityBrand | null =
+        (currentSp?.brands as IdentityBrand | null) ??
+        (deriveBrandForStore(brandsRef.current, o.store_id) as IdentityBrand | undefined) ??
+        null;
+      const initial: InitialIdentity = {
+        brandId: derivedBrand?.id ?? null,
+        brandName: derivedBrand?.name ?? null,
+        brandWooStoreId: derivedBrand?.woo_store_id ?? null,
+        sellingPointId: currentSp?.id ?? null,
+        sellingPointName: currentSp?.name ?? null,
+        sellingPointWooStoreId: currentSp?.woo_store_id ?? null,
+      };
+      setInitialIdentity(initial);
+      setBrandId(initial.brandId ?? "");
+      setSellingPointId(initial.sellingPointId ?? "");
 
       const shipments = (shipmentsRes.data as CourierShipmentEntry[]) || [];
       if (o.consignment_id && !shipments.some(s => s.consignment_id === o.consignment_id)) {
@@ -480,6 +558,32 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       }
     })();
   }, [open]);
+
+  // Identity options (issue #32): active Selling Points of the active business
+  // plus the selectable Pathao Accounts and per-brand default links (issue #22).
+  // Errors degrade to empty lists so the sheet still renders.
+  useEffect(() => {
+    if (!open) return;
+    let mounted = true;
+    (async () => {
+      const [pointsRes, accountData] = await Promise.all([
+        active?.id
+          ? supabase
+              .from("selling_points")
+              .select("id, name, brand_id, woo_store_id, is_default, is_active")
+              .eq("business_id", active.id)
+              .eq("is_active", true)
+              .order("name")
+          : Promise.resolve({ data: [] as IdentitySellingPoint[] }),
+        fetchPathaoAccountData(),
+      ]);
+      if (!mounted) return;
+      setIdentityPoints(((pointsRes.data || []) as IdentitySellingPoint[]) || []);
+      setPathaoAccounts(accountData.accounts);
+      setPathaoLinks(accountData.links);
+    })();
+    return () => { mounted = false; };
+  }, [open, active?.id]);
 
   // Resolve preset measurements (e.g. S/M/L size charts) for items that have no
   // measurement rows yet, so they show up — and stay editable — in the sheet.
@@ -624,6 +728,107 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     });
   };
 
+  /* ---------- Order identity (issue #32) ---------- */
+
+  // The order's current Selling Point stays selectable even when it is no
+  // longer in the active list, so opening the sheet never silently swaps it.
+  const mergedPoints = useMemo<IdentitySellingPoint[]>(() => {
+    const current = order?.selling_points;
+    if (!current) return identityPoints;
+    if (identityPoints.some((point) => point.id === current.id)) return identityPoints;
+    return [
+      ...identityPoints,
+      {
+        id: current.id,
+        name: current.name ?? "",
+        brand_id: current.brand_id,
+        woo_store_id: current.woo_store_id,
+        is_default: current.is_default,
+        is_active: true,
+      },
+    ];
+  }, [identityPoints, order?.selling_points]);
+
+  // Brand choices: active brands plus the order's current brand (possibly
+  // inactive or absent from context) so it displays instead of vanishing.
+  const brandChoices = useMemo<IdentityBrand[]>(() => {
+    const list: IdentityBrand[] = brands
+      .filter((brand) => brand.is_active)
+      .map((brand) => ({ id: brand.id, name: brand.name, woo_store_id: brand.woo_store_id }));
+    const currentId = initialIdentity?.brandId;
+    if (currentId && !list.some((brand) => brand.id === currentId)) {
+      const known = brands.find((brand) => brand.id === currentId);
+      list.push(
+        known
+          ? { id: known.id, name: known.name, woo_store_id: known.woo_store_id }
+          : {
+              id: currentId,
+              name: initialIdentity?.brandName || "Unknown brand",
+              woo_store_id: initialIdentity?.brandWooStoreId ?? null,
+            },
+      );
+    }
+    return list;
+  }, [brands, initialIdentity]);
+
+  const brandSellingPoints = useMemo(
+    () => sellingPointsForBrand(mergedPoints, brandId),
+    [mergedPoints, brandId],
+  );
+
+  // Issue #21 resolution rules: the brand default is preselected-but-editable,
+  // a single option is auto-selected, and a brand change re-resolves from its
+  // own options (the previous Selling Point belongs to the old brand).
+  useEffect(() => {
+    if (!brandId) {
+      setSellingPointId("");
+      return;
+    }
+    setSellingPointId((previous) => resolveSellingPoint(brandSellingPoints, previous).sellingPointId ?? "");
+  }, [brandId, brandSellingPoints]);
+
+  const selectedBrand = brandChoices.find((brand) => brand.id === brandId) || null;
+  const selectedSellingPoint = brandSellingPoints.find((point) => point.id === sellingPointId) || null;
+
+  // Brand default Pathao Account (brand -> woo_store_id -> pathao_store_links),
+  // resolved through the Selling Point binding first when it has one (issue
+  // #22) — re-derived whenever the Brand or Selling Point changes.
+  const defaultAccount = useMemo(
+    () =>
+      resolveDefaultAccount(pathaoAccounts, pathaoLinks, [
+        selectedSellingPoint?.woo_store_id,
+        selectedBrand?.woo_store_id,
+      ]),
+    [pathaoAccounts, pathaoLinks, selectedSellingPoint, selectedBrand],
+  );
+
+  const identityDirty =
+    !!initialIdentity &&
+    identityChanged(initialIdentity, { brandId: brandId || null, sellingPointId: sellingPointId || null });
+  // Zero Selling Points (or multiple with no default and no pick) block the
+  // identity change with a configure hint — same rules as Add Order.
+  const identityResolution = resolveSellingPoint(brandSellingPoints, sellingPointId);
+  const identityBlocked =
+    identityDirty &&
+    brands.some((brand) => brand.is_active) &&
+    (!brandId || identityChangeBlocked(brandId, identityResolution));
+
+  // Warn before changing identity while an active consignment is booked
+  // through another Pathao Account — the courier record is never rewritten.
+  const bookedAccountKey =
+    order && order.pathao_store_id != null
+      ? pathaoAccountKey(order.pathao_integration_id ?? null, order.pathao_store_id)
+      : null;
+  const bookedAccount = bookedAccountKey
+    ? pathaoAccounts.find((account) => account.key === bookedAccountKey)
+    : undefined;
+  const consignmentConflict = consignmentAccountConflict(
+    courierShipments,
+    order?.consignment_id ?? null,
+    bookedAccountKey,
+    defaultAccount?.key ?? null,
+  );
+
   /* ---------- Save ---------- */
 
   const handleSave = async () => {
@@ -636,6 +841,23 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       const gateLockedNow = evaluatePaymentGate(order).gated;
       const saveStatus = gateLockedNow ? order.status : status;
       const savePaymentStatus = gateLockedNow ? order.payment_status : paymentStatus;
+
+      // Identity change (issue #32): written only when the operator actually
+      // changed Brand/Selling Point. store_id stays a legacy Woo store binding
+      // (the Selling Point's, else the Brand's) — NEVER a Selling Point UUID.
+      const identityIsChanging = identityChanged(
+        initialIdentity ?? { brandId: null, sellingPointId: null },
+        { brandId: brandId || null, sellingPointId: sellingPointId || null },
+      );
+      const identityPatch: Record<string, unknown> = {};
+      if (identityIsChanging) {
+        identityPatch.selling_point_id = selectedSellingPoint?.id || null;
+        identityPatch.store_id = legacyStoreIdFor(selectedSellingPoint, selectedBrand, {
+          previousStoreId: order.store_id,
+          brandChanged: (initialIdentity?.brandId ?? null) !== (brandId || null),
+        });
+      }
+
       await supabase
         .from("orders")
         .update({
@@ -653,6 +875,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           fulfillment_type: fulfillmentType,
           payment_method: paymentMethod || null,
           location_id: locationId || null,
+          ...identityPatch,
         })
         .eq("id", order.id);
 
@@ -804,14 +1027,65 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         });
       }
 
-      // Status / customer / totals edits all enqueue via the DB trigger on
-      // orders.update; kick the worker so the push lands within seconds
-      // instead of waiting for the throttled scheduler.
+      // Identity change (issue #32): timeline + audit entry covering Brand,
+      // Selling Point, and the re-resolved default Pathao Account — including
+      // whether an active consignment stays booked on another account.
+      if (identityIsChanging) {
+        const beforeAccount = resolveDefaultAccount(pathaoAccounts, pathaoLinks, [
+          initialIdentity?.sellingPointWooStoreId,
+          initialIdentity?.brandWooStoreId,
+        ]);
+        const accountLabel = (account: PathaoAccountOption | undefined) =>
+          account ? `${account.accountName} · ${account.pickupStoreName}` : null;
+        const beforeSnap: IdentitySnapshot = {
+          brandId: initialIdentity?.brandId ?? null,
+          brandName: initialIdentity?.brandName ?? null,
+          sellingPointId: initialIdentity?.sellingPointId ?? null,
+          sellingPointName: initialIdentity?.sellingPointName ?? null,
+          accountKey: beforeAccount?.key ?? null,
+          accountLabel: accountLabel(beforeAccount),
+        };
+        const afterSnap: IdentitySnapshot = {
+          brandId: brandId || null,
+          brandName: selectedBrand?.name ?? null,
+          sellingPointId: selectedSellingPoint?.id ?? null,
+          sellingPointName: selectedSellingPoint?.name ?? null,
+          accountKey: defaultAccount?.key ?? null,
+          accountLabel: accountLabel(defaultAccount),
+        };
+        const { description, metadata } = describeIdentityChange(beforeSnap, afterSnap);
+        const conflictNote = consignmentConflict.conflicted
+          ? {
+              consignment_conflict: true,
+              consignment_ids: consignmentConflict.consignmentIds,
+              booked_account_key: consignmentConflict.bookedAccountKey,
+            }
+          : {};
+        await addOrderTimeline({
+          order_id: order.id,
+          event: "identity_changed",
+          description: consignmentConflict.conflicted
+            ? `${description} — active consignment ${consignmentConflict.consignmentIds.join(", ")} stays booked on its Pathao Account (courier record unchanged)`
+            : description,
+          metadata: { ...metadata, ...conflictNote },
+        });
+        await logAction("update", "order_identity", order.id, {
+          order_number: order.order_number,
+          before: beforeSnap,
+          after: afterSnap,
+          ...conflictNote,
+        });
+      }
+
+      // Status / customer / totals / identity edits all enqueue via the DB
+      // trigger on orders.update; kick the worker so the push lands within
+      // seconds instead of waiting for the throttled scheduler.
       if (
         saveStatus !== order.status ||
         savePaymentStatus !== order.payment_status ||
         custChanges.length > 0 ||
-        totalsChanges.length > 0
+        totalsChanges.length > 0 ||
+        identityIsChanging
       ) {
         void kickSyncWorker();
       }
@@ -1366,6 +1640,105 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   </section>
                   );
                 })()}
+
+                {/* Order Identity (issue #32) */}
+                <section>
+                  <h3 className="text-sm font-semibold text-foreground mb-3">Order Identity</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Brand</Label>
+                      <Select
+                        value={brandId || "none"}
+                        onValueChange={(value) => setBrandId(value === "none" ? "" : value)}
+                        disabled={!canEdit}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="No Brand" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {!initialIdentity?.brandId && <SelectItem value="none">No Brand</SelectItem>}
+                          {brandChoices.map((brand) => (
+                            <SelectItem key={brand.id} value={brand.id}>
+                              {brand.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Selling Point</Label>
+                      <Select
+                        value={sellingPointId}
+                        onValueChange={setSellingPointId}
+                        disabled={!canEdit || !brandId || brandSellingPoints.length === 0}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder={brandId ? "Choose Selling Point" : "—"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {brandSellingPoints.map((point) => (
+                            <SelectItem key={point.id} value={point.id}>
+                              {point.name}{point.is_default ? " · Default" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Pathao Account (default)</Label>
+                      <div className="h-9 flex items-center rounded-md border border-border bg-muted/30 px-3 text-sm text-foreground">
+                        {defaultAccount
+                          ? `${defaultAccount.accountName} · ${defaultAccount.pickupStoreName}`
+                          : "Not configured"}
+                      </div>
+                    </div>
+                  </div>
+                  {brandId && brandSellingPoints.length === 0 && (
+                    <p className="text-[11px] text-destructive mt-2">{SELLING_POINT_CONFIGURE_HINT}</p>
+                  )}
+                  {identityDirty && brandId && !identityResolution.sellingPointId && brandSellingPoints.length > 0 && (
+                    <p className="text-[11px] text-destructive mt-2">Choose a Selling Point to save this identity change.</p>
+                  )}
+                  {identityDirty && (
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      Saved with <span className="font-medium">Save Changes</span>. Changing the Brand re-resolves
+                      the Selling Point and the default Pathao Account above.
+                    </p>
+                  )}
+                  {identityDirty && consignmentConflict.conflicted && (
+                    <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-500 space-y-1">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        Active consignment on another Pathao Account
+                      </div>
+                      <p>
+                        Consignment <strong className="font-mono">{consignmentConflict.consignmentIds.join(", ")}</strong>{" "}
+                        was booked through{" "}
+                        <strong>
+                          {bookedAccount
+                            ? `${bookedAccount.accountName} · ${bookedAccount.pickupStoreName}`
+                            : "another Pathao Account"}
+                        </strong>
+                        {defaultAccount ? (
+                          <>
+                            {" "}while this identity defaults to{" "}
+                            <strong>{defaultAccount.accountName} · {defaultAccount.pickupStoreName}</strong>
+                          </>
+                        ) : null}
+                        . Saving will <strong>not</strong> rebook or rewrite the courier record — cancel the booking
+                        and attach the parcel again to dispatch through the new account.
+                      </p>
+                    </div>
+                  )}
+                  {identityDirty && !consignmentConflict.conflicted && consignmentConflict.consignmentIds.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      This order has an active consignment ({consignmentConflict.consignmentIds.join(", ")}); its
+                      courier record keeps the booked Pathao Account.
+                    </p>
+                  )}
+                </section>
+
+                <Separator />
 
                 {/* Payment & Source Info */}
                 <section>
@@ -2096,7 +2469,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 <Undo2 className="h-4 w-4" /> Return
               </Button>
             )}
-            <Button onClick={handleSave} disabled={saving || (!canEdit && !canChangeStatus)}>
+            <Button onClick={handleSave} disabled={saving || (!canEdit && !canChangeStatus) || identityBlocked}>
               {saving ? "Saving…" : "Save Changes"}
             </Button>
           </div>
