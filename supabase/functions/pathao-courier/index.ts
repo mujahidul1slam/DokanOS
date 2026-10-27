@@ -222,8 +222,18 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // GET with retry on 429 (rate-limit) and 5xx using exponential backoff +
 // honoring the Retry-After header when Pathao provides one.
-async function pathaoGet(token: string, path: string, maxRetries = 4) {
+// Auth context handed to the low-level Pathao callers so a rejected bearer
+// (401 "verify-auth-token: user not found" — Pathao retires old tokens after
+// new issues) can self-heal: invalidate the cached token, mint a fresh one,
+// and retry once. Without it the whole action fails on a stale token.
+interface PathaoAuthCtx {
+  creds: PathaoCreds;
+  sb: ReturnType<typeof supabaseAdmin>;
+}
+
+async function pathaoGet(token: string, path: string, auth?: PathaoAuthCtx, maxRetries = 4) {
   let attempt = 0;
+  let reauthed = false;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const res = await fetch(`${PATHAO_BASE}${path}`, {
@@ -232,6 +242,12 @@ async function pathaoGet(token: string, path: string, maxRetries = 4) {
     if (res.ok) return res.json();
 
     const txt = await res.text();
+    if (res.status === 401 && auth && !reauthed) {
+      reauthed = true;
+      console.warn(`pathaoGet ${path} 401; re-issuing Pathao token and retrying once`);
+      token = await getAccessToken(auth.creds, true);
+      continue;
+    }
     const retriable = res.status === 429 || res.status >= 500;
     if (!retriable || attempt >= maxRetries) {
       throw new Error(`Pathao GET ${path} failed [${res.status}]: ${txt}`);
