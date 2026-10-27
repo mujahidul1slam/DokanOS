@@ -286,25 +286,32 @@ async function pathaoPost(token: string, path: string, body: unknown, auth?: Pat
   }
 }
 
-async function cancelPathaoOrder(token: string, consignmentId: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/orders/${consignmentId}/cancel`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({}),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data?.type === "error" || data?.type === "validation_error") {
-      const errMsg = data?.message || data?.errors || data?.error || JSON.stringify(data) || `HTTP ${res.status}`;
-      return { success: false, error: typeof errMsg === "object" ? JSON.stringify(errMsg) : String(errMsg) };
+async function cancelPathaoOrder(token: string, consignmentId: string, auth?: PathaoAuthCtx): Promise<{ success: boolean; error?: string }> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/orders/${consignmentId}/cancel`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.type === "error" || data?.type === "validation_error") {
+        if (res.status === 401 && auth && attempt === 0) {
+          console.warn(`cancel ${consignmentId} 401; re-issuing Pathao token and retrying once`);
+          token = await getAccessToken(auth.creds, true);
+          continue;
+        }
+        const errMsg = data?.message || data?.errors || data?.error || JSON.stringify(data) || `HTTP ${res.status}`;
+        return { success: false, error: typeof errMsg === "object" ? JSON.stringify(errMsg) : String(errMsg) };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
     }
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err.message || String(err) };
   }
 }
 
