@@ -138,7 +138,7 @@ async function loadIntegration(sb: ReturnType<typeof supabaseAdmin>, integration
   return data as PathaoCreds;
 }
 
-async function getAccessToken(creds: PathaoCreds): Promise<string> {
+async function getAccessToken(creds: PathaoCreds, forceRefresh = false): Promise<string> {
   // Two-tier cache (revamp 1.2):
   //   1. in-memory Map — free, but dies with the function instance (cold
   //      starts used to re-issue a token EVERY invocation);
@@ -147,6 +147,21 @@ async function getAccessToken(creds: PathaoCreds): Promise<string> {
   //      issue-token round-trips in practice.
   const sb = supabaseAdmin();
   const now = Date.now();
+
+  // Pathao retires previously-issued tokens (a warm instance's cached bearer
+  // then 401s with "verify-auth-token: user not found"). forceRefresh throws
+  // the stale token out of BOTH tiers so the retry mints a fresh one.
+  if (forceRefresh) {
+    tokenCache.delete(creds.id);
+    if (creds.id !== "env") {
+      const { error: delErr } = await sb
+        .from("courier_tokens")
+        .delete()
+        .eq("provider", "pathao")
+        .eq("integration_id", creds.id);
+      if (delErr) console.warn(`[pathao-courier] courier_tokens delete failed: ${delErr.message}`);
+    }
+  }
 
   const cached = tokenCache.get(creds.id);
   if (cached && cached.expiresAt > now + 60_000) return cached.token;
