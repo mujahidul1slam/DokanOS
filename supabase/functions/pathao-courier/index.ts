@@ -138,7 +138,7 @@ async function loadIntegration(sb: ReturnType<typeof supabaseAdmin>, integration
   return data as PathaoCreds;
 }
 
-async function getAccessToken(creds: PathaoCreds): Promise<string> {
+async function getAccessToken(creds: PathaoCreds, forceRefresh = false): Promise<string> {
   // Two-tier cache (revamp 1.2):
   //   1. in-memory Map — free, but dies with the function instance (cold
   //      starts used to re-issue a token EVERY invocation);
@@ -147,6 +147,21 @@ async function getAccessToken(creds: PathaoCreds): Promise<string> {
   //      issue-token round-trips in practice.
   const sb = supabaseAdmin();
   const now = Date.now();
+
+  // Pathao retires previously-issued tokens (a warm instance's cached bearer
+  // then 401s with "verify-auth-token: user not found"). forceRefresh throws
+  // the stale token out of BOTH tiers so the retry mints a fresh one.
+  if (forceRefresh) {
+    tokenCache.delete(creds.id);
+    if (creds.id !== "env") {
+      const { error: delErr } = await sb
+        .from("courier_tokens")
+        .delete()
+        .eq("provider", "pathao")
+        .eq("integration_id", creds.id);
+      if (delErr) console.warn(`[pathao-courier] courier_tokens delete failed: ${delErr.message}`);
+    }
+  }
 
   const cached = tokenCache.get(creds.id);
   if (cached && cached.expiresAt > now + 60_000) return cached.token;
@@ -207,8 +222,18 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // GET with retry on 429 (rate-limit) and 5xx using exponential backoff +
 // honoring the Retry-After header when Pathao provides one.
-async function pathaoGet(token: string, path: string, maxRetries = 4) {
+// Auth context handed to the low-level Pathao callers so a rejected bearer
+// (401 "verify-auth-token: user not found" — Pathao retires old tokens after
+// new issues) can self-heal: invalidate the cached token, mint a fresh one,
+// and retry once. Without it the whole action fails on a stale token.
+interface PathaoAuthCtx {
+  creds: PathaoCreds;
+  sb: ReturnType<typeof supabaseAdmin>;
+}
+
+async function pathaoGet(token: string, path: string, auth?: PathaoAuthCtx, maxRetries = 4) {
   let attempt = 0;
+  let reauthed = false;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const res = await fetch(`${PATHAO_BASE}${path}`, {
@@ -217,6 +242,12 @@ async function pathaoGet(token: string, path: string, maxRetries = 4) {
     if (res.ok) return res.json();
 
     const txt = await res.text();
+    if (res.status === 401 && auth && !reauthed) {
+      reauthed = true;
+      console.warn(`pathaoGet ${path} 401; re-issuing Pathao token and retrying once`);
+      token = await getAccessToken(auth.creds, true);
+      continue;
+    }
     const retriable = res.status === 429 || res.status >= 500;
     if (!retriable || attempt >= maxRetries) {
       throw new Error(`Pathao GET ${path} failed [${res.status}]: ${txt}`);
@@ -231,44 +262,56 @@ async function pathaoGet(token: string, path: string, maxRetries = 4) {
   }
 }
 
-async function pathaoPost(token: string, path: string, body: unknown) {
-  const res = await fetch(`${PATHAO_BASE}${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(
-      `Pathao POST ${path} failed [${res.status}]: ${JSON.stringify(data)}`
-    );
-  }
-  return data;
-}
-
-async function cancelPathaoOrder(token: string, consignmentId: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/orders/${consignmentId}/cancel`, {
+async function pathaoPost(token: string, path: string, body: unknown, auth?: PathaoAuthCtx) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${PATHAO_BASE}${path}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify(body),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data?.type === "error" || data?.type === "validation_error") {
-      const errMsg = data?.message || data?.errors || data?.error || JSON.stringify(data) || `HTTP ${res.status}`;
-      return { success: false, error: typeof errMsg === "object" ? JSON.stringify(errMsg) : String(errMsg) };
+    const data = await res.json();
+    if (res.ok) return data;
+    if (res.status === 401 && auth && attempt === 0) {
+      console.warn(`pathaoPost ${path} 401; re-issuing Pathao token and retrying once`);
+      token = await getAccessToken(auth.creds, true);
+      continue;
     }
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err.message || String(err) };
+    throw new Error(
+      `Pathao POST ${path} failed [${res.status}]: ${JSON.stringify(data)}`
+    );
+  }
+}
+
+async function cancelPathaoOrder(token: string, consignmentId: string, auth?: PathaoAuthCtx): Promise<{ success: boolean; error?: string }> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/orders/${consignmentId}/cancel`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.type === "error" || data?.type === "validation_error") {
+        if (res.status === 401 && auth && attempt === 0) {
+          console.warn(`cancel ${consignmentId} 401; re-issuing Pathao token and retrying once`);
+          token = await getAccessToken(auth.creds, true);
+          continue;
+        }
+        const errMsg = data?.message || data?.errors || data?.error || JSON.stringify(data) || `HTTP ${res.status}`;
+        return { success: false, error: typeof errMsg === "object" ? JSON.stringify(errMsg) : String(errMsg) };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
   }
 }
 
@@ -354,13 +397,14 @@ Deno.serve(async (req: Request) => {
     }
 
     const creds = await loadIntegration(sb, integration_id);
+    const authCtx: PathaoAuthCtx = { creds, sb };
     const token = await getAccessToken(creds);
 
     let result: unknown;
 
     switch (action) {
       case "get_cities": {
-        const data = await pathaoGet(token, "/aladdin/api/v1/countries/1/city-list");
+        const data = await pathaoGet(token, "/aladdin/api/v1/countries/1/city-list", authCtx);
         const cities = data.data?.data || data.data || [];
         if (cities.length > 0) {
           await sb.from("pathao_cities").upsert(
@@ -378,7 +422,7 @@ Deno.serve(async (req: Request) => {
 
       case "get_zones": {
         const { city_id } = params;
-        const data = await pathaoGet(token, `/aladdin/api/v1/cities/${city_id}/zone-list`);
+        const data = await pathaoGet(token, `/aladdin/api/v1/cities/${city_id}/zone-list`, authCtx);
         const zones = data.data?.data || data.data || [];
         if (zones.length > 0) {
           await sb.from("pathao_zones").upsert(
@@ -397,7 +441,7 @@ Deno.serve(async (req: Request) => {
 
       case "get_areas": {
         const { zone_id } = params;
-        const data = await pathaoGet(token, `/aladdin/api/v1/zones/${zone_id}/area-list`);
+        const data = await pathaoGet(token, `/aladdin/api/v1/zones/${zone_id}/area-list`, authCtx);
         const areas = data.data?.data || data.data || [];
         if (areas.length > 0) {
           await sb.from("pathao_areas").upsert(
@@ -415,7 +459,7 @@ Deno.serve(async (req: Request) => {
       }
 
       case "get_stores": {
-        const data = await pathaoGet(token, "/aladdin/api/v1/stores");
+        const data = await pathaoGet(token, "/aladdin/api/v1/stores", authCtx);
         const allStores = data.data?.data || data.data || [];
 
         let allowed: number[] = [];
@@ -459,7 +503,8 @@ Deno.serve(async (req: Request) => {
         const data = await pathaoPost(
           token,
           "/aladdin/api/v1/merchant/price-plan",
-          { store_id, item_type, delivery_type, item_weight, recipient_city, recipient_zone }
+          { store_id, item_type, delivery_type, item_weight, recipient_city, recipient_zone },
+          authCtx
         );
         result = data.data || data;
         break;
@@ -487,7 +532,7 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        const data = await pathaoPost(token, "/aladdin/api/v1/orders", order_payload);
+        const data = await pathaoPost(token, "/aladdin/api/v1/orders", order_payload, authCtx);
         const consignment_id = data.data?.consignment_id || data.consignment_id;
 
         if (order_id && consignment_id) {
@@ -566,7 +611,7 @@ Deno.serve(async (req: Request) => {
                   }
                 }
 
-                const data = await pathaoPost(token, "/aladdin/api/v1/orders", entry.order_payload);
+                const data = await pathaoPost(token, "/aladdin/api/v1/orders", entry.order_payload, authCtx);
                 const consignment_id = data.data?.consignment_id || data.consignment_id;
 
                 if (entry.order_id && consignment_id) {
@@ -627,7 +672,7 @@ Deno.serve(async (req: Request) => {
 
       case "track_order": {
         const { consignment_id } = params;
-        const data = await pathaoGet(token, `/aladdin/api/v1/orders/${consignment_id}`);
+        const data = await pathaoGet(token, `/aladdin/api/v1/orders/${consignment_id}`, authCtx);
         const info = data.data || data;
         const orderStatusRaw = info.order_status ?? info.status ?? info.order_status_slug ?? "";
         const order_status = typeof orderStatusRaw === "string" ? orderStatusRaw.trim() : "";
@@ -696,6 +741,8 @@ Deno.serve(async (req: Request) => {
         const trackResults: any[] = [];
         const tokenByIntegration = new Map<string, string>();
         tokenByIntegration.set(creds.id, token);
+        const authByIntegration = new Map<string, PathaoAuthCtx>();
+        authByIntegration.set(creds.id, authCtx);
 
         // Parallel tracking (revamp Phase 0): a serial loop measured ~2.3s per
         // consignment (~2.65s with pacing), capping the whole system at ~200
@@ -717,16 +764,19 @@ Deno.serve(async (req: Request) => {
           const polledAt = new Date().toISOString();
           try {
             let useToken = token;
+            let useAuth: PathaoAuthCtx | undefined = authCtx;
             const intId = (order as any).pathao_integration_id as string | null;
             if (intId && intId !== creds.id) {
               if (!tokenByIntegration.has(intId)) {
                 const otherCreds = await loadIntegration(sb, intId);
                 tokenByIntegration.set(intId, await getAccessToken(otherCreds));
+                authByIntegration.set(intId, { creds: otherCreds, sb });
               }
               useToken = tokenByIntegration.get(intId)!;
+              useAuth = authByIntegration.get(intId);
             }
 
-            const data = await pathaoGet(useToken, `/aladdin/api/v1/orders/${order.consignment_id}`);
+            const data = await pathaoGet(useToken, `/aladdin/api/v1/orders/${order.consignment_id}`, useAuth);
             const info = data.data || data;
             const orderStatusRaw = info.order_status ?? info.status ?? info.order_status_slug;
             const order_status = typeof orderStatusRaw === "string" ? orderStatusRaw.trim() : "";
@@ -891,16 +941,18 @@ Deno.serve(async (req: Request) => {
               .maybeSingle();
 
             const oldIntegId = oldShipment?.integration_id || targetOrder.pathao_integration_id;
+            let oldAuth: PathaoAuthCtx | undefined = authCtx;
             if (oldIntegId && oldIntegId !== creds.id) {
               try {
                 const oldCreds = await loadIntegration(sb, oldIntegId);
                 oldToken = await getAccessToken(oldCreds);
+                oldAuth = { creds: oldCreds, sb };
               } catch (e) {
                 console.warn("Could not load credentials for previous integration:", e);
               }
             }
 
-            cancelRes = await cancelPathaoOrder(oldToken, oldConsignment);
+            cancelRes = await cancelPathaoOrder(oldToken, oldConsignment, oldAuth);
             if (!cancelRes.success && !force) {
               return new Response(
                 JSON.stringify({
@@ -974,7 +1026,7 @@ Deno.serve(async (req: Request) => {
         let liveStatus = "";
         let pathaoInfo: any = {};
         try {
-          const data = await pathaoGet(token, `/aladdin/api/v1/orders/${cid}`);
+          const data = await pathaoGet(token, `/aladdin/api/v1/orders/${cid}`, authCtx);
           pathaoInfo = data.data || data;
           const rawStatus = pathaoInfo.order_status ?? pathaoInfo.status ?? pathaoInfo.order_status_slug ?? "";
           liveStatus = typeof rawStatus === "string" ? rawStatus.trim() : "";
@@ -1111,16 +1163,18 @@ Deno.serve(async (req: Request) => {
 
         // Attempt Pathao cancellation via API
         let cancelToken = token;
+        let cancelAuth: PathaoAuthCtx | undefined = authCtx;
         if (shipment.integration_id && shipment.integration_id !== creds.id) {
           try {
             const shipCreds = await loadIntegration(sb, shipment.integration_id);
             cancelToken = await getAccessToken(shipCreds);
+            cancelAuth = { creds: shipCreds, sb };
           } catch (e) {
             console.warn("Could not load creds for shipment integration:", e);
           }
         }
 
-        const cancelRes = await cancelPathaoOrder(cancelToken, shipment.consignment_id);
+        const cancelRes = await cancelPathaoOrder(cancelToken, shipment.consignment_id, cancelAuth);
         if (!cancelRes.success && !force) {
           return new Response(
             JSON.stringify({

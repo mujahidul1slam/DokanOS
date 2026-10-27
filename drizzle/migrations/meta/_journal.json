@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1793111881699,
+      "tag": "0000_recreate_courier_tokens",
+      "breakpoints": true
+    }
+  ]
+}
