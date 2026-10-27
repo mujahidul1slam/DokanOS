@@ -397,13 +397,14 @@ Deno.serve(async (req: Request) => {
     }
 
     const creds = await loadIntegration(sb, integration_id);
+    const authCtx: PathaoAuthCtx = { creds, sb };
     const token = await getAccessToken(creds);
 
     let result: unknown;
 
     switch (action) {
       case "get_cities": {
-        const data = await pathaoGet(token, "/aladdin/api/v1/countries/1/city-list");
+        const data = await pathaoGet(token, "/aladdin/api/v1/countries/1/city-list", authCtx);
         const cities = data.data?.data || data.data || [];
         if (cities.length > 0) {
           await sb.from("pathao_cities").upsert(
@@ -421,7 +422,7 @@ Deno.serve(async (req: Request) => {
 
       case "get_zones": {
         const { city_id } = params;
-        const data = await pathaoGet(token, `/aladdin/api/v1/cities/${city_id}/zone-list`);
+        const data = await pathaoGet(token, `/aladdin/api/v1/cities/${city_id}/zone-list`, authCtx);
         const zones = data.data?.data || data.data || [];
         if (zones.length > 0) {
           await sb.from("pathao_zones").upsert(
@@ -440,7 +441,7 @@ Deno.serve(async (req: Request) => {
 
       case "get_areas": {
         const { zone_id } = params;
-        const data = await pathaoGet(token, `/aladdin/api/v1/zones/${zone_id}/area-list`);
+        const data = await pathaoGet(token, `/aladdin/api/v1/zones/${zone_id}/area-list`, authCtx);
         const areas = data.data?.data || data.data || [];
         if (areas.length > 0) {
           await sb.from("pathao_areas").upsert(
@@ -458,7 +459,7 @@ Deno.serve(async (req: Request) => {
       }
 
       case "get_stores": {
-        const data = await pathaoGet(token, "/aladdin/api/v1/stores");
+        const data = await pathaoGet(token, "/aladdin/api/v1/stores", authCtx);
         const allStores = data.data?.data || data.data || [];
 
         let allowed: number[] = [];
@@ -502,7 +503,8 @@ Deno.serve(async (req: Request) => {
         const data = await pathaoPost(
           token,
           "/aladdin/api/v1/merchant/price-plan",
-          { store_id, item_type, delivery_type, item_weight, recipient_city, recipient_zone }
+          { store_id, item_type, delivery_type, item_weight, recipient_city, recipient_zone },
+          authCtx
         );
         result = data.data || data;
         break;
@@ -530,7 +532,7 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        const data = await pathaoPost(token, "/aladdin/api/v1/orders", order_payload);
+        const data = await pathaoPost(token, "/aladdin/api/v1/orders", order_payload, authCtx);
         const consignment_id = data.data?.consignment_id || data.consignment_id;
 
         if (order_id && consignment_id) {
@@ -609,7 +611,7 @@ Deno.serve(async (req: Request) => {
                   }
                 }
 
-                const data = await pathaoPost(token, "/aladdin/api/v1/orders", entry.order_payload);
+                const data = await pathaoPost(token, "/aladdin/api/v1/orders", entry.order_payload, authCtx);
                 const consignment_id = data.data?.consignment_id || data.consignment_id;
 
                 if (entry.order_id && consignment_id) {
@@ -670,7 +672,7 @@ Deno.serve(async (req: Request) => {
 
       case "track_order": {
         const { consignment_id } = params;
-        const data = await pathaoGet(token, `/aladdin/api/v1/orders/${consignment_id}`);
+        const data = await pathaoGet(token, `/aladdin/api/v1/orders/${consignment_id}`, authCtx);
         const info = data.data || data;
         const orderStatusRaw = info.order_status ?? info.status ?? info.order_status_slug ?? "";
         const order_status = typeof orderStatusRaw === "string" ? orderStatusRaw.trim() : "";
@@ -739,6 +741,8 @@ Deno.serve(async (req: Request) => {
         const trackResults: any[] = [];
         const tokenByIntegration = new Map<string, string>();
         tokenByIntegration.set(creds.id, token);
+        const authByIntegration = new Map<string, PathaoAuthCtx>();
+        authByIntegration.set(creds.id, authCtx);
 
         // Parallel tracking (revamp Phase 0): a serial loop measured ~2.3s per
         // consignment (~2.65s with pacing), capping the whole system at ~200
@@ -760,16 +764,19 @@ Deno.serve(async (req: Request) => {
           const polledAt = new Date().toISOString();
           try {
             let useToken = token;
+            let useAuth: PathaoAuthCtx | undefined = authCtx;
             const intId = (order as any).pathao_integration_id as string | null;
             if (intId && intId !== creds.id) {
               if (!tokenByIntegration.has(intId)) {
                 const otherCreds = await loadIntegration(sb, intId);
                 tokenByIntegration.set(intId, await getAccessToken(otherCreds));
+                authByIntegration.set(intId, { creds: otherCreds, sb });
               }
               useToken = tokenByIntegration.get(intId)!;
+              useAuth = authByIntegration.get(intId);
             }
 
-            const data = await pathaoGet(useToken, `/aladdin/api/v1/orders/${order.consignment_id}`);
+            const data = await pathaoGet(useToken, `/aladdin/api/v1/orders/${order.consignment_id}`, useAuth);
             const info = data.data || data;
             const orderStatusRaw = info.order_status ?? info.status ?? info.order_status_slug;
             const order_status = typeof orderStatusRaw === "string" ? orderStatusRaw.trim() : "";
@@ -934,16 +941,18 @@ Deno.serve(async (req: Request) => {
               .maybeSingle();
 
             const oldIntegId = oldShipment?.integration_id || targetOrder.pathao_integration_id;
+            let oldAuth: PathaoAuthCtx | undefined = authCtx;
             if (oldIntegId && oldIntegId !== creds.id) {
               try {
                 const oldCreds = await loadIntegration(sb, oldIntegId);
                 oldToken = await getAccessToken(oldCreds);
+                oldAuth = { creds: oldCreds, sb };
               } catch (e) {
                 console.warn("Could not load credentials for previous integration:", e);
               }
             }
 
-            cancelRes = await cancelPathaoOrder(oldToken, oldConsignment);
+            cancelRes = await cancelPathaoOrder(oldToken, oldConsignment, oldAuth);
             if (!cancelRes.success && !force) {
               return new Response(
                 JSON.stringify({
@@ -1017,7 +1026,7 @@ Deno.serve(async (req: Request) => {
         let liveStatus = "";
         let pathaoInfo: any = {};
         try {
-          const data = await pathaoGet(token, `/aladdin/api/v1/orders/${cid}`);
+          const data = await pathaoGet(token, `/aladdin/api/v1/orders/${cid}`, authCtx);
           pathaoInfo = data.data || data;
           const rawStatus = pathaoInfo.order_status ?? pathaoInfo.status ?? pathaoInfo.order_status_slug ?? "";
           liveStatus = typeof rawStatus === "string" ? rawStatus.trim() : "";
@@ -1154,16 +1163,18 @@ Deno.serve(async (req: Request) => {
 
         // Attempt Pathao cancellation via API
         let cancelToken = token;
+        let cancelAuth: PathaoAuthCtx | undefined = authCtx;
         if (shipment.integration_id && shipment.integration_id !== creds.id) {
           try {
             const shipCreds = await loadIntegration(sb, shipment.integration_id);
             cancelToken = await getAccessToken(shipCreds);
+            cancelAuth = { creds: shipCreds, sb };
           } catch (e) {
             console.warn("Could not load creds for shipment integration:", e);
           }
         }
 
-        const cancelRes = await cancelPathaoOrder(cancelToken, shipment.consignment_id);
+        const cancelRes = await cancelPathaoOrder(cancelToken, shipment.consignment_id, cancelAuth);
         if (!cancelRes.success && !force) {
           return new Response(
             JSON.stringify({
