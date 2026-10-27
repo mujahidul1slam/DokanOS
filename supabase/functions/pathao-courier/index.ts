@@ -262,23 +262,28 @@ async function pathaoGet(token: string, path: string, auth?: PathaoAuthCtx, maxR
   }
 }
 
-async function pathaoPost(token: string, path: string, body: unknown) {
-  const res = await fetch(`${PATHAO_BASE}${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) {
+async function pathaoPost(token: string, path: string, body: unknown, auth?: PathaoAuthCtx) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${PATHAO_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.ok) return data;
+    if (res.status === 401 && auth && attempt === 0) {
+      console.warn(`pathaoPost ${path} 401; re-issuing Pathao token and retrying once`);
+      token = await getAccessToken(auth.creds, true);
+      continue;
+    }
     throw new Error(
       `Pathao POST ${path} failed [${res.status}]: ${JSON.stringify(data)}`
     );
   }
-  return data;
 }
 
 async function cancelPathaoOrder(token: string, consignmentId: string): Promise<{ success: boolean; error?: string }> {
