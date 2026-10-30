@@ -18,7 +18,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Verification:**
 - [x] `npm run typecheck` (clean), `npm test` (351 passed, 3 skipped), `eslint` on touched files (clean), `npm run build` (clean)
 - [x] Real-browser Playwright run on system Chrome (`PLAYWRIGHT_CHANNEL=chrome`): `personal-signup` 14/14 passed, incl. new test "mismatched confirm password blocks personal signup before any auth or signup request"
-- [ ] Shared-browser visual check: BLOCKED — the shared browser reports a Cloudflare Turnstile challenge on /login; awaiting human clearance. Also: remote Supabase lacks the `is_signup_open` RPC (PGRST202), so the live signup page is fail-closed until that migration is deployed (decision pending)
+- [x] Shared-browser visual check (2026-10-30, against the local stack): form renders with Confirm Password + show/hide; mismatched values show the inline "Passwords do not match" hint and submit is blocked (toast, stays on /signup); matching values complete signup end-to-end and land on "Choose a business account". Note: production signup is still fail-closed (`is_signup_open()` missing there) — covered by the user-gated batch in `tasks/audit/production-migration-plan.md`
 
 **Dependencies:** None
 **Files likely touched:** `src/pages/Signup.tsx`, `tests/accounts/personal-signup.spec.ts` (if it fills the form)
