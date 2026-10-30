@@ -17,6 +17,13 @@ Implement [DOMAIN-REVAMP-SPEC.md](../DOMAIN-REVAMP-SPEC.md) (grill-agreed 2026-1
 - **Default business** controls post-login landing only; quick-create/search follow the *current* business; notifications merged across businesses, grouped (spec §5).
 - **No feature flags** — the app is pre-launch except one tenant; new pages replace old ones per slice, legacy pages stay until the contract phase.
 
+## Session handoff (2026-10-30, end of session)
+
+- **Next: Task 2** (default business selection + auto-select + fallback). Task 1 is fully done and verified.
+- Already running: Vite dev server on `http://localhost:8080/` (targets the local stack), Docker + local Supabase (`127.0.0.1:54321`, ledger head `20261030090000`, local `signup_open=true`). If ports are dead after a reboot: Docker Desktop → `supabase start` → `docker start supabase_edge_runtime_jiwndicvfkiltgageqwv` → `npm run dev`.
+- **User-gated, not executed:** the production catch-up batch (16 pending migrations + repair) in [audit/production-migration-plan.md](audit/production-migration-plan.md). Production signup is fail-closed until it runs.
+- Verify changed behavior in the running frontend (`dsh_browser_*`) per AGENTS.md; Playwright via `PLAYWRIGHT_CHANNEL=chrome npm run test:browser -- <spec>`.
+
 ## Task List (ordered index; full cards in [todo.md](todo.md))
 
 ### Phase 1 — Personal account surfaces (independent of the revamp)
