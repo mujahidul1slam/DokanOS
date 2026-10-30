@@ -20,7 +20,9 @@ export default function Signup() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreedConsent, setAgreedConsent] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -77,6 +79,11 @@ export default function Signup() {
 
     if (password.length < 10) {
       toast.error("Password must be at least 10 characters");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match");
       return;
     }
 
@@ -279,6 +286,36 @@ export default function Signup() {
                     <span className="font-medium text-foreground">{strength.text}</span>
                   </p>
                 </div>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="confirmPassword" className="flex items-center gap-1.5">
+                <Lock className="h-3.5 w-3.5 text-muted-foreground" /> Confirm Password
+              </Label>
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="Re-enter your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={10}
+                  className="pr-10"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {confirmPassword.length > 0 && confirmPassword !== password && (
+                <p className="text-xs text-destructive font-medium mt-1">Passwords do not match</p>
               )}
             </div>
 

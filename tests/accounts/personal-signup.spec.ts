@@ -25,6 +25,11 @@ async function api(page: Page, memberships: unknown[] = []) {
     const body = request.postDataJSON();
     requests.push({ path: url.pathname, url: url.href, method: request.method(), body });
     let data: unknown = [];
+    // 2435c1b moved the signup kill switch from an app_config row read to the
+    // is_signup_open() RPC (fail-closed UI) and the suite died silently with
+    // the call. Mock the CURRENT contract; keep the retired app_config shape
+    // green while both lines coexist.
+    if (url.pathname.endsWith("/rpc/is_signup_open")) data = true;
     if (url.pathname.endsWith("/app_config")) data = { value: true };
     if (url.pathname.endsWith("/user_business_access")) data = memberships;
     if (url.pathname.endsWith("/signup")) data = { user, session: null };
@@ -55,6 +60,7 @@ test("a person signs up with no business details or business-provisioning state"
   await expect(page.getByLabel("Business Name")).toHaveCount(0);
   await page.getByLabel("Email", { exact: true }).fill("person@example.com");
   await page.getByLabel("Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("PersonalPass123!");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create personal account" }).click();
   await expect(page).toHaveURL(/\/check-email\?email=/);
@@ -63,6 +69,20 @@ test("a person signs up with no business details or business-provisioning state"
   const event = requests.find((r) => r.path.endsWith("/signup-event"));
   expect(event?.body?.meta).toEqual({ signup_intent: "personal", consent: true });
   expect(requests.some((r) => r.path.endsWith("/signup-provision"))).toBe(false);
+});
+
+test("mismatched confirm password blocks personal signup before any auth or signup request", async ({ page }) => {
+  const requests = await api(page);
+  await page.goto("/signup");
+  await page.getByLabel("Your Name").fill("Sarah Jenkins");
+  await page.getByLabel("Email", { exact: true }).fill("person@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("PersonalPass124!");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Create personal account" }).click();
+  await expect(page.getByText("Passwords do not match").first()).toBeVisible();
+  await expect(page).toHaveURL(/\/signup$/);
+  expect(requests.some((r) => r.path === "/auth/v1/signup" || r.path.endsWith("/signup-event"))).toBe(false);
 });
 
 for (const type of ["signup", "recovery"]) test(`a ${type} URL establishes a fresh session without provisioning`, async ({ page }) => {
@@ -254,6 +274,7 @@ test("invitation intent survives signup, a fresh-device confirmation, and reload
   await page.getByLabel("Your Name").fill("Sarah Jenkins");
   await page.getByLabel("Email", { exact: true }).fill("person@example.com");
   await page.getByLabel("Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("PersonalPass123!");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create personal account" }).click();
   await expect(page).toHaveURL(/\/check-email\?.*invite=pending-invitation-token/);
