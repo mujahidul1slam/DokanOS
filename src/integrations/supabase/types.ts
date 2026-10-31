@@ -1557,6 +1557,7 @@ export type Database = {
       }
       order_sources: {
         Row: {
+          accepted_payment_methods: Json
           brand_id: string
           config: Json
           created_at: string
@@ -1578,6 +1579,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          accepted_payment_methods?: Json
           brand_id: string
           config?: Json
           created_at?: string
@@ -1599,6 +1601,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          accepted_payment_methods?: Json
           brand_id?: string
           config?: Json
           created_at?: string
@@ -2120,6 +2123,72 @@ export type Database = {
             referencedColumns: ["city_id"]
           },
         ]
+      }
+      payment_accounts: {
+        Row: {
+          business_id: string
+          created_at: string
+          credentials: Json
+          id: string
+          is_active: boolean
+          name: string
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          credentials?: Json
+          id?: string
+          is_active?: boolean
+          name: string
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          credentials?: Json
+          id?: string
+          is_active?: boolean
+          name?: string
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_accounts_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_accounts_provider_fkey"
+            columns: ["provider"]
+            isOneToOne: false
+            referencedRelation: "payment_providers"
+            referencedColumns: ["code"]
+          },
+        ]
+      }
+      payment_providers: {
+        Row: {
+          code: string
+          is_active: boolean
+          name: string
+        }
+        Insert: {
+          code: string
+          is_active?: boolean
+          name: string
+        }
+        Update: {
+          code?: string
+          is_active?: boolean
+          name?: string
+        }
+        Relationships: []
       }
       permission_settings: {
         Row: {

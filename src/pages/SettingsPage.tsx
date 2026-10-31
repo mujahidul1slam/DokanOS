@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler,
   Building2, Hash, Hourglass, Search, ChevronRight, ArrowLeft, X,
-  Palette, User, Printer, Warehouse, Truck,
+  Palette, User, Printer, Warehouse, Truck, CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -21,6 +21,7 @@ import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import WarehousesTab from "@/components/settings/WarehousesTab";
 import CourierServicesTab from "@/components/settings/CourierServicesTab";
+import PaymentAccountsTab from "@/components/settings/PaymentAccountsTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
 import BusinessAccountTab from "@/components/settings/BusinessAccountTab";
@@ -38,7 +39,7 @@ import {
 
 type TabId =
   | "profile" | "account" | "brands"
-  | "general" | "couriers" | "printheader" | "inventory" | "warehouses" | "pos" | "orders"
+  | "general" | "couriers" | "payments" | "printheader" | "inventory" | "warehouses" | "pos" | "orders"
   | "preorders" | "measurements" | "invoice" | "sources" | "audit";
 
 type TabDef = {
@@ -72,6 +73,7 @@ const groups: GroupDef[] = [
     tabs: [
       { id: "general", label: "General", icon: Settings, description: "Theme and install preferences", keywords: "appearance dark light mode theme install pwa" },
       { id: "couriers", label: "Courier services", icon: Truck, description: "Courier accounts for the whole business", keywords: "courier pathao steadfast redx ecourier dispatch shipping parcel" },
+      { id: "payments", label: "Payment accounts", icon: CreditCard, description: "Payment gateway accounts for the whole business", keywords: "payment bkash nagad stripe card gateway cod cash checkout" },
     ],
   },
   {
@@ -234,6 +236,7 @@ const SettingsPage = () => {
       case "sources": return <OrderSourcesTab />;
       case "warehouses": return <WarehousesTab />;
       case "couriers": return <CourierServicesTab />;
+      case "payments": return <PaymentAccountsTab />;
       case "measurements": return <MeasurementsTab />;
       case "audit": return <AuditLogTab />;
     }

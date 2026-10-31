@@ -33,6 +33,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { staffPaymentOptions } from "@/lib/paymentAccounts";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -300,7 +301,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       fetchAllRows((range) =>
         supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes").range(range.from, range.to),
       ),
-      supabase.from("order_sources").select("id, brand_id, name, type, is_stock_holding").in("brand_id", brands.map((b) => b.id)),
+      supabase.from("order_sources").select("id, brand_id, name, type, is_stock_holding, accepted_payment_methods").in("brand_id", brands.map((b) => b.id)),
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
@@ -353,6 +354,22 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     () => orderSources.filter((s) => s.brand_id === activeBrandId),
     [orderSources, activeBrandId],
   );
+
+  // Staff-entered orders may always use cash / manual; the rest of the method
+  // list follows the selected source's accepted payment methods (spec §4).
+  const selectedSourceRow = useMemo(
+    () => brandSources.find((s) => s.id === orderSourceId) ?? null,
+    [brandSources, orderSourceId],
+  );
+  const paymentOptions = useMemo(
+    () => staffPaymentOptions(selectedSourceRow?.accepted_payment_methods),
+    [selectedSourceRow],
+  );
+  useEffect(() => {
+    if (!paymentOptions.some((m) => m.code === paymentMethod)) {
+      setPaymentMethod(paymentOptions[0]?.code ?? "cash");
+    }
+  }, [paymentOptions, paymentMethod]);
 
   useEffect(() => {
     if (sourceTouchedRef.current) {
@@ -886,7 +903,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           order_source_id: selectedSource?.id ?? null,
           status: "processing",
           payment_status: paymentStatus,
-          payment_method: paidAmount > 0 ? paymentMethod : null,
+          payment_method: paidAmount > 0 || paymentMethod === "cod" ? paymentMethod : null,
           fulfillment_type: fulfillment,
           customer_id: customerId,
           customer_name: customerName || null,
@@ -1297,6 +1314,22 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               <Label className="text-xs">Paid</Label>
               <Input type="number" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} className="h-9" />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Payment method</Label>
+            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Select method" /></SelectTrigger>
+              <SelectContent>
+                {paymentOptions.map((m) => (
+                  <SelectItem key={m.code} value={m.code}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-muted-foreground">
+              Cash / manual is always available; the other methods follow what the
+              selected order source accepts.
+            </p>
           </div>
 
           <div className="rounded-md border border-primary/20 bg-primary/5 p-3 space-y-2">

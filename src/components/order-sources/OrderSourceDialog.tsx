@@ -14,6 +14,7 @@ import {
   normalizeFulfillmentPreference,
   type StockHolder,
 } from "@/lib/stockHolders";
+import { PAYMENT_METHODS, normalizeAcceptedMethods } from "@/lib/paymentAccounts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,6 +67,7 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
   const [shipFromStore, setShipFromStore] = useState(false);
   const [holdsStock, setHoldsStock] = useState(false);
   const [prefList, setPrefList] = useState<Array<{ id: string; name: string; kind: string; checked: boolean }>>([]);
+  const [acceptedMethods, setAcceptedMethods] = useState<string[]>(PAYMENT_METHODS.filter((m) => ["cod", "cash"].includes(m.code)).map((m) => m.code));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +84,7 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
       setSyncDirection(source.sync_direction ?? "none");
       setHoldsStock(source.is_stock_holding ?? isPhysicalSourceType(source.type));
       setShipFromStore(source.ship_from_store ?? false);
+      setAcceptedMethods(normalizeAcceptedMethods(source.accepted_payment_methods));
       // Secrets stay write-only; non-secret values prefill for editing.
       const secrets = new Set(orderSourceConfigFields(source.type).filter((f) => f.secret).map((f) => f.key));
       const config = source.config ?? {};
@@ -100,6 +103,7 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
       setConfigValues({});
       setHoldsStock(false);
       setShipFromStore(false);
+      setAcceptedMethods(PAYMENT_METHODS.filter((m) => ["cod", "cash"].includes(m.code)).map((m) => m.code));
     }
 
     // The fulfillment pool: the brand's stock holders, minus this source
@@ -158,6 +162,7 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
         sync_direction: syncRelevant && syncDirection !== "none" ? syncDirection : null,
         ship_from_store: shipFromStore,
         fulfillment_preference: prefList.filter((r) => r.checked).map((r) => r.id),
+        accepted_payment_methods: acceptedMethods,
         // Stock-holding is a physical-source toggle (spec §3); digital sources
         // take the DB default and can never hold stock rows.
         ...(isPhysicalSourceType(type) ? { is_stock_holding: holdsStock } : {}),
@@ -359,6 +364,37 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
                   </div>
                 ))
               )}
+            </div>
+          </fieldset>
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium leading-none">Payments</legend>
+            <p className="text-[10px] text-muted-foreground">
+              Which payment methods this source accepts. Cash / manual is always
+              available for staff-entered orders, whatever is toggled here.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {PAYMENT_METHODS.map((method) => {
+                const checked = acceptedMethods.includes(method.code);
+                return (
+                  <label
+                    key={method.code}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border border-border p-2.5 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setAcceptedMethods((prev) =>
+                          checked ? prev.filter((c) => c !== method.code) : [...prev, method.code],
+                        )
+                      }
+                      aria-label={`Accept ${method.label}`}
+                    />
+                    {method.label}
+                  </label>
+                );
+              })}
             </div>
           </fieldset>
 

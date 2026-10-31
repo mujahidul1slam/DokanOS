@@ -169,6 +169,8 @@ export interface OrderSourceRow {
   ship_from_store: boolean;
   /** Ordered stock-holder id list (spec §3) — normalized via `normalizeFulfillmentPreference`. */
   fulfillment_preference: unknown;
+  /** Accepted payment method codes (spec §4) — normalized via `normalizeAcceptedMethods`. */
+  accepted_payment_methods: unknown;
   created_at: string;
   updated_at: string;
 }
