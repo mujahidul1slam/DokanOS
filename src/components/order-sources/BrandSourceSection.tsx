@@ -41,9 +41,42 @@ function SyncCell({ source }: { source: OrderSourceRow }) {
   return <span className="text-xs text-muted-foreground">Never synced</span>;
 }
 
+export interface RecentSourceOrder {
+  id: string;
+  order_number: string;
+  customer_name: string | null;
+  total: number;
+  created_at: string;
+}
+
+export interface SourceOrderStat {
+  count: number;
+  recent: RecentSourceOrder[];
+}
+
+function OrdersCell({ stat }: { stat: SourceOrderStat | undefined }) {
+  if (!stat || stat.count === 0) {
+    return <span className="text-xs text-muted-foreground">0 orders</span>;
+  }
+  return (
+    <div className="text-xs">
+      <span className="font-medium">{stat.count} order{stat.count === 1 ? "" : "s"}</span>
+      <div className="mt-0.5 space-y-0.5 text-muted-foreground">
+        {stat.recent.slice(0, 2).map((o) => (
+          <div key={o.id} title={`Placed ${new Date(o.created_at).toLocaleString()} · ${o.total}`}>
+            {o.order_number}
+            {o.customer_name ? ` · ${o.customer_name}` : ""}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   brand: { id: string; name: string };
   sources: OrderSourceRow[];
+  stats: Record<string, SourceOrderStat>;
   legacy: LegacyRows;
   canCreate: boolean;
   onAdd: (brandId: string) => void;
@@ -51,7 +84,7 @@ interface Props {
 }
 
 /** One brand's order sources (spec §2) plus its read-only legacy rows (spec §7). */
-export function BrandSourceSection({ brand, sources, legacy, canCreate, onAdd, onEdit }: Props) {
+export function BrandSourceSection({ brand, sources, stats, legacy, canCreate, onAdd, onEdit }: Props) {
   return (
     <section aria-label={`Order sources — ${brand.name}`} className="rounded-lg border border-border bg-card">
       <div className="flex items-center gap-3 p-5">
@@ -86,6 +119,7 @@ export function BrandSourceSection({ brand, sources, legacy, canCreate, onAdd, o
               <TableHead>Type</TableHead>
               <TableHead>Connection</TableHead>
               <TableHead>Sync</TableHead>
+              <TableHead>Orders</TableHead>
               {canCreate && <TableHead className="w-12"><span className="sr-only">Actions</span></TableHead>}
             </TableRow>
           </TableHeader>
@@ -101,6 +135,7 @@ export function BrandSourceSection({ brand, sources, legacy, canCreate, onAdd, o
                 </TableCell>
                 <TableCell><ConnectionCell source={source} /></TableCell>
                 <TableCell><SyncCell source={source} /></TableCell>
+                <TableCell><OrdersCell stat={stats[source.id]} /></TableCell>
                 {canCreate && (
                   <TableCell>
                     <Button

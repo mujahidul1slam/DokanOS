@@ -7,7 +7,11 @@ import { canCreateBusinessResources } from "@/lib/accounts/rolePresentation";
 import type { OrderSourceRow } from "@/lib/orderSources";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { BrandSourceSection } from "@/components/order-sources/BrandSourceSection";
+import {
+  BrandSourceSection,
+  type RecentSourceOrder,
+  type SourceOrderStat,
+} from "@/components/order-sources/BrandSourceSection";
 import {
   type LegacyBrandStoreRow,
   type LegacyRows,
@@ -35,6 +39,7 @@ export default function OrderSources() {
   const { active, brands, loading: ctxLoading, myRole } = useBusinessContext();
   const canCreate = canCreateBusinessResources(myRole);
   const [sources, setSources] = useState<OrderSourceRow[]>([]);
+  const [orderStats, setOrderStats] = useState<Record<string, SourceOrderStat>>({});
   const [legacy, setLegacy] = useState<LegacyRows>(EMPTY_LEGACY_ROWS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,13 +91,49 @@ export default function OrderSources() {
       ]);
       const failed = [srcRes, spRes, bsRes, sfRes, stRes].find((r) => r.error);
       if (failed?.error) throw failed.error;
-      setSources((srcRes.data as OrderSourceRow[]) || []);
+      const loadedSources = (srcRes.data as OrderSourceRow[]) || [];
+      setSources(loadedSources);
       setLegacy({
         stores: (stRes.data as LegacyStoreRow[]) || [],
         sellingPoints: (spRes.data as LegacySellingPointRow[]) || [],
         brandStores: (bsRes.data as LegacyBrandStoreRow[]) || [],
         storefronts: (sfRes.data as LegacyStorefrontRow[]) || [],
       });
+
+      // Orders attributed to each source — a created order must appear under
+      // its source (Task 6 acceptance). Counts are per source (head queries);
+      // recent orders come from one bounded fetch.
+      const stats: Record<string, SourceOrderStat> = {};
+      if (loadedSources.length > 0) {
+        const sourceIds = loadedSources.map((s) => s.id);
+        const results = (await Promise.all([
+          supabase
+            .from("orders")
+            .select("id, order_number, customer_name, total, created_at, order_source_id")
+            .in("order_source_id", sourceIds)
+            .is("deleted_at", null)
+            .order("created_at", { ascending: false })
+            .limit(100),
+          ...sourceIds.map((id) =>
+            supabase
+              .from("orders")
+              .select("id", { count: "exact", head: true })
+              .eq("order_source_id", id)
+              .is("deleted_at", null),
+          ),
+        ])) as Array<{ data: unknown; error: { message: string } | null; count?: number | null }>;
+        const recentRes = results[0];
+        if (recentRes.error) throw recentRes.error;
+        sourceIds.forEach((id, i) => {
+          stats[id] = { count: results[i + 1]?.count ?? 0, recent: [] };
+        });
+        for (const row of (recentRes.data ?? []) as Array<RecentSourceOrder & { order_source_id: string | null }>) {
+          if (row.order_source_id && stats[row.order_source_id]) {
+            stats[row.order_source_id].recent.push(row);
+          }
+        }
+      }
+      setOrderStats(stats);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load order sources");
     } finally {
@@ -164,6 +205,7 @@ export default function OrderSources() {
               key={brand.id}
               brand={brand}
               sources={sources.filter((s) => s.brand_id === brand.id)}
+              stats={orderStats}
               legacy={{
                 stores: legacy.stores.filter((s) => brands.find((b) => b.id === brand.id)?.woo_store_id === s.id),
                 sellingPoints: legacy.sellingPoints.filter((sp) => sp.brand_id === brand.id),
