@@ -166,6 +166,9 @@ export interface OrderSourceRow {
   last_sync_at: string | null;
   last_sync_error: string | null;
   is_stock_holding: boolean | null;
+  ship_from_store: boolean;
+  /** Ordered stock-holder id list (spec §3) — normalized via `normalizeFulfillmentPreference`. */
+  fulfillment_preference: unknown;
   created_at: string;
   updated_at: string;
 }

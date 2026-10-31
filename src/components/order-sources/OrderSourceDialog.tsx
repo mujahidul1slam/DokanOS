@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ORDER_SOURCE_TYPES,
+  isPhysicalSourceType,
   orderSourceConfigFields,
   orderSourceTypeInfo,
   type OrderSourceRow,
   type OrderSourceType,
 } from "@/lib/orderSources";
+import {
+  buildStockHolders,
+  normalizeFulfillmentPreference,
+  type StockHolder,
+} from "@/lib/stockHolders";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +63,9 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
   const [type, setType] = useState<OrderSourceType | "">("");
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [syncDirection, setSyncDirection] = useState("none");
+  const [shipFromStore, setShipFromStore] = useState(false);
+  const [holdsStock, setHoldsStock] = useState(false);
+  const [prefList, setPrefList] = useState<Array<{ id: string; name: string; kind: string; checked: boolean }>>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +80,8 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
       setName(source.name);
       setType((source.type as OrderSourceType) || "");
       setSyncDirection(source.sync_direction ?? "none");
+      setHoldsStock(source.is_stock_holding ?? isPhysicalSourceType(source.type));
+      setShipFromStore(source.ship_from_store ?? false);
       // Secrets stay write-only; non-secret values prefill for editing.
       const secrets = new Set(orderSourceConfigFields(source.type).filter((f) => f.secret).map((f) => f.key));
       const config = source.config ?? {};
@@ -86,8 +98,41 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
       setType("");
       setSyncDirection("none");
       setConfigValues({});
+      setHoldsStock(false);
+      setShipFromStore(false);
     }
-  }, [open, source]);
+
+    // The fulfillment pool: the brand's stock holders, minus this source
+    // (its own stock is the ship-from-store toggle).
+    let cancelled = false;
+    (async () => {
+      const [whRes, srcRes] = await Promise.all([
+        supabase.from("warehouses").select("id, brand_id, name, is_default").eq("brand_id", brandId),
+        supabase
+          .from("order_sources")
+          .select("id, brand_id, name, type, is_stock_holding")
+          .eq("brand_id", brandId),
+      ]);
+      if (cancelled) return;
+      const holders: StockHolder[] = buildStockHolders(
+        (whRes.data ?? []) as Array<{ id: string; brand_id: string; name: string; is_default: boolean }>,
+        ((srcRes.data ?? []) as Array<{ id: string; brand_id: string; name: string; is_stock_holding: boolean | null }>).filter(
+          (s) => s.id !== source?.id,
+        ),
+      );
+      const preferred = normalizeFulfillmentPreference(source?.fulfillment_preference, holders);
+      const ordered = [
+        ...preferred.map((id) => holders.find((h) => h.id === id)).filter((h): h is StockHolder => !!h),
+        ...holders.filter((h) => !preferred.includes(h.id)),
+      ];
+      setPrefList(
+        ordered.map((h) => ({ id: h.id, name: h.name, kind: h.kind, checked: preferred.includes(h.id) })),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, source, brandId]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -111,6 +156,11 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
         type,
         config,
         sync_direction: syncRelevant && syncDirection !== "none" ? syncDirection : null,
+        ship_from_store: shipFromStore,
+        fulfillment_preference: prefList.filter((r) => r.checked).map((r) => r.id),
+        // Stock-holding is a physical-source toggle (spec §3); digital sources
+        // take the DB default and can never hold stock rows.
+        ...(isPhysicalSourceType(type) ? { is_stock_holding: holdsStock } : {}),
       };
       const result = source
         ? await supabase.from("order_sources").update(payload).eq("id", source.id).select("id").single()
@@ -129,6 +179,16 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
     } finally {
       setSaving(false);
     }
+  };
+
+  const movePref = (index: number, delta: number) => {
+    setPrefList((prev) => {
+      const target = index + delta;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
   };
 
   return (
@@ -159,7 +219,10 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
                       name="order-source-type"
                       value={info.value}
                       checked={type === info.value}
-                      onChange={() => setType(info.value)}
+                      onChange={() => {
+                        setType(info.value);
+                        setHoldsStock(isPhysicalSourceType(info.value));
+                      }}
                     />
                     {info.label}
                   </label>
@@ -222,6 +285,82 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
               </Select>
             </div>
           )}
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium leading-none">Fulfillment</legend>
+            {isPhysicalSourceType(type) && (
+              <div className="flex items-center justify-between rounded-md border border-border p-2.5">
+                <div>
+                  <Label htmlFor="order-source-holds-stock" className="text-sm">Holds stock</Label>
+                  <p className="text-xs text-muted-foreground">Physical sources hold stock by default.</p>
+                </div>
+                <Switch id="order-source-holds-stock" checked={holdsStock} onCheckedChange={setHoldsStock} />
+              </div>
+            )}
+            <div className="flex items-center justify-between rounded-md border border-border p-2.5">
+              <div>
+                <Label htmlFor="order-source-ship-from-store" className="text-sm">Ship from store</Label>
+                <p className="text-xs text-muted-foreground">Fulfill orders from this source's own stock.</p>
+              </div>
+              <Switch id="order-source-ship-from-store" checked={shipFromStore} onCheckedChange={setShipFromStore} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Stock draw order</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Checked holders are drawn from, top first. This source's own stock
+                is controlled by the ship-from-store toggle.
+              </p>
+              {prefList.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No stock holders yet — add a warehouse or a stock-holding source
+                  first.
+                </p>
+              ) : (
+                prefList.map((row, index) => (
+                  <div key={row.id} className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
+                    <input
+                      type="checkbox"
+                      checked={row.checked}
+                      onChange={() =>
+                        setPrefList((prev) =>
+                          prev.map((r, i) => (i === index ? { ...r, checked: !r.checked } : r)),
+                        )
+                      }
+                      aria-label={`Draw from ${row.name}`}
+                    />
+                    <span className="flex-1 text-sm">
+                      {row.name}{" "}
+                      <span className="text-[10px] text-muted-foreground">
+                        ({row.kind === "warehouse" ? "warehouse" : "source"})
+                      </span>
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      disabled={index === 0}
+                      onClick={() => movePref(index, -1)}
+                      aria-label={`Move ${row.name} up`}
+                    >
+                      <ArrowUp className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      disabled={index === prefList.length - 1}
+                      onClick={() => movePref(index, 1)}
+                      aria-label={`Move ${row.name} down`}
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </fieldset>
 
           {error && (
             <p role="alert" className="text-sm text-destructive">
