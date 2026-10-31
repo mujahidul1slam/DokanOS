@@ -214,6 +214,7 @@ test("an owner rehearses signup -> verification -> business -> brand -> physical
   await expect(page.getByLabel("Business Name")).toHaveCount(0);
   await page.getByLabel("Email", { exact: true }).fill(owner.email);
   await page.getByLabel("Password", { exact: true }).fill("RehearsalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("RehearsalPass123!");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create personal account" }).click();
   await expect(page).toHaveURL(/\/check-email\?email=/);
@@ -223,6 +224,10 @@ test("an owner rehearses signup -> verification -> business -> brand -> physical
   // ---- verification reaches account selection with no memberships ----
   await signedIn(page, owner);
   await page.goto("/auth/confirm");
+  // Task 3: verification routes a not-yet-set-up person through the skippable
+  // profile step before any business screen.
+  await expect(page).toHaveURL(/\/profile\/setup$/);
+  await page.getByRole("button", { name: "Skip for now" }).click();
   await expect(page).toHaveURL(/\/accounts$/);
   await expect(page.getByText("You don't belong to a business account yet.")).toBeVisible();
 
@@ -244,7 +249,8 @@ test("an owner rehearses signup -> verification -> business -> brand -> physical
   expect(state.brands[0].woo_store_id).toBeNull();
 
   // ---- a physical and an online store under that brand ----
-  await page.goto("/stores");
+  // (Task 11: StoresHub retired — store creation lives on the Brands page.)
+  await page.goto("/brands");
   await expect(page.getByText("Rehearsal Brand", { exact: true })).toBeVisible();
   for (const [name, type] of [["Rehearsal Outlet", "Physical store"], ["Rehearsal Online", "Online store"]] as const) {
     await page.getByRole("button", { name: "New Store", exact: true }).click();
@@ -272,6 +278,7 @@ test("a brand-new invitee registers, verifies, and only then explicitly accepts 
   await page.getByLabel("Your Name").fill("New Invitee");
   await page.getByLabel("Email", { exact: true }).fill(newInvitee.email);
   await page.getByLabel("Password", { exact: true }).fill("RehearsalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("RehearsalPass123!");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create personal account" }).click();
   await expect(page).toHaveURL(/\/check-email\?.*invite=rehearsal-invite-token/);
@@ -279,6 +286,9 @@ test("a brand-new invitee registers, verifies, and only then explicitly accepts 
   // A fresh-device confirmation keeps the invitation intent but does not accept it.
   await signedIn(page, newInvitee);
   await page.goto("/auth/confirm?invite=rehearsal-invite-token");
+  // Task 3: the skippable profile step preserves the invitation token.
+  await expect(page).toHaveURL(/\/profile\/setup\?invite=rehearsal-invite-token$/);
+  await page.getByRole("button", { name: "Skip for now" }).click();
   await expect(page).toHaveURL(/\/accounts\?invite=rehearsal-invite-token$/);
   await expect(page.getByText("Your invitation is saved. Verification does not accept it or grant access.")).toBeVisible();
   await expect(page.getByText("You're invited to join Rehearsal Account.")).toBeVisible();

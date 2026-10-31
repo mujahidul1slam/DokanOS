@@ -135,13 +135,14 @@ export default function Brands() {
             </Button>
           )}
           <Button asChild size="sm" variant="ghost">
-            <Link to="/stores">View stores and operational setup</Link>
+            <Link to="/order-sources">View order sources and operational setup</Link>
           </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {brands.map((brand) => {
-            const storeCount = brandStores.filter((store) => store.brand_id === brand.id).length;
+            const storeRows = brandStores.filter((store) => store.brand_id === brand.id);
+            const storeCount = storeRows.length;
             return (
             <div key={brand.id} className="rounded-lg border border-border bg-card p-5">
               <div className="flex items-start gap-3">
@@ -159,12 +160,24 @@ export default function Brands() {
                   </p>
                 </div>
               </div>
+              {storeRows.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  {storeRows.map((store) => (
+                    <div key={store.id} className="flex items-center gap-2 text-xs">
+                      <Badge variant={store.store_type === "online" ? "outline" : "secondary"} className="text-[10px]">
+                        {store.store_type === "physical" ? "Physical" : "Online"}
+                      </Badge>
+                      <span className="truncate">{store.name}</span>
+                      {store.store_type === "online" && (
+                        <span className="text-muted-foreground">
+                          {store.is_published ? "· Published" : "· Unpublished"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="mt-4 flex items-center gap-2">
-                <Button asChild size="sm" variant="outline">
-                  <Link to="/stores">
-                    <Store className="h-3.5 w-3.5 mr-1" /> Stores
-                  </Link>
-                </Button>
                 {canCreate && (
                   <Button size="sm" variant="ghost" onClick={() => openStoreDialog(brand.id)}>
                     <Plus className="h-3.5 w-3.5 mr-1" /> Add store

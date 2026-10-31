@@ -32,7 +32,6 @@ const Products = lazy(() => import("./pages/Products"));
 const POS = lazy(() => import("./pages/POS"));
 const PosReports = lazy(() => import("./pages/PosReports"));
 const Analytics = lazy(() => import("./pages/Analytics"));
-const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
@@ -53,7 +52,6 @@ const StorefrontPreview = lazy(() =>
     }),
   ),
 );
-const StoresHub = lazy(() => import("./pages/StoresHub"));
 const OrderSources = lazy(() => import("./pages/OrderSources"));
 const Brands = lazy(() => import("./pages/Brands"));
 const BusinessMembers = lazy(() => import("./pages/BusinessMembers"));
@@ -157,12 +155,12 @@ const AppRoutes = () => {
               <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />
               <Route path="/pos/reports" element={<PermissionGuard permission="analytics.view"><PosReports /></PermissionGuard>} />
               <Route path="/analytics" element={<PermissionGuard permission="analytics.view"><Analytics /></PermissionGuard>} />
-              <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
+              <Route path="/integrations" element={<Navigate to="/settings" replace />} />
               <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
               <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
               <Route path="/brands" element={<Brands />} />
               <Route path="/members" element={<BusinessMembers />} />
-              <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
+              <Route path="/stores" element={<Navigate to="/order-sources" replace />} />
               <Route path="/order-sources" element={<PermissionGuard permission="dashboard.view"><OrderSources /></PermissionGuard>} />
               {/* Wildcard: deep admin URLs (/storefronts/:slug/admin/:surface)
                   mount StorefrontsPage, which parses the URL itself (fix C). */}

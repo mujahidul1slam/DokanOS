@@ -69,10 +69,10 @@ const Dashboard = () => {
         <EmptyState
           icon={StoreIcon}
           title="No stores in this business"
-          description="This business has no stores mapped yet, so there is no operational data to show. Add a store to this business to see its orders, revenue and store health here."
+          description="This business has no stores mapped yet, so there is no operational data to show. Add your stores and channels from the Order Sources page to see orders, revenue and store health here."
           action={
-            <Button variant="outline" onClick={() => navigate("/stores")}>
-              <StoreIcon className="mr-1 h-4 w-4" /> Add a store
+            <Button variant="outline" onClick={() => navigate("/order-sources")}>
+              <StoreIcon className="mr-1 h-4 w-4" /> Order sources
             </Button>
           }
         />

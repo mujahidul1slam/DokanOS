@@ -75,7 +75,8 @@ test("a member creates multiple physical and online stores under brands without 
       await route.fulfill({ json: [{ role: "member", business_id: business.id, businesses: business }] });
       return;
     }
-    // /stores sits behind PermissionGuard(dashboard.view).
+    // Task 11 moved store creation to the Brands page (unguarded); the
+    // permission mock stays for the other routes the app touches.
     if (url.pathname.endsWith("/rpc/get_user_permissions")) {
       await route.fulfill({ json: ["dashboard.view"] });
       return;
@@ -137,7 +138,7 @@ test("a member creates multiple physical and online stores under brands without 
   });
   await signedIn(page);
 
-  await page.goto("/stores");
+  await page.goto("/brands");
   await expect(page.getByText("North Star", { exact: true })).toBeVisible();
   await expect(page.getByText("Daylight Goods", { exact: true })).toBeVisible();
 
@@ -160,19 +161,25 @@ test("a member creates multiple physical and online stores under brands without 
   await createStore("North Star", "North Star Online", "Online store");
   await createStore("Daylight Goods", "Gulshan Outlet", "Physical store");
 
-  await page.getByText("North Star", { exact: true }).click();
+  // Task 11: StoresHub retired — each brand card lists its stores inline
+  // (type badge + publish state), so every created store is visible at once.
   await expect(page.getByText("Dhanmondi Outlet", { exact: true })).toBeVisible();
   await expect(page.getByText("North Star Online", { exact: true })).toBeVisible();
+  await expect(page.getByText("Gulshan Outlet", { exact: true })).toBeVisible();
   await expect(page.getByText(/Unpublished/)).toBeVisible();
 
-  await page.getByText("Daylight Goods", { exact: true }).click();
-  await expect(page.getByText("Gulshan Outlet", { exact: true })).toBeVisible();
-  await expect(page.getByText("Dhanmondi Outlet", { exact: true })).toHaveCount(0);
-
   // A store enters the brand's existing operational context without requiring
-  // an address, integration or storefront configuration first.
-  await page.getByRole("button", { name: /Configure/ }).first().click();
-  await expect(page.getByText("No locations yet.")).toBeVisible();
+  // an address, integration or storefront configuration first; brand → store
+  // scoping is asserted on the created rows (each landed under the brand
+  // picked in the dialog).
+  const brandId = (name: string) => brands.find((brand) => brand.name === name)?.id;
+  expect(stores.map((store) => `${String(store.brand_id)}:${String(store.name)}`).sort()).toEqual(
+    [
+      `${brandId("Daylight Goods")}:Gulshan Outlet`,
+      `${brandId("North Star")}:Dhanmondi Outlet`,
+      `${brandId("North Star")}:North Star Online`,
+    ].sort(),
+  );
 
   expect(stores).toHaveLength(3);
   expect(stores.every((store) => store.is_published === false)).toBe(true);

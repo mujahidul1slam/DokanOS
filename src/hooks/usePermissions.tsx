@@ -164,6 +164,9 @@ export const PERMISSION_GROUPS: { group: string; items: { key: AppPermission; la
     ],
   },
   {
+    // Legacy permission model (retained until the Task 16 contract): these keys
+    // feed the member operational baseline even though the integrations/StoresHub
+    // UI is retired — see accountBaselinePermissions below.
     group: "Integrations & Stores",
     items: [
       { key: "integrations.view", label: "View integrations" },
