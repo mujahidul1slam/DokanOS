@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler,
   Building2, Hash, Hourglass, Search, ChevronRight, ArrowLeft, X,
-  Palette, User, Printer, Warehouse,
+  Palette, User, Printer, Warehouse, Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -20,6 +20,7 @@ import OrdersSettingsTab from "@/components/settings/OrdersSettingsTab";
 import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import WarehousesTab from "@/components/settings/WarehousesTab";
+import CourierServicesTab from "@/components/settings/CourierServicesTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
 import BusinessAccountTab from "@/components/settings/BusinessAccountTab";
@@ -37,7 +38,7 @@ import {
 
 type TabId =
   | "profile" | "account" | "brands"
-  | "general" | "printheader" | "inventory" | "warehouses" | "pos" | "orders"
+  | "general" | "couriers" | "printheader" | "inventory" | "warehouses" | "pos" | "orders"
   | "preorders" | "measurements" | "invoice" | "sources" | "audit";
 
 type TabDef = {
@@ -70,6 +71,7 @@ const groups: GroupDef[] = [
     label: "Business",
     tabs: [
       { id: "general", label: "General", icon: Settings, description: "Theme and install preferences", keywords: "appearance dark light mode theme install pwa" },
+      { id: "couriers", label: "Courier services", icon: Truck, description: "Courier accounts for the whole business", keywords: "courier pathao steadfast redx ecourier dispatch shipping parcel" },
     ],
   },
   {
@@ -231,6 +233,7 @@ const SettingsPage = () => {
       case "invoice": return <InvoiceSettingsTab />;
       case "sources": return <OrderSourcesTab />;
       case "warehouses": return <WarehousesTab />;
+      case "couriers": return <CourierServicesTab />;
       case "measurements": return <MeasurementsTab />;
       case "audit": return <AuditLogTab />;
     }

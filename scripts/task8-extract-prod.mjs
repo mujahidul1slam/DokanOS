@@ -90,6 +90,7 @@ const TABLES = {
   product_locations: "select * from public.product_locations order by created_at",
   customer_aliases: "select * from public.customer_aliases order by created_at",
   pathao_integrations: "select * from public.pathao_integrations order by created_at",
+  courier_providers: "select * from public.courier_providers order by code",
 };
 
 const BATCHED = {

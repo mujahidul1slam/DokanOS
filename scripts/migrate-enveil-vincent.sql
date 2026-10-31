@@ -176,6 +176,35 @@ VALUES (
 );
 
 -- ---------------------------------------------------------------------------
+-- 2b. Courier services (Task 9, spec §4): the legacy Pathao accounts become
+--     business-level courier services. Credentials are COPIED FROM the legacy
+--     rows at runtime (never in this file); the per-brand courier connector is
+--     paired through its config.integration_id id link — no name lookups.
+-- ---------------------------------------------------------------------------
+INSERT INTO public.courier_services (
+  id, business_id, provider, name, credentials, is_active,
+  legacy_pathao_integration_id, legacy_connector_id
+)
+SELECT
+  CASE p.id
+    WHEN '1931698d-3d31-421f-9c80-129792541b9d' THEN 'dc85e597-0269-4779-8fab-8aa698f1476f'::uuid
+    WHEN '094b56e4-da50-4f1c-a804-a94ac4c0eb54' THEN 'b25408b6-ebbd-4396-a1e4-ddbe2bf38048'::uuid
+  END,
+  'de31fd60-a520-4d42-aef2-c72ededc4c09',
+  'pathao', p.name,
+  jsonb_build_object(
+    'client_id', p.client_id, 'client_secret', p.client_secret,
+    'username', p.username, 'password', p.password,
+    'environment', p.environment, 'allowed_store_ids', p.allowed_store_ids
+  ),
+  p.is_active, p.id,
+  (SELECT c.id FROM public.connectors c
+   WHERE c.category = 'courier' AND c.config->>'integration_id' = p.id::text
+   LIMIT 1)
+FROM public.pathao_integrations p
+WHERE p.id IN ('1931698d-3d31-421f-9c80-129792541b9d', '094b56e4-da50-4f1c-a804-a94ac4c0eb54');
+
+-- ---------------------------------------------------------------------------
 -- 3. Warehouse mapping: locations "Warehouse" (Vincent, 42cceea7) → warehouses.
 --    (Enveil has no warehouse location — spec §7: "no warehouse yet — fine".)
 -- ---------------------------------------------------------------------------

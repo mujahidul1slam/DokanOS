@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Send, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import {
+  courierProviderInfo,
+  courierServiceIntegrationId,
+  courierProviderLabel,
+  type CourierServiceRow,
+} from "@/lib/courierServices";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,9 +81,12 @@ interface DispatchDialogProps {
 
 export default function DispatchDialog({ open, onOpenChange, orders, onDispatched }: DispatchDialogProps) {
   const { symbol } = useCurrency();
+  const { active } = useBusinessContext();
   const [dispatching, setDispatching] = useState(false);
   const [pathaoStores, setPathaoStores] = useState<PathaoStore[]>([]);
   const [selectedPathaoStore, setSelectedPathaoStore] = useState("");
+  const [courierServices, setCourierServices] = useState<CourierServiceRow[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState("");
   const [cities, setCities] = useState<City[]>([]);
   const [allZones, setAllZones] = useState<Zone[]>([]);
   const [zonesMap, setZonesMap] = useState<Record<number, Zone[]>>({});
@@ -96,19 +106,31 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const [{ data: stores }, { data: citiesData }, { data: zonesData }] = await Promise.all([
+      const [{ data: stores }, { data: citiesData }, { data: zonesData }, { data: services }] = await Promise.all([
         supabase.from("pathao_stores").select("pathao_store_id, store_name, integration_id").eq("is_active", true),
         supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
         supabase.from("pathao_zones").select("zone_id, zone_name, city_id").order("zone_name"),
+        active
+          ? supabase.from("courier_services").select("*").eq("business_id", active.id).eq("is_active", true).order("name")
+          : Promise.resolve({ data: [] }),
       ]);
       setPathaoStores((stores || []) as PathaoStore[]);
       setCities(citiesData || []);
       setAllZones(zonesData || []);
-      if (stores?.length && !selectedPathaoStore) {
-        setSelectedPathaoStore(String(stores[0].pathao_store_id));
+      const serviceRows = (services || []) as CourierServiceRow[];
+      setCourierServices(serviceRows);
+      // Dispatch defaults to the business's first Pathao-capable service.
+      if (serviceRows.length > 0) {
+        const preferred = serviceRows.find((s) => courierServiceIntegrationId(s) !== null || s.provider === "pathao");
+        const defaultServiceId = (preferred ?? serviceRows[0]).id;
+        setSelectedServiceId((prev) => prev || defaultServiceId);
+      }
+      if (stores?.length) {
+        const defaultStoreId = String(stores[0].pathao_store_id);
+        setSelectedPathaoStore((prev) => prev || defaultStoreId);
       }
     })();
-  }, [open]);
+  }, [open, active]);
 
   const normalizeLocationText = useCallback((value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""), []);
 
@@ -432,7 +454,10 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         };
       });
       const selectedStore = pathaoStores.find((s) => String(s.pathao_store_id) === selectedPathaoStore);
-      const integrationId = selectedStore?.integration_id || undefined;
+      // The business-level courier service owns the dispatch call (spec §4);
+      // pre-cutover it resolves to the mapped legacy Pathao integration.
+      const selectedService = courierServices.find((s) => s.id === selectedServiceId);
+      const integrationId = (selectedService ? courierServiceIntegrationId(selectedService) : null) || selectedStore?.integration_id || undefined;
       const allResults: any[] = [];
       for (let i = 0; i < allPayloads.length; i += BATCH_SIZE) {
         const batch = allPayloads.slice(i, i + BATCH_SIZE);
@@ -458,6 +483,11 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     }
   };
 
+  const selectedService = courierServices.find((s) => s.id === selectedServiceId) ?? null;
+  const serviceSupportsDispatch = selectedService
+    ? (courierProviderInfo(selectedService.provider)?.dispatchSupported ?? false)
+    : false;
+
   return (
     <ResponsiveDialog
       open={open}
@@ -467,13 +497,41 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
       footer={
         <>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleDispatch} disabled={dispatching} className="gap-2">
+          <Button onClick={handleDispatch} disabled={dispatching || !serviceSupportsDispatch} className="gap-2">
             {dispatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Dispatch {orders.length} Order(s)
           </Button>
         </>
       }
     >
+        {/* Business-level courier service (spec §4) */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 pb-2">
+          <Label className="text-sm font-medium whitespace-nowrap">Courier service:</Label>
+          <Select value={selectedServiceId} onValueChange={setSelectedServiceId}>
+            <SelectTrigger className="w-full sm:w-[320px]">
+              <SelectValue placeholder={courierServices.length > 0 ? "Select courier service" : "No courier services yet"} />
+            </SelectTrigger>
+            <SelectContent>
+              {courierServices.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name} · {courierProviderLabel(s.provider)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedService && !serviceSupportsDispatch && (
+            <p className="text-xs text-muted-foreground">
+              {courierProviderLabel(selectedService.provider)} dispatch arrives with its adapter —
+              pick a Pathao service to dispatch now.
+            </p>
+          )}
+          {courierServices.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Add the business's courier account under Settings → Courier services.
+            </p>
+          )}
+        </div>
+
         {/* Pathao store selector */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 pb-2">
           <Label className="text-sm font-medium whitespace-nowrap">Pathao Store:</Label>

@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { Link2, Loader2, AlertTriangle, RefreshCw, PlusCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import {
+  courierProviderLabel,
+  courierServiceIntegrationId,
+  type CourierServiceRow,
+} from "@/lib/courierServices";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +31,9 @@ import { useToast } from "@/hooks/use-toast";
 interface PathaoIntegration {
   id: string;
   name: string;
-  is_active: boolean;
+  provider: string;
+  /** Legacy Pathao integration id the adapter uses pre-cutover (Task 9). */
+  integrationId: string | null;
 }
 
 interface AttachParcelDialogProps {
@@ -48,6 +56,7 @@ export default function AttachParcelDialog({
   onAttached,
 }: AttachParcelDialogProps) {
   const { toast } = useToast();
+  const { active } = useBusinessContext();
   const [consignmentId, setConsignmentId] = useState("");
   const [integrations, setIntegrations] = useState<PathaoIntegration[]>([]);
   const [selectedIntegration, setSelectedIntegration] = useState("");
@@ -65,24 +74,36 @@ export default function AttachParcelDialog({
 
   const hasExistingEntries = !!existingConsignmentId || (existingEntryCount !== undefined && existingEntryCount > 0);
 
-  // Load active Pathao integrations
+  // Load the business-level courier services (spec §4 — one courier account per
+  // business, never per brand). The mapped legacy Pathao integration feeds the
+  // adapter until the cutover contract moves credentials onto the service.
   useEffect(() => {
     if (!open) return;
     setConsignmentId("");
     setConfirmChoiceOpen(false);
     setPathaoFailDialog(null);
     (async () => {
-      const { data } = await supabase
-        .from("pathao_integrations_safe" as any)
-        .select("id, name, is_active")
-        .eq("is_active", true)
-        .order("name");
-      const list = (data || []) as unknown as PathaoIntegration[];
+      const { data } = active
+        ? await supabase
+            .from("courier_services")
+            .select("id, name, provider, is_active, legacy_pathao_integration_id")
+            .eq("business_id", active.id)
+            .eq("is_active", true)
+            .order("name")
+        : { data: [] };
+      const list = ((data || []) as CourierServiceRow[]).map((s) => ({
+        id: s.id,
+        name: s.name,
+        provider: s.provider,
+        integrationId: courierServiceIntegrationId(s),
+      }));
       setIntegrations(list);
-      if (list.length === 1) setSelectedIntegration(list[0].id);
-      else if (list.length > 0 && !selectedIntegration) setSelectedIntegration(list[0].id);
+      if (list.length > 0) {
+        const defaultId = list[0].id;
+        setSelectedIntegration((prev) => prev || defaultId);
+      }
     })();
-  }, [open]);
+  }, [open, active]);
 
   const handleInitialSubmit = () => {
     const cid = consignmentId.trim();
@@ -114,7 +135,8 @@ export default function AttachParcelDialog({
           action: "attach_parcel",
           order_id: orderId,
           consignment_id: cid,
-          integration_id: selectedIntegration || undefined,
+          integration_id:
+            integrations.find((i) => i.id === selectedIntegration)?.integrationId || undefined,
           replace: mode === "replace",
           add_new: mode === "add_new",
           force,
@@ -214,17 +236,17 @@ export default function AttachParcelDialog({
             )}
 
             <div className="space-y-1.5">
-              <Label className="text-sm">Pathao Account</Label>
+              <Label className="text-sm">Courier service</Label>
               {integrations.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No active Pathao accounts. Add one in Integrations.</p>
+                <p className="text-sm text-muted-foreground">No active courier services. Add one in Settings → Courier services.</p>
               ) : integrations.length === 1 ? (
-                <Input value={integrations[0].name} disabled className="h-9" />
+                <Input value={`${integrations[0].name} · ${courierProviderLabel(integrations[0].provider)}`} disabled className="h-9" />
               ) : (
                 <Select value={selectedIntegration} onValueChange={setSelectedIntegration}>
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Select account" /></SelectTrigger>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Select courier service" /></SelectTrigger>
                   <SelectContent>
                     {integrations.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      <SelectItem key={p.id} value={p.id}>{p.name} · {courierProviderLabel(p.provider)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

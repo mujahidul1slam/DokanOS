@@ -13,6 +13,7 @@ Script: [migrate-enveil-vincent.sql](../../scripts/migrate-enveil-vincent.sql) �
 | `locations` "Main" + `selling_points` showroom_pos | **1 order source · Showroom** per brand (stock-holding ON, ship-from-store ON) |
 | `selling_points` facebook | **1 order source · Facebook / Instagram** per brand |
 | `locations` "Warehouse" (Vincent) | **1 warehouse** (stock-only) |
+| `pathao_integrations` + courier `connectors` | **business-level courier services** (Task 9) — credentials copied at runtime, paired via `config.integration_id` |
 | `product_locations` rows | repointed to their showroom source / warehouse (205 rows stay put) |
 
 Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 warehouse.
@@ -31,20 +32,22 @@ Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 wareho
 | products.total | 225 | 225 |
 | product_variations.total | 1,204 | 1,204 |
 | product_locations.total | 205 | 205 |
-| customers.total | 3,234 | 3,232 |
-| orders.total | 4,073 | 4,073 |
+| customers.total | 3,235 | 3,233 |
+| orders.total | 4,074 | 4,074 |
 | order_sources.total | 0 | 8 |
 | warehouses.total | 0 | 1 |
+| courier_services.total | 0 | 2 |
 | user_business_access.total | 9 | 2 |
 | order_sources.legacy_mapped | 0 | 8 |
 | order_sources.vincent | 0 | 4 |
 | order_sources.enveil | 0 | 4 |
+| courier_services.legacy_mapped | 0 | 2 |
 | products.attributed | 0 | 225 |
-| customers.bound | 2,024 | 2,024 |
+| customers.bound | 2,025 | 2,025 |
 | customers.pool | 0 | 1,208 |
-| customers.attributed | 0 | 2,024 |
-| orders.bound | 3,218 | 3,218 |
-| orders.attributed | 0 | 3,315 |
+| customers.attributed | 0 | 2,025 |
+| orders.bound | 3,219 | 3,219 |
+| orders.attributed | 0 | 3,316 |
 | orders.pool | 0 | 758 |
 | orders.unattributed_left | 855 | 0 |
 | orders.inferable | 97 | 0 |
@@ -57,7 +60,7 @@ Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 wareho
 | Source | Type | Orders |
 |---|---|---:|
 | Enveil Storefront | storefront | 0 |
-| Enveil WooCommerce | woocommerce | 657 |
+| Enveil WooCommerce | woocommerce | 658 |
 | Facebook / Instagram | facebook | 235 |
 | Main Showroom | showroom | 29 |
 | Facebook / Instagram | facebook | 549 |
@@ -72,17 +75,18 @@ Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 wareho
 | Script runs idempotently against a scratch DB | first run: applied; second run: refused by guard — no double-apply (idempotent); audits identical: true | ✅ |
 | 4 order sources + warehouses per brand | Vincent 4 sources + 1 warehouse, Enveil 4 sources + 0 warehouses | ✅ |
 | 225 products preserved | 225 → 225, all attributed: 225 | ✅ |
-| Customers preserved + merged | bound 2024 (+2 merged, −2 rows) → attributed 2024; total 3234 → 3232 (2 merge rows removed) | ✅ |
-| Attributed orders preserved + inferred | bound 3218 + inferred 97 → attributed 3315 (spec snapshot: 3,297 = 3,201 + 96) | ✅ |
+| Customers preserved + merged | bound 2025 (+2 merged, −2 rows) → attributed 2025; total 3235 → 3233 (2 merge rows removed) | ✅ |
+| Attributed orders preserved + inferred | bound 3219 + inferred 97 → attributed 3316 (spec snapshot: 3,297 = 3,201 + 96) | ✅ |
 | Legacy pool | orders 758 (spec: 753), customers 1208 (spec: 1,200) — drift = new rows since the 2026-10-29 spec snapshot | ✅ |
 | Inference rule reproduces the spec's ~96 | 97 orders attributed via customer id/phone match (spec: 96 = 73 Vincent / 23 Enveil) | ✅ |
 | Junk + test data wiped | tracked ids still present: 0; AGS→Enveil-store link severed before deletes (step 1 of script) | ✅ |
 | Stock repointed, nothing moved | holder rows 205 / legacy-location rows 0 (205 preserved) | ✅ |
 | No name-based lookups | static scan of the script: none found (UUID literals only) | ✅ |
+| Courier services mapped (Task 9) | 2 business-level services, 2 with legacy ids mapped (spec: 2 Pathao integrations → services) | ✅ |
 
 ## Reconciliation with the spec snapshot (2026-10-29)
 
-The acceptance numbers (225 products / 2,022 customers / 3,297 attributed orders / 753 + 1,200 pool / 96 inferred) were captured at spec time. The live tenant kept trading: the extract holds **3234 customers** (spec: 3,222) and **4073 orders** (spec: 4,050). All +drift rows are new attributed rows and new unattributed counter orders; the mapping rules reproduce the spec's shape exactly (2 merges, ~96 inferences, the rest → pool).
+The acceptance numbers (225 products / 2,022 customers / 3,297 attributed orders / 753 + 1,200 pool / 96 inferred) were captured at spec time. The live tenant kept trading: the extract holds **3235 customers** (spec: 3,222) and **4074 orders** (spec: 4,050). All +drift rows are new attributed rows and new unattributed counter orders; the mapping rules reproduce the spec's shape exactly (2 merges, ~96 inferences, the rest → pool).
 
 ## Review items (Checkpoint C)
 
@@ -90,4 +94,4 @@ The acceptance numbers (225 products / 2,022 customers / 3,297 attributed orders
 2. **Legacy pool tag** — pool rows are tagged `source = 'legacy migration'` on both orders and customers (customers additionally get `origin_kind = 'legacy'`), matching the spec's backticked tag and Task 15's "tagged `legacy migration`". Trade-off: the pool rows' free-text channel (`pos`/`fb/ig`) is overwritten; it survives nowhere else on orders (they have no provenance column). The tag dies with `orders.source` at Task 16, so Task 15/16 should either drain the pool first or migrate the tag to a surviving column.
 3. **Fulfillment defaults on migrated sources** — digital sources draw warehouse-first then the showroom (spec §3 example); showrooms get ship-from-store ON. All editable in the Task 7 UI.
 
-Generated by `node scripts/task8-audit.mjs` on 2026-10-31T05:52:00.695Z.
+Generated by `node scripts/task8-audit.mjs` on 2026-10-31T06:17:23.384Z.

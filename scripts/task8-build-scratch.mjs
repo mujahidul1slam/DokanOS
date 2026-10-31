@@ -65,6 +65,7 @@ const LOAD_ORDER = [
   "customers",
   "customer_aliases",
   "pathao_integrations",
+  "courier_providers",
   "orders",
   "user_business_access",
 ];

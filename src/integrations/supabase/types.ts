@@ -602,6 +602,63 @@ export type Database = {
         }
         Relationships: []
       }
+      courier_services: {
+        Row: {
+          business_id: string
+          created_at: string
+          credentials: Json
+          id: string
+          is_active: boolean
+          legacy_connector_id: string | null
+          legacy_courier_integration_id: string | null
+          legacy_pathao_integration_id: string | null
+          name: string
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          credentials?: Json
+          id?: string
+          is_active?: boolean
+          legacy_connector_id?: string | null
+          legacy_courier_integration_id?: string | null
+          legacy_pathao_integration_id?: string | null
+          name: string
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          credentials?: Json
+          id?: string
+          is_active?: boolean
+          legacy_connector_id?: string | null
+          legacy_courier_integration_id?: string | null
+          legacy_pathao_integration_id?: string | null
+          name?: string
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_services_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_services_provider_fkey"
+            columns: ["provider"]
+            isOneToOne: false
+            referencedRelation: "courier_providers"
+            referencedColumns: ["code"]
+          },
+        ]
+      },
       courier_shipments: {
         Row: {
           cancelled_at: string | null

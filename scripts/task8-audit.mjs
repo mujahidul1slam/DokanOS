@@ -54,7 +54,8 @@ async function collectAudit(client) {
   for (const table of [
     "businesses", "brands", "stores", "locations", "selling_points", "storefronts",
     "connectors", "products", "product_variations", "product_locations",
-    "customers", "orders", "order_sources", "warehouses", "user_business_access",
+    "customers", "orders", "order_sources", "warehouses", "courier_services",
+    "user_business_access",
   ]) {
     a[`${table}.total`] = await one(client, `SELECT count(*)::int AS n FROM public.${table}`);
   }
@@ -64,6 +65,8 @@ async function collectAudit(client) {
     `SELECT count(*)::int AS n FROM public.order_sources WHERE brand_id = 'ca061912-27a6-4eb5-a859-b77e9a347a30'`);
   a["order_sources.enveil"] = await one(client,
     `SELECT count(*)::int AS n FROM public.order_sources WHERE brand_id = '3eb99fc9-7826-4890-ace0-78af0dfdf972'`);
+  a["courier_services.legacy_mapped"] = await one(client,
+    `SELECT count(*)::int AS n FROM public.courier_services WHERE legacy_pathao_integration_id IS NOT NULL`);
   a["products.attributed"] = await one(client,
     `SELECT count(*)::int AS n FROM public.products WHERE origin_order_source_id IS NOT NULL`);
   a["customers.bound"] = await one(client,
@@ -192,6 +195,7 @@ async function main() {
   push("| `locations` \"Main\" + `selling_points` showroom_pos | **1 order source · Showroom** per brand (stock-holding ON, ship-from-store ON) |");
   push("| `selling_points` facebook | **1 order source · Facebook / Instagram** per brand |");
   push("| `locations` \"Warehouse\" (Vincent) | **1 warehouse** (stock-only) |");
+  push("| `pathao_integrations` + courier `connectors` | **business-level courier services** (Task 9) — credentials copied at runtime, paired via `config.integration_id` |");
   push("| `product_locations` rows | repointed to their showroom source / warehouse (205 rows stay put) |");
   push();
   push("Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 warehouse.");
@@ -224,6 +228,7 @@ async function main() {
     ["Junk + test data wiped", `tracked ids still present: ${after["wiped_rows_still_present"]}; AGS→Enveil-store link severed before deletes (step 1 of script)`, after["wiped_rows_still_present"] === 0],
     ["Stock repointed, nothing moved", `holder rows ${after["stock.holder_rows"]} / legacy-location rows ${after["stock.legacy_location_rows"]} (205 preserved)`, after["stock.holder_rows"] === 205 && after["stock.legacy_location_rows"] === 0],
     ["No name-based lookups", nameFindings.length === 0 ? "static scan of the script: none found (UUID literals only)" : `FINDINGS: ${nameFindings.join(", ")}`, nameFindings.length === 0],
+    ["Courier services mapped (Task 9)", `${after["courier_services.total"]} business-level services, ${after["courier_services.legacy_mapped"]} with legacy ids mapped (spec: 2 Pathao integrations → services)`, after["courier_services.total"] === 2 && after["courier_services.legacy_mapped"] === 2],
   ];
   push("| Check | Evidence | Verdict |");
   push("|---|---|---|");
