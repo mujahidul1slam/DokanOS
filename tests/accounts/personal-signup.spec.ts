@@ -32,6 +32,11 @@ async function api(page: Page, memberships: unknown[] = []) {
     if (url.pathname.endsWith("/rpc/is_signup_open")) data = true;
     if (url.pathname.endsWith("/app_config")) data = { value: true };
     if (url.pathname.endsWith("/user_business_access")) data = memberships;
+    // Task 3: an established account has already completed or skipped the one-time
+    // profile setup. Without this row the gate would treat the account as new.
+    if (url.pathname.endsWith("/profiles")) {
+      data = { id: "33333333-0000-0000-0000-000000000001", user_id: user.id, full_name: "Sarah Jenkins", avatar_url: null, phone: null, profile_setup_completed_at: "2026-10-19T00:00:00Z" };
+    }
     if (url.pathname.endsWith("/signup")) data = { user, session: null };
     if (url.pathname.endsWith("/user")) data = user;
     if (url.pathname.includes("/functions/")) data = { status: "ok" };
@@ -131,10 +136,14 @@ test("existing members select their authorized account and the retired wizard re
     localStorage.setItem("dokanos_signup_business_name", "Do Not Create");
   });
   await page.goto("/auth/confirm");
-  await page.getByRole("button", { name: "Existing Account", exact: true }).click();
+  // Task 2 (spec §5): a single business is auto-selected after confirmation, so
+  // the picker never renders and the app opens directly on that account.
   // Selecting an account must not force onboarding: an account with no store
   // is a valid app destination. Setup stays available on explicit navigation.
   await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Choose a business account" })).toHaveCount(0);
+  // The sidebar account switcher names itself with the account name (plus its logo alt text).
+  await expect(page.getByRole("button", { name: /^Existing Account/ }).first()).toBeVisible();
   await page.goto("/onboarding");
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();

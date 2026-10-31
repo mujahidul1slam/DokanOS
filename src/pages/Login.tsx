@@ -14,6 +14,7 @@ import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidge
 import { mapAuthError } from "@/lib/authErrors";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 import { invitationPath } from "@/lib/invitationPath";
+import { POST_LOGIN_STATE } from "@/lib/accounts/landing";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -47,7 +48,7 @@ const Login = () => {
       toast.error(mapAuthError(error));
       return;
     }
-    navigate(invitationPath("/accounts"));
+    navigate(invitationPath("/accounts"), { state: POST_LOGIN_STATE });
   };
 
   const handleMfaVerify = async (e: React.FormEvent) => {
@@ -56,7 +57,7 @@ const Login = () => {
     setMfaLoading(true);
     try {
       await challengeAndVerify(mfaFactorId, mfaCode);
-      navigate(invitationPath("/accounts"));
+      navigate(invitationPath("/accounts"), { state: POST_LOGIN_STATE });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "";
       toast.error(

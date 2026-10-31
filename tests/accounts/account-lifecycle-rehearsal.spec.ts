@@ -169,6 +169,14 @@ async function installHarness(page: Page, world: World) {
       await route.fulfill({ json: world.invitations });
       return;
     }
+    // 2435c1b moved the signup kill switch from an app_config row read to the
+    // is_signup_open() RPC (fail-closed UI) and the suite died silently with
+    // the call. Mock the CURRENT contract; keep the retired app_config shape
+    // green while both lines coexist.
+    if (url.pathname.endsWith("/rpc/is_signup_open")) {
+      await route.fulfill({ json: true });
+      return;
+    }
     if (url.pathname.endsWith("/app_config")) {
       await route.fulfill({ json: { value: true } });
       return;

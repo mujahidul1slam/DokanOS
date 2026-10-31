@@ -2455,28 +2455,45 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string
+          default_business_id: string | null
           full_name: string | null
           id: string
+          phone: string | null
+          profile_setup_completed_at: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string
+          default_business_id?: string | null
           full_name?: string | null
           id?: string
+          phone?: string | null
+          profile_setup_completed_at?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
+          default_business_id?: string | null
           full_name?: string | null
           id?: string
+          phone?: string | null
+          profile_setup_completed_at?: string | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_default_business_id_fkey"
+            columns: ["default_business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       purchase_orders: {
         Row: {

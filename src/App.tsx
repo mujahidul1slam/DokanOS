@@ -61,6 +61,7 @@ const Signup = lazy(() => import("./pages/Signup"));
 const CheckEmail = lazy(() => import("./pages/CheckEmail"));
 const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
 const AccountSelection = lazy(() => import("./pages/AccountSelection"));
+const ProfileSetup = lazy(() => import("./pages/ProfileSetup"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -125,6 +126,9 @@ const AppRoutes = () => {
     <Routes>
       <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
       <Route path="/accounts" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AccountSelection /></Suspense>} />
+      {/* Task 3: the one-time personal profile setup. Sits outside BusinessGuards so
+          a person with no business yet can still complete or skip it. */}
+      <Route path="/profile/setup" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><ProfileSetup /></Suspense>} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/signup" element={<Navigate to={invitationPath("/accounts")} replace />} />
       <Route path="/check-email" element={<Navigate to={invitationPath("/accounts")} replace />} />

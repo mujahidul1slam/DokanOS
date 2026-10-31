@@ -7,6 +7,23 @@ import { Loader2 } from "lucide-react";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 import { invitationPath } from "@/lib/invitationPath";
 import { initialAuthCallbackType } from "@/lib/authCallbackIntent";
+import { POST_LOGIN_STATE } from "@/lib/accounts/landing";
+import { profileSetupOwed } from "@/lib/accounts/profileSetup";
+
+/** True when the verified person still owes the one-time setup. A read failure is not owed. */
+const profileSetupIsOwed = async (userId: string): Promise<boolean> => {
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("profile_setup_completed_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return false;
+    return profileSetupOwed(data);
+  } catch {
+    return false;
+  }
+};
 
 /** Authentication callbacks never create business resources or accept invitations. */
 export default function AuthConfirm() {
@@ -38,7 +55,20 @@ export default function AuthConfirm() {
           return;
         }
         const recovery = params.get("type") === "recovery" || hash.get("type") === "recovery" || initialAuthCallbackType === "recovery";
-        navigate(invitationPath(recovery ? "/reset-password" : "/accounts", params), { replace: true });
+        if (recovery) {
+          navigate(invitationPath("/reset-password", params), { replace: true });
+          return;
+        }
+        // Task 3: the one-time profile setup comes after verification and before the
+        // business flow. A read failure never traps the person here: it falls through
+        // to the business flow as before.
+        const owed = await profileSetupIsOwed(session.user.id);
+        if (!active) return;
+        if (owed) {
+          navigate(invitationPath("/profile/setup", params), { replace: true });
+          return;
+        }
+        navigate(invitationPath("/accounts", params), { replace: true, state: POST_LOGIN_STATE });
       } catch (error) {
         if (active) setMessage(error instanceof Error ? error.message : "Could not verify your confirmation link.");
       }
