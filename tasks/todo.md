@@ -254,12 +254,16 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §5: rename role enum `owner/admin/member/viewer → Owner/Admin/Manager/Staff` (map owner→Owner, admin→Admin, member→Manager, viewer→Staff). Invitations carry the chosen role (picker in invite UI). Existing memberships mapped.
 
 **Acceptance criteria:**
-- [ ] Role ladder displays/behaves as Owner/Admin/Manager/Staff everywhere (members page, invites)
-- [ ] Invite dialog has role picker; accepted invite grants that role
-- [ ] Existing rows remapped by the enum rename migration
+- [x] Role ladder displays/behaves as Owner/Admin/Manager/Staff everywhere (members page, invites) — `roleLabel`/`ROLE_LADDER` in [rolePresentation.ts](../src/lib/accounts/rolePresentation.ts) drive the members-page badges, the invite picker, and the UserAccessDialog role select (Owner/Admin/Manager/Staff). Behavior is the renamed-but-identical ladder: stored values are lowercase `owner/admin/manager/staff` (member→manager, viewer→staff), semantics unchanged (managers write, staff read-only). The global `app_role` model (user_roles: admin/staff/viewer) is deliberately untouched
+- [x] Invite dialog has role picker; accepted invite grants that role — the picker rides `invite_business_member(p_business_id, p_email, p_role)` (new argument, default `manager`, validated against the 4 rungs) and `accept_business_invitation` grants `v_invitation.role` instead of the old hard-coded 'member'
+- [x] Existing rows remapped by the enum rename migration — `20261101090000_role_ladder_rename.sql`: rows remapped (member→manager, viewer→staff) in `user_business_access` + `business_invitations`, CHECK constraints and column defaults rebuilt on the new value set, 8 role-literal policies ALTERed, 7 functions rewritten (invite/set-role/transfer also gain their Task 12 behavior; `has_permission` excluded — its literals are the app_role vocabulary)
 
 **Verification:**
-- [ ] `npm run typecheck`, `npm test` pass; manual invite with each role works
+- [x] `npm run typecheck` (clean), `npm test` (394 passed, 3 skipped), eslint: 0 new problems (5 pre-existing `any` in UserAccessDialog, same as HEAD), `npm run build` + `npm run build:dev` (clean)
+- [x] `npm run test:rls` **ALL GREEN (22 files)** on a fresh DB — the whole chain (rename migration + renamed fixtures) replays cleanly; defaults/CHECK catch was found and fixed here
+- [x] `npm run test:browser` (system Chrome): **37/37 passed** — the invite test now drives the role picker (asserts the Owner/Admin/Manager/Staff options and the `p_role` payload)
+- [x] API end-to-end (local stack): owner invites with `p_role='staff'` → invitee accepts → membership granted **`staff`** (not the old hard-coded member); an `admin` invite row carries `role='admin'`; `p_role='superuser'` refused with `INVITATION_ROLE_INVALID`
+- [x] Shared-browser UI check (local stack): Members page shows the ladder badges (Owner / Staff), the invite form's role picker lists Owner/Admin/Manager/Staff with Manager preselected, and invitation rows carry role badges (Admin · Pending, Staff · Accepted); transfer/leave copy updated to the new rungs
 
 **Dependencies:** None (independent); touches `user_business_access`/`business_invitations`
 **Files likely touched:** `supabase/migrations/*.sql`, `src/pages/BusinessMembers.tsx`, `src/components/*invite*`, `src/lib/roles*.ts`
