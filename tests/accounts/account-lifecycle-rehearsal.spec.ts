@@ -39,7 +39,7 @@ const business = {
   onboarding_completed_at: null,
 };
 
-type Membership = { role: string; business_id: string; businesses: typeof business };
+type Membership = { role: string; business_id: string; businesses: typeof business; joined_via?: string };
 type Write = { path: string; method: string; body: unknown };
 
 type World = {
@@ -81,12 +81,18 @@ async function installHarness(page: Page, world: World) {
     }
     if (url.pathname.endsWith("/functions/v1/create-business")) {
       // The owner's own business creation is the only membership it grants.
-      world.memberships = [{ role: "owner", business_id: business.id, businesses: business }];
+      world.memberships = [{ role: "owner", business_id: business.id, businesses: business, joined_via: "created" }];
       await route.fulfill({ json: { business_id: business.id } });
       return;
     }
     if (url.pathname.endsWith("/user_business_access")) {
-      await route.fulfill({ json: [...world.memberships] });
+      if (url.searchParams.get("select") === "joined_via") {
+        const bid = url.searchParams.get("business_id")?.replace("eq.", "") ?? "";
+        const row = world.memberships.find((m) => m.business_id === bid);
+        await route.fulfill({ json: row ? { joined_via: row.joined_via ?? null } : null });
+      } else {
+        await route.fulfill({ json: [...world.memberships] });
+      }
       return;
     }
     if (url.pathname.endsWith("/rpc/get_user_permissions") || url.pathname.endsWith("/rpc/get_user_store_ids")) {
@@ -235,7 +241,7 @@ test("an owner rehearses signup -> verification -> business -> brand -> physical
   await page.getByRole("button", { name: "Create a business account", exact: true }).click();
   await page.getByLabel("Business Name", { exact: true }).fill(business.name);
   await page.getByRole("button", { name: "Create Business", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/onboarding$/);
   expect(state.memberships.map((row) => row.role)).toEqual(["owner"]);
   expect(state.writes.some((write) => /\/rest\/v1\/(brands|stores|storefronts)$/.test(write.path))).toBe(false);
 

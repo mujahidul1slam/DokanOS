@@ -31,7 +31,15 @@ async function api(page: Page, memberships: unknown[] = []) {
     // green while both lines coexist.
     if (url.pathname.endsWith("/rpc/is_signup_open")) data = true;
     if (url.pathname.endsWith("/app_config")) data = { value: true };
-    if (url.pathname.endsWith("/user_business_access")) data = memberships;
+    if (url.pathname.endsWith("/user_business_access")) {
+      if (url.searchParams.get("select") === "joined_via") {
+        const bid = url.searchParams.get("business_id")?.replace("eq.", "") ?? "";
+        const row = (memberships as Array<Record<string, unknown>>).find((m) => m.business_id === bid);
+        data = row ? { joined_via: row.joined_via ?? null } : null;
+      } else {
+        data = memberships;
+      }
+    }
     // Task 3: an established account has already completed or skipped the one-time
     // profile setup. Without this row the gate would treat the account as new.
     if (url.pathname.endsWith("/profiles")) {
@@ -156,14 +164,15 @@ test("explicitly creating another business switches setup to that business, not 
   await api(page, memberships);
   await signedIn(page);
   await page.route("**/functions/v1/create-business", async (route) => {
-    memberships.push({ role: "owner", business_id: created.id, businesses: created });
+    memberships.push({ role: "owner", business_id: created.id, businesses: created, joined_via: "created" });
     await route.fulfill({ json: { business_id: created.id } });
   });
   await page.goto("/accounts");
   await page.getByRole("button", { name: "Create a business account", exact: true }).click();
   await page.getByLabel("Business Name", { exact: true }).fill("New Account");
   await page.getByRole("button", { name: "Create Business", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await page.goto("/");
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("button", { name: /New Account/ })).toBeVisible();
@@ -175,7 +184,7 @@ test("a verified person creates their first empty business and becomes its owner
   const requests = await api(page, memberships);
   await signedIn(page);
   await page.route("**/functions/v1/create-business", async (route) => {
-    memberships.push({ role: "owner", business_id: created.id, businesses: created });
+    memberships.push({ role: "owner", business_id: created.id, businesses: created, joined_via: "created" });
     await route.fulfill({ json: { business_id: created.id } });
   });
 
@@ -184,7 +193,7 @@ test("a verified person creates their first empty business and becomes its owner
   await page.getByLabel("Business Name", { exact: true }).fill("First Account");
   await page.getByRole("button", { name: "Create Business", exact: true }).click();
 
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/onboarding$/);
   await expect.poll(() => page.evaluate(() => localStorage.getItem("dokanos-active-business-id"))).toBe(created.id);
   expect(requests.some((request) =>
     ["POST", "PATCH", "PUT", "DELETE"].includes(request.method)
@@ -194,6 +203,35 @@ test("a verified person creates their first empty business and becomes its owner
     ["POST", "PATCH", "PUT", "DELETE"].includes(request.method)
       && /\/rest\/v1\/(brands|brand_stores|stores|storefronts|selling_points)$/.test(request.path)
   )).toBe(false);
+});
+
+test("the onboarding wizard appears after creating a business and a step can be skipped", async ({ page }) => {
+  const created = { id: "11111111-0000-0000-0000-000000000004", name: "Wizard Account", slug: "wizard", is_active: true };
+  const memberships: unknown[] = [];
+  await api(page, memberships);
+  await signedIn(page);
+  await page.route("**/functions/v1/create-business", async (route) => {
+    memberships.push({ role: "owner", business_id: created.id, businesses: created, joined_via: "created" });
+    await route.fulfill({ json: { business_id: created.id } });
+  });
+
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: "Create a business account", exact: true }).click();
+  await page.getByLabel("Business Name", { exact: true }).fill("Wizard Account");
+  await page.getByRole("button", { name: "Create Business", exact: true }).click();
+
+  // Task 13: the wizard is the post-create landing for the creator.
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByRole("heading", { name: "Set up your business" })).toBeVisible();
+  await expect(page.getByLabel("Business name")).toBeVisible();
+
+  // Skip the first step — the wizard advances to the next unmarked step.
+  await page.getByRole("button", { name: "Skip for now" }).click();
+  await expect(page.getByLabel("Brand name")).toBeVisible();
+
+  // Exit setup leaves the wizard at any point.
+  await page.getByRole("button", { name: "Exit setup" }).click();
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test("switching revalidates a stale account membership before changing context", async ({ page }) => {
