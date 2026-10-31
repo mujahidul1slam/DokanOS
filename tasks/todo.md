@@ -228,12 +228,15 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §8: remove `/integrations` page and the legacy StoresHub tabs (Stores/Locations/Selling Points/Connectors/Product Sources/Customer Sources) now covered by Order Sources / Warehouses / Courier services / Payment accounts. Keep legacy tables untouched (contract is Task 16). Update tests.
 
 **Acceptance criteria:**
-- [ ] No integrations UI reachable; no StoresHub tabs referencing removed concepts
-- [ ] Navigation points at Order Sources, Warehouses, business-settings pages
-- [ ] Playwright account specs updated and passing
+- [x] No integrations UI reachable; no StoresHub tabs referencing removed concepts — `src/pages/Integrations.tsx`, `src/pages/StoresHub.tsx` and its detail components (`WooCommerceDetail`, `PathaoDetail`, `PathaoStoreLinks`) deleted; `/integrations` now redirects to Settings (couriers + payment accounts live there per spec §8) and `/stores` redirects to Order Sources (spec §8: "StoresHub dissolves → Order Sources + Warehouses"). `GlobalSyncIndicator` kept (still used by the dashboard layout). The legacy `integrations.*`/`stores.*` permission keys remain in the role-editor catalog on purpose: they feed `accountBaselinePermissions` (member operational baseline) and the DB enum — "keep legacy tables untouched (contract is Task 16)"
+- [x] Navigation points at Order Sources, Warehouses, business-settings pages — sidebar "Integrations" entry removed (Order Sources / Storefronts / Settings remain); the Dashboard "No stores" empty-state CTA and StoreHealthGrid "Manage stores" now point at Order Sources; the Brands page links reworded/repointed to Order Sources
+- [x] Playwright account specs updated and passing — `business-members` nav assertions match the post-retirement sidebar (also fixes drift from Task 6's "Stores"→"Order Sources" rename); `brand-stores` drives store creation on the Brands page with data-level brand→store scoping; `account-lifecycle-rehearsal` routes through the Brands page and (drift fixes for gates added since the spec was last green) fills the Task 1 confirm-password field and steps through Task 3's skippable profile setup
+- [x] Brand-store CRUD surfaced on the Brands page (StoresHub's own header comment named this destination): each brand card lists its stores inline (type badge + Published/Unpublished) with "Add store" per card
 
 **Verification:**
-- [ ] `npm run test:browser` (where env allows), `npm run typecheck`, `npm test` pass
+- [x] `npm run typecheck` (clean), `npm test` (394 passed, 3 skipped), eslint: 0 new problems (5 pre-existing in AppSidebar/usePermissions, same as HEAD), `npm run build` (clean)
+- [x] `npm run test:browser` (system Chrome): **37/37 passed** — including the previously "pre-existing" `account-lifecycle-rehearsal` pair, whose real causes were fixed: (a) the dev server died mid-run because chokidar EBUSY-crashed on transient workspace artifacts (hardened via `server.watch.ignored` in vite.config.ts — this also explains the older "stall at /signup" reports), and (b) the specs predated the Task 1 confirm-password field and Task 3's profile-setup gate
+- [x] Shared-browser UI check (2026-10-31, local stack, `task9.verify@example.com` → "Task 9 Courier Verify"): sidebar lists Dashboard…Order Sources/Storefronts/Team/Settings with **no Integrations entry**; `/integrations` redirects to `/settings`; `/stores` redirects to `/order-sources`; the Brands page card lists stores inline — created "Task 11 Outlet" (Physical badge) through the "New Store" dialog and it renders in the card; StoreHealthGrid's CTA now reads "Order sources"
 
 **Dependencies:** Tasks 6, 7, 9, 10
 **Files likely touched:** `src/pages/Integrations.tsx` (delete), `src/pages/StoresHub.tsx` (remove/replace), `src/App.tsx`, `tests/accounts/*.spec.ts`
