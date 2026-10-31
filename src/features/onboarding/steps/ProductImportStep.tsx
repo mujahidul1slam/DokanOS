@@ -16,7 +16,7 @@ import {
 } from "@/lib/productImport";
 import { downloadCsv } from "@/lib/exportCsv";
 import { kickSyncWorker } from "@/lib/wooNotes";
-import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { useStoresList } from "@/hooks/useStoresList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +38,9 @@ import { StepFooter } from "./StepFooter";
  */
 export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStepProps) {
   const navigate = useNavigate();
-  const { brandStores } = useBusinessContext();
+  // Operational `stores` rows (the Products page's space via useStoresList) —
+  // NOT brand_stores rows: products.store_id is a stores.id (RLS + FK).
+  const stores = useStoresList();
 
   const [wooSources, setWooSources] = useState<OrderSourceRow[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
@@ -73,12 +75,14 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
   }, [brandIds]);
 
   // Products attach to a store of the business (store-scoped catalog) — pick
-  // the first one by default, like the Products page's filter.
+  // the first one by default, like the Products page's filter. The target ids
+  // come from the operational stores list (useStoresList), the same id space
+  // products.store_id accepts — the Task 14 gap bound brand_stores ids here.
   useEffect(() => {
     setTargetStoreId((current) =>
-      brandStores.some((s) => s.id === current) ? current : (brandStores[0]?.id ?? ""),
+      stores.some((s) => s.id === current) ? current : (stores[0]?.id ?? ""),
     );
-  }, [brandStores]);
+  }, [stores]);
 
   const connectedWoo = wooSources.filter(
     (s) => orderSourceConnectionState(s) === "connected",
@@ -222,18 +226,18 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
             stock_quantity, description, image_url, barcode).
           </p>
         </div>
-        {brandStores.length === 0 ? (
+        {stores.length === 0 ? (
           <div className="rounded-md border border-dashed border-border px-3 py-2.5">
             <p className="text-xs text-muted-foreground">
-              Products live under a brand’s store.{" "}
+              CSV import needs a connected store as its target — the catalog is store-scoped.{" "}
               <button
                 type="button"
                 className="font-medium text-primary underline underline-offset-2"
-                onClick={() => navigate("/brands")}
+                onClick={() => navigate("/order-sources")}
               >
-                Add a store on the Brands page
+                Connect a WooCommerce store on Order Sources
               </button>{" "}
-              first, then import here.
+              to get one, then come back to import.
             </p>
           </div>
         ) : (
@@ -245,7 +249,7 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
                   <SelectValue placeholder="Select a store" />
                 </SelectTrigger>
                 <SelectContent>
-                  {brandStores.map((s) => (
+                  {stores.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.name}
                     </SelectItem>
