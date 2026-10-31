@@ -35,22 +35,24 @@ const THEME_ACCENTS: Record<string, string> = {
 /**
  * Publish the scaffolded Home page so "publish now" means the storefront is
  * actually visible (the anon runtime renders ONLY published snapshots; a
- * draft-only storefront shows the legacy layout). Best-effort, like scaffolding.
+ * draft-only storefront shows the legacy layout). Best-effort, like
+ * scaffolding — resolves true ONLY when the Home page was actually updated
+ * to published, so the caller's toast can tell the truth either way.
  */
-async function publishScaffoldedHome(storefrontId: string): Promise<void> {
+async function publishScaffoldedHome(storefrontId: string): Promise<boolean> {
   const { data: home } = await supabase
     .from("storefront_pages")
     .select("id")
     .eq("storefront_id", storefrontId)
     .eq("slug", "home")
     .maybeSingle();
-  if (!home) return;
+  if (!home) return false;
   const { data: sections } = await supabase
     .from("storefront_page_sections")
     .select("type, position, is_visible, props")
     .eq("page_id", (home as { id: string }).id)
     .order("position");
-  await supabase
+  const { error } = await supabase
     .from("storefront_pages")
     .update({
       status: "published",
@@ -58,6 +60,7 @@ async function publishScaffoldedHome(storefrontId: string): Promise<void> {
       published_snapshot: ((sections ?? []) as SectionSnapshot[]) as unknown as Json,
     })
     .eq("id", (home as { id: string }).id);
+  return !error;
 }
 
 export interface CreateStorefrontInput {
@@ -154,17 +157,32 @@ export async function createStorefrontFromForm(
   }
 
   const created = data as unknown as CreatedStorefront;
+  let pagesOk = true;
+  let published = false;
   try {
     await scaffoldStorefront(created.id, name, values.theme);
-    if (values.publishNow) await publishScaffoldedHome(created.id);
+    if (values.publishNow) published = await publishScaffoldedHome(created.id);
   } catch {
-    // Scaffolding/publishing is best-effort; pages can be finished in the admin.
+    // Scaffolding/publishing stays best-effort (pages can be finished in the
+    // admin) — but the toast must never claim pages were created or published
+    // when they were not.
+    pagesOk = false;
   }
-  toast({
-    title: "Storefront created",
-    description: values.publishNow
-      ? `Live at /storefront/${slug} — starter pages were published.`
-      : "Starter pages (Home, Contact) were created in draft.",
-  });
+  if (!pagesOk || (values.publishNow && !published)) {
+    toast({
+      title: "Storefront created — starter pages pending",
+      description: pagesOk
+        ? "The storefront exists, but Home is not published yet — publish it in the storefront admin."
+        : "The storefront exists, but the starter pages could not be created — add them in the storefront admin.",
+      variant: "destructive",
+    });
+  } else {
+    toast({
+      title: "Storefront created",
+      description: values.publishNow
+        ? `Live at /storefront/${slug} — starter pages were published.`
+        : "Starter pages (Home, Contact) were created in draft.",
+    });
+  }
   return created;
 }
