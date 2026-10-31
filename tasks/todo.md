@@ -144,12 +144,13 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §3: brand-level **Warehouses** settings (replaces Locations tab). Stock view per warehouse + stock-holding source (from `product_locations`). Simple transfers (from → to, items, qty) with stock moves. Per-source fulfillment preference + ship-from-store toggle.
 
 **Acceptance criteria:**
-- [ ] Warehouses CRUD at brand level; showrooms appear as stock holders (order sources with `is_stock_holding`)
-- [ ] Transfer creates `stock_transfers` row and moves `product_locations` quantities
-- [ ] Fulfillment preference + ship-from-store editable per order source
+- [x] Warehouses CRUD at brand level; showrooms appear as stock holders (order sources with `is_stock_holding`) — Settings → **Warehouses** tab (user-confirmed placement) with per-brand sections; warehouse dialog (name, default, address/city/zone/area/phone), edit + delete (confirmed; warns that stock rows cascade); stock holders = warehouses + `is_stock_holding` sources, shown in the on-hand table
+- [x] Transfer creates `stock_transfers` row and moves `product_locations` quantities — Transfer dialog (from → to holder, item lines with live "available at" hints, note); `applyStockTransfer` validates the from side first (clear "Not enough stock" errors), moves quantities, upserts the to side, and writes one ledger line per product/variation (duplicate lines merged); the existing `product_locations_stock_sync` trigger keeps `products.stock_quantity` aggregated
+- [x] Fulfillment preference + ship-from-store editable per order source — OrderSourceDialog "Fulfillment" panel: ship-from-store switch for every source, ordered "stock draw order" (checked holders, ↑/↓) persisted as the bare-id `fulfillment_preference` list (self excluded — own stock is the ship-from-store toggle), plus the `is_stock_holding` toggle for physical types only (spec §3)
 
 **Verification:**
-- [ ] `npm run typecheck`, `npm test` pass; manual transfer moves stock correctly
+- [x] `npm run typecheck` (clean), `npm test` (385 passed, 3 skipped — 380 baseline + 5 new `stockHolders.test.ts`), eslint clean on touched files, `npm run build` (clean)
+- [x] Manual in the running frontend (2026-10-31, local stack, `task6.verify@example.com`): created "Main Warehouse" (default) via the dialog; seeded 10 units at it; transferred 4 → "Main Showroom" — stock view moved to 6/4, "Recent transfers" shows the row with note/status, DB shows the `stock_transfers` ledger line and `products.stock_quantity` still 10 (aggregate intact). Over-quantity transfer blocked inline: "Not enough stock at Main Warehouse for Task 6 Test Product: have 6, need 99". Edited "Main Showroom": ship-from-store ON + draw order [Main Warehouse] saved (`ship_from_store=true`, `fulfillment_preference=[warehouse id]` verified in DB); digital source "Task 6 Woo Connection" correctly shows no Holds-stock toggle (`is_stock_holding=false`)
 
 **Dependencies:** Tasks 5, 6
 **Files likely touched:** new `src/pages/Warehouses.tsx` (or settings tab), `src/components/settings/*`, `src/lib/stock*.ts`, `src/App.tsx`
