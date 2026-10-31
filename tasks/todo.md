@@ -99,13 +99,13 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §3: `warehouses` table (brand_id, name, address/contact, is_default). Stock holders = warehouses + stock-holding order sources: `product_locations` gets `warehouse_id`/`stock_holder_order_source_id` (exactly one via CHECK) alongside existing `location_id` (kept until contract). `order_sources.fulfillment_preference` (ordered id list jsonb) + `ship_from_store` boolean. `stock_transfers` table (from/to stock holder, items, quantities, status).
 
 **Acceptance criteria:**
-- [ ] `warehouses` CRUD-able at brand level (schema + RLS)
-- [ ] `product_locations` rows can point at warehouse OR stock-holding order source (CHECK exactly one)
-- [ ] `order_sources` has `is_stock_holding`, `ship_from_store`, `fulfillment_preference`
-- [ ] `stock_transfers` table with RLS
+- [x] `warehouses` CRUD-able at brand level (schema + RLS) — brand-child RLS idiom, UQ(brand_id,name), address/contact fields, `is_default`
+- [x] `product_locations` rows can point at warehouse OR stock-holding order source (CHECK exactly one across legacy `location_id` + the two new holders); partial-unique siblings per holder kind; trigger rejects non-stock-holding sources
+- [x] `order_sources` has `is_stock_holding`, `ship_from_store`, `fulfillment_preference` (jsonb ordered holder-id list, array CHECK)
+- [x] `stock_transfers` table with RLS — one line per transfer (product, variation, quantity, status), endpoint CHECKs (exactly one from/to holder, distinct endpoints)
 
 **Verification:**
-- [ ] Migrations apply on fresh local DB; RLS tests pass; `npm run typecheck` passes
+- [x] Migration `20261031113000_warehouses_stock.sql` applies on fresh local DB; `npm run test:rls` **ALL GREEN (22 files)** incl. new `warehouses_test.sql` + `stock_transfers_test.sql` (holder CHECKs, toggle trigger, unique siblings, aggregate rollup 10+5=15 across holders, transfer endpoint CHECKs, brand-child RLS + survival); `npm run typecheck` clean after type regen; `npm test` 380 passed; `npm run build` clean
 
 **Dependencies:** Task 4
 **Files likely touched:** `supabase/migrations/*.sql` (new), `src/integrations/supabase/types.ts`, `supabase/tests/rls/*.sql`

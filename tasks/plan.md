@@ -41,7 +41,7 @@ Implement [DOMAIN-REVAMP-SPEC.md](../DOMAIN-REVAMP-SPEC.md) (grill-agreed 2026-1
 
 ### Phase 2 — Schema foundation (expand)
 - [x] Task 4: Unified `order_sources` + provenance columns + RLS/types *(M)* — migration `20261031090000`; legacy lookup renamed to `legacy_order_channels` (2 consumers patched); RLS battery 20/20 green
-- [ ] Task 5: Warehouses & stock model schema (stock holders, transfers) *(M)*
+- [x] Task 5: Warehouses & stock model schema (stock holders, transfers) *(M)* — migration `20261031113000`; exactly-one-holder CHECK on `product_locations`; RLS battery 22/22 green
 
 **Checkpoint B** — migrations apply cleanly on a fresh local DB; RLS tests pass.
 
