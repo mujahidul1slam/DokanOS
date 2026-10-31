@@ -208,12 +208,14 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §4: business-level **Payment accounts** (bKash/Nagad/Stripe/card credentials) + per-order-source accepted-method toggles (COD, bKash, card…). No separate integrations area.
 
 **Acceptance criteria:**
-- [ ] Payment accounts CRUD at business level
-- [ ] Each order source has accepted-methods toggles; order creation reflects them
-- [ ] Manual/cash always available for staff-entered orders
+- [x] Payment accounts CRUD at business level — Settings → **Payment accounts** tab (`PaymentAccountsTab` + `PaymentAccountDialog`): provider picker (bKash/Nagad/Stripe/Card with per-provider credential fields, write-only — blank on edit keeps the stored secret), UQ(business_id, name) surfaced inline, activate/deactivate; `payment_accounts` table + `payment_providers` registry in migration `20261031180000_payment_accounts.sql` (business membership RLS, mirrors courier_services). No legacy mapping needed — payments were free text on orders, there are no legacy payment integration tables
+- [x] Each order source has accepted-methods toggles; order creation reflects them — OrderSourceDialog gains a "Payments" panel (method checkboxes; default cod+cash); `order_sources.accepted_payment_methods` jsonb with a known-codes CHECK. AddOrderDialog gains a "Payment method" picker filtered to the selected source's accepted methods — verified: source with ["cod","cash","bkash"] shows exactly "Cash on delivery / Cash / manual / bKash", and a COD order writes `payment_method='cod'` (previously written only when paid > 0)
+- [x] Manual/cash always available for staff-entered orders — `staffPaymentOptions` always injects cash / manual regardless of the source's toggles (unit-tested)
 
 **Verification:**
-- [ ] `npm run typecheck`, `npm test` pass; manual: toggle methods per source, see them in order flow
+- [x] `npm run typecheck` (clean), `npm test` (394 passed, 3 skipped — 389 baseline + 5 new `paymentAccounts.test.ts`), eslint: 0 new problems (27 pre-existing `any` in AddOrderDialog, same as HEAD), `npm run build` + `npm run build:dev` (both clean)
+- [x] `npm run test:rls` **ALL GREEN (22 files)** incl. new `payment_accounts_test.sql` (member create/UQ/update, viewer read-only with row-count no-ops, outsider + cross-business denial, value-pinned survival; method-toggle default ["cod","cash"], unknown code rejected (check_violation), non-array rejected)
+- [x] Manual end-to-end in the running frontend (2026-10-31, local stack, `task9.verify@example.com` → "Task 9 Courier Verify"): created "Main bKash" (bKash, 4 credential fields) via the dialog → shows **Configured**; edit dialog keeps secrets write-only ("saved — leave blank to keep"; non-secret username echoes). Order Sources → New source "Phone Orders" (manual): **Payments** panel shows the 6 methods with cod+cash pre-checked; toggling bKash persisted `["cod","cash","bkash"]` (DB-verified). Add Order → store "Task 9 Woo Store" auto-binds source "Phone Orders · Manual"; the Payment method picker offers exactly the source's three methods (cash / manual never disappears); creating with "Cash on delivery" and 0 paid wrote order **#3000** with `payment_method='cod'`, `payment_status='unpaid'`, COD ৳50 (DB-verified)
 
 **Dependencies:** Tasks 4, 6
 **Files likely touched:** new `src/pages/PaymentAccounts.tsx` (or settings tab), `src/components/orders/AddOrderDialog.tsx`, `src/lib/payment*.ts`, `src/App.tsx`
