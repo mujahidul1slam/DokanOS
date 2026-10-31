@@ -28,11 +28,24 @@ describe("progressFromRows", () => {
     const progress = progressFromRows([
       { step_key: "business_profile", status: "completed" },
       { step_key: "first_brand", status: "skipped" },
-      { step_key: "warehouses", status: "completed" }, // Task 14 key in a newer build
+      { step_key: "some_future_step", status: "completed" }, // a newer build's key
       { step_key: "order_sources", status: "bogus" },
     ]);
     expect(progress).toEqual({ business_profile: "completed", first_brand: "skipped" });
     expect(stepMark(progress, "order_sources")).toBeUndefined();
+  });
+
+  it("recognizes the Task 14 steps (warehouses → product import → storefront)", () => {
+    const progress = progressFromRows([
+      { step_key: "warehouses", status: "completed" },
+      { step_key: "product_import", status: "skipped" },
+      { step_key: "storefront", status: "completed" },
+    ]);
+    expect(progress).toEqual({
+      warehouses: "completed",
+      product_import: "skipped",
+      storefront: "completed",
+    });
   });
 });
 
@@ -58,6 +71,21 @@ describe("resume (progress persisted per business → resumable after sign-out/i
     const progress = markStep({}, "business_profile", "completed");
     expect(nextUnfinishedKey(progress)).toBe("first_brand");
     expect(resumeIndex(progress)).toBe(stepIndexOf("first_brand"));
+  });
+
+  it("walks the Task 14 tail: resume lands on warehouses, then product import, then storefront", () => {
+    let progress: OnboardingProgress = {};
+    for (const key of ["business_profile", "first_brand", "order_sources"] as const) {
+      progress = markStep(progress, key, "completed");
+    }
+    expect(nextUnfinishedKey(progress)).toBe("warehouses");
+    progress = markStep(progress, "warehouses", "completed");
+    expect(nextUnfinishedKey(progress)).toBe("product_import");
+    progress = markStep(progress, "product_import", "skipped");
+    expect(nextUnfinishedKey(progress)).toBe("storefront");
+    progress = markStep(progress, "storefront", "skipped");
+    expect(isSetupComplete(progress)).toBe(true);
+    expect(resumeIndex(progress)).toBe(ONBOARDING_STEPS.length);
   });
 
   it("resumes past skipped steps and lands on the first truly open one", () => {

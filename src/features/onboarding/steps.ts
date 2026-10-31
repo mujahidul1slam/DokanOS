@@ -2,16 +2,22 @@
  * Task 13 (domain revamp, spec §6a): the business-creation onboarding wizard's
  * step vocabulary and persistent checklist state — pure logic, no I/O.
  *
- * The wizard runs the first slice of the spec §6a order
- * (business profile → first brand → order sources); Task 14 appends
- * warehouses → product import → storefront here. Progress is persisted per
+ * The wizard runs the spec §6a order (business profile → first brand → order
+ * sources → warehouses → product import → storefront; Task 14 appended the
+ * last three). Progress is persisted per
  * business in `business_onboarding_steps` (one row per business + step; a step
  * with no row is still open), which makes the wizard skippable at any step and
  * resumable after sign-out/in. Rows whose step_key this build does not know
  * are ignored — an older client never blocks on newer steps.
  */
 
-export type OnboardingStepKey = "business_profile" | "first_brand" | "order_sources";
+export type OnboardingStepKey =
+  | "business_profile"
+  | "first_brand"
+  | "order_sources"
+  | "warehouses"
+  | "product_import"
+  | "storefront";
 
 export interface OnboardingStepDef {
   key: OnboardingStepKey;
@@ -40,6 +46,24 @@ export const ONBOARDING_STEPS: readonly OnboardingStepDef[] = [
     title: "Order sources",
     label: "Order sources",
     description: "Choose where orders come from: channels and showrooms.",
+  },
+  {
+    key: "warehouses",
+    title: "Warehouses",
+    label: "Warehouses",
+    description: "Add the stock-only warehouses your brands ship from.",
+  },
+  {
+    key: "product_import",
+    title: "Product import",
+    label: "Product import",
+    description: "Bring products in from WooCommerce, a CSV file, or add them manually.",
+  },
+  {
+    key: "storefront",
+    title: "Storefront",
+    label: "Storefront",
+    description: "Launch a storefront — name, theme, payments, publish.",
   },
 ];
 

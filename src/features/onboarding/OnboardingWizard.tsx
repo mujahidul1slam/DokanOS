@@ -35,6 +35,9 @@ import type { OnboardingStepProps } from "./stepProps";
 import { BusinessProfileStep } from "./steps/BusinessProfileStep";
 import { FirstBrandStep } from "./steps/FirstBrandStep";
 import { OrderSourcesStep } from "./steps/OrderSourcesStep";
+import { WarehousesStep } from "./steps/WarehousesStep";
+import { ProductImportStep } from "./steps/ProductImportStep";
+import { StorefrontStep } from "./steps/StorefrontStep";
 
 /**
  * Task 13 (spec §6a): the business-creation onboarding wizard.
@@ -263,6 +266,9 @@ export default function OnboardingWizard() {
               {currentStep.key === "business_profile" && <BusinessProfileStep {...stepProps} />}
               {currentStep.key === "first_brand" && <FirstBrandStep {...stepProps} />}
               {currentStep.key === "order_sources" && <OrderSourcesStep {...stepProps} />}
+              {currentStep.key === "warehouses" && <WarehousesStep {...stepProps} />}
+              {currentStep.key === "product_import" && <ProductImportStep {...stepProps} />}
+              {currentStep.key === "storefront" && <StorefrontStep {...stepProps} />}
             </CardContent>
           </Card>
         )}

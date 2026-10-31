@@ -137,6 +137,25 @@ const ProductList = () => {
   const [selectedBulkCats, setSelectedBulkCats] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
+  // Deep link from the onboarding product-import step (spec §6a "manual"):
+  // /products?new=1 opens the add-product form once, then clears the param.
+  // window.location (not useSearchParams) keeps this list router-agnostic —
+  // the deep link always arrives from another route, so a mount-time read is
+  // enough.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") !== "1") return;
+    setEditProductId(null);
+    setSheetOpen(true);
+    params.delete("new");
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + (query ? `?${query}` : ""),
+    );
+  }, []);
+
   /**
    * The scope the reads below use: an explicit store filter narrows it to that
    * store, but only when the store belongs to the active business — a filter
