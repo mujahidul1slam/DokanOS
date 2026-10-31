@@ -19,7 +19,7 @@ const OrderSourcesTab = () => {
   const [, setLoading] = useState(true);
 
   const fetchSources = async () => {
-    const { data } = await supabase.from("order_sources").select("*").order("sort_order");
+    const { data } = await supabase.from("legacy_order_channels").select("*").order("sort_order");
     setSources((data || []) as Source[]);
     setLoading(false);
   };
@@ -30,31 +30,31 @@ const OrderSourcesTab = () => {
     const name = newName.trim().toLowerCase();
     if (!name) return;
     if (sources.some(s => s.name === name)) { toast.error("Source already exists"); return; }
-    const { error } = await supabase.from("order_sources").insert({ name, sort_order: sources.length + 1 });
+    const { error } = await supabase.from("legacy_order_channels").insert({ name, sort_order: sources.length + 1 });
     if (error) toast.error(error.message);
     else { toast.success("Source added"); setNewName(""); fetchSources(); }
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("order_sources").delete().eq("id", id);
+    const { error } = await supabase.from("legacy_order_channels").delete().eq("id", id);
     if (error) toast.error(error.message);
     else { toast.success("Source removed"); fetchSources(); }
   };
 
   const handleRename = async (id: string, name: string) => {
-    await supabase.from("order_sources").update({ name: name.toLowerCase() }).eq("id", id);
+    await supabase.from("legacy_order_channels").update({ name: name.toLowerCase() }).eq("id", id);
     fetchSources();
   };
 
   const handleSetDefault = async (id: string) => {
     // Clear all defaults, then set this one. Two updates needed.
     const { error: clearErr } = await supabase
-      .from("order_sources")
+      .from("legacy_order_channels")
       .update({ is_default: false })
       .neq("id", id);
     if (clearErr) { toast.error(clearErr.message); return; }
     const { error } = await supabase
-      .from("order_sources")
+      .from("legacy_order_channels")
       .update({ is_default: true })
       .eq("id", id);
     if (error) toast.error(error.message);

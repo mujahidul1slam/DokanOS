@@ -91,8 +91,10 @@ END;
 $$;
 
 -- products/anon: the storefront catalog column set must be readable, and the
--- cost_price carve-out must still hold (a table-level SELECT grant makes
--- has_column_privilege true for cost_price and fails here).
+-- internal-only carve-outs must still hold (a table-level SELECT grant makes
+-- has_column_privilege true for cost_price and fails here). Internal-only:
+-- cost_price (margin) and the provenance pair origin_order_source_id/origin_kind
+-- (Task 4 — "where did this come from" is a business question, not storefront).
 DO $$
 DECLARE
   v_column record;
@@ -104,7 +106,7 @@ BEGIN
     WHERE table_schema = 'public' AND table_name = 'products'
     ORDER BY ordinal_position
   LOOP
-    IF v_column.column_name = 'cost_price' THEN
+    IF v_column.column_name IN ('cost_price', 'origin_order_source_id', 'origin_kind') THEN
       CONTINUE;
     END IF;
     IF NOT has_column_privilege('anon', 'public.products', v_column.column_name, 'SELECT') THEN
@@ -117,6 +119,11 @@ BEGIN
   END IF;
   IF has_column_privilege('anon', 'public.products', 'cost_price', 'SELECT') THEN
     RAISE EXCEPTION 'FAIL: anon can read public.products.cost_price (20260620172022 carve-out lost)'
+      USING ERRCODE = 'P0001';
+  END IF;
+  IF has_column_privilege('anon', 'public.products', 'origin_order_source_id', 'SELECT')
+     OR has_column_privilege('anon', 'public.products', 'origin_kind', 'SELECT') THEN
+    RAISE EXCEPTION 'FAIL: anon can read public.products provenance columns (Task 4 carve-out lost)'
       USING ERRCODE = 'P0001';
   END IF;
 END;

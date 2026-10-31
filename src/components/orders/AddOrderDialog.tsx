@@ -294,7 +294,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       fetchAllRows((range) =>
         supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes").range(range.from, range.to),
       ),
-      supabase.from("order_sources").select("id, name, is_default").order("sort_order"),
+      supabase.from("legacy_order_channels").select("id, name, is_default").order("sort_order"),
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
