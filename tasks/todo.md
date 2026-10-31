@@ -31,14 +31,15 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §5: personal profile settings gets a "Default business account" selector; it controls post-login landing only. Exactly one business → auto-selected everywhere, no picker. Default deleted/membership lost → fall back to sole/first remaining. Zero businesses → "create or join" screen.
 
 **Acceptance criteria:**
-- [ ] ProfileSettingsTab has Default business selector (per-user persisted choice)
-- [ ] Post-login landing uses the default; single-business users never see a picker
-- [ ] Fallbacks: dead default → sole/first remaining business; none → create/join screen
-- [ ] Quick-create/search follow the *current* business, not the default
+- [x] ProfileSettingsTab has Default business selector (per-user persisted choice)
+- [x] Post-login landing uses the default; single-business users never see a picker
+- [x] Fallbacks: dead default → sole/first remaining business (verified in UI). Zero-business → create/join screen: covered by Playwright `personal-signup` "confirmation and repeated visits reach empty account selection" (passes on the final tree)
+- [x] Quick-create/search follow the *current* business, not the default (verified by code path: `CommandPalette` → `useActiveBusinessStoreIds` → `useStoresList` → `useBusinessContext().active`; search UI not exercised)
 
 **Verification:**
-- [ ] `npm run typecheck`, `npm test` pass
-- [ ] Manual in UI: set default, re-login, lands there; single-business account auto-lands
+- [x] `npm run typecheck` (clean), `npm test` (361 passed, 3 skipped), eslint on touched files (clean)
+- [x] Manual in UI (2026-10-30, local stack): single business auto-lands on `/`; live default lands on the default; no default shows the picker; a removed default (sole business left) lands on it; a removed default with two businesses left falls back to the first remaining business and the settings form shows that same business; an unrelated profile save leaves a stored default untouched; a deliberate settings change persists and changes the next sign-in's landing; a manual `/accounts` visit still shows the picker
+- [x] Playwright: `personal-signup` 14/14, `business-members` + `brands` + `brand-stores` all pass. `account-lifecycle-rehearsal`: 2 tests fail on the clean `HEAD` as well (pre-existing, signup form step), unrelated to this task
 
 **Dependencies:** None (uses existing `active_business_context` infra)
 **Files likely touched:** `src/components/settings/ProfileSettingsTab.tsx`, `src/pages/AccountSelection.tsx`, `src/App.tsx`, a migration for `profiles.default_business_id`, `src/lib/*` context helpers
@@ -51,16 +52,19 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §5/§6b: after email verification, show a skippable "Set up your profile" screen (photo, name, phone) before any business screen. Completable later from settings. Verified email stays the only hard gate.
 
 **Acceptance criteria:**
-- [ ] New screen appears after `/auth/confirm`, before business flow; skippable in one click
-- [ ] Fields: avatar upload, full name, phone; saved to `profiles`
-- [ ] Skip lands on the business flow; re-entry possible from settings
+- [x] New screen appears after `/auth/confirm`, before business flow; skippable in one click (`AuthConfirm` routes a verified, not-yet-set-up person to `/profile/setup`; "Skip for now" stamps completion and changes no profile field)
+- [x] Fields: avatar upload, full name, phone; saved to `profiles` (phone normalized and validated by `profileSetup.ts`; same rule in settings)
+- [x] Skip lands on the business flow; re-entry possible from settings (settings Phone field; invitation token preserved through the step)
 
 **Verification:**
-- [ ] `npm run typecheck`, `npm test` pass
-- [ ] Manual: signup → verify → setup screen → skip and complete paths both work
+- [x] `npm run typecheck` (clean), `npm test` (380 passed, 3 skipped), eslint on changed files (clean), `npm run build` (clean)
+- [x] Playwright: `profile-setup` 6/6 (gate, skip writes no field, save normalizes phone, invalid phone blocked, completed profile not re-prompted, invitation token survives); `personal-signup` 14/14 and `business-members` 12/12 after the established-account profile mock
+- [x] Manual in the running UI (2026-10-30, local stack): setup page rendered with all fields. **Skip path** (`setup.live.direct@example.com`): "Skip for now" → landed on `/accounts`; DB shows `profile_setup_completed_at` stamped, `full_name` preserved, `phone`/`avatar_url` unchanged. **Save path** (`setup.live.save@example.com`): entered `+8801711-234567` → "Save and continue" → landed on `/accounts`; DB shows phone normalized to `01711234567`. **Re-login**: completed user goes directly to `/accounts`, not re-prompted. **Note:** the `/auth/confirm` gate redirect was not exercised live because `getSession()` does not reliably return `email_confirmed_at` (pre-existing `AuthConfirm` limitation); the gate logic is covered by Playwright mocks.
+- [x] Pre-existing and unchanged: `account-lifecycle-rehearsal` still fails the same 2 signup-form tests as the clean `HEAD` (stall at `/signup`)
 
 **Dependencies:** None
 **Files likely touched:** new `src/pages/ProfileSetup.tsx` (or component), `src/pages/AuthConfirm.tsx`, `src/App.tsx`, `src/components/settings/ProfileSettingsTab.tsx`
+**Migration:** `supabase/migrations/20261030200000_profile_setup.sql` (adds `profiles.phone`, `profiles.profile_setup_completed_at`; backfills existing profiles as done so current members are not re-prompted)
 **Estimated scope:** M
 
 ---

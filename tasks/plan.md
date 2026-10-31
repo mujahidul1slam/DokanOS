@@ -17,19 +17,25 @@ Implement [DOMAIN-REVAMP-SPEC.md](../DOMAIN-REVAMP-SPEC.md) (grill-agreed 2026-1
 - **Default business** controls post-login landing only; quick-create/search follow the *current* business; notifications merged across businesses, grouped (spec §5).
 - **No feature flags** — the app is pre-launch except one tenant; new pages replace old ones per slice, legacy pages stay until the contract phase.
 
-## Session handoff (2026-10-30, end of session)
+## Session handoff (2026-10-30, after Task 3)
 
-- **Next: Task 2** (default business selection + auto-select + fallback). Task 1 is fully done and verified.
-- Already running: Vite dev server on `http://localhost:8080/` (targets the local stack), Docker + local Supabase (`127.0.0.1:54321`, ledger head `20261030090000`, local `signup_open=true`). If ports are dead after a reboot: Docker Desktop → `supabase start` → `docker start supabase_edge_runtime_jiwndicvfkiltgageqwv` → `npm run dev`.
-- **User-gated, not executed:** the production catch-up batch (16 pending migrations + repair) in [audit/production-migration-plan.md](audit/production-migration-plan.md). Production signup is fail-closed until it runs.
-- Verify changed behavior in the running frontend (`dsh_browser_*`) per AGENTS.md; Playwright via `PLAYWRIGHT_CHANNEL=chrome npm run test:browser -- <spec>`.
+- **Done: Task 1, Task 2, and Task 3.** All three are verified; see [todo.md](todo.md).
+- **Task 3 verified live (2026-10-30):** Setup page rendered, skip path stamped completion without overwriting fields, save path normalized phone `+8801711-234567` → `01711234567`, re-login skipped the prompt. The `/auth/confirm` gate redirect was not exercised live due to a pre-existing `getSession()` limitation with `email_confirmed_at`; gate logic is covered by Playwright.
+- **Next: Task 4** (unified `order_sources` + provenance + RLS/types). Start from `tasks/todo.md`, not from memory.
+- **Task 2 changes:** migration `20261030180000_profiles_default_business.sql` adds `profiles.default_business_id` (nullable, `ON DELETE SET NULL`, no policy change). The pure landing decision lives in `src/lib/accounts/landing.ts` (`resolveLanding`, unit-tested). Post-login hops (`Login`, `AuthConfirm`, `ResetPassword`) pass `POST_LOGIN_STATE`; `AccountSelection` auto-lands only on that arrival, so a deliberate `/accounts` visit still shows the picker. `ProfileSettingsTab` owns the selector (2+ businesses only). Quick-create and search are unchanged and follow the current business.
+- **Landing rule:** no default ever set + two or more businesses → picker (user-confirmed). A saved default that is still a membership → lands there. A saved default that was removed (membership lost or business deleted) → silently lands on the first remaining business (spec §5). The settings form shows the same business landing would open (`shownDefaultBusinessId`), so the two never disagree. An unrelated profile save never rewrites a stored default (`defaultToPersist`).
+- **Local stack:** Docker + Supabase at `127.0.0.1:54321`, ledger head `20261030180000`. Dev server on `http://127.0.0.1:8080` (use the IP, not `localhost`; the browser could not reach `localhost:8080`). Seeded local fixtures are the `landing.*@example.com` accounts with password `LandingTest-2026!`; they are local-only test data.
+- **Pre-existing, not caused by Task 2:** `account-lifecycle-rehearsal.spec.ts` has 2 failing tests (the signup form does not advance to `/check-email`). Reproduced on a clean `HEAD` worktree, so it predates this work. Also pre-existing: `ProfileSettingsTab.tsx` MFA handlers use `catch (err: any)` and one hook-deps warning (ESLint errors in code Task 2 did not touch).
+- **Dev-server caveat:** a Playwright run can race Vite's watcher on `tests/accounts/*.tmpdir` and crash the dev server with `EBUSY`. Restart `npm run dev -- --port 8080 --strictPort --host 127.0.0.1` if it dies.
+- **User-gated, not executed:** the production catch-up batch (16 pending migrations + repair) in [audit/production-migration-plan.md](audit/production-migration-plan.md). Production signup is fail-closed until it runs. The new `default_business_id` migration is **not** in that batch; it must be added before production deploy.
+- Verify changed behavior in the running frontend (`dsh_browser_*`) per AGENTS.md; Playwright via `PLAYWRIGHT_CHANNEL=chrome npx playwright test --config playwright.accounts.config.ts <spec>`.
 
 ## Task List (ordered index; full cards in [todo.md](todo.md))
 
 ### Phase 1 — Personal account surfaces (independent of the revamp)
 - [x] Task 1: Confirm-password on signup *(XS)* — committed `6dac1fc`; typecheck/vitest/eslint/build/Playwright (14/14, system Chrome) green
-- [ ] Task 2: Default business selection + auto-select + fallback *(M)*
-- [ ] Task 3: Post-verification personal profile setup screen *(M)*
+- [x] Task 2: Default business selection + auto-select + fallback *(M)* — migration `20261030180000`; landing resolver unit-tested; verified in UI, DB, and Playwright
+- [x] Task 3: Post-verification personal profile setup screen *(M)* — migration `20261030200000`; live skip/save/re-login verified in running UI
 
 **Checkpoint A** — tests/typecheck/build green; UI verified in running frontend; review with human.
 

@@ -9,8 +9,8 @@ Target: Supabase project `jiwndicvfkiltgageqwv` — the real database, tenant **
 
 ## Where production stands
 
-- Ledger head `20261014120000` (162 of 178 repo migrations applied) → **16 pending**,
-  `20261019120000` … `20261026150000`, plus the new repair = **17 files to apply**.
+- Ledger head `20261014120000` (162 of 178 repo migrations applied at audit time) →
+  the 16 pending, the drift repair, and the two Phase-1 migrations = **19 files to apply**.
 - **Signup on production is currently broken**: `is_signup_open()` does not exist there
   (verified `PGRST202`), and the frontend since commit `2435c1b` calls exactly that RPC and
   fails closed ("Unable to check sign-up availability"). Migration #10 below fixes it.
@@ -36,6 +36,8 @@ Target: Supabase project `jiwndicvfkiltgageqwv` — the real database, tenant **
 | 15 | 20261026140000_explicit_api_table_grants | deliberate grant rebalance (−459/+19 table grants) | **attention** |
 | 16 | 20261026150000_fix_anon_public_surface | revokes anon's direct table surface | **attention** |
 | 17 | 20261030090000_repair_audit_drift *(new)* | `orders.payment_meta` + `webhook_events` convergence | low |
+| 18 | 20261030180000_profiles_default_business *(new, Task 2)* | `profiles.default_business_id` + index | low |
+| 19 | 20261030200000_profile_setup *(new, Task 3)* | `profiles.phone`, `profiles.profile_setup_completed_at` + backfill | low |
 
 ## Safety analysis
 
@@ -52,6 +54,9 @@ Target: Supabase project `jiwndicvfkiltgageqwv` — the real database, tenant **
     rows, audited 2026-10-30) vs NOT NULL in the chain — the live table predates the
     migration that defines it and the `IF NOT EXISTS` repair no-op'd. **Converged by #17**
     (guarded backfill + SET DEFAULT + SET NOT NULL).
+- **#19 has one deliberate top-level data write**: it stamps `profile_setup_completed_at`
+  on every existing profile so nobody is pushed through the new setup step; only accounts
+  created afterwards owe it. This is the only non-DDL statement in the batch.
   - Nothing else: no production-only tables; all remaining diff sides come from the batch itself.
 
 ## Apply-order warning (frontend)
@@ -75,7 +80,7 @@ Target: Supabase project `jiwndicvfkiltgageqwv` — the real database, tenant **
 ## Apply
 
 - `supabase db push` from this repo (applies pending in order, each file transactional),
-  or the dashboard SQL editor running the 17 files in filename order.
+  or the dashboard SQL editor running the 19 files in filename order.
 - Expected duration: seconds. Largest touched table is `webhook_events` (885 rows).
 
 ## Post-checks
