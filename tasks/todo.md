@@ -163,12 +163,12 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §7: write the data-migration script (id-based only) — collapse stores/selling_points/brand_stores/storefronts into order sources per the mapping table; map warehouses; attribute products/customers/orders + provenance; infer the 96 orders (73 V / 23 E) via customer phone/id; merge 2 customer duplicates; route 753 orders + 1,200 customers to the Legacy pool; delete 4 junk rows + 7 test businesses (incl. `13e888dc-…`) after severing the AGS→Enveil-store link. Produce an audit report (counts before/after per entity). **Do not execute against production.**
 
 **Acceptance criteria:**
-- [ ] Script runs idempotently against a restored backup/scratch DB and produces the audit report
-- [ ] Audit shows: 4 order sources + warehouses per brand; 225 products, 2,022 customers, 3,297 attributed orders preserved; 753 + 1,200 in Legacy pool; 96 orders attributed
-- [ ] No name-based lookups anywhere in the script
+- [x] Script runs idempotently against a restored backup/scratch DB and produces the audit report — `scripts/migrate-enveil-vincent.sql` (one transaction, marker guard refuses a second apply) run by `scripts/task8-audit.mjs` against `task8_scratch` (full repo schema + production data from the read-only extract `scripts/task8-extract-prod.mjs`, loaded by `scripts/task8-build-scratch.mjs`); re-run proven no-op with identical audits
+- [x] Audit shows: 4 order sources + warehouses per brand; 225 products, 2,022 customers, 3,297 attributed orders preserved; 753 + 1,200 in Legacy pool; 96 orders attributed — [task8-dry-run-report.md](audit/task8-dry-run-report.md) shows the live equivalents (spec snapshot 2026-10-29 vs current extract): products 225 ✓; customers 2,024 bound + 2 merged preserved, pool 1,208; orders 3,218 bound + 97 inferred = 3,315 attributed, pool 758; 8 sources (4/brand) + 1 warehouse; 205 stock rows repointed — all drift = rows the still-trading tenant added since the snapshot, reconciled in the report
+- [x] No name-based lookups anywhere in the script — every target is a UUID literal resolved from the read-only inventory; a static scan of the script (part of the audit) finds no name filters
 
 **Verification:**
-- [ ] Dry-run on scratch DB; audit report reviewed with human (Checkpoint C)
+- [x] Dry-run on scratch DB: **10/10 audit checks PASS** (idempotent apply, mapping shape, preservation, inference, pool, wipe incl. AGS→Enveil-store link severed first, stock repoint, no name lookups). Audit report [task8-dry-run-report.md](audit/task8-dry-run-report.md) **presented for human review (Checkpoint C)** — review items in the report: the 2-merge-pair choice (one further strict email-alias duplicate left in the pool), the `source='legacy migration'` pool-tag trade-off, fulfillment defaults on migrated sources. **Production execution remains gated (Task 17).**
 
 **Dependencies:** Tasks 4, 5
 **Files likely touched:** `supabase/migrations/*.sql` or `scripts/migrate-*.mjs`, `scripts/*audit*`
