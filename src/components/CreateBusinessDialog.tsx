@@ -69,8 +69,10 @@ export function CreateBusinessDialog({ open, onOpenChange }: CreateBusinessDialo
       if (!await setActive(data.business_id)) {
         throw new Error("The new business account membership could not be verified.");
       }
-      // A new business account is usable immediately; setup stays explicit.
-      navigate("/");
+      // Task 13 (spec §6a): business creation launches that business's
+      // onboarding wizard. The wizard is skippable with one click at any step
+      // and never blocks the app — the business is usable immediately.
+      navigate("/onboarding");
     } catch (err: unknown) {
       setLoading(false);
       turnstileRef.current?.reset();

@@ -321,6 +321,38 @@ export type Database = {
           },
         ]
       }
+      business_onboarding_steps: {
+        Row: {
+          business_id: string
+          created_at: string
+          status: string
+          step_key: string
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          status: string
+          step_key: string
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          status?: string
+          step_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "business_onboarding_steps_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       businesses: {
         Row: {
           address: string | null
@@ -658,7 +690,7 @@ export type Database = {
             referencedColumns: ["code"]
           },
         ]
-      },
+      }
       courier_shipments: {
         Row: {
           cancelled_at: string | null
@@ -3670,6 +3702,7 @@ export type Database = {
           business_id: string
           created_at: string
           id: string
+          joined_via: string
           role: string
           user_id: string
         }
@@ -3677,6 +3710,7 @@ export type Database = {
           business_id: string
           created_at?: string
           id?: string
+          joined_via?: string
           role?: string
           user_id: string
         }
@@ -3684,6 +3718,7 @@ export type Database = {
           business_id?: string
           created_at?: string
           id?: string
+          joined_via?: string
           role?: string
           user_id?: string
         }

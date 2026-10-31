@@ -61,6 +61,7 @@ const CheckEmail = lazy(() => import("./pages/CheckEmail"));
 const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
 const AccountSelection = lazy(() => import("./pages/AccountSelection"));
 const ProfileSetup = lazy(() => import("./pages/ProfileSetup"));
+const OnboardingWizard = lazy(() => import("./features/onboarding/OnboardingWizard"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -131,8 +132,10 @@ const AppRoutes = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/signup" element={<Navigate to={invitationPath("/accounts")} replace />} />
       <Route path="/check-email" element={<Navigate to={invitationPath("/accounts")} replace />} />
-      {/* Retired legacy combined setup route. Use independent Brands and Stores surfaces. */}
-      <Route path="/onboarding" element={<Navigate to="/" replace />} />
+      {/* Task 13: the skippable/resumable business-creation onboarding (spec
+          §6a). Full-screen like ProfileSetup, outside BusinessGuards; the
+          wizard itself redirects non-creating (invited) members away (§6b). */}
+      <Route path="/onboarding" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><OnboardingWizard /></Suspense>} />
       {/* Preview routes — FULL-BLEED, chrome-free (fix B): the preview iframe
           renders the storefront page alone, NOT the admin app. Must sit
           outside DashboardLayout so no sidebar/palette wraps the preview. */}
