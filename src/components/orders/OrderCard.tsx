@@ -30,6 +30,7 @@ interface OrderCardProps {
     pickup_slip_printed_at?: string | null;
     measurement_slip_printed_at?: string | null;
     stores: { name: string } | null;
+    order_source?: { name: string; type: string } | null;
     productItems: { name: string; qty: number }[];
   };
   selected: boolean;
@@ -76,7 +77,7 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
           )}
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <SourceBadge source={order.source} storeName={order.stores?.name} />
+            <SourceBadge source={order.source} storeName={order.stores?.name} orderSource={order.order_source} />
             <FulfillmentBadge status={order.status} />
             <DeliveryBadge type={order.fulfillment_type} />
             <PaymentBadge status={order.payment_status} />

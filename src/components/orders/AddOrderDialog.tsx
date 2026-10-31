@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Fuse from "fuse.js";
 import { Plus, Minus, Trash2, Loader2, Ruler, ChevronDown, ChevronUp, Sparkles, ImageIcon, Search, Package, ShoppingCart, Tag, User } from "lucide-react";
 
@@ -9,6 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { parseVariationAttributes as parseVariationAttributesShared, getProductVariations } from "@/lib/variations";
 import { fetchAllRows } from "@/lib/supabasePage";
 import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { orderSourceLabel, pickWalkInSource, type OrderSourceRow } from "@/lib/orderSources";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
@@ -238,8 +240,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [fulfillment, setFulfillment] = useState<"walkin" | "pickup" | "delivery">("delivery");
-  const [source, setSource] = useState("phone");
-  const [sources, setSources] = useState<{ id: string; name: string; is_default?: boolean }[]>([]);
+  const { brands } = useBusinessContext();
+  const [orderSources, setOrderSources] = useState<OrderSourceRow[]>([]);
+  const [orderSourceId, setOrderSourceId] = useState("");
+  // True once the operator picks a source by hand; auto-selection (walk-ins →
+  // the showroom source, otherwise the brand's first source) backs off after.
+  const sourceTouchedRef = useRef(false);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [storeId, setStoreId] = useState<string>(localStorage.getItem("last_selected_store_id") || "");
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
@@ -294,7 +300,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       fetchAllRows((range) =>
         supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes").range(range.from, range.to),
       ),
-      supabase.from("legacy_order_channels").select("id, name, is_default").order("sort_order"),
+      supabase.from("order_sources").select("id, brand_id, name, type, is_stock_holding").in("brand_id", brands.map((b) => b.id)),
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
@@ -308,10 +314,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       // Filter wholesale-loaded variations to only those belonging to scoped products
       const scopedProductIds = new Set(loadedProducts.map((p: any) => p.id));
       setVariations((vRes as VariationRow[]).filter((v) => scopedProductIds.has(v.product_id)));
-      const srcs = (sRes.data || []) as any[];
-      setSources(srcs);
-      const def = srcs.find((s) => s.is_default);
-      if (def) setSource(def.name);
+      const srcs = (sRes.data || []) as OrderSourceRow[];
+      setOrderSources(srcs);
       setCities((cRes.data || []) as any[]);
       setAllZones((zRes.data || []) as any[]);
       setAllAreas((aRes.data || []) as any[]);
@@ -336,7 +340,33 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       toast.error(err?.message || "Failed to load product catalog");
     });
 
-  }, [open, businessStoreIds]);
+  }, [open, businessStoreIds, brands]);
+
+  // The order's brand follows its store (legacy link); the source picker lists
+  // that brand's order sources. Walk-ins attach to the showroom source itself
+  // (spec §2) until the operator picks a source by hand.
+  const activeStoreId = storeId && businessStoreIds.includes(storeId) ? storeId : null;
+  const activeBrandId = activeStoreId
+    ? brands.find((b) => b.woo_store_id === activeStoreId)?.id ?? null
+    : null;
+  const brandSources = useMemo(
+    () => orderSources.filter((s) => s.brand_id === activeBrandId),
+    [orderSources, activeBrandId],
+  );
+
+  useEffect(() => {
+    if (sourceTouchedRef.current) {
+      // A store/brand switch invalidates a pick made for the old brand.
+      if (orderSourceId && !brandSources.some((s) => s.id === orderSourceId)) {
+        sourceTouchedRef.current = false;
+        setOrderSourceId("");
+      }
+      return;
+    }
+    const walkIn = fulfillment === "walkin" ? pickWalkInSource(brandSources) : null;
+    const next = walkIn?.id ?? brandSources[0]?.id ?? "";
+    setOrderSourceId((prev) => (prev === next ? prev : next));
+  }, [brandSources, fulfillment, orderSourceId]);
 
   // When a new product is added to the cart, lazy-load its measurement groups.
   useEffect(() => {
@@ -662,8 +692,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const resetForm = () => {
     setItems([]); setCustomerName(""); setCustomerPhone(""); setCustomerAddress("");
     setFulfillment("delivery");
-    const def = sources.find((s) => (s as any).is_default);
-    setSource(def ? def.name : "phone");
+    sourceTouchedRef.current = false;
+    setOrderSourceId("");
     setShippingCost(0); setShippingTouched(false);
     setDiscount(0);
     setPaidAmount(0);
@@ -807,6 +837,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     const orderStoreId = storeId && businessStoreIds.includes(storeId) ? storeId : null;
     if (!orderStoreId) { toast.error("Select a store belonging to the active business"); return; }
     if (items.length === 0) { toast.error("Add at least one product"); return; }
+    const selectedSource = brandSources.find((s) => s.id === orderSourceId) ?? null;
+    const sourceName = selectedSource?.name ?? "manual";
     setSaving(true);
     try {
         let customerId: string | null = null;
@@ -834,7 +866,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
               city: cities.find(c => c.city_id === selectedCity)?.city_name || null,
               zone: zones.find(z => z.zone_id === selectedZone)?.zone_name || null,
               area: areas.find(a => a.area_id === selectedArea)?.area_name || null,
-              source,
+              source: sourceName,
+              origin_order_source_id: selectedSource?.id ?? null,
+              origin_kind: "manual",
               store_id: orderStoreId,
             }).select("id").single();
             customerId = newC?.id || null;
@@ -849,7 +883,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
         const { data: order, error } = await supabase.from("orders").insert({
           order_number: orderNumber,
-          source,
+          order_source_id: selectedSource?.id ?? null,
           status: "processing",
           payment_status: paymentStatus,
           payment_method: paidAmount > 0 ? paymentMethod : null,
@@ -918,12 +952,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       await addOrderTimeline({
         order_id: order.id,
         event: "created",
-        description: `Order placed manually (${source})`,
-        metadata: { order_number: orderNumber, source },
+        description: `Order placed manually (${sourceName})`,
+        metadata: { order_number: orderNumber, source: sourceName, order_source_id: selectedSource?.id ?? null },
       });
 
       await logAction("create", "order", order.id, {
-        order_number: orderNumber, source,
+        order_number: orderNumber, source: sourceName,
       });
 
       toast.success(`Order ${orderNumber} created`);
@@ -1199,7 +1233,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Fulfillment</Label>
               <Select value={fulfillment} onValueChange={(v: any) => setFulfillment(v)}>
@@ -1225,6 +1259,29 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 </Select>
               </div>
             )}
+            <div className="space-y-1">
+              <Label className="text-xs">Order source</Label>
+              <Select
+                value={orderSourceId}
+                onValueChange={(v) => { sourceTouchedRef.current = true; setOrderSourceId(v); }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder={brandSources.length > 0 ? "Select source" : "No sources yet"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {brandSources.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name} · {orderSourceLabel(s.type)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {brandSources.length === 0 && (
+                <p className="text-[10px] text-muted-foreground">
+                  No order sources for this brand yet — add one on the Order Sources page.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-2">

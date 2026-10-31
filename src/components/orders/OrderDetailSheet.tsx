@@ -82,6 +82,7 @@ interface OrderDetail {
   storefront_id?: string | null;
   stock_restored_at?: string | null;
   stores: { url: string | null; name?: string | null } | null;
+  order_source?: { name: string; type: string } | null;
 }
 
 interface LineItem {
@@ -342,7 +343,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const orderRes = await scopeStoreIds(
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, stores(url, name)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, stores(url, name), order_source:order_sources(name, type)")
         .eq("id", orderId),
       businessStoreIds,
     ).single();
@@ -1181,7 +1182,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 #{order?.order_number || "..."}
               </SheetTitle>
               {order && <FulfillmentBadge status={order.status} />}
-              {order && <SourceBadge source={order.source} storeName={order.stores?.name} />}
+              {order && <SourceBadge source={order.source} storeName={order.stores?.name} orderSource={order.order_source} />}
             </div>
             {order?.woo_order_id && order.stores?.url && (
               <Button

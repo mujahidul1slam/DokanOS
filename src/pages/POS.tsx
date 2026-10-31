@@ -32,6 +32,8 @@ import {
   hasStoreScope,
 } from "@/hooks/useActiveBusinessStoreIds";
 import { useStoresListState } from "@/hooks/useStoresList";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { pickWalkInSource } from "@/lib/orderSources";
 
 const normalizeBdPhone = (raw?: string | null) => {
   if (!raw) return null;
@@ -61,6 +63,7 @@ const createEmptyCart = (label: string): Cart => ({
 const POS = () => {
   const { symbol } = useCurrency();
   const { user } = useAuth();
+  const { brands } = useBusinessContext();
   const { toast } = useToast();
 
   // Tenant scope (issue #16): fail closed — empty scope means no reads/writes.
@@ -439,6 +442,19 @@ const POS = () => {
       return "";
     }
 
+    // POS sales attach to the showroom source itself (spec §2). The legacy
+    // `source: "pos"` tag keeps POS reports working until the contract phase.
+    const posBrandId = brands.find((b) => b.woo_store_id === orderStoreId)?.id ?? null;
+    let posOrderSourceId: string | null = null;
+    if (posBrandId) {
+      const { data: posSources } = await supabase
+        .from("order_sources")
+        .select("id, type")
+        .eq("brand_id", posBrandId)
+        .in("type", ["showroom", "physical_store"]);
+      posOrderSourceId = pickWalkInSource(posSources ?? [])?.id ?? null;
+    }
+
     const subtotal = cart.items.reduce((s, i) => {
       const lineTotal = i.price * i.qty;
       const itemDiscount = i.discountType === "percent"
@@ -482,7 +498,7 @@ const POS = () => {
       if (!customerId) {
         const { data: newCust } = await supabase
           .from("customers")
-          .insert({ name: cart.customer.name, phone: normalizedCustomerPhone, address: cart.customer.address || null, source: 'pos', store_id: orderStoreId })
+          .insert({ name: cart.customer.name, phone: normalizedCustomerPhone, address: cart.customer.address || null, source: 'pos', origin_order_source_id: posOrderSourceId, origin_kind: "pos", store_id: orderStoreId })
           .select("id")
           .single();
         if (newCust) customerId = newCust.id;
@@ -500,6 +516,7 @@ const POS = () => {
       .insert({
         order_number: orderNumber,
         source: "pos",
+        order_source_id: posOrderSourceId,
         status: orderStatus,
         payment_status: paymentStatus,
         subtotal,
@@ -681,7 +698,7 @@ const POS = () => {
     });
 
     return orderNumber;
-  }, [selectedStoreId, user, currentShift, successChime, globalStockEnabled, businessStoreIds, hasScope, toast, symbol]);
+  }, [selectedStoreId, user, currentShift, successChime, globalStockEnabled, businessStoreIds, brands, hasScope, toast, symbol]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {

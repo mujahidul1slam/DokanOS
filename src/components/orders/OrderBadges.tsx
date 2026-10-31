@@ -12,7 +12,26 @@ export function DeliveryBadge({ type }: { type: string }) {
   }
 }
 
-export function SourceBadge({ source, storeName }: { source: string; storeName?: string | null }) {
+export function SourceBadge({
+  source,
+  storeName,
+  orderSource,
+}: {
+  source: string;
+  storeName?: string | null;
+  /** New-model attribution (orders.order_source_id) — preferred over the legacy text. */
+  orderSource?: { name: string; type: string } | null;
+}) {
+  if (orderSource) {
+    return (
+      <Badge
+        className="bg-blue-500/15 text-blue-400 border-blue-500/20 hover:bg-blue-500/25"
+        title={`Order source · ${orderSource.type}`}
+      >
+        {orderSource.name}
+      </Badge>
+    );
+  }
   if (source === "pos") {
     return <Badge className="bg-purple-500/15 text-purple-400 border-purple-500/20 hover:bg-purple-500/25">POS</Badge>;
   }

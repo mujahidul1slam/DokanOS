@@ -33,6 +33,7 @@ interface OrderRowLike {
   pickup_slip_printed_at?: string | null;
   measurement_slip_printed_at?: string | null;
   stores: { name: string } | null;
+  order_source?: { name: string; type: string } | null;
   productItems: { name: string; qty: number }[];
 }
 
@@ -135,7 +136,7 @@ function OrderTable<T extends OrderRowLike>({
               <TableCell>
                 <ProductsList items={order.productItems} />
               </TableCell>
-              <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} /></TableCell>
+              <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} orderSource={order.order_source} /></TableCell>
               <TableCell className="text-right">
                 <div className="font-medium text-foreground">{symbol}{Number(order.total).toLocaleString()}</div>
                 {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (
