@@ -180,12 +180,38 @@ describe("Analytics reads are scoped to the active business's stores", () => {
 
   it("scopes every orders, pos_returns and products read it issues", async () => {
     renderAnalytics();
-    // Three orders reads: current period, previous period, all-history customers.
-    await waitFor(() => expect(queriesFor("orders").length).toBe(3));
+    // Three store-scoped orders reads: current period, previous period,
+    // all-history customers. Plus exactly ONE pinned carve-out (Task 15): the
+    // legacy-pool head count on the banner — it counts UNOWNED rows (pool rows
+    // carry no store binding at all), so it is deliberately not store-scoped
+    // and is pinned by shape below instead.
+    await waitFor(() => expect(queriesFor("orders").length).toBe(4));
 
     const orderScopes = readScopes("orders");
-    expect(orderScopes.length).toBe(3);
-    for (const scope of orderScopes) expect(scope).toEqual(BIZ_ONE_STORES);
+    const storeScoped = orderScopes.filter(Boolean);
+    expect(storeScoped.length).toBe(3);
+    for (const scope of storeScoped) expect(scope).toEqual(BIZ_ONE_STORES);
+
+    // The pool count is the ONLY unscoped orders read this surface may issue.
+    const unscoped = queriesFor("orders").filter(
+      (q) => !q.calls.some((c) => c.method === "in" && c.args[0] === "store_id"),
+    );
+    expect(unscoped.length).toBe(1);
+    const poolRead = unscoped[0];
+    expect(
+      poolRead.calls.some(
+        (c) =>
+          c.method === "select" &&
+          typeof c.args[1] === "object" &&
+          c.args[1] !== null &&
+          (c.args[1] as { head?: boolean }).head === true,
+      ),
+    ).toBe(true);
+    expect(
+      poolRead.calls.some(
+        (c) => c.method === "eq" && c.args[0] === "source" && c.args[1] === "legacy migration",
+      ),
+    ).toBe(true);
 
     expect(readScopes("pos_returns")).toEqual([BIZ_ONE_STORES]);
     expect(readScopes("products")).toEqual([BIZ_ONE_STORES]);
@@ -222,7 +248,8 @@ describe("Analytics reads are scoped to the active business's stores", () => {
 
   it("re-runs the scoped reads with the new business after a switch", async () => {
     const view = renderAnalytics();
-    await waitFor(() => expect(queriesFor("orders").length).toBe(3));
+    // 3 store-scoped orders reads + the pinned legacy-pool carve-out (see above).
+    await waitFor(() => expect(queriesFor("orders").length).toBe(4));
     mark();
 
     // The seam re-derives the scope from the (swapped) context and re-reads

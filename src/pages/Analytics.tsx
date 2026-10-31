@@ -21,6 +21,7 @@ import CustomerInsights from "@/components/analytics/CustomerInsights";
 import InventoryHealth from "@/components/analytics/InventoryHealth";
 import GeoBreakdown from "@/components/analytics/GeoBreakdown";
 import OperationalMetrics from "@/components/analytics/OperationalMetrics";
+import LegacyPoolBanner from "@/components/legacy-pool/LegacyPoolBanner";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 import { useCurrency } from "@/hooks/useCurrency";
 import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
@@ -383,6 +384,9 @@ const Analytics = () => {
           </Button>
         </div>
       </div>
+
+      {/* Legacy pool heads-up: unattributed rows are outside brand-level figures */}
+      <LegacyPoolBanner storeIds={businessStoreIds} />
 
       {/* Top KPI cards with deltas */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">

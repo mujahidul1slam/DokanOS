@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import {
   LayoutDashboard, ShoppingCart, Package, Users, Monitor,
   Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3, Hourglass, Receipt, ChevronsUpDown, Check, Store,
-  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags, Plus, UserPlus
+  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags, Plus, UserPlus, Inbox
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
@@ -68,6 +68,7 @@ const BASE_NAV_GROUPS: NavGroup[] = [
       { icon: Tags, label: "Brands", path: "/brands", roles: ["admin", "staff", "viewer"] },
       { icon: UserPlus, label: "Members", path: "/members", roles: ["admin"] },
       { icon: Store, label: "Order Sources", path: "/order-sources", roles: ["admin", "staff"] },
+      { icon: Inbox, label: "Legacy Pool", path: "/legacy-pool", roles: ["admin", "staff"] },
       { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin", "staff"] },
       { icon: UsersRound, label: "Team", path: "/team", roles: ["admin"] },
       { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },

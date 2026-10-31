@@ -55,6 +55,7 @@ const StorefrontPreview = lazy(() =>
 const OrderSources = lazy(() => import("./pages/OrderSources"));
 const Brands = lazy(() => import("./pages/Brands"));
 const BusinessMembers = lazy(() => import("./pages/BusinessMembers"));
+const LegacyPool = lazy(() => import("./pages/LegacyPool"));
 const VisualPageBuilder = lazy(() => import("@/components/storefront-admin/VisualPageBuilder"));
 const Signup = lazy(() => import("./pages/Signup"));
 const CheckEmail = lazy(() => import("./pages/CheckEmail"));
@@ -165,6 +166,7 @@ const AppRoutes = () => {
               <Route path="/members" element={<BusinessMembers />} />
               <Route path="/stores" element={<Navigate to="/order-sources" replace />} />
               <Route path="/order-sources" element={<PermissionGuard permission="dashboard.view"><OrderSources /></PermissionGuard>} />
+              <Route path="/legacy-pool" element={<PermissionGuard permission="dashboard.view"><LegacyPool /></PermissionGuard>} />
               {/* Wildcard: deep admin URLs (/storefronts/:slug/admin/:surface)
                   mount StorefrontsPage, which parses the URL itself (fix C). */}
               <Route path="/storefronts/*" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
