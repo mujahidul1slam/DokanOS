@@ -72,7 +72,7 @@ test("a member creates multiple physical and online stores under brands without 
     }
 
     if (url.pathname.endsWith("/user_business_access")) {
-      await route.fulfill({ json: [{ role: "member", business_id: business.id, businesses: business }] });
+      await route.fulfill({ json: [{ role: "manager", business_id: business.id, businesses: business }] });
       return;
     }
     // Task 11 moved store creation to the Brands page (unguarded); the

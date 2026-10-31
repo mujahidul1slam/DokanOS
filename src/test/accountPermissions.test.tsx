@@ -61,19 +61,19 @@ describe("account membership permission resolution (#13 operational access)", ()
   });
 
   it("keeps loading while the active account membership is still resolving", () => {
-    setContext({ role: "member", loading: true });
+    setContext({ role: "manager", loading: true });
     renderProbe("dashboard.view");
     expect(screen.getByTestId("probe")).toHaveTextContent("loading");
   });
 
   it("member (no legacy rows) reaches operational modules but no management authority", async () => {
-    setContext({ role: "member" });
+    setContext({ role: "manager" });
     renderProbe("dashboard.view");
     await waitFor(() => expect(screen.getByTestId("probe")).toHaveTextContent("yes"));
   });
 
   it("member can view orders and use POS", async () => {
-    setContext({ role: "member" });
+    setContext({ role: "manager" });
     render(
       <PermissionsProvider>
         <Probe perm="orders.view" />
@@ -89,7 +89,7 @@ describe("account membership permission resolution (#13 operational access)", ()
     rpcMock.mockImplementation((fn: string) =>
       Promise.resolve({ data: fn === "get_user_permissions" ? ["team.manage", "settings.manage", "audit.view"] : [], error: null }),
     );
-    setContext({ role: "member" });
+    setContext({ role: "manager" });
     render(
       <PermissionsProvider>
         <Probe perm="analytics.view" />
@@ -113,7 +113,7 @@ describe("account membership permission resolution (#13 operational access)", ()
   });
 
   it("viewer stays read-only: view basics yes, POS/write/management no", async () => {
-    setContext({ role: "viewer" });
+    setContext({ role: "staff" });
     render(
       <PermissionsProvider>
         <Probe perm="dashboard.view" />
@@ -192,7 +192,7 @@ describe("account membership permission resolution (#13 operational access)", ()
     rpcMock.mockImplementation((fn: string) =>
       Promise.resolve({ data: fn === "get_user_permissions" ? ["orders.view"] : [], error: null }),
     );
-    setContext({ role: "member" });
+    setContext({ role: "manager" });
     render(
       <PermissionsProvider>
         <Probe perm="dashboard.view" />
@@ -226,7 +226,7 @@ describe("account membership permission resolution (#13 operational access)", ()
     rpcMock.mockImplementation((fn: string) =>
       Promise.resolve({ data: fn === "get_user_permissions" ? ["orders.create", "team.manage"] : [], error: null }),
     );
-    setContext({ role: "viewer" });
+    setContext({ role: "staff" });
     render(
       <PermissionsProvider>
         <Probe perm="orders.view" />
@@ -242,7 +242,7 @@ describe("account membership permission resolution (#13 operational access)", ()
     });
   });
 
-  it.each(["owner", "member"])('%s is not narrowed by legacy selected-store assignments', async (role) => {
+  it.each(["owner", "manager"])('%s is not narrowed by legacy selected-store assignments', async (role) => {
     rpcMock.mockImplementation((fn: string) => Promise.resolve({
       data: fn === "get_user_store_ids" ? ["legacy-restricted-store"] : [], error: null,
     }));
@@ -258,7 +258,7 @@ describe("account membership permission resolution (#13 operational access)", ()
   });
 
   it("creates no user_roles/user_permissions rows and only reads through the resolver RPCs", async () => {
-    setContext({ role: "member" });
+    setContext({ role: "manager" });
     renderProbe("dashboard.view");
     await waitFor(() => expect(screen.getByTestId("probe")).toHaveTextContent("yes"));
     expect(fromMock.mock.calls.map((c) => (c as unknown[])[0])).not.toContain("user_roles");

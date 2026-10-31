@@ -310,7 +310,7 @@ async function runBrandStoreApiChecks(client, status) {
     }
 
     // Owner and member both see exactly the two own-account stores.
-    for (const [label, userId] of [["owner", OWNER_A], ["member", MEMBER_A], ["viewer", VIEWER_A]]) {
+    for (const [label, userId] of [["owner", OWNER_A], ["manager", MEMBER_A], ["staff", VIEWER_A]]) {
       const stores = await storesFor(userId, brandId);
       const names = stores.map((store) => store.name).sort();
       if (stores.length !== 2 || names.join() !== [STORE_ONLINE, STORE_PHYSICAL].sort().join()) {
@@ -490,7 +490,7 @@ async function runBusinessInvitationApiChecks(client, status) {
     const issued = await invite(OWNER_A, BIZ_A, "  Issue13-Invitee@Dokanos.TEST ");
     const invitation = await payloadOf(issued);
     if (!issued.ok || invitation?.business_id !== BIZ_A || invitation?.email !== INVITEE_EMAIL
-        || invitation?.role !== "member" || invitation?.status !== "pending"
+        || invitation?.role !== "manager" || invitation?.status !== "pending"
         || invitation?.business_name !== "Biz A Fixture" || !invitation?.token) {
       throw new Error(`owner invitation failed or lost its account context `
         + `(${issued.status}${await reasonOf(issued)})`);
@@ -573,7 +573,7 @@ async function runBusinessInvitationApiChecks(client, status) {
     if (unverifiedAccept.ok) throw new Error("an unverified identity accepted an invitation through the API");
 
     const joined = await payloadOf(await accept(INVITEE, invitation.token));
-    if (joined?.outcome !== "joined" || joined?.role !== "member" || joined?.business_id !== BIZ_A) {
+    if (joined?.outcome !== "joined" || joined?.role !== "manager" || joined?.business_id !== BIZ_A) {
       throw new Error("the intended identity did not join with account-wide member access");
     }
     const grant = (await client.query(`
@@ -603,14 +603,14 @@ async function runBusinessInvitationApiChecks(client, status) {
     }
     const membersAsMember = await payloadOf(await listMembers(INVITEE, BIZ_A));
     if (!Array.isArray(membersAsMember)
-        || !membersAsMember.some((row) => row.user_id === INVITEE && row.role === "member")
+        || !membersAsMember.some((row) => row.user_id === INVITEE && row.role === "manager")
         || membersAsMember.some((row) => "token" in row || "email_matches" in row)) {
       throw new Error("the member directory was unavailable, wrong or exposed invitation data");
     }
 
     // ---- acceptance is safely repeatable ----
     const repeated = await payloadOf(await accept(INVITEE, invitation.token));
-    if (repeated?.outcome !== "already_member" || repeated?.role !== "member") {
+    if (repeated?.outcome !== "already_member" || repeated?.role !== "manager") {
       throw new Error("a repeated acceptance did not report the existing membership");
     }
     const membershipRows = (await client.query(
@@ -750,7 +750,7 @@ async function runBusinessOwnershipApiChecks(client, status) {
     await client.query("DELETE FROM public.user_business_access WHERE business_id = $1", [BIZ]);
     await client.query(
       `INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
-         ($1, $5, 'owner'), ($2, $5, 'owner'), ($3, $5, 'member'), ($4, $5, 'member')`,
+         ($1, $5, 'owner'), ($2, $5, 'owner'), ($3, $5, 'manager'), ($4, $5, 'manager')`,
       [OWNER, CO_OWNER, MEMBER, MEMBER2, BIZ],
     );
   };
@@ -786,7 +786,7 @@ async function runBusinessOwnershipApiChecks(client, status) {
     );
     await client.query(
       `INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
-         ($1, $6, 'owner'), ($2, $6, 'owner'), ($3, $6, 'member'), ($4, $6, 'member'),
+         ($1, $6, 'owner'), ($2, $6, 'owner'), ($3, $6, 'manager'), ($4, $6, 'manager'),
          ($5, $7, 'owner')`,
       [OWNER, CO_OWNER, MEMBER, MEMBER2, OTHER_OWNER, BIZ, OTHER_BIZ],
     );
@@ -803,9 +803,9 @@ async function runBusinessOwnershipApiChecks(client, status) {
     }
     // A nonmember who is not an owner cannot leave an account they do not belong to.
     await expectDenied(await leave(OUTSIDER, BIZ), "nonmember departure");
-    await expectDenied(await setRole(MEMBER, BIZ, OWNER, "viewer"), "member demotion of an owner");
+    await expectDenied(await setRole(MEMBER, BIZ, OWNER, "staff"), "member demotion of an owner");
     if (await roleOf(OWNER, BIZ) !== "owner" || await roleOf(CO_OWNER, BIZ) !== "owner"
-        || await roleOf(MEMBER, BIZ) !== "member") {
+        || await roleOf(MEMBER, BIZ) !== "manager") {
       throw new Error("unauthorized ownership/role attempts changed the account");
     }
 
@@ -830,10 +830,10 @@ async function runBusinessOwnershipApiChecks(client, status) {
       throw new Error(`owner transfer failed (${transferred.status})`);
     }
     if (await roleOf(MEMBER, BIZ) !== "owner") throw new Error("target did not become owner");
-    if (await roleOf(OWNER, BIZ) !== "member") throw new Error("transferring owner did not become a member");
+    if (await roleOf(OWNER, BIZ) !== "manager") throw new Error("transferring owner did not become a member");
     if (await roleOf(CO_OWNER, BIZ) !== "owner") throw new Error("legacy co-owner was not preserved");
     if (await ownerCount(BIZ) < 1) throw new Error("transfer left the account ownerless");
-    if (await roleOf(MEMBER2, BIZ) !== "member") throw new Error("transfer changed an unrelated member");
+    if (await roleOf(MEMBER2, BIZ) !== "manager") throw new Error("transfer changed an unrelated member");
 
     // Repeated transfer and repeated departure are safe.
     await expectDenied(await transfer(OWNER, BIZ, MEMBER2), "repeated transfer by former owner");
@@ -861,7 +861,7 @@ async function runBusinessOwnershipApiChecks(client, status) {
     if (transferWins !== 1) {
       throw new Error(`competing owner transfers committed ${transferWins} times`);
     }
-    if (await ownerCount(BIZ) < 1 || await roleOf(OWNER, BIZ) !== "member") {
+    if (await ownerCount(BIZ) < 1 || await roleOf(OWNER, BIZ) !== "manager") {
       throw new Error("competing transfers did not end with a valid owner and former-owner member");
     }
     const winners = [await roleOf(MEMBER, BIZ), await roleOf(MEMBER2, BIZ)].filter((role) => role === "owner");
@@ -876,7 +876,7 @@ async function runBusinessOwnershipApiChecks(client, status) {
     if (leaveRace.ok && await roleOf(OWNER, BIZ) !== null) {
       throw new Error("successful leave race left the former owner membership behind");
     }
-    if (!leaveRace.ok && await roleOf(OWNER, BIZ) !== "member") {
+    if (!leaveRace.ok && await roleOf(OWNER, BIZ) !== "manager") {
       throw new Error("blocked leave race did not leave the former owner as a member");
     }
     if (await ownerCount(BIZ) < 1) throw new Error("transfer/leave race left the account ownerless");
@@ -947,8 +947,8 @@ async function seed(client) {
        ($1, $7, 'owner'),   -- OWNER_A
        ($2, $7, 'owner'),   -- OWNER_A2
        ($3, $7, 'admin'),   -- UBA_ADMIN_A
-       ($4, $7, 'member'),  -- MEMBER_A
-       ($5, $7, 'viewer'),  -- VIEWER_A
+       ($4, $7, 'manager'),  -- MEMBER_A
+       ($5, $7, 'staff'),  -- VIEWER_A
        ($6, $8, 'owner')    -- OWNER_B
      ON CONFLICT (user_id, business_id) DO NOTHING`,
     [FIXTURE_IDS[3], FIXTURE_IDS[4], FIXTURE_IDS[5], FIXTURE_IDS[6], FIXTURE_IDS[7], FIXTURE_IDS[8], BIZ_A, B_OTHER],

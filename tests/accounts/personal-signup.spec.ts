@@ -201,7 +201,7 @@ test("switching revalidates a stale account membership before changing context",
   const revoked = { id: "11111111-0000-0000-0000-000000000002", name: "Revoked Account", slug: "revoked", is_active: true };
   const memberships = [
     { role: "owner", business_id: retained.id, businesses: retained },
-    { role: "member", business_id: revoked.id, businesses: revoked },
+    { role: "manager", business_id: revoked.id, businesses: revoked },
   ];
   await api(page, memberships);
   await signedIn(page);
@@ -222,7 +222,7 @@ test("switching accounts refreshes account-scoped permissions and resources", as
   const second = { id: "11111111-0000-0000-0000-000000000002", name: "Second Context", slug: "second-context", is_active: true };
   const requests = await api(page, [
     { role: "owner", business_id: first.id, businesses: first },
-    { role: "member", business_id: second.id, businesses: second },
+    { role: "manager", business_id: second.id, businesses: second },
   ]);
   await signedIn(page);
   await page.addInitScript((id) => localStorage.setItem("dokanos-active-business-id", id), first.id);

@@ -119,7 +119,7 @@ ROLLBACK;
 
 -- ---------------------------------------------------------------------------
 -- AC-2 (Shape B): an owner invitation carries the account context and the
--- intended (normalized) email identity, always as role 'member'.
+-- intended (normalized) email identity, always as role 'manager'.
 -- ---------------------------------------------------------------------------
 BEGIN;
 SET LOCAL ROLE authenticated;
@@ -134,7 +134,7 @@ BEGIN
   IF r->>'email' IS DISTINCT FROM 'new.person@dokanos.test' THEN
     RAISE EXCEPTION 'FAIL: AC2 invitation email was not normalized (%)', r USING ERRCODE = 'P0001';
   END IF;
-  IF r->>'role' IS DISTINCT FROM 'member' THEN
+  IF r->>'role' IS DISTINCT FROM 'manager' THEN
     RAISE EXCEPTION 'FAIL: AC2 invitation did not default to the member role (%)', r USING ERRCODE = 'P0001';
   END IF;
   IF r->>'token' IS NULL OR length(r->>'token') < 16 THEN
@@ -167,7 +167,7 @@ BEGIN
     SELECT 1 FROM public.business_invitations
     WHERE business_id = '11111111-0000-0000-0000-000000000001'
       AND email = 'new.person@dokanos.test'
-      AND role = 'member'
+      AND role = 'manager'
       AND accepted_at IS NULL AND revoked_at IS NULL
       AND invited_by = '00000000-0000-0000-0000-000000000001'
   ) THEN
@@ -257,7 +257,7 @@ BEGIN
   IF r->>'outcome' IS DISTINCT FROM 'joined' THEN
     RAISE EXCEPTION 'FAIL: AC3 acceptance outcome was % (%)', r->>'outcome', r USING ERRCODE = 'P0001';
   END IF;
-  IF r->>'role' IS DISTINCT FROM 'member'
+  IF r->>'role' IS DISTINCT FROM 'manager'
      OR r->>'business_id' IS DISTINCT FROM '11111111-0000-0000-0000-000000000001' THEN
     RAISE EXCEPTION 'FAIL: AC3 acceptance returned the wrong grant (%)', r USING ERRCODE = 'P0001';
   END IF;
@@ -285,7 +285,7 @@ BEGIN
     SELECT 1 FROM public.user_business_access
     WHERE user_id = '00000000-0000-0000-0000-00000000000e'
       AND business_id = '11111111-0000-0000-0000-000000000001'
-      AND role = 'member'
+      AND role = 'manager'
   ) THEN
     RAISE EXCEPTION 'FAIL: AC3 membership row missing after acceptance' USING ERRCODE = 'P0001';
   END IF;
@@ -491,7 +491,7 @@ BEGIN
     SELECT 1 FROM public.user_business_access
     WHERE user_id = '00000000-0000-0000-0000-000000000009'
       AND business_id = '11111111-0000-0000-0000-000000000001'
-      AND role = 'member'
+      AND role = 'manager'
   ) THEN
     RAISE EXCEPTION 'FAIL: AC7 first acceptance did not persist' USING ERRCODE = 'P0001';
   END IF;
@@ -507,7 +507,7 @@ BEGIN
   IF r->>'outcome' IS DISTINCT FROM 'already_member' THEN
     RAISE EXCEPTION 'FAIL: AC7 repeat acceptance outcome was %', r->>'outcome' USING ERRCODE = 'P0001';
   END IF;
-  IF r->>'role' IS DISTINCT FROM 'member' THEN
+  IF r->>'role' IS DISTINCT FROM 'manager' THEN
     RAISE EXCEPTION 'FAIL: AC7 repeat acceptance changed the role to %', r->>'role' USING ERRCODE = 'P0001';
   END IF;
 END $$;

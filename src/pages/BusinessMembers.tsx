@@ -8,6 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ROLE_LADDER, roleLabel } from "@/lib/accounts/rolePresentation";
+import {
   isValidInviteEmail,
   normalizeInvitationRows,
   normalizeInviteEmail,
@@ -52,6 +60,7 @@ export default function BusinessMembers() {
   const [reloadKey, setReloadKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("manager");
   const [inviting, setInviting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyMember, setBusyMember] = useState<string | null>(null);
@@ -124,6 +133,7 @@ export default function BusinessMembers() {
     const { error: inviteError } = await supabase.rpc("invite_business_member", {
       p_business_id: active.id,
       p_email: email,
+      p_role: inviteRole,
     });
     setInviting(false);
 
@@ -197,7 +207,7 @@ export default function BusinessMembers() {
     // Toast survives the context refresh that remounts this route.
     toast({
       title: "Ownership transferred",
-      description: `${label} is now the owner of ${active.name}. You are now a member and can leave the account.`,
+      description: `${label} is now the owner of ${active.name}. You are now a manager and can leave the account.`,
     });
     // Re-read authoritative membership before rendering departure controls.
     await refresh();
@@ -292,6 +302,19 @@ export default function BusinessMembers() {
                 maxLength={254}
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="invite-role">Role</Label>
+              <Select value={inviteRole} onValueChange={setInviteRole}>
+                <SelectTrigger id="invite-role" className="w-[160px]">
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_LADDER.map((rung) => (
+                    <SelectItem key={rung.value} value={rung.value}>{rung.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button type="submit" disabled={inviting}>
               {inviting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />} Send invitation
             </Button>
@@ -317,7 +340,7 @@ export default function BusinessMembers() {
                     {member.email && <p className="truncate text-xs text-muted-foreground">{member.email}</p>}
                   </div>
                   <Badge variant={member.isOwner ? "secondary" : "outline"}>
-                    {member.isOwner ? "Owner" : "Member"}
+                    {roleLabel(member.role)}
                   </Badge>
                   {isOwner && isTransferTarget(myUserId, member.userId, member.role) && (
                     <Button
@@ -361,7 +384,7 @@ export default function BusinessMembers() {
                       <p className="text-sm font-medium">You are the owner of {active.name}.</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Transfer ownership to an existing member before you leave. The
-                        transfer demotes only you to member; any other owners stay untouched.
+                        transfer demotes only you to Manager; any other owners stay untouched.
                       </p>
                     </div>
                   </div>
@@ -369,7 +392,7 @@ export default function BusinessMembers() {
                     <div role="group" aria-label="Confirm ownership transfer" className="rounded-md border border-border bg-secondary/40 p-3">
                       <p className="text-sm">
                         Make {memberLabel(pendingTransfer)} the owner of {active.name}?
-                        You will become an ordinary member and can then leave.
+                        You will become a manager and can then leave.
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
@@ -484,6 +507,7 @@ export default function BusinessMembers() {
                     <div key={invitation.id} className="space-y-2 p-4">
                       <div className="flex flex-wrap items-center gap-3">
                         <p className="min-w-0 flex-1 truncate text-sm font-medium">{invitation.email}</p>
+                        <Badge variant="outline">{roleLabel(invitation.role)}</Badge>
                         <Badge variant={invitation.status === "pending" ? "secondary" : "outline"}>
                           {statusLabel(invitation.status)}
                         </Badge>

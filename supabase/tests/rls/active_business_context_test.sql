@@ -147,8 +147,8 @@ VALUES ('00000000-0000-0000-0000-000000000041', 'authenticated', 'authenticated'
         'dual-member@dokanos.test', 'local-fixture-password-never-used-for-login', now(),
         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now());
 INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
-  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000001', 'member'),
-  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000002', 'member');
+  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000001', 'manager'),
+  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000002', 'manager');
 INSERT INTO public.stores (id, name, url) VALUES
   ('33333333-0000-0000-0000-000000000021', 'RLS Store A', 'https://rls-a.test'),
   ('33333333-0000-0000-0000-000000000022', 'RLS Store B', 'https://rls-b.test');
@@ -215,8 +215,8 @@ VALUES ('00000000-0000-0000-0000-000000000041', 'authenticated', 'authenticated'
         'dual-member@dokanos.test', 'local-fixture-password-never-used-for-login', now(),
         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now());
 INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
-  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000001', 'member'),
-  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000002', 'member');
+  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000001', 'manager'),
+  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000002', 'manager');
 INSERT INTO public.stores (id, name, url) VALUES
   ('33333333-0000-0000-0000-000000000021', 'RLS Store A', 'https://rls-a.test'),
   ('33333333-0000-0000-0000-000000000022', 'RLS Store B', 'https://rls-b.test');
@@ -349,7 +349,7 @@ VALUES ('00000000-0000-0000-0000-000000000041', 'authenticated', 'authenticated'
         'dual-member@dokanos.test', 'local-fixture-password-never-used-for-login', now(),
         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now());
 INSERT INTO public.user_business_access (user_id, business_id, role) VALUES
-  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000001', 'member');
+  ('00000000-0000-0000-0000-000000000041', '11111111-0000-0000-0000-000000000001', 'manager');
 INSERT INTO public.stores (id, name, url) VALUES
   ('33333333-0000-0000-0000-000000000021', 'RLS Store A', 'https://rls-a.test'),
   ('33333333-0000-0000-0000-000000000022', 'RLS Store B', 'https://rls-b.test');

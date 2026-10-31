@@ -73,7 +73,7 @@ BEGIN
   IF v_target_role IS DISTINCT FROM 'owner' THEN
     RAISE EXCEPTION 'FAIL: AC1 existing member did not become owner (role %)', v_target_role USING ERRCODE = 'P0001';
   END IF;
-  IF v_caller_role IS DISTINCT FROM 'member' THEN
+  IF v_caller_role IS DISTINCT FROM 'manager' THEN
     RAISE EXCEPTION 'FAIL: AC1 transferring owner did not become a member (role %)', v_caller_role USING ERRCODE = 'P0001';
   END IF;
   IF v_co_owner_role IS DISTINCT FROM 'owner' THEN
@@ -243,8 +243,8 @@ BEGIN
      '00000000-0000-0000-0000-000000000001:owner,'
      || '00000000-0000-0000-0000-000000000002:owner,'
      || '00000000-0000-0000-0000-000000000003:admin,'
-     || '00000000-0000-0000-0000-000000000004:member,'
-     || '00000000-0000-0000-0000-000000000005:viewer' THEN
+     || '00000000-0000-0000-0000-000000000004:manager,'
+     || '00000000-0000-0000-0000-000000000005:staff' THEN
     RAISE EXCEPTION 'FAIL: AC3 a refused transfer changed account membership: %', v_state USING ERRCODE = 'P0001';
   END IF;
 END $$;
@@ -343,7 +343,7 @@ DO $$
 DECLARE v_result jsonb;
 BEGIN
   v_result := public.leave_business_account('11111111-0000-0000-0000-000000000001');
-  IF v_result->>'left' IS DISTINCT FROM 'true' OR v_result->>'role' IS DISTINCT FROM 'member' THEN
+  IF v_result->>'left' IS DISTINCT FROM 'true' OR v_result->>'role' IS DISTINCT FROM 'manager' THEN
     RAISE EXCEPTION 'FAIL: AC5 member departure failed: %', v_result USING ERRCODE = 'P0001';
   END IF;
 END $$;

@@ -48,7 +48,7 @@ test("an empty account can create and list independent name-only brands without 
     if (["POST", "PATCH", "PUT", "DELETE"].includes(method)) writes.push(url.pathname);
 
     if (url.pathname.endsWith("/user_business_access")) {
-      await route.fulfill({ json: [{ role: "member", business_id: business.id, businesses: business }] });
+      await route.fulfill({ json: [{ role: "manager", business_id: business.id, businesses: business }] });
       return;
     }
     if (url.pathname.endsWith("/brands") && method === "GET") {

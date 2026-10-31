@@ -139,7 +139,7 @@ async function installHarness(page: Page, world: World) {
       const invitation = {
         id: `22222222-0000-0000-0000-${String(world.invitations.length + 1).padStart(12, "0")}`,
         email: String(body?.p_email ?? "").toLowerCase(),
-        role: "member",
+        role: "manager",
         status: "pending",
         token: "rehearsal-invite-token",
         expires_at: "2026-11-02T00:00:00Z",
@@ -154,15 +154,15 @@ async function installHarness(page: Page, world: World) {
     }
     if (url.pathname.endsWith("/rpc/accept_business_invitation")) {
       if (world.acceptGrants !== false) {
-        world.memberships = [{ role: "member", business_id: business.id, businesses: business }];
+        world.memberships = [{ role: "manager", business_id: business.id, businesses: business }];
       }
       await route.fulfill({
-        json: world.accept ?? { outcome: "joined", business_id: business.id, business_name: business.name, role: "member" },
+        json: world.accept ?? { outcome: "joined", business_id: business.id, business_name: business.name, role: "manager" },
       });
       return;
     }
     if (url.pathname.endsWith("/rpc/list_business_members")) {
-      await route.fulfill({ json: [{ user_id: world.user.id, email: world.user.email, full_name: "Rehearsal Person", role: "member", joined_at: "2026-10-19T01:00:00Z" }] });
+      await route.fulfill({ json: [{ user_id: world.user.id, email: world.user.email, full_name: "Rehearsal Person", role: "manager", joined_at: "2026-10-19T01:00:00Z" }] });
       return;
     }
     if (url.pathname.endsWith("/rpc/list_business_invitations")) {
@@ -298,7 +298,7 @@ test("a brand-new invitee registers, verifies, and only then explicitly accepts 
   await page.getByRole("button", { name: "Accept invitation" }).click();
   await expect(page.getByText(/You've joined the business account/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Rehearsal Account", exact: true })).toBeVisible();
-  expect(state.memberships).toEqual([{ role: "member", business_id: business.id, businesses: business }]);
+  expect(state.memberships).toEqual([{ role: "manager", business_id: business.id, businesses: business }]);
   expect(state.paths.some((path) => path.endsWith("/signup-provision"))).toBe(false);
   expect(state.writes.some((write) => write.path.endsWith("/rest/v1/user_roles"))).toBe(false);
 });
@@ -313,7 +313,7 @@ test("an existing person accepts the invitation and is a member without any owne
   await expect(page.getByText("You're invited to join Rehearsal Account.")).toBeVisible();
   await page.getByRole("button", { name: "Accept invitation" }).click();
   await expect(page.getByText(/You've joined the business account/)).toBeVisible();
-  expect(state.memberships).toEqual([{ role: "member", business_id: business.id, businesses: business }]);
+  expect(state.memberships).toEqual([{ role: "manager", business_id: business.id, businesses: business }]);
 
   // An ordinary member sees the directory but no invitation or removal controls.
   await page.goto("/members");

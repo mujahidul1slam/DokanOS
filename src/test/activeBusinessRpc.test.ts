@@ -54,7 +54,7 @@ const business = (id: string, name: string) => ({
 /** The signed-in user belongs to both fixture businesses. */
 const membershipRows = () => [
   { role: "owner", business_id: BIZ_ONE, businesses: business(BIZ_ONE, "Biz One") },
-  { role: "member", business_id: BIZ_TWO, businesses: business(BIZ_TWO, "Biz Two") },
+  { role: "manager", business_id: BIZ_TWO, businesses: business(BIZ_TWO, "Biz Two") },
 ];
 
 /** Ordered record of the calls the switch path makes, so the

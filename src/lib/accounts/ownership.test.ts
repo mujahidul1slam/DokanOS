@@ -97,9 +97,9 @@ describe("ownership result parsing", () => {
 
 describe("departure and transfer eligibility", () => {
   it("lets ordinary members depart but blocks every owner until a transfer", () => {
-    expect(canLeaveWithoutTransfer("member")).toBe(true);
+    expect(canLeaveWithoutTransfer("manager")).toBe(true);
     expect(canLeaveWithoutTransfer("admin")).toBe(true);
-    expect(canLeaveWithoutTransfer("viewer")).toBe(true);
+    expect(canLeaveWithoutTransfer("staff")).toBe(true);
     expect(canLeaveWithoutTransfer("owner")).toBe(false);
     expect(canLeaveWithoutTransfer(null)).toBe(false);
     expect(canLeaveWithoutTransfer("unexpected")).toBe(false);
@@ -108,9 +108,9 @@ describe("departure and transfer eligibility", () => {
   it("only offers a different, non-owner member as a transfer target", () => {
     const caller = "00000000-0000-0000-0000-000000000001";
 
-    expect(isTransferTarget(caller, "00000000-0000-0000-0000-000000000004", "member")).toBe(true);
-    expect(isTransferTarget(caller, caller, "member")).toBe(false);
+    expect(isTransferTarget(caller, "00000000-0000-0000-0000-000000000004", "manager")).toBe(true);
+    expect(isTransferTarget(caller, caller, "manager")).toBe(false);
     expect(isTransferTarget(caller, "00000000-0000-0000-0000-000000000002", "owner")).toBe(false);
-    expect(isTransferTarget(null, "00000000-0000-0000-0000-000000000004", "member")).toBe(false);
+    expect(isTransferTarget(null, "00000000-0000-0000-0000-000000000004", "manager")).toBe(false);
   });
 });

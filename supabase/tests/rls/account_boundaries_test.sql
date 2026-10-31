@@ -71,7 +71,7 @@ BEGIN
     PERFORM public.set_member_business_role(
       '00000000-0000-0000-0000-000000000007',
       '11111111-0000-0000-0000-000000000001',
-      'member'
+      'manager'
     );
     RAISE EXCEPTION 'FAIL: member performed owner-only membership administration' USING ERRCODE = 'P0001';
   EXCEPTION WHEN SQLSTATE '42501' THEN NULL;

@@ -4169,7 +4169,7 @@ export type Database = {
         Returns: boolean
       }
       invite_business_member: {
-        Args: { p_business_id: string; p_email: string }
+        Args: { p_business_id: string; p_email: string; p_role?: string }
         Returns: Json
       }
       is_business_member: { Args: { p_business_id: string }; Returns: boolean }

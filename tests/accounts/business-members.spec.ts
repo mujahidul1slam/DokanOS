@@ -69,7 +69,7 @@ type InvitationPayload = {
 
 type HarnessOptions = {
   user: typeof owner;
-  role: "owner" | "member" | "viewer";
+  role: "owner" | "manager" | "staff";
   members: MemberPayload[];
   /** Whether the signed-in identity already operates this account. */
   initiallyMember?: boolean;
@@ -99,7 +99,7 @@ const joinedMember: MemberPayload = {
   user_id: member.id,
   email: member.email,
   full_name: "Member A",
-  role: "member",
+  role: "manager",
   joined_at: "2026-10-19T01:00:00Z",
 };
 
@@ -161,7 +161,7 @@ async function appHarness(page: Page, options: HarnessOptions) {
       const invitation: InvitationPayload = {
         id: `22222222-0000-0000-0000-${String(state.invitations.length + 1).padStart(12, "0")}`,
         email,
-        role: "member",
+        role: String(body?.p_role ?? "manager"),
         status: "pending",
         token: "invite-token-1",
         expires_at: "2026-11-02T00:00:00Z",
@@ -180,7 +180,7 @@ async function appHarness(page: Page, options: HarnessOptions) {
     }
     if (url.pathname.endsWith("/rpc/remove_business_member")) {
       state.members = state.members.filter((row) => row.user_id !== body?.p_user_id);
-      await route.fulfill({ json: { removed: true, business_id: business.id, user_id: body?.p_user_id, role: "member" } });
+      await route.fulfill({ json: { removed: true, business_id: business.id, user_id: body?.p_user_id, role: "manager" } });
       return;
     }
     if (url.pathname.endsWith("/rpc/transfer_business_ownership")) {
@@ -191,17 +191,17 @@ async function appHarness(page: Page, options: HarnessOptions) {
       const target = state.members.find((row) => row.user_id === body?.p_new_owner_id);
       const caller = state.members.find((row) => row.user_id === options.user.id);
       if (target) target.role = "owner";
-      if (caller) caller.role = "member";
-      state.role = "member";
+      if (caller) caller.role = "manager";
+      state.role = "manager";
       await route.fulfill({
         json: {
           transferred: true,
           business_id: business.id,
           business_name: business.name,
           previous_owner_id: options.user.id,
-          previous_owner_role: "member",
+          previous_owner_role: "manager",
           new_owner_id: body?.p_new_owner_id,
-          new_owner_previous_role: "member",
+          new_owner_previous_role: "manager",
           owner_count: 1,
         },
       });
@@ -239,7 +239,7 @@ async function appHarness(page: Page, options: HarnessOptions) {
           outcome: "joined",
           business_id: business.id,
           business_name: business.name,
-          role: "member",
+          role: "manager",
         },
       });
       return;
@@ -287,13 +287,20 @@ test("the owner invites by email, sees the pending link, revokes it, and removes
   await expect(page.getByRole("button", { name: `Remove ${owner.email}` })).toHaveCount(0);
 
   await page.getByLabel("Email address").fill("NewPerson@Example.com");
+  // Task 12: the inviter picks the role on the invite — the picker offers the
+  // full Owner/Admin/Manager/Staff ladder and the choice rides the RPC.
+  await page.locator("#invite-role").click();
+  for (const label of ["Owner", "Admin", "Manager", "Staff"]) {
+    await expect(page.getByRole("option", { name: label, exact: true })).toBeVisible();
+  }
+  await page.getByRole("option", { name: "Staff", exact: true }).click();
   await page.getByRole("button", { name: "Send invitation" }).click();
   await expect(page.getByText("newperson@example.com")).toBeVisible();
 
   const invite = harness.requests.find((request) =>
     request.method === "POST" && request.path.endsWith("/rpc/invite_business_member")
   );
-  expect(invite?.body).toEqual({ p_business_id: business.id, p_email: "newperson@example.com" });
+  expect(invite?.body).toEqual({ p_business_id: business.id, p_email: "newperson@example.com", p_role: "staff" });
   await expect(page.getByText(/\/accounts\?invite=invite-token-1/)).toBeVisible();
   await expect(page.getByText("Pending", { exact: true })).toBeVisible();
 
@@ -338,7 +345,7 @@ test("an owner transfers ownership before leaving, and the former owner can then
   );
   expect(transfer?.body).toEqual({ p_business_id: business.id, p_new_owner_id: member.id });
   await expect(page.getByText(/Member A is now the owner of Biz A Fixture/).first()).toBeVisible();
-  await expect.poll(() => harness.state.role).toBe("member");
+  await expect.poll(() => harness.state.role).toBe("manager");
   await expect.poll(() => harness.state.members.find((row) => row.user_id === member.id)?.role).toBe("owner");
 
   // The former owner is now an ordinary member: no transfer controls remain,
@@ -375,13 +382,13 @@ test("a refused transfer keeps the owner in place and explains the refusal", asy
   await expect(page.getByRole("button", { name: "Leave account" })).toBeDisabled();
   expect(harness.state.role).toBe("owner");
   expect(harness.state.members.find((row) => row.user_id === owner.id)?.role).toBe("owner");
-  expect(harness.state.members.find((row) => row.user_id === member.id)?.role).toBe("member");
+  expect(harness.state.members.find((row) => row.user_id === member.id)?.role).toBe("manager");
 });
 
 test("an ordinary member leaves without any ownership control", async ({ page }) => {
   const harness = await appHarness(page, {
     user: member,
-    role: "member",
+    role: "manager",
     members: [ownerMember, joinedMember],
   });
   await signedIn(page, member);
@@ -403,7 +410,7 @@ test("an ordinary member leaves without any ownership control", async ({ page })
 test("a member can see who operates the account but gets no invitation or removal controls", async ({ page }) => {
   const harness = await appHarness(page, {
     user: member,
-    role: "member",
+    role: "manager",
     members: [ownerMember, joinedMember],
   });
   await signedIn(page, member);
@@ -427,7 +434,7 @@ test("a member can see who operates the account but gets no invitation or remova
 test("an account member reaches operational routes and can create orders without a legacy permission row", async ({ page }) => {
   const harness = await appHarness(page, {
     user: member,
-    role: "member",
+    role: "manager",
     members: [ownerMember, joinedMember],
   });
   await signedIn(page, member);
@@ -462,8 +469,8 @@ test("an account member reaches operational routes and can create orders without
 test("an account viewer can view operational routes but stays read-only", async ({ page }) => {
   await appHarness(page, {
     user: viewer,
-    role: "viewer",
-    members: [ownerMember, { ...joinedMember, user_id: viewer.id, email: viewer.email, full_name: "Viewer A", role: "viewer" }],
+    role: "staff",
+    members: [ownerMember, { ...joinedMember, user_id: viewer.id, email: viewer.email, full_name: "Viewer A", role: "staff" }],
   });
   await signedIn(page, viewer);
 
@@ -493,7 +500,7 @@ test("an account owner retains operational and management surfaces", async ({ pa
 test("a signed-in non-member of the active account never reaches operational routes", async ({ page }) => {
   await appHarness(page, {
     user: member,
-    role: "member",
+    role: "manager",
     members: [ownerMember],
     initiallyMember: false,
   });
@@ -507,7 +514,7 @@ test("a signed-in non-member of the active account never reaches operational rou
 test("a verified invitee explicitly accepts and immediately sees the refreshed business context", async ({ page }) => {
   const harness = await appHarness(page, {
     user: invitee,
-    role: "member",
+    role: "manager",
     members: [ownerMember],
     initiallyMember: false,
     describe: { status: "pending", business_name: business.name, email_matches: true },
@@ -537,7 +544,7 @@ test("a verified invitee explicitly accepts and immediately sees the refreshed b
 test("a link issued for another identity never offers or performs acceptance", async ({ page }) => {
   const harness = await appHarness(page, {
     user: invitee,
-    role: "member",
+    role: "manager",
     members: [ownerMember],
     initiallyMember: false,
     describe: { status: "pending", business_name: business.name, email_matches: false },
@@ -554,7 +561,7 @@ test("a link issued for another identity never offers or performs acceptance", a
 test("an already-used link explains itself without accepting again", async ({ page }) => {
   const harness = await appHarness(page, {
     user: invitee,
-    role: "member",
+    role: "manager",
     members: [ownerMember],
     initiallyMember: false,
     describe: { status: "accepted", business_name: business.name, email_matches: true },

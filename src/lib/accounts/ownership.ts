@@ -120,7 +120,7 @@ export function parseDepartureResult(raw: unknown): DepartureResult {
  * ownership; an unknown role claims nothing, so the control stays hidden.
  */
 export function canLeaveWithoutTransfer(role: string | null | undefined): boolean {
-  return role === "member" || role === "admin" || role === "viewer";
+  return role === "manager" || role === "admin" || role === "staff";
 }
 
 /** A transfer target must be a different, existing member of this account. */

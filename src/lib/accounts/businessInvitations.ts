@@ -194,7 +194,7 @@ export function normalizeInvitationRows(raw: unknown): InvitationRow[] {
     return [{
       id,
       email: email(row.email) ?? "",
-      role: text(row.role) ?? "member",
+      role: text(row.role) ?? "manager",
       // An unrecognizable row state is surfaced as unusable, never as open.
       status: toStatus(row.status) ?? "invalid",
       token: text(row.token) ?? "",
@@ -209,7 +209,7 @@ export function normalizeMemberRows(raw: unknown): MemberRow[] {
     if (!isRecord(row)) return [];
     const userId = text(row.user_id);
     if (userId === null) return [];
-    const role = text(row.role) ?? "member";
+    const role = text(row.role) ?? "manager";
     return [{
       userId,
       email: email(row.email),

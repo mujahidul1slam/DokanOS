@@ -215,9 +215,9 @@ const accountBaselinePermissions = (
     case "owner":
       return ALL_PERMISSIONS;
     case "admin":
-    case "member":
+    case "manager":
       return STAFF_BASELINE;
-    case "viewer":
+    case "staff":
       return VIEWER_BASELINE;
     default:
       return null;

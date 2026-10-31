@@ -59,7 +59,7 @@ BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}';
 INSERT INTO public.user_business_access (user_id, business_id, role)
-VALUES ('00000000-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001', 'member');
+VALUES ('00000000-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001', 'manager');
 COMMIT;
 DO $$
 BEGIN
@@ -108,7 +108,7 @@ BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated"}';
 INSERT INTO public.user_business_access (user_id, business_id, role)
-VALUES ('00000000-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001', 'member');
+VALUES ('00000000-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001', 'manager');
 COMMIT;
 DO $$
 BEGIN
@@ -193,11 +193,11 @@ BEGIN
     RAISE EXCEPTION 'FAIL: W1a-AC7b direct DELETE exposed another membership' USING ERRCODE = 'P0001';
   END IF;
 END $$;
-SELECT public.set_member_business_role('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'viewer');
+SELECT public.set_member_business_role('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'staff');
 RESET ROLE;
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004' AND role='viewer') THEN
+  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004' AND role='staff') THEN
     RAISE EXCEPTION 'FAIL: W1a-AC7b owner role RPC did not update the preserved membership' USING ERRCODE = 'P0001';
   END IF;
 END $$;
@@ -220,7 +220,7 @@ END $$;
 RESET ROLE;
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004' AND role='member') THEN
+  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004' AND role='manager') THEN
     RAISE EXCEPTION 'FAIL: W1a-AC7c membership did not survive the direct DELETE' USING ERRCODE = 'P0001';
   END IF;
 END $$;
@@ -262,7 +262,7 @@ DO $$
 DECLARE v_rc bigint;
 BEGIN
   BEGIN
-    UPDATE public.user_business_access SET role='member'
+    UPDATE public.user_business_access SET role='manager'
      WHERE business_id='11111111-0000-0000-0000-000000000002' AND user_id='00000000-0000-0000-0000-000000000006';
   EXCEPTION
     WHEN insufficient_privilege THEN NULL;
@@ -292,7 +292,7 @@ DO $$
 DECLARE v_rc bigint;
 BEGIN
   BEGIN
-    UPDATE public.user_business_access SET role='member'
+    UPDATE public.user_business_access SET role='manager'
      WHERE business_id='11111111-0000-0000-0000-000000000002' AND user_id='00000000-0000-0000-0000-000000000006';
   EXCEPTION
     WHEN insufficient_privilege THEN NULL;
@@ -322,18 +322,18 @@ SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000001","
 DO $$
 DECLARE affected bigint;
 BEGIN
-  UPDATE public.user_business_access SET role='member'
+  UPDATE public.user_business_access SET role='manager'
     WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002';
   GET DIAGNOSTICS affected = ROW_COUNT;
   IF affected <> 0 THEN
     RAISE EXCEPTION 'FAIL: W1a-AC10a direct UPDATE exposed another membership' USING ERRCODE = 'P0001';
   END IF;
 END $$;
-SELECT public.set_member_business_role('00000000-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001', 'member');
+SELECT public.set_member_business_role('00000000-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001', 'manager');
 COMMIT;
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002' AND role='member')
+  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002' AND role='manager')
   THEN RAISE EXCEPTION 'FAIL: W1a-AC10a owner demote of co-owner did not persist' USING ERRCODE = 'P0001'; END IF;
 END $$;
 BEGIN;
@@ -347,7 +347,7 @@ SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000003","
 DO $$
 DECLARE affected bigint;
 BEGIN
-  UPDATE public.user_business_access SET role='member'
+  UPDATE public.user_business_access SET role='manager'
     WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002';
   GET DIAGNOSTICS affected = ROW_COUNT;
   IF affected <> 0 THEN
@@ -389,7 +389,7 @@ BEGIN
   THEN RAISE EXCEPTION 'FAIL: W1a-AC10d owner elevation did not persist' USING ERRCODE = 'P0001'; END IF;
 END $$;
 BEGIN;
-UPDATE public.user_business_access SET role='member' WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004';
+UPDATE public.user_business_access SET role='manager' WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000004';
 COMMIT;
 
 -- ============ AC-11 (Shape A trigger): OWNER_A2 mutates their own visible identity → trigger check_violation ============
@@ -427,11 +427,11 @@ INSERT INTO public.user_business_access (user_id, business_id, role) VALUES ('00
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated"}';
-UPDATE public.user_business_access SET role='member' WHERE business_id='11111111-0000-0000-0000-000000000002' AND user_id='00000000-0000-0000-0000-000000000006';
+UPDATE public.user_business_access SET role='manager' WHERE business_id='11111111-0000-0000-0000-000000000002' AND user_id='00000000-0000-0000-0000-000000000006';
 COMMIT;
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000002' AND user_id='00000000-0000-0000-0000-000000000006' AND role='member')
+  IF NOT EXISTS (SELECT 1 FROM public.user_business_access WHERE business_id='11111111-0000-0000-0000-000000000002' AND user_id='00000000-0000-0000-0000-000000000006' AND role='manager')
   THEN RAISE EXCEPTION 'FAIL: W1a-AC12b admin demote of sole owner did not persist' USING ERRCODE = 'P0001'; END IF;
 END $$;
 UPDATE public.user_business_access SET role='owner' WHERE business_id='11111111-0000-0000-0000-000000000002' AND user_id='00000000-0000-0000-0000-000000000006';

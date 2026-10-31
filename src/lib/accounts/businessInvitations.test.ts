@@ -64,10 +64,10 @@ describe("invitation description", () => {
 
 describe("acceptance results", () => {
   it("reports joining and repeating distinctly, carrying the account name", () => {
-    expect(parseAcceptanceResult({ outcome: "joined", business_name: "Biz A Fixture", role: "member" }))
-      .toEqual({ outcome: "joined", businessName: "Biz A Fixture", role: "member" });
-    expect(parseAcceptanceResult({ outcome: "already_member", business_name: "Biz A Fixture", role: "member" }))
-      .toEqual({ outcome: "already_member", businessName: "Biz A Fixture", role: "member" });
+    expect(parseAcceptanceResult({ outcome: "joined", business_name: "Biz A Fixture", role: "manager" }))
+      .toEqual({ outcome: "joined", businessName: "Biz A Fixture", role: "manager" });
+    expect(parseAcceptanceResult({ outcome: "already_member", business_name: "Biz A Fixture", role: "manager" }))
+      .toEqual({ outcome: "already_member", businessName: "Biz A Fixture", role: "manager" });
   });
 
   it("treats an unrecognized result as a failure rather than a grant", () => {
@@ -128,16 +128,16 @@ describe("invite form input", () => {
 describe("owner directory rows", () => {
   it("normalizes invitation rows and ignores malformed output", () => {
     const rows = normalizeInvitationRows([
-      { id: "inv-1", email: "New.Person@Dokanos.test", role: "member", status: "pending", token: "tok-1", expires_at: "2026-11-02T00:00:00Z" },
-      { id: "inv-2", email: "used@dokanos.test", role: "member", status: "accepted", token: "tok-2" },
-      { id: "inv-3", email: "odd@dokanos.test", role: "member", status: "who-knows", token: "tok-3" },
+      { id: "inv-1", email: "New.Person@Dokanos.test", role: "manager", status: "pending", token: "tok-1", expires_at: "2026-11-02T00:00:00Z" },
+      { id: "inv-2", email: "used@dokanos.test", role: "manager", status: "accepted", token: "tok-2" },
+      { id: "inv-3", email: "odd@dokanos.test", role: "manager", status: "who-knows", token: "tok-3" },
       null,
       "nonsense",
     ]);
 
     expect(rows).toHaveLength(3);
     expect(rows[0]).toEqual({
-      id: "inv-1", email: "new.person@dokanos.test", role: "member",
+      id: "inv-1", email: "new.person@dokanos.test", role: "manager",
       status: "pending", token: "tok-1", expiresAt: "2026-11-02T00:00:00Z",
     });
     expect(rows[1].status).toBe("accepted");
@@ -148,8 +148,8 @@ describe("owner directory rows", () => {
   it("normalizes member rows and identifies owners", () => {
     const rows = normalizeMemberRows([
       { user_id: "person-1", email: "Owner@Dokanos.test", full_name: " Owner  ", role: "owner", joined_at: "2026-10-19T00:00:00Z" },
-      { user_id: "person-2", email: "member@dokanos.test", full_name: null, role: "member" },
-      { user_id: null, role: "member" },
+      { user_id: "person-2", email: "member@dokanos.test", full_name: null, role: "manager" },
+      { user_id: null, role: "manager" },
     ]);
 
     expect(rows).toHaveLength(2);
@@ -159,7 +159,7 @@ describe("owner directory rows", () => {
     });
     expect(rows[1]).toEqual({
       userId: "person-2", email: "member@dokanos.test", fullName: null,
-      role: "member", isOwner: false, joinedAt: null,
+      role: "manager", isOwner: false, joinedAt: null,
     });
   });
 });
