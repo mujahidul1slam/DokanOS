@@ -80,13 +80,13 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §2: create the per-brand `order_sources` table (type enum `woocommerce|storefront|showroom|physical_store|facebook|instagram|whatsapp|manual`, name, config jsonb, connection/sync config, legacy_* mapping columns, `is_stock_holding` default by type). Add provenance columns to `products`/`customers` (`origin_order_source_id`, `origin_kind`). `orders.order_source_id` column (nullable for now). RLS per brand; regenerate Supabase types.
 
 **Acceptance criteria:**
-- [ ] `order_sources` exists with UQ(brand_id, name), type enum, legacy_* audit columns
-- [ ] `products.origin_order_source_id` + `origin_kind`; `customers.origin_order_source_id` + `origin_kind`
-- [ ] `orders.order_source_id` nullable FK added (no backfill yet — Task 8)
-- [ ] RLS isolates by business membership; RLS tests pass
+- [x] `order_sources` exists with UQ(brand_id, name), type enum (`order_source_type`, 8 values), legacy_* audit columns (6, unique-when-set) — migration `20261031090000_unified_order_sources.sql`; legacy 5-row lookup **renamed** to `legacy_order_channels` (not dropped; its 2 consumers patched to it and keep working until Task 6)
+- [x] `products.origin_order_source_id` + `origin_kind`; `customers.origin_order_source_id` + `origin_kind` (CHECK `woo_sync|csv|manual|pos|legacy`); provenance is internal-only — pinned as an anon carve-out in `api_table_grants_test` alongside `cost_price`
+- [x] `orders.order_source_id` nullable FK added (no backfill yet — Task 8)
+- [x] RLS isolates by business membership (brand_stores idiom: members read, owner/admin/member write); RLS tests pass
 
 **Verification:**
-- [ ] `npm run test:rls` (or targeted SQL tests) pass; `npm run typecheck` passes after type regen
+- [x] `npm run test:rls` **ALL GREEN (20 files)** incl. new `order_sources_test.sql` (stock-default trigger, override, UQ, viewer read-only, outsider/cross-business denial, value-pinned survival) + extended grants carve-out; `npm run typecheck` clean after type regen; `npm test` 380 passed; `npm run build` clean
 
 **Dependencies:** None (expand phase; no drops)
 **Files likely touched:** `supabase/migrations/*.sql` (new), `src/integrations/supabase/types.ts` (generated), `supabase/tests/rls/*.sql`
