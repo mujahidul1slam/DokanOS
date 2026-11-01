@@ -37,3 +37,25 @@ export function mapAuthError(error: any): string {
   // Default fallback: return clean generic or sanitized original
   return error.message || "An unexpected error occurred. Please try again.";
 }
+
+/**
+ * Enumeration hygiene (SIGNUP-PLAN §6.4): does this signUp failure mean
+ * "the account already exists"? Signup must treat that case exactly like a
+ * fresh signup (same confirmation-waiting screen) so nobody can probe which
+ * emails have accounts — see Signup.tsx.
+ *
+ * Shapes covered (probe of the local gotrue, 2026-11-01): the raw body
+ * `{"code":422,"error_code":"user_already_exists","msg":"User already registered"}`
+ * surfaces in supabase-js as `AuthApiError { code: "user_already_exists",
+ * status: 422, message: "User already registered" }`. Other gotrue builds use
+ * `email_exists` or message-only errors, so all three shapes are accepted.
+ */
+export function isExistingAccountError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: unknown; error_code?: unknown; message?: unknown };
+  const code =
+    typeof e.code === "string" ? e.code : typeof e.error_code === "string" ? e.error_code : "";
+  if (code === "user_already_exists" || code === "email_exists") return true;
+  const msg = typeof e.message === "string" ? e.message : "";
+  return /already registered|already exists/i.test(msg);
+}

@@ -98,6 +98,29 @@ test("mismatched confirm password blocks personal signup before any auth or sign
   expect(requests.some((r) => r.path === "/auth/v1/signup" || r.path.endsWith("/signup-event"))).toBe(false);
 });
 
+test("an existing-account signup is masked: the same check-email screen, no error toast", async ({ page }) => {
+  const requests = await api(page);
+  await page.route("http://127.0.0.1:54321/auth/v1/signup", (route) =>
+    route.fulfill({
+      status: 422,
+      json: { code: 422, error_code: "user_already_exists", msg: "User already registered" },
+    }),
+  );
+  await page.goto("/signup");
+  await page.getByLabel("Your Name").fill("Sarah Jenkins");
+  await page.getByLabel("Email", { exact: true }).fill("person@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Create personal account" }).click();
+  // Enumeration hygiene: the destination is byte-identical to the fresh-signup
+  // test above, and nothing on screen reveals the account already exists.
+  await expect(page).toHaveURL(/\/check-email\?email=person%40example\.com/);
+  await expect(page.getByText(/already registered/i)).toHaveCount(0);
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0);
+  expect(requests.some((r) => r.path === "/auth/v1/signup")).toBe(true);
+});
+
 for (const type of ["signup", "recovery"]) test(`a ${type} URL establishes a fresh session without provisioning`, async ({ page }) => {
   const requests = await api(page);
   const token = [

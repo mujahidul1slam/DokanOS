@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Checkbox } from "@/components/ui/checkbox";
 import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidget";
 import { isDisposableEmail } from "@/lib/disposableDomains";
-import { mapAuthError } from "@/lib/authErrors";
+import { isExistingAccountError, mapAuthError } from "@/lib/authErrors";
 import { readEdgeFnError } from "@/lib/edgeFnError";
 import { invitationPath } from "@/lib/invitationPath";
 import { toast } from "sonner";
@@ -142,13 +142,17 @@ export default function Signup() {
         },
       });
 
-      if (signUpErr) {
+      if (signUpErr && !isExistingAccountError(signUpErr)) {
         toast.error(mapAuthError(signUpErr));
         turnstileRef.current?.reset();
         setLoading(false);
         return;
       }
 
+      // Enumeration hygiene (SIGNUP-PLAN §6.4): an already-registered signup
+      // falls through to the exact same confirmation-waiting screen as a fresh
+      // one — no toast, no turnstile reset, no distinguishing parameter — so
+      // the form cannot be used to probe which emails have accounts.
       setLoading(false);
       // Proceed to confirmation waiting screen
       navigate(invitationPath(`/check-email?email=${encodeURIComponent(email.trim())}`));
