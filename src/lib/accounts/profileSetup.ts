@@ -48,3 +48,49 @@ export const validateAvatarFile = (file: { type: string; size: number }): string
   if (file.size > AVATAR_MAX_BYTES) return "Image must be under 2MB";
   return null;
 };
+
+/**
+ * Shared owed check for the Task 3 gate. Both decision points call this: the
+ * post-confirmation redirect (AuthConfirm) and the login landing (Login), so
+ * confirming on one device and signing in on another can never skip the setup.
+ *
+ * The client is taken as `unknown` on purpose — structural assignability checks
+ * against the supabase-js builder generics explode into TS2589 (same treatment
+ * as `applyPoolFilter` in legacyPool.ts) — and is cast locally to the minimal
+ * chain this one query needs. Fail-soft contract: a read ERROR is not owed, so
+ * a broken read never traps someone outside the business flow; a missing ROW
+ * still owes the setup (see `profileSetupOwed`).
+ */
+interface ProfileSetupRow {
+  profile_setup_completed_at: string | null;
+}
+
+interface ProfileSetupMaybeSingle {
+  maybeSingle(): PromiseLike<{ data: ProfileSetupRow | null; error: unknown }>;
+}
+
+interface ProfileSetupEq {
+  eq(column: string, value: string): ProfileSetupMaybeSingle;
+}
+
+interface ProfileSetupSelect {
+  select(columns: string): ProfileSetupEq;
+}
+
+interface ProfileSetupClient {
+  from(table: string): ProfileSetupSelect;
+}
+
+export const isProfileSetupOwed = async (client: unknown, userId: string): Promise<boolean> => {
+  try {
+    const { data, error } = await (client as ProfileSetupClient)
+      .from("profiles")
+      .select("profile_setup_completed_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return false;
+    return profileSetupOwed(data);
+  } catch {
+    return false;
+  }
+};

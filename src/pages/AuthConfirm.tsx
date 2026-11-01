@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,21 +9,31 @@ import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 import { invitationPath } from "@/lib/invitationPath";
 import { initialAuthCallbackType } from "@/lib/authCallbackIntent";
 import { POST_LOGIN_STATE } from "@/lib/accounts/landing";
-import { profileSetupOwed } from "@/lib/accounts/profileSetup";
+import { isProfileSetupOwed } from "@/lib/accounts/profileSetup";
+import {
+  resolveAuthConfirm,
+  type AuthConfirmDeps,
+} from "@/lib/accounts/authConfirmFlow";
 
-/** True when the verified person still owes the one-time setup. A read failure is not owed. */
-const profileSetupIsOwed = async (userId: string): Promise<boolean> => {
-  try {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("profile_setup_completed_at")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (error) return false;
-    return profileSetupOwed(data);
-  } catch {
-    return false;
-  }
+/** Adapts the supabase client to the flow's deps (unit-tested with fakes). */
+const authConfirmDeps: AuthConfirmDeps = {
+  verifyOtp: async ({ type, token_hash }) => {
+    const { data, error } = await supabase.auth.verifyOtp({
+      type: type as EmailOtpType,
+      token_hash,
+    });
+    return { user: data?.user ?? null, error };
+  },
+  getSession: async () => {
+    const { data, error } = await supabase.auth.getSession();
+    return { user: data?.session?.user ?? null, error };
+  },
+  getUser: async () => {
+    const { data, error } = await supabase.auth.getUser();
+    return { user: data?.user ?? null, error };
+  },
+  isProfileSetupOwed: (userId) => isProfileSetupOwed(supabase, userId),
+  settle: () => new Promise((resolve) => setTimeout(resolve, 1200)),
 };
 
 /** Authentication callbacks never create business resources or accept invitations. */
@@ -33,47 +44,29 @@ export default function AuthConfirm() {
 
   useEffect(() => {
     let active = true;
-    async function confirm() {
-      try {
-        const hash = new URLSearchParams(window.location.hash.slice(1));
-        if (params.has("error") || hash.has("error")) {
-          throw new Error("This confirmation link is invalid or expired. Sign in or request a new link.");
-        }
-        let { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (!session) {
-          // Allow the auth client to finish exchanging a callback URL.
-          await new Promise((resolve) => setTimeout(resolve, 1200));
-          const result = await supabase.auth.getSession();
-          session = result.data.session;
-          error = result.error;
-          if (error) throw error;
-        }
-        if (!active) return;
-        if (!session?.user.email_confirmed_at) {
-          setMessage("Sign in with your verified email to continue. No business setup is required.");
-          return;
-        }
-        const recovery = params.get("type") === "recovery" || hash.get("type") === "recovery" || initialAuthCallbackType === "recovery";
-        if (recovery) {
-          navigate(invitationPath("/reset-password", params), { replace: true });
-          return;
-        }
-        // Task 3: the one-time profile setup comes after verification and before the
-        // business flow. A read failure never traps the person here: it falls through
-        // to the business flow as before.
-        const owed = await profileSetupIsOwed(session.user.id);
-        if (!active) return;
-        if (owed) {
-          navigate(invitationPath("/profile/setup", params), { replace: true });
-          return;
-        }
-        navigate(invitationPath("/accounts", params), { replace: true, state: POST_LOGIN_STATE });
-      } catch (error) {
-        if (active) setMessage(error instanceof Error ? error.message : "Could not verify your confirmation link.");
+    (async () => {
+      const outcome = await resolveAuthConfirm(authConfirmDeps, {
+        search: params,
+        hash: new URLSearchParams(window.location.hash.slice(1)),
+        initialType: initialAuthCallbackType,
+      });
+      if (!active) return;
+      if (outcome.kind === "message") {
+        setMessage(outcome.message);
+        return;
       }
-    }
-    confirm();
+      if (outcome.kind === "reset-password") {
+        navigate(invitationPath("/reset-password", params), { replace: true });
+        return;
+      }
+      // Task 3: the one-time profile setup comes after verification and before
+      // the business flow (the flow is fail-soft on the profiles read).
+      if (outcome.kind === "profile-setup") {
+        navigate(invitationPath("/profile/setup", params), { replace: true });
+        return;
+      }
+      navigate(invitationPath("/accounts", params), { replace: true, state: POST_LOGIN_STATE });
+    })();
     return () => { active = false; };
   }, [navigate, params]);
 

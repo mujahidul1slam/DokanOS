@@ -15,6 +15,7 @@ import { mapAuthError } from "@/lib/authErrors";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 import { invitationPath } from "@/lib/invitationPath";
 import { POST_LOGIN_STATE } from "@/lib/accounts/landing";
+import { isProfileSetupOwed } from "@/lib/accounts/profileSetup";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -29,6 +30,25 @@ const Login = () => {
   const turnstileRef = useRef<TurnstileWidgetRef>(null);
   const { signIn } = useAuth();
   const navigate = useNavigate();
+
+  // Task 3: the one-time profile setup gate also runs on the login landing, so
+  // confirming on one device and signing in on another can never skip it. The
+  // owed check is shared with the post-confirmation gate and fail-soft: a read
+  // failure falls through to the normal landing and never traps anyone.
+  const landingAfterAuth = async () => {
+    let owed = false;
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (data.user) owed = await isProfileSetupOwed(supabase, data.user.id);
+    } catch {
+      // not owed
+    }
+    if (owed) {
+      navigate(invitationPath("/profile/setup"));
+      return;
+    }
+    navigate(invitationPath("/accounts"), { state: POST_LOGIN_STATE });
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +68,7 @@ const Login = () => {
       toast.error(mapAuthError(error));
       return;
     }
-    navigate(invitationPath("/accounts"), { state: POST_LOGIN_STATE });
+    await landingAfterAuth();
   };
 
   const handleMfaVerify = async (e: React.FormEvent) => {
@@ -57,7 +77,7 @@ const Login = () => {
     setMfaLoading(true);
     try {
       await challengeAndVerify(mfaFactorId, mfaCode);
-      navigate(invitationPath("/accounts"), { state: POST_LOGIN_STATE });
+      await landingAfterAuth();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "";
       toast.error(

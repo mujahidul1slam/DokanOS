@@ -50,8 +50,23 @@ const signupProfile = (): ProfileRow => ({
   profile_setup_completed_at: null,
 });
 
+/** The session shape GoTrue returns from verify/token exchanges. */
+const sessionResponse = () => ({
+  access_token: "browser-test-token",
+  token_type: "bearer",
+  expires_in: 3600,
+  expires_at: Math.floor(Date.now() / 1000) + 3600,
+  refresh_token: "browser-test-refresh",
+  user,
+});
+
+interface ApiOptions {
+  /** Override the /auth/v1/verify exchange (default: success with a session). */
+  verify?: { status: number; body: unknown };
+}
+
 /** Mocks the REST layer around one stateful profile row, and records every request. */
-async function api(page: Page, profile: ProfileRow) {
+async function api(page: Page, profile: ProfileRow, options: ApiOptions = {}) {
   const requests: Request[] = [];
   await page.route("https://challenges.cloudflare.com/**", (route) => route.abort());
   await page.route("http://127.0.0.1:54321/**", async (route) => {
@@ -60,10 +75,20 @@ async function api(page: Page, profile: ProfileRow) {
     const body = request.postDataJSON() as Record<string, unknown> | null;
     requests.push({ path: url.pathname, method: request.method(), body });
     let data: unknown = [];
+    let status = 200;
     if (url.pathname.endsWith("/rpc/is_signup_open")) data = true;
     if (url.pathname.endsWith("/user_business_access")) {
       data = [{ role: "owner", business_id: business.id, businesses: business }];
     }
+    if (url.pathname.endsWith("/verify")) {
+      if (options.verify) {
+        status = options.verify.status;
+        data = options.verify.body;
+      } else {
+        data = sessionResponse();
+      }
+    }
+    if (url.pathname.endsWith("/token")) data = sessionResponse();
     if (url.pathname.endsWith("/user")) data = user;
     if (url.pathname.endsWith("/profiles")) {
       if (request.method() === "PATCH") {
@@ -74,7 +99,7 @@ async function api(page: Page, profile: ProfileRow) {
       }
     }
     if (url.pathname.includes("/functions/")) data = { status: "ok" };
-    await route.fulfill({ json: data });
+    await route.fulfill({ status, json: data });
   });
   return requests;
 }
@@ -169,4 +194,35 @@ test("invitation intent survives the setup step, and the step never accepts it",
   await expect(page).toHaveURL(/\/accounts\?invite=setup-invitation$/);
   await expect(page.getByText("Your invitation is saved. Verification does not accept it or grant access.")).toBeVisible();
   expect(requests.some((r) => /accept_business_invitation/.test(r.path))).toBe(false);
+});
+
+test("an emailed token_hash link is exchanged and lands on the setup step", async ({ page }) => {
+  const requests = await api(page, signupProfile());
+  // No seeded session: the link's own exchange must establish the user.
+  await page.goto("/auth/confirm?token_hash=test-hash&type=signup");
+  await expect(page).toHaveURL(/\/profile\/setup$/);
+  await expect(page.getByRole("heading", { name: "Set up your profile" })).toBeVisible();
+  expect(requests.some((r) => r.path.endsWith("/verify"))).toBe(true);
+});
+
+test("signing in while setup is owed lands on the setup step before the business flow", async ({ page }) => {
+  await api(page, signupProfile());
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(user.email);
+  await page.getByLabel("Password", { exact: true }).fill("irrelevant-password");
+  await page.getByRole("button", { name: "Sign In" }).click();
+
+  await expect(page).toHaveURL(/\/profile\/setup$/);
+  await expect(page.getByRole("heading", { name: "Set up your profile" })).toBeVisible();
+});
+
+test("a used confirmation link with an established session proceeds to the gate instead of dead-ending", async ({ page }) => {
+  await api(page, signupProfile(), {
+    verify: { status: 404, body: { code: 404, error_code: "otp_expired", msg: "Token has expired or is invalid" } },
+  });
+  await signedIn(page);
+  await page.goto("/auth/confirm?token_hash=used-hash&type=signup");
+
+  await expect(page).toHaveURL(/\/profile\/setup$/);
+  await expect(page.getByText("invalid or expired")).toHaveCount(0);
 });
