@@ -297,18 +297,17 @@ Two further observations from the same pass:
   Supabase defaults, so `cost_price` (margin data) is readable. This is the same root cause — grants
   granted but never revoked.
 
-**Proposed remediation (not applied — needs your go-ahead; it is a write to production):**
+**Remediation — WRITTEN AND VERIFIED 2026-11-01, awaiting the production go-ahead:**
 
-1. `ALTER TABLE … ENABLE ROW LEVEL SECURITY` on the four reachable tables, with policies mirroring
-   intent: `sync_queue` / `sync_queue_cleanup_log` → service-role only (RLS on, no anon/authenticated
-   policy); `product_locations` → its existing four policies start working as written;
-   `payment_providers` → SELECT for anon/authenticated (public lookup), writes denied.
-2. `REVOKE` the default-grant surface from `anon` to match policy intent, restoring the `cost_price`
-   carve-out.
-3. Regression test that **fails if any `public` table has `relrowsecurity = false`** — the existing
-   `api_table_grants_test.sql` checks the policy/privilege *pairing* but never asserts RLS is enabled,
-   which is why the battery stayed green through all of this.
-4. Correct the plan document's grant-rebalance claim.
+`supabase/migrations/20261103100000_rls_hardening.sql` (local ledger 190 → 191; production still 190 until applied):
+
+1. **§1 root cause**: production's `postgres` role carries **permissive `ALTER DEFAULT PRIVILEGES`** on schema `public` (tables/sequences/functions fully granted to `anon`/`authenticated`/`service_role`) — environment drift, created by no repo migration (grep: zero matches). Every new table was born fully granted to anon **including TRUNCATE, which RLS does not gate** (proven: a deny-all-RLS scratch table was still wiped by an anon TRUNCATE). §1 revokes the postgres-owned defaults so new tables arrive ungranted. (The `supabase_admin`-owned defaults are platform-level and inert — all objects are `postgres`-owned — and cannot be altered by `postgres`, which is not a superuser.)
+2. **§2** enables RLS on all nine tables (the four reachable ones first among them). `product_locations`' four existing authenticated policies start working as written (0 of 205 rows orphaned; 0 of 225 products have NULL `store_id` — no row is lost).
+3. **§3** adds the three missing intent-matching policies: `courier_providers` public read (directory precedent), `payment_providers` authenticated read (the grant intent of `20261031180000:52`), `courier_shipments` member read via the order → `user_can_access_store` chain (the `order_payments` idiom).
+4. **§4** `REVOKE ALL ON ALL TABLES/SEQUENCES IN SCHEMA public FROM anon, authenticated, public` — kills the 511-grant anon surface and the TRUNCATE bypass (service_role deliberately untouched; it bypasses RLS and the edge functions depend on it).
+5. **§5–§8** re-grant exactly the policy-derived surface: the `20261026140000` doctrine loop (skipping `products`/`app_config`), the column carve-outs (`products` 31 public catalog columns — `cost_price` stays excluded, restoring the intended carve-out; `invoice_settings` 4 branding columns; `app_config` table-wide revoked from service_role, replaced by `GRANT SELECT (key, value)` which the signup edge function reads and which keeps `has_table_privilege` false per the `signup_config_accessor_test.sql` contract), the three views (`sync_health`, `*_safe`), and function EXECUTE hygiene (the 21-RPC app surface keeps EXECUTE; the six internal SECURITY DEFINER functions are revoked from anon/authenticated, `claim_sync_queue_batch(int)` + `recover_orphaned_sync_rows(timestamptz)` re-granted to service_role only).
+
+Companion regression battery `supabase/tests/rls/rls_hardening_test.sql` — static invariants (every public table RLS-enabled; zero postgres-owned default ACLs granting API roles; anon grants only on anon-policy tables and only SELECT; zero anon/authenticated TRUNCATE; ~20 targeted posture asserts; the three new policies) + behavioural probes (anon denials on the formerly-readable tables **including the TRUNCATE bypass**, owner positive control through the `user_can_access_store` chain, outsider invisibility + grant-level mutation denial). **Result: 29/29 files + 6 API suites ALL GREEN** (`npx supabase db reset` then `node scripts/run-rls-tests.mjs`, exit 0). Two test-side defects were caught and fixed during verification: the owner probe initially used the *business* UUID (`11111111-…0001`) as the JWT `sub` instead of `OWNER_A` (`00000000-…0001`), and the outsider UPDATE probe expected a filtered rowcount where the doctrine correctly denies at the grant layer (no client UPDATE policy exists — edge functions write shipments with the service key).
 
 Blast radius: all four tables are read by **edge functions using the service-role key** (which has
 `rolbypassrls = true`, verified) or by the Postgres owner, never by the browser — `src/` has zero
