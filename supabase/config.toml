@@ -58,3 +58,11 @@ verify_jwt = true
 [auth.email]
 enable_confirmations = true
 
+# Auth redirect allow-list. GoTrue replaces an unlisted `emailRedirectTo` with
+# SITE_URL silently — with the defaults that dead-ended every confirmation link
+# at http://127.0.0.1:3000 (verified live 2026-11-01). Site URL + every local
+# app origin must be listed or the verify->app handoff cannot work.
+[auth]
+site_url = "http://localhost:8080"
+additional_redirect_urls = ["http://localhost:8080/**", "http://127.0.0.1:8080/**", "http://localhost:4175/**", "http://127.0.0.1:4175/**"]
+
