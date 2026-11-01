@@ -67,6 +67,7 @@ const LOAD_ORDER = [
   "pathao_integrations",
   "courier_providers",
   "orders",
+  "order_items",
   "user_business_access",
 ];
 
@@ -126,7 +127,7 @@ async function main() {
   const db = new pg.Client({ connectionString: scratchUrl.href });
   await db.connect();
 
-  const required = ["businesses", "brands", "stores", "selling_points", "orders", "customers", "order_sources", "warehouses"];
+  const required = ["businesses", "brands", "stores", "selling_points", "orders", "order_items", "customers", "order_sources", "warehouses"];
   for (const table of required) {
     const { rows } = await db.query(`SELECT to_regclass('public.${table}') AS t`);
     if (!rows[0].t) {

@@ -12,9 +12,9 @@ Work landed 2026-11-01 (commit hash recorded in [cutover-status.md](cutover-stat
 
 ## RLS gap discovered (2026-11-01)
 - Every existing orders/customers policy required `store_id IS NOT NULL AND user_can_access_store(store_id)` — pool rows passed **no** policy: invisible and unmodifiable via PostgREST before this task.
-- Migration `20261102120000_legacy_pool_rls.sql` (policies only, no schema change): pool read for active-business members, pool reassign UPDATE for owner/admin/manager (staff read-only) with a WITH CHECK that only allows moving a row into a binding the operator can access; plus source-attribution read/update legs so source-bound rows (incl. the script's ~97 inferred) are visible to the source's business, with a store-consistency guard.
+- Migration `20261102120000_legacy_pool_rls.sql` (policies only, no schema change): pool read for active-business members, pool reassign UPDATE for owner/admin/manager (staff read-only) with a WITH CHECK that only allows moving a row into a binding the operator can access; plus source-attribution read/update legs so source-bound rows (including the refreshed rehearsal's 809 inferred orders) are visible to the source's business, with a store-consistency guard.
 - **Documented trade-off:** pool rows are unowned by construction (no business/brand binding), so their tenancy gate is membership in the server-side ACTIVE business context — right for the single real tenant post-migration; in a multi-business world unowned rows are shared by whichever business a member has active (outsiders fail closed). Pinned in `supabase/tests/rls/legacy_pool_test.sql`.
 - **Recommendation for Task 16's contract:** stamp `business_id` onto pool rows (one UPDATE in the migration script) so the pool becomes truly per-business. Not done in Task 15 — it would change the line-cited script content.
 
 ## related
-- [onboarding-design.md](onboarding-design.md) (provenance columns from Tasks 4/13) · [cutover-status.md](cutover-status.md) (the dry-run numbers: pool 758 orders / 1,208 customers)
+- [onboarding-design.md](onboarding-design.md) (provenance columns from Tasks 4/13) · [cutover-status.md](cutover-status.md) (refreshed dry-run numbers: pool 48 orders / 51 customers; 809 orders inferred; 1,162 customers resolved via connected-order evidence)

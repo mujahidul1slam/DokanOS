@@ -27,7 +27,7 @@ Real tenant (the only keep): business `de31fd60-a520-4d42-aef2-c72ededc4c09` **E
 Sources for every step are cited inline; the executable truth lives in
 `scripts/migrate-enveil-vincent.sql` and `scripts/task8-audit.mjs` — **run those files, do not
 retype their statements from this document.** Expected counts come from
-`tasks/audit/task8-dry-run-report.md` (dry-run against `task8_scratch`, extract of 2026-10-31).
+`tasks/audit/task8-dry-run-report.md` (dry-run against `task8_scratch`, refreshed extract of 2026-11-01).
 
 ## ⚠ Name traps — everything by UUID, never by name
 
@@ -109,23 +109,23 @@ node scripts/task8-extract-prod.mjs
 node scripts/task8-build-scratch.mjs
 
 # 3. Rehearse: audit-before → apply scripts/migrate-enveil-vincent.sql (one transaction)
-#    → audit-after + 11 acceptance checks → idempotency re-run (guard must refuse)
+#    → audit-after + 12 acceptance checks → idempotency re-run (guard must refuse)
 #    → writes tasks/audit/task8-dry-run-report.md. (scripts/task8-audit.mjs)
 node scripts/task8-audit.mjs
 ```
 
-Pass criteria (as on the 2026-10-31 run, `tasks/audit/task8-dry-run-report.md` §"Acceptance
-checks"): **all 11 checks ✅** — idempotent apply (second run refused by the guard, audits
+Pass criteria (from the refreshed 2026-11-01 run, `tasks/audit/task8-dry-run-report.md` §"Acceptance
+checks"): **all 12 checks ✅** — idempotent apply (second run refused by the guard, audits
 identical), 4 sources + warehouses per brand, 225 products preserved & attributed, customers
-preserved + 2 merged, orders preserved + 97 inferred, legacy pool sizes, inference reproduces the
-spec's ~96, junk + test data wiped (incl. AGS link severed first), stock repointed (205 rows, none
-moved), no name-based lookups (static scan `scripts/task8-audit.mjs:120-125`), 2 courier services
-mapped.
+preserved + 2 merged, pool customers with connected-order product evidence attributed, bound orders
+preserved + 809 inferred, residual legacy pool recorded, all resolvable orders attributed, junk + test
+data wiped (incl. AGS link severed first), stock repointed (205 rows, none moved), no name-based
+lookups (static scan `scripts/task8-audit.mjs:137-141`), and 2 courier services mapped.
 
 **Preserve the refreshed report** (copy it to a dated file before the run overwrites
 `tasks/audit/task8-dry-run-report.md`) — its "After" values are the **live-audit expected counts**
-for Phase 4 (the 2026-10-31 numbers in this runbook are the historical baseline; the tenant keeps
-trading, so customer/order totals drift upward — see the drift rules in Phase 4).
+for Phase 4 (the reference is a rehearsal snapshot; production keeps trading, so customer/order
+totals drift upward — take a fresh extract in the same window before applying exact-count checks).
 
 ## 3. Phase 2 — Backup + maintenance window (Gate 1, then Gate 2)
 
@@ -196,8 +196,9 @@ What the script does, step by step (exact behavior — the runbook matches the f
 | 6 | **Customer merges (BEFORE attribution)**: the 2 audited phone/alias duplicates (`c4444444-…`, `c7777777-…`) merge into brand customer `c1111111-…` — orders repointed, aliases merged **with de-duplication** against `uq_customer_alias_value`, dup rows deleted. The one further strict email-alias duplicate (`1a689ee5-…` → `4d0d1b7d-…`) is **deliberately left in the pool** (Checkpoint C review item) | `:252-272` |
 | 7 | **Store-bound customers → provenance**: `origin_order_source_id` + `origin_kind` per channel (online/woo-id → woo_sync, pos → pos, fb/ig → manual, else manual/no source) | `:278-299` |
 | 8 | **Store-bound orders → mapped source**: online/woocommerce/woo-id → WooCommerce; fb/ig → Facebook/Instagram; everything else on the counter (exchange/split/…) → Showroom | `:306-322` |
-| 9 | **Inference for unattributed orders**: brand resolved via customer id match (wins) or exactly-one store-bound customer on the order's phone, then attributed by channel text (pos/exchange → showroom, fb/ig → Facebook). ~97 orders (spec: 96 = 73 V / 23 E) | `:330-358` |
-| 10 | **Legacy pool**: remaining unattributed orders/customers tagged `source='legacy migration'` (customers also `origin_kind='legacy'`), business-level pool, reassignable later (Task 15). Trade-off: the pool rows' free-text channel is overwritten (Checkpoint C review item) | `:367-374` |
+| 8b | **Pool customers with connected-order evidence → brand**: for each still-unattributed customer, use the connected order's store/source or its ordered products to infer a brand; mixed-brand evidence chooses the earliest connected order's brand, then the customer's still-unattributed orders follow in step 9 | `:325-399` |
+| 9 | **Inference for remaining unattributed orders**: brand resolved via customer id match (wins) or exactly-one store-bound customer on the order's phone, then attributed by channel text (pos/exchange → showroom, fb/ig → Facebook). The refreshed rehearsal resolved 809 orders (97 at the original spec scope); `orders.inferable` must reach 0 | `:402-435` |
+| 10 | **Legacy pool**: remaining unattributed orders/customers tagged `source='legacy migration'` (customers also `origin_kind='legacy'`), business-level pool, reassignable later (Task 15). After step 8b this is the residual no-evidence pool; its free-text channel is overwritten and the tag remains a Task 16 migration concern | `:438-452` |
 | 11 | **Junk rows inside the real business** (spec §7): brand `d56f8d28-…` "safsdfsafsd" + its storefront `94cd65c5-…` (+2 pages); selling points `7df6baea-…` "Badda Showroom" and `9d2cc780-…` "Enveil Woocommerce" (**the junk one** — not `9a3fb6c0-…`) | `:379-385` |
 | 12 | **Test-data wipe** (Q24/Q27, spec §7), children first: storefront pages→storefronts (6, +the AGS link already gone in step 1 = 7), selling points (14), connector `9f777dc7-…` (**the 2 Pathao courier connectors `43c2b501-…`/`2a01ee63-…` STAY**), product_sources `11b92544-…`, customer_sources `b6896fa5-…`, locations (4), brands (6), stores (6), user_business_access (7), businesses (7 — incl. the duplicate "Enveil Vincent" `13e888dc-…`) | `:393-440` |
 | — | `COMMIT` | `:442` |
@@ -221,9 +222,9 @@ What the script does, step by step (exact behavior — the runbook matches the f
 ## 5. Phase 3 — Post-migration audit (Gate 3 input)
 
 Produce `tasks/audit/task17-live-audit-report.md` from **read-only** queries against production —
-the exact queries `scripts/task8-audit.mjs` runs (`collectAudit` `:52-108`, `ordersPerSource`
-`:110-118`). Copy-paste form (expected = the **fresh Phase 1 rehearsal** report; the 2026-10-31
-baseline is in Phase 4):
+the exact queries `scripts/task8-audit.mjs` runs (`collectAudit` `:52-123`, `ordersPerSource`
+`:127-135`). Copy-paste form (expected = the **fresh Phase 1 rehearsal** report; the current
+2026-11-01 reference is in Phase 4):
 
 ```sql
 -- table totals (collectAudit:54-61)
@@ -244,7 +245,7 @@ UNION ALL SELECT 'warehouses', count(*) FROM public.warehouses
 UNION ALL SELECT 'courier_services', count(*) FROM public.courier_services
 UNION ALL SELECT 'user_business_access', count(*) FROM public.user_business_access;
 
--- derived metrics (collectAudit:62-107) — see Phase 4 for expected values
+-- derived metrics (collectAudit:62-119) — see Phase 4 for expected values
 SELECT count(*) FROM public.order_sources
  WHERE legacy_store_id IS NOT NULL OR legacy_selling_point_id IS NOT NULL
     OR legacy_storefront_id IS NOT NULL OR legacy_location_id IS NOT NULL;      -- legacy_mapped = 8
@@ -270,30 +271,30 @@ SELECT ((SELECT count(*) FROM public.storefronts WHERE id IN ('a8ff5e33-986a-413
      + (SELECT count(*) FROM public.brands    WHERE id IN ('a8ff5e33-986a-413e-a774-03ee49727fe9','94cd65c5-fbb0-4ff5-a60a-c5e33e325728','13e888dc-db75-47cf-94c4-012bc1d5f669','e36ec825-2bb7-42e4-8b96-53a969054064','7df6baea-b2b1-4db0-90f0-b2ee853e86b6','9d2cc780-0e2a-44c8-a4dc-afef2eec4267','d56f8d28-0a28-4f57-894d-8f85c27e8dfa'))
      + (SELECT count(*) FROM public.businesses WHERE id IN ('a8ff5e33-986a-413e-a774-03ee49727fe9','94cd65c5-fbb0-4ff5-a60a-c5e33e325728','13e888dc-db75-47cf-94c4-012bc1d5f669','e36ec825-2bb7-42e4-8b96-53a969054064','7df6baea-b2b1-4db0-90f0-b2ee853e86b6','9d2cc780-0e2a-44c8-a4dc-afef2eec4267','d56f8d28-0a28-4f57-894d-8f85c27e8dfa'))) AS wiped_rows_still_present;  -- 0
 
--- orders per new source (ordersPerSource:110-118)
+-- orders per new source (ordersPerSource:127-135)
 SELECT s.name, s.type, count(o.id) AS orders
   FROM public.order_sources s LEFT JOIN public.orders o ON o.order_source_id = s.id
  GROUP BY s.id, s.name, s.type, s.brand_id ORDER BY s.brand_id, s.name;
 ```
 
-## 6. Phase 4 — Verification: expected counts (baseline 2026-10-31 dry-run)
+## 6. Phase 4 — Verification: expected counts (refreshed 2026-11-01 rehearsal)
 
-From `tasks/audit/task8-dry-run-report.md` (After column). **Drift rule:** the tenant keeps
-trading — `customers`/`orders` totals and their bound/pool splits may be **larger** than the
-baseline; compare them against the fresh Phase 1 rehearsal report instead. Everything else is
-shape-fixed and must match **exactly**. Structural invariants (must hold whatever the drift):
+From `tasks/audit/task8-dry-run-report.md` (After column). The values below are the current
+Phase 1 rehearsal reference; production is still expected to drift, so compare the live audit
+against a fresh extract from the same window. Structural invariants must hold exactly unless a
+fresh rehearsal explains a deliberate data-shape change:
 
 - `order_sources` = 8 (4 per brand), **all 8** carry `legacy_*` mapping ids; `warehouses` = 1;
   `courier_services` = 2 (both legacy-mapped).
 - `products` preserved and fully attributed (225); `product_variations` preserved (1,204);
   `product_locations` preserved (205) — 205 holder rows, **0** rows still on legacy `location_id`.
 - `customers.total` = before − 2 (the 2 merges); `customers.attributed + customers.pool =
-  customers.total`.
-- `orders.unattributed_left` = 0; `orders.attributed` = before-bound + inferred (97);
-  `orders.pool` = `orders.total` − `orders.attributed`.
+  customers.total`; the connected-order evidence cohort is 0 after step 8b.
+- `orders.unattributed_left` = 0; `orders.attributed` = before-bound + inferred (809 in the refreshed
+  rehearsal); `orders.inferable` = 0; `orders.pool` = `orders.total` − `orders.attributed`.
 - `wiped_rows_still_present` = 0.
 
-| Metric | Expected after (2026-10-31 baseline) | Drift rule |
+| Metric | Expected after (2026-11-01 rehearsal) | Drift rule |
 |---|---:|---|
 | businesses.total | 1 | exact |
 | brands.total | 2 | exact |
@@ -305,8 +306,8 @@ shape-fixed and must match **exactly**. Structural invariants (must hold whateve
 | products.total | 225 | exact |
 | product_variations.total | 1,204 | exact |
 | product_locations.total | 205 | exact |
-| customers.total | 3,233 | ≥ (before − 2) |
-| orders.total | 4,074 | ≥ |
+| customers.total | 3,244 | = before − 2 |
+| orders.total | 4,092 | fresh-extract reference; compare same-window audit |
 | order_sources.total | 8 | exact |
 | warehouses.total | 1 | exact |
 | courier_services.total | 2 | exact |
@@ -315,46 +316,46 @@ shape-fixed and must match **exactly**. Structural invariants (must hold whateve
 | order_sources.vincent / enveil | 4 / 4 | exact |
 | courier_services.legacy_mapped | 2 | exact |
 | products.attributed | 225 | = products.total |
-| customers.bound | 2,025 | ≥ |
-| customers.pool | 1,208 | ≥ (total − attributed) |
-| customers.attributed | 2,025 | = total − pool |
-| orders.bound | 3,219 | = before-bound (bound rows are never re-attributed) |
-| orders.attributed | 3,316 | = before-bound + 97 (inferred) |
-| orders.pool | 758 | = total − attributed |
+| customers.bound | 3,193 | fresh-extract reference |
+| customers.pool | 51 | = total − attributed |
+| customers.attributed | 3,193 | = total − pool |
+| customers.unattributed_with_order_evidence | 0 | exact after step 8b |
+| orders.bound | 3,235 | = before-bound (bound rows are never re-attributed) |
+| orders.attributed | 4,044 | = before-bound + 809 (refreshed inferred) |
+| orders.pool | 48 | = total − attributed |
 | orders.unattributed_left | 0 | exact |
 | orders.inferable (post-migration) | 0 | exact |
 | stock.holder_rows | 205 | exact |
 | stock.legacy_location_rows | 0 | exact |
 | wiped_rows_still_present | 0 | exact |
 
-Orders per new source after (baseline; identify sources by UUID — names repeat across brands):
+Orders per new source after (2026-11-01 rehearsal; identify sources by UUID — names repeat across brands):
 
 | Brand | Source | Type | Orders |
 |---|---|---|---:|
-| Enveil | Enveil WooCommerce `ea160683-…` | woocommerce | 658 |
-| Enveil | Facebook / Instagram `60741e62-…` | facebook | 235 |
-| Enveil | Main Showroom `748bb49a-…` | showroom | 29 |
+| Enveil | Enveil WooCommerce `ea160683-…` | woocommerce | 660 |
+| Enveil | Facebook / Instagram `60741e62-…` | facebook | 243 |
+| Enveil | Main Showroom `748bb49a-…` | showroom | 179 |
 | Enveil | Enveil Storefront `81cb426c-…` | storefront | 0 |
-| Vincent | Vincent WooCommerce `2590e589-…` | woocommerce | 1,765 |
-| Vincent | Facebook / Instagram `b259adc8-…` | facebook | 549 |
-| Vincent | Main Showroom `7e2687c4-…` | showroom | 80 |
+| Vincent | Vincent WooCommerce `2590e589-…` | woocommerce | 1,769 |
+| Vincent | Facebook / Instagram `b259adc8-…` | facebook | 555 |
+| Vincent | Main Showroom `7e2687c4-…` | showroom | 638 |
 | Vincent | Vincent Storefront `c5376c7f-…` | storefront | 0 |
-| | **Total attributed** | | **3,316** |
+| | **Total attributed** | | **4,044** |
 
-### Count reconciliation (spec snapshot → dry-run → Task 8 card)
+### Count reconciliation (spec snapshot → refreshed dry-run → Task 8 card)
 
 - Spec snapshot 2026-10-29 (`DOMAIN-REVAMP-SPEC.md` §7 "Data mapping"): 225 products;
   customers 2,020 bound + 1,202 unattributed (2 merged → 1,200 pool); orders 3,201 attributed +
   849 unattributed (96 inferred / 753 pool).
-- Dry-run report 2026-10-31 (authoritative baseline): 225 products; customers 3,235 → 3,233
-  (2 dup rows merged away), bound 2,025, pool 1,208; orders 4,074, bound 3,219, inferred 97,
-  attributed **3,316**, pool 758. The +drift is new trading rows since the spec snapshot
-  (+13 customers, +24 orders) — the mapping rules reproduce the spec's shape exactly.
-- ⚠ The Task 8 card (`tasks/todo.md:167`) states "customers **2,024** bound … orders **3,218**
-  bound + 97 inferred = **3,315** attributed" — each of those three figures is **1 lower** than
-  the report (2,025 / 3,219 / 3,316; the report's own per-source table sums to 3,316). The
-  **report wins**; treat the card line as stale by one row. All other card figures (225 products,
-  pool 1,208 / 758, 8 sources + 1 warehouse, 205 stock rows, 2 courier mappings) match.
+- Refreshed dry-run report 2026-11-01 (current rehearsal): 225 products; customers 3,246 → 3,244
+  (2 dup rows merged away), bound 3,235 → 3,193 attributed, residual pool 51; orders 4,092,
+  bound 3,235, inferred 809, attributed **4,044**, pool 48. The larger inference count includes
+  orders of customers resolved by step 8b; `orders.inferable` reaches 0 and the evidence cohort is
+  fully drained.
+- The spec snapshot and 2026-10-31 values above remain historical comparison points only. The
+  generated report is authoritative for the current rehearsal; production execution must take a
+  fresh extract in the same window rather than copy these drifting totals blindly.
 
 ## 7. Phase 5 — Enable the new UI (Gate 3 first!)
 
@@ -408,7 +409,7 @@ sign-off on the live audit report.**
 |---|---|---|---|---|
 | ☐ | Checkpoints A–E complete; dry-run report reviewed (Checkpoint C) | `tasks/audit/task8-dry-run-report.md` reviewed incl. the 3 review items | user | |
 | ☐ | 19-file catch-up batch + 5-file schema wave applied (its own go-ahead + checks) | ledger head `20261101090000`; `is_signup_open()` NOT NULL | operator | |
-| ☐ | Fresh scratch rehearsal: all 11 checks ✅ | refreshed report saved (dated copy) | operator | |
+| ☐ | Fresh scratch rehearsal: all 12 checks ✅ | refreshed report saved (dated copy), including the connected-order evidence cohort | operator | |
 | ☐ | Backup / PITR taken, recovery timestamp recorded | recorded here: ____ | operator | |
 | ☐ | Maintenance window announced; read-only freeze on | | operator | |
 | ☐ | Pre-flight read-only queries all green | §3 (Phase 2 step 4) | operator | |
@@ -427,10 +428,10 @@ sign-off on the live audit report.**
   audit passes and the user decides (`tasks/todo.md` Task 16 dependency; spec §7 keeps
   `legacy_*` mapping columns on the new rows). Until then legacy tables keep working
   (stores 2 / locations 3 / selling_points 8 / storefronts 2 / connectors 4 remain by design).
-- Checkpoint C review items still open for the user: (1) the unmerged strict email-alias duplicate
-  (`1a689ee5-…` → `4d0d1b7d-…`) can join the merge table on request; (2) pool-tag trade-off —
-  `source='legacy migration'` dies with `orders.source` at Task 16, so drain the pool first or
-  migrate the tag; (3) fulfillment defaults on migrated sources are editable in the Task 7 UI
+- Checkpoint C review items are resolved in the generated report: (1) the strict email-alias duplicate
+  (`1a689ee5-…` → `4d0d1b7d-…`) stays in the pool; (2) pool customers with connected-order product
+  evidence are attributed by the signed-off earliest-order rule, while the residual tag is a Task 16
+  migration item; (3) fulfillment defaults are accepted and remain editable in the Task 7 UI
   (`tasks/audit/task8-dry-run-report.md` §"Review items").
 - Legacy `orders.source`/`customers.source` free-text is consumed read-only until Task 16.
 
@@ -455,8 +456,9 @@ Recorded while verifying this runbook against the actual scripts (Task 17 verifi
 5. The audit's wipe check samples **7 tracked ids** across storefronts/brands/businesses
    (`scripts/task8-audit.mjs:40-45`) — it proves the headline rows are gone, not every deleted
    row; full wipe completeness rests on the script's own UUID lists (steps 11–12).
-6. `tasks/todo.md` says "10/10 audit checks" (Task 8 line) and "11/11" (Task 9 line) — the
-   current report table carries **11** checks (the 10th set predates the courier check); all 11 ✅.
+6. The refreshed Task 8 report carries **12** checks: the connected-order evidence cohort and the
+   zero-resolvable-orders invariant are explicit, alongside the mapping, preservation, pool, wipe,
+   stock, UUID-only, and courier checks. All 12 pass in the 2026-11-01 rehearsal.
 7. The dry-run report's per-source table lists sources ordered by `brand_id`, so Enveil rows come
    first despite "Vincent" names sorting later; two source names repeat across brands — the Phase
    4 table adds brand + UUID to remove the ambiguity.

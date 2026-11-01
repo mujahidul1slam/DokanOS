@@ -244,9 +244,9 @@ WHERE store_id IN ('1e69bece-51f8-414c-ab8b-341702e008f5', '4f3e88d1-c592-48d9-b
 
 -- ---------------------------------------------------------------------------
 -- 6. Customer duplicates (the two audited phone/alias matches) — merged into
---    the brand customer BEFORE attribution. Review item: one further strict
---    email-alias duplicate exists (1a689ee5-… → 4d0d1b7d-…); it is
---    deliberately left in the pool for human decision
+--    the brand customer BEFORE attribution. Review item RESOLVED (human
+--    sign-off 2026-11-01): one further strict email-alias duplicate
+--    (1a689ee5-… → 4d0d1b7d-…) stays in the pool — deliberately NOT merged
 --    (see tasks/audit/task8-dry-run-report.md).
 -- ---------------------------------------------------------------------------
 CREATE TEMP TABLE task8_merges (dup_id uuid PRIMARY KEY, keep_id uuid NOT NULL);
@@ -322,6 +322,83 @@ WHERE store_id IN ('1e69bece-51f8-414c-ab8b-341702e008f5', '4f3e88d1-c592-48d9-b
   AND order_source_id IS NULL;
 
 -- ---------------------------------------------------------------------------
+-- 8b. Customers: unattributed → brand via their connected orders' products
+--     (human ruling 2026-11-01, Checkpoint C verdict 2). Evidence per
+--     connected order = the order's own store/channel binding UNION the
+--     store/brand of the products in its items. A customer touching exactly
+--     one brand binds there; a customer with products/orders from BOTH brands
+--     binds to the first one (deterministic tie-break: the brand of the
+--     customer's earliest connected order, then brand UUID order).
+--     Connected = orders.customer_id = customer.id, or the order has no
+--     customer_id and the phones match (id wins, like step 9).
+--     Binding mirrors step 7 exactly (transitional store_id + channel source).
+--     Runs before step 9 so the customers' still-unattributed orders then
+--     follow their customer — the script's existing inference semantics.
+-- ---------------------------------------------------------------------------
+CREATE TEMP TABLE task8_customer_brand (customer_id uuid PRIMARY KEY, brand_store uuid NOT NULL);
+
+WITH ev AS (
+  SELECT c.id AS customer_id, o.created_at, x.brand_store
+  FROM public.customers c
+  JOIN public.orders o
+    ON (o.customer_id = c.id
+        OR (o.customer_id IS NULL AND c.phone IS NOT NULL AND o.customer_phone = c.phone))
+  CROSS JOIN LATERAL (
+    SELECT DISTINCT y.brand_store
+    FROM (
+      SELECT o.store_id AS brand_store
+      WHERE o.store_id IN ('1e69bece-51f8-414c-ab8b-341702e008f5', '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd')
+      UNION
+      SELECT CASE o.order_source_id
+          WHEN '2590e589-d158-4582-bc00-0446949d5433' THEN '1e69bece-51f8-414c-ab8b-341702e008f5'::uuid
+          WHEN '7e2687c4-5f42-49cd-bae7-0b583bd8a95f' THEN '1e69bece-51f8-414c-ab8b-341702e008f5'::uuid
+          WHEN 'b259adc8-67e2-406b-8f69-8fb84a737cfb' THEN '1e69bece-51f8-414c-ab8b-341702e008f5'::uuid
+          WHEN 'ea160683-a303-4616-bda5-2d51cbf4f204' THEN '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd'::uuid
+          WHEN '748bb49a-8f5c-4c6e-a998-ef432b76f39a' THEN '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd'::uuid
+          WHEN '60741e62-1fee-4750-8882-27a144c997cb' THEN '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd'::uuid
+        END
+      UNION
+      SELECT p.store_id
+      FROM public.order_items oi
+      JOIN public.products p ON p.id = oi.product_id
+      WHERE oi.order_id = o.id
+        AND p.store_id IN ('1e69bece-51f8-414c-ab8b-341702e008f5', '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd')
+    ) y
+    WHERE y.brand_store IS NOT NULL
+  ) x
+  WHERE c.store_id IS NULL AND c.origin_order_source_id IS NULL
+)
+INSERT INTO task8_customer_brand (customer_id, brand_store)
+SELECT DISTINCT ON (customer_id) customer_id, brand_store
+FROM ev
+ORDER BY customer_id, created_at ASC, brand_store ASC;
+
+UPDATE public.customers c
+SET store_id = cb.brand_store,
+    origin_order_source_id = CASE
+      WHEN c.source = 'pos' THEN CASE cb.brand_store
+        WHEN '1e69bece-51f8-414c-ab8b-341702e008f5' THEN '7e2687c4-5f42-49cd-bae7-0b583bd8a95f'::uuid
+        WHEN '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd' THEN '748bb49a-8f5c-4c6e-a998-ef432b76f39a'::uuid
+      END
+      WHEN c.source = 'fb/ig' THEN CASE cb.brand_store
+        WHEN '1e69bece-51f8-414c-ab8b-341702e008f5' THEN 'b259adc8-67e2-406b-8f69-8fb84a737cfb'::uuid
+        WHEN '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd' THEN '60741e62-1fee-4750-8882-27a144c997cb'::uuid
+      END
+      WHEN c.source = 'online' OR c.woo_customer_id IS NOT NULL THEN CASE cb.brand_store
+        WHEN '1e69bece-51f8-414c-ab8b-341702e008f5' THEN '2590e589-d158-4582-bc00-0446949d5433'::uuid
+        WHEN '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd' THEN 'ea160683-a303-4616-bda5-2d51cbf4f204'::uuid
+      END
+      ELSE NULL
+    END,
+    origin_kind = CASE
+      WHEN c.source = 'online' OR c.woo_customer_id IS NOT NULL THEN 'woo_sync'
+      WHEN c.source = 'pos' THEN 'pos'
+      ELSE 'manual'
+    END
+FROM task8_customer_brand cb
+WHERE c.id = cb.customer_id AND c.store_id IS NULL AND c.origin_order_source_id IS NULL;
+
+-- ---------------------------------------------------------------------------
 -- 9. Orders: unattributed → infer brand via customer id/phone match
 --    (exactly one store-bound customer on that phone; id match wins), then
 --    attribute by channel. Channel text: pos/exchange → showroom, fb/ig →
@@ -361,6 +438,7 @@ WHERE r.order_id = o.id AND r.store_id IS NOT NULL;
 -- 10. Legacy pool (spec §7 / Task 15): remaining unattributed customers and
 --     orders are tagged `legacy migration` (business-level pool, reassignable
 --     from the UI later). customers additionally get origin_kind 'legacy'.
+--     After 8b this is the residual pool: rows with NO brand evidence.
 --     Note: this replaces the free-text channel on pool rows (pos/fb-ig/…);
 --     they are by definition the rows nobody could attribute.
 -- ---------------------------------------------------------------------------

@@ -96,6 +96,23 @@ async function collectAudit(client) {
       WHERE o.store_id IS NULL AND o.selling_point_id IS NULL AND o.storefront_id IS NULL
         AND o.order_source_id IS NULL
     ) SELECT count(*)::int AS n FROM resolved WHERE store_id IS NOT NULL`);
+  a["customers.unattributed_with_order_evidence"] = await one(client, `
+    SELECT count(DISTINCT c.id)::int AS n
+    FROM public.customers c
+    JOIN public.orders o
+      ON (o.customer_id = c.id
+          OR (o.customer_id IS NULL AND c.phone IS NOT NULL AND o.customer_phone = c.phone))
+    WHERE c.store_id IS NULL AND c.origin_order_source_id IS NULL
+      AND (
+        o.store_id IN ('1e69bece-51f8-414c-ab8b-341702e008f5', '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd')
+        OR o.order_source_id IN ('2590e589-d158-4582-bc00-0446949d5433', '7e2687c4-5f42-49cd-bae7-0b583bd8a95f',
+                                'b259adc8-67e2-406b-8f69-8fb84a737cfb', 'ea160683-a303-4616-bda5-2d51cbf4f204',
+                                '748bb49a-8f5c-4c6e-a998-ef432b76f39a', '60741e62-1fee-4750-8882-27a144c997cb')
+        OR EXISTS (SELECT 1 FROM public.order_items oi
+                   JOIN public.products p ON p.id = oi.product_id
+                   WHERE oi.order_id = o.id
+                     AND p.store_id IN ('1e69bece-51f8-414c-ab8b-341702e008f5', '4f3e88d1-c592-48d9-ba0d-aa50a12e82fd'))
+      )`);
   a["stock.holder_rows"] = await one(client,
     `SELECT count(*)::int AS n FROM public.product_locations WHERE warehouse_id IS NOT NULL OR stock_holder_order_source_id IS NOT NULL`);
   a["stock.legacy_location_rows"] = await one(client,
@@ -222,9 +239,10 @@ async function main() {
     ["4 order sources + warehouses per brand", `Vincent ${after["order_sources.vincent"]} sources + 1 warehouse, Enveil ${after["order_sources.enveil"]} sources + 0 warehouses`, after["order_sources.vincent"] === 4 && after["order_sources.enveil"] === 4 && after["warehouses.total"] === 1],
     ["225 products preserved", `${before["products.total"]} → ${after["products.total"]}, all attributed: ${after["products.attributed"]}`, after["products.total"] === before["products.total"] && after["products.attributed"] === after["products.total"]],
     ["Customers preserved + merged", `bound ${before["customers.bound"]} (+2 merged, −2 rows) → attributed ${after["customers.attributed"]}; total ${before["customers.total"]} → ${after["customers.total"]} (2 merge rows removed)`, after["customers.total"] === before["customers.total"] - 2],
+    ["Pool customers attributed via connected orders (Checkpoint C ruling 2026-11-01)", `cohort ${fmt(before["customers.unattributed_with_order_evidence"])} unattributed customers had connected-order brand evidence (order binding + items' products) → migrated to that brand (both brands → first); residual with evidence: ${after["customers.unattributed_with_order_evidence"]}`, after["customers.unattributed_with_order_evidence"] === 0],
     ["Attributed orders preserved + inferred", `bound ${before["orders.bound"]} + inferred ${inferred} → attributed ${after["orders.attributed"]} (spec snapshot: 3,297 = 3,201 + 96)`, after["orders.attributed"] === before["orders.bound"] + inferred],
     ["Legacy pool", `orders ${after["orders.pool"]} (spec: 753), customers ${after["customers.pool"]} (spec: 1,200) — drift = new rows since the 2026-10-29 spec snapshot`, after["orders.pool"] === before["orders.total"] - after["orders.attributed"] && after["customers.pool"] === before["customers.total"] - 2 - after["customers.attributed"]],
-    ["Inference rule reproduces the spec's ~96", `${inferred} orders attributed via customer id/phone match (spec: 96 = 73 Vincent / 23 Enveil)`, inferred >= 96 && inferred <= 97],
+    ["Orders follow their customer (id/phone match)", `${fmt(inferred)} orders attributed (spec snapshot: 96 = 73 Vincent / 23 Enveil; extra = orders of 8b-attributed customers), resolvable-left ${after["orders.inferable"]}`, inferred >= 96 && after["orders.inferable"] === 0],
     ["Junk + test data wiped", `tracked ids still present: ${after["wiped_rows_still_present"]}; AGS→Enveil-store link severed before deletes (step 1 of script)`, after["wiped_rows_still_present"] === 0],
     ["Stock repointed, nothing moved", `holder rows ${after["stock.holder_rows"]} / legacy-location rows ${after["stock.legacy_location_rows"]} (205 preserved)`, after["stock.holder_rows"] === 205 && after["stock.legacy_location_rows"] === 0],
     ["No name-based lookups", nameFindings.length === 0 ? "static scan of the script: none found (UUID literals only)" : `FINDINGS: ${nameFindings.join(", ")}`, nameFindings.length === 0],
@@ -236,13 +254,13 @@ async function main() {
   push();
   push("## Reconciliation with the spec snapshot (2026-10-29)");
   push();
-  push(`The acceptance numbers (225 products / 2,022 customers / 3,297 attributed orders / 753 + 1,200 pool / 96 inferred) were captured at spec time. The live tenant kept trading: the extract holds **${before["customers.total"]} customers** (spec: 3,222) and **${before["orders.total"]} orders** (spec: 4,050). All +drift rows are new attributed rows and new unattributed counter orders; the mapping rules reproduce the spec's shape exactly (2 merges, ~96 inferences, the rest → pool).`);
+  push(`The acceptance numbers (225 products / 2,022 customers / 3,297 attributed orders / 753 + 1,200 pool / 96 inferred) were captured at spec time. The live tenant kept trading: the extract holds **${before["customers.total"]} customers** (spec: 3,222) and **${before["orders.total"]} orders** (spec: 4,050). All +drift rows are new attributed rows and new unattributed counter orders; the mapping rules reproduce the spec's shape (2 merges, ~96 inferences at spec scope, pool customers with connected-order brand evidence attributed per the 2026-11-01 ruling, the rest → pool).`);
   push();
-  push("## Review items (Checkpoint C)");
+  push("## Review items (Checkpoint C) — verdicts recorded (human sign-off 2026-11-01)");
   push();
-  push("1. **Customer merge pairs** — the script merges the two audited phone/alias duplicates into the one brand customer (`c4444444-…` and `c7777777-…` → `c1111111-…`, the April storefront-QA fixture trio; zero orders each, alias rows repointed with de-duplication). One further *strict* duplicate exists in the data: `1a689ee5-…` → `4d0d1b7d-…` via an email-alias match. It is deliberately NOT merged (left in the pool) — say the word and it joins the merge table in the script.");
-  push("2. **Legacy pool tag** — pool rows are tagged `source = 'legacy migration'` on both orders and customers (customers additionally get `origin_kind = 'legacy'`), matching the spec's backticked tag and Task 15's \"tagged `legacy migration`\". Trade-off: the pool rows' free-text channel (`pos`/`fb/ig`) is overwritten; it survives nowhere else on orders (they have no provenance column). The tag dies with `orders.source` at Task 16, so Task 15/16 should either drain the pool first or migrate the tag to a surviving column.");
-  push("3. **Fulfillment defaults on migrated sources** — digital sources draw warehouse-first then the showroom (spec §3 example); showrooms get ship-from-store ON. All editable in the Task 7 UI.");
+  push("1. **Customer merge pairs** — RESOLVED: the script merges the two audited phone/alias duplicates into the one brand customer (`c4444444-…` and `c7777777-…` → `c1111111-…`, the April storefront-QA fixture trio; zero orders each, alias rows repointed with de-duplication). The further strict email-alias duplicate (`1a689ee5-…` → `4d0d1b7d-…`) **stays in the pool — NOT merged** (email aliases can be distinct people; a later manual merge via the pool UI is possible).");
+  push("2. **Legacy pool tag / pool customers** — RESOLVED (custom ruling): pool **customers** are auto-migrated to a brand inferred from their connected orders' products (the order's own binding + the store/brand of the products in its items) — script step 8b. Exactly one brand → that brand; products/orders from **both** brands → **the first one** (tie-break: the brand of the customer's earliest connected order). Their still-unattributed orders then follow their customer via the existing step 9 inference. The `source='legacy migration'` tag remains only on the residual pool (rows with no brand evidence) and at Task 16 migrates to a surviving column together with the `business_id` stamp.");
+  push("3. **Fulfillment defaults on migrated sources** — RESOLVED: defaults accepted (digital sources draw warehouse-first then the showroom; showrooms get ship-from-store ON; all editable in the Task 7 UI).");
   push();
   push(`Generated by \`node scripts/task8-audit.mjs\` on ${new Date().toISOString()}.`);
 

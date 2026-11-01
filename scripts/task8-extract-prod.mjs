@@ -96,6 +96,10 @@ const TABLES = {
 const BATCHED = {
   customers: { table: "public.customers", order: "created_at, id" },
   orders: { table: "public.orders", order: "created_at, id" },
+  // The customer-attribution dry-run uses order items to infer a brand from
+  // the products in a connected order. Keep this in the same snapshot as
+  // orders so the scratch database can satisfy the foreign keys.
+  order_items: { table: "public.order_items", order: "created_at, id" },
 };
 const BATCH_SIZE = 1000;
 

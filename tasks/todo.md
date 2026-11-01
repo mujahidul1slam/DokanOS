@@ -71,7 +71,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 ### Checkpoint A
 - [x] Tasks 1–3 tested, typechecked, built, UI-verified
-- [ ] Review with human before Phase 2 *(tasks completed and verified; awaiting explicit sign-off)*
+- [x] Review with human before Phase 2 *(signed off 2026-11-01)*
 
 ---
 
@@ -115,7 +115,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 ### Checkpoint B
 - [x] Fresh-DB migration clean; RLS green (every task's battery ran `test:rls` on fresh resets; 22 → 26+ RLS files across the phase)
-- [ ] Review with human *(awaiting sign-off)*
+- [x] Review with human *(signed off 2026-11-01)*
 
 ---
 
@@ -161,15 +161,15 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 ## Task 8: Enveil Vincent mapping migration + audit (DRY-RUN ONLY)
 
-**Description:** Per spec §7: write the data-migration script (id-based only) — collapse stores/selling_points/brand_stores/storefronts into order sources per the mapping table; map warehouses; attribute products/customers/orders + provenance; infer the 96 orders (73 V / 23 E) via customer phone/id; merge 2 customer duplicates; route 753 orders + 1,200 customers to the Legacy pool; delete 4 junk rows + 7 test businesses (incl. `13e888dc-…`) after severing the AGS→Enveil-store link. Produce an audit report (counts before/after per entity). **Do not execute against production.**
+**Description:** Per spec §7: write the data-migration script (id-based only) — collapse stores/selling_points/brand_stores/storefronts into order sources per the mapping table; map warehouses; attribute products/customers/orders + provenance; infer unattributed orders via customer phone/id; merge 2 customer duplicates; attribute pool customers with connected-order product evidence per the signed-off Checkpoint C rule; route residual rows to the Legacy pool; delete 4 junk rows + 7 test businesses (incl. `13e888dc-…`) after severing the AGS→Enveil-store link. Produce an audit report (counts before/after per entity). **Do not execute against production.**
 
 **Acceptance criteria:**
 - [x] Script runs idempotently against a restored backup/scratch DB and produces the audit report — `scripts/migrate-enveil-vincent.sql` (one transaction, marker guard refuses a second apply) run by `scripts/task8-audit.mjs` against `task8_scratch` (full repo schema + production data from the read-only extract `scripts/task8-extract-prod.mjs`, loaded by `scripts/task8-build-scratch.mjs`); re-run proven no-op with identical audits
-- [x] Audit shows: 4 order sources + warehouses per brand; 225 products, 2,022 customers, 3,297 attributed orders preserved; 753 + 1,200 in Legacy pool; 96 orders attributed — [task8-dry-run-report.md](audit/task8-dry-run-report.md) shows the live equivalents (spec snapshot 2026-10-29 vs current extract): products 225 ✓; customers 2,025 bound + 2 merged preserved, pool 1,208; orders 3,219 bound + 97 inferred = 3,316 attributed, pool 758 (card figures corrected 2026-11-01 — the runbook cross-check found the earlier 2,024/3,218/3,315 stale by one vs the report); 8 sources (4/brand) + 1 warehouse; 205 stock rows repointed — all drift = rows the still-trading tenant added since the snapshot, reconciled in the report
+- [x] Audit shows: 4 order sources + warehouses per brand; 225 products preserved; the refreshed 2026-11-01 rehearsal has 3,246 → 3,244 customers after 2 merges, 3,193 attributed + 51 residual pool customers, and 4,044 attributed + 48 pool orders from 4,092 total (3,235 bound + 809 inferred; all 1,162 customers with connected-order evidence attributed; 0 inferable orders remain) — [task8-dry-run-report.md](audit/task8-dry-run-report.md) is authoritative; 8 sources (4/brand) + 1 warehouse; 205 stock rows repointed; 2 courier services mapped. Historical spec/baseline counts and live trading drift are reconciled in the report.
 - [x] No name-based lookups anywhere in the script — every target is a UUID literal resolved from the read-only inventory; a static scan of the script (part of the audit) finds no name filters
 
 **Verification:**
-- [x] Dry-run on scratch DB: **11/11 audit checks PASS** (the card said 10/10; the report has 11 incl. the Task 9 courier mapping) (idempotent apply, mapping shape, preservation, inference, pool, wipe incl. AGS→Enveil-store link severed first, stock repoint, no name lookups). Audit report [task8-dry-run-report.md](audit/task8-dry-run-report.md) **presented for human review (Checkpoint C)** — review items in the report: the 2-merge-pair choice (one further strict email-alias duplicate left in the pool), the `source='legacy migration'` pool-tag trade-off, fulfillment defaults on migrated sources. **Production execution remains gated (Task 17).**
+- [x] Dry-run on scratch DB: **12/12 audit checks PASS** on the refreshed 2026-11-01 extract (idempotent apply, mapping shape, preservation, pool-customer attribution via connected-order products, order inference, legacy pool, wipe incl. AGS→Enveil-store link severed first, stock repoint, no name lookups, courier mapping). Audit report [task8-dry-run-report.md](audit/task8-dry-run-report.md) **presented for human review (Checkpoint C)** and signed off — the strict email-alias pair remains in the pool, fulfillment defaults are accepted, and mixed-brand pool customers use the earliest connected order's brand. **Production execution remains gated (Task 17).**
 
 **Dependencies:** Tasks 4, 5
 **Files likely touched:** `supabase/migrations/*.sql` or `scripts/migrate-*.mjs`, `scripts/*audit*`
@@ -179,7 +179,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 ### Checkpoint C
 - [x] New pages usable end-to-end (Order Sources / Warehouses / Courier services / Payment accounts all live-verified in Tasks 6–10); mapping dry-run audit produced and **presented** (Task 8)
-- [ ] Review with human *(the dry-run report's review items — 2-merge-pair choice, pool-tag trade-off, fulfillment defaults — await your verdict)*
+- [x] Review with human *(signed off 2026-11-01 — verdicts recorded in [audit/task8-dry-run-report.md](audit/task8-dry-run-report.md): merge pair stays in the pool; fulfillment defaults accepted; pool customers auto-attributed to a brand from their connected orders' products — mixed-brand → first brand)*
 
 ---
 
@@ -196,7 +196,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 - [x] `npm run typecheck` (clean), `npm test` (389 passed, 3 skipped — 385 baseline + 4 new `courierServices.test.ts`), eslint: 0 new problems (8 pre-existing `any` in DispatchDialog/AttachParcelDialog, same as HEAD), `npm run build` (clean)
 - [x] `npm run test:rls` **ALL GREEN (21 files)** incl. new `courier_services_test.sql` (member create/update + UQ(business_id, name) + unique-when-set legacy ids, viewer read-only with row-count no-op checks, outsider invisibility, cross-business denial, value-pinned survival)
 - [x] API-layer walkthrough of the exact PostgREST calls the UI makes (2026-10-31, local stack, `task9.verify@example.com` → owner of "Task 9 Courier Verify"): `create_business_with_owner` RPC, INSERT Pathao service with credentials + Steadfast service, UPDATE (rename + credential rotation), duplicate name rejected (UQ), null legacy ids allow repeats (unique-when-set), DELETE, SELECT lists scoped rows — all behaved correctly
-- [x] Cutover mapping extended into `scripts/migrate-enveil-vincent.sql` (2 legacy `pathao_integrations` → 2 business-level services, paired to their courier `connectors` via `config.integration_id`, UUID literals only) and re-audited on the scratch DB: "Courier services mapped (Task 9)" ✅ in [task8-dry-run-report.md](audit/task8-dry-run-report.md) (11/11 checks green)
+- [x] Cutover mapping extended into `scripts/migrate-enveil-vincent.sql` (2 legacy `pathao_integrations` → 2 business-level services, paired to their courier `connectors` via `config.integration_id`, UUID literals only) and re-audited on the scratch DB: "Courier services mapped (Task 9)" ✅ in [task8-dry-run-report.md](audit/task8-dry-run-report.md) (12/12 checks green)
 - [x] Manual dispatch click-through in the shared browser (2026-10-31, local stack, `task9.verify@example.com` → "Task 9 Courier Verify"): Settings → Business → Courier services tab renders the business-level list with state badges (RedX 2 → Setup incomplete, Task 9 Pathao Renamed → Configured); edit dialog keeps secrets write-only ("saved — leave blank to keep", non-secret username echoes); New service dialog (provider radios + per-provider fields) created "Task 9 eCourier" → appears Configured. Orders → Attach Parcel shows the business-level "Courier service" picker (was "Pathao Account"). Bulk **Dispatch** dialog shows "Courier service:" preselected to the Pathao-capable service (skips RedX) with Dispatch enabled; selecting eCourier shows "eCourier dispatch arrives with its adapter — pick a Pathao service to dispatch now." and disables the Dispatch button. No per-brand courier UI anywhere (single business-level tab)
 
 **Dependencies:** Task 4
@@ -248,7 +248,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 ### Checkpoint D
 - [x] Integrations UI gone (redirects verified live 2026-10-31); couriers/payments usable (live-verified in Tasks 9–10)
-- [ ] Review with human *(awaiting sign-off)*
+- [x] Review with human *(signed off 2026-11-01)*
 
 ---
 
@@ -306,7 +306,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 **Verification:**
 - [x] `npm run typecheck` clean, `npm test` **431 passed / 3 skipped** (+23: CSV parser edges, provenance payloads, step-vocabulary walk, storefront validation/settings), eslint 0 new problems (StorefrontsPage's 3 pre-existing kept in untouched code), `npm run build` clean
-- [x] Manual full onboarding incl. CSV import + storefront creation (2026-11-01, local stack) — plus **two real defects found and fixed the same day**: (1) `storefronts` RLS rejected the documented store-less insert and scaffold/publish sat behind global-role gates real accounts fail (`5731853`: brand-scoped policy legs + honest scaffold/publish reporting + `storefront_brand_rls_test.sql`), (2) CSV import wrote `brand_stores` ids into `products.store_id` (`d26c8e5`: picker rebound to the operational store space + payload pin test). **Open model question for the user:** nothing in the UI creates operational `stores` rows (the Brands-page dialog creates `brand_stores` only), so fresh businesses dead-end for CSV/manual product add — options + recommendation B recorded in [wiki/transitional-store-model.md](wiki/transitional-store-model.md)
+- [x] Manual full onboarding incl. CSV import + storefront creation (2026-11-01, local stack) — plus **two real defects found and fixed the same day**: (1) `storefronts` RLS rejected the documented store-less insert and scaffold/publish sat behind global-role gates real accounts fail (`5731853`: brand-scoped policy legs + honest scaffold/publish reporting + `storefront_brand_rls_test.sql`), (2) CSV import wrote `brand_stores` ids into `products.store_id` (`d26c8e5`: picker rebound to the operational store space + payload pin test). The transitional store bridge is implemented and live-verified; WooCommerce sources provision operational store space, and the Product Import step offers a local-store convenience for pure-CSV merchants. See [wiki/transitional-store-model.md](wiki/transitional-store-model.md).
 
 **Dependencies:** Task 13
 **Files likely touched:** `src/components/onboarding/*`, `src/components/storefront/*`, `src/lib/import*.ts`, `src/App.tsx`
@@ -335,7 +335,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 ### Checkpoint E
 - [x] Onboarding end-to-end + re-run verified; Legacy pool works — all live-verified 2026-11-01 (see Tasks 13–15 verification blocks)
-- [ ] Review with human *(awaiting sign-off)*
+- [x] Review with human *(signed off 2026-11-01)*
 
 ---
 
@@ -347,6 +347,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 - [ ] Legacy tables/columns dropped via migration; app builds and tests pass without them
 - [ ] Orphaned components/pages deleted
 - [ ] `legacy_*` mapping columns retained on order sources / stock holders
+- [ ] Pool `source='legacy migration'` tag migrated to a surviving column (it dies with `orders.source`); pool rows stamped with `business_id` (Task 15 recommendation — see [wiki/legacy-pool-semantics.md](wiki/legacy-pool-semantics.md))
 
 **Verification:**
 - [ ] `npm run typecheck`, `npm test`, `npm run build` pass; `npm run test:rls` pass

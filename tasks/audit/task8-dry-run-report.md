@@ -1,6 +1,6 @@
 # Task 8 dry-run report — Enveil Vincent mapping migration
 
-Status: **DRY-RUN ONLY — executed against scratch database `task8_scratch` (production data extracted read-only on 2026-10-31). Production execution is Task 17, user-gated.**
+Status: **DRY-RUN ONLY — executed against scratch database `task8_scratch` (production data extracted read-only on 2026-11-01). Production execution is Task 17, user-gated.**
 
 Script: [migrate-enveil-vincent.sql](../../scripts/migrate-enveil-vincent.sql) · Extractor: [task8-extract-prod.mjs](../../scripts/task8-extract-prod.mjs) · Scratch builder: [task8-build-scratch.mjs](../../scripts/task8-build-scratch.mjs) · This audit: [task8-audit.mjs](../../scripts/task8-audit.mjs)
 
@@ -32,8 +32,8 @@ Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 wareho
 | products.total | 225 | 225 |
 | product_variations.total | 1,204 | 1,204 |
 | product_locations.total | 205 | 205 |
-| customers.total | 3,235 | 3,233 |
-| orders.total | 4,074 | 4,074 |
+| customers.total | 3,246 | 3,244 |
+| orders.total | 4,092 | 4,092 |
 | order_sources.total | 0 | 8 |
 | warehouses.total | 0 | 1 |
 | courier_services.total | 0 | 2 |
@@ -43,14 +43,15 @@ Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 wareho
 | order_sources.enveil | 0 | 4 |
 | courier_services.legacy_mapped | 0 | 2 |
 | products.attributed | 0 | 225 |
-| customers.bound | 2,025 | 2,025 |
-| customers.pool | 0 | 1,208 |
-| customers.attributed | 0 | 2,025 |
-| orders.bound | 3,219 | 3,219 |
-| orders.attributed | 0 | 3,316 |
-| orders.pool | 0 | 758 |
-| orders.unattributed_left | 855 | 0 |
+| customers.bound | 2,031 | 3,193 |
+| customers.pool | 0 | 51 |
+| customers.attributed | 0 | 3,193 |
+| orders.bound | 3,235 | 3,235 |
+| orders.attributed | 0 | 4,044 |
+| orders.pool | 0 | 48 |
+| orders.unattributed_left | 857 | 0 |
 | orders.inferable | 97 | 0 |
+| customers.unattributed_with_order_evidence | 1,162 | 0 |
 | stock.holder_rows | 0 | 205 |
 | stock.legacy_location_rows | 205 | 0 |
 | wiped_rows_still_present | 5 | 0 |
@@ -60,13 +61,13 @@ Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 wareho
 | Source | Type | Orders |
 |---|---|---:|
 | Enveil Storefront | storefront | 0 |
-| Enveil WooCommerce | woocommerce | 658 |
-| Facebook / Instagram | facebook | 235 |
-| Main Showroom | showroom | 29 |
-| Facebook / Instagram | facebook | 549 |
-| Main Showroom | showroom | 80 |
+| Enveil WooCommerce | woocommerce | 660 |
+| Facebook / Instagram | facebook | 243 |
+| Main Showroom | showroom | 179 |
+| Facebook / Instagram | facebook | 555 |
+| Main Showroom | showroom | 638 |
 | Vincent Storefront | storefront | 0 |
-| Vincent WooCommerce | woocommerce | 1,765 |
+| Vincent WooCommerce | woocommerce | 1,769 |
 
 ## Acceptance checks (tasks/todo.md Task 8)
 
@@ -75,10 +76,11 @@ Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 wareho
 | Script runs idempotently against a scratch DB | first run: applied; second run: refused by guard — no double-apply (idempotent); audits identical: true | ✅ |
 | 4 order sources + warehouses per brand | Vincent 4 sources + 1 warehouse, Enveil 4 sources + 0 warehouses | ✅ |
 | 225 products preserved | 225 → 225, all attributed: 225 | ✅ |
-| Customers preserved + merged | bound 2025 (+2 merged, −2 rows) → attributed 2025; total 3235 → 3233 (2 merge rows removed) | ✅ |
-| Attributed orders preserved + inferred | bound 3219 + inferred 97 → attributed 3316 (spec snapshot: 3,297 = 3,201 + 96) | ✅ |
-| Legacy pool | orders 758 (spec: 753), customers 1208 (spec: 1,200) — drift = new rows since the 2026-10-29 spec snapshot | ✅ |
-| Inference rule reproduces the spec's ~96 | 97 orders attributed via customer id/phone match (spec: 96 = 73 Vincent / 23 Enveil) | ✅ |
+| Customers preserved + merged | bound 2031 (+2 merged, −2 rows) → attributed 3193; total 3246 → 3244 (2 merge rows removed) | ✅ |
+| Pool customers attributed via connected orders (Checkpoint C ruling 2026-11-01) | cohort 1,162 unattributed customers had connected-order brand evidence (order binding + items' products) → migrated to that brand (both brands → first); residual with evidence: 0 | ✅ |
+| Attributed orders preserved + inferred | bound 3235 + inferred 809 → attributed 4044 (spec snapshot: 3,297 = 3,201 + 96) | ✅ |
+| Legacy pool | orders 48 (spec: 753), customers 51 (spec: 1,200) — drift = new rows since the 2026-10-29 spec snapshot | ✅ |
+| Orders follow their customer (id/phone match) | 809 orders attributed (spec snapshot: 96 = 73 Vincent / 23 Enveil; extra = orders of 8b-attributed customers), resolvable-left 0 | ✅ |
 | Junk + test data wiped | tracked ids still present: 0; AGS→Enveil-store link severed before deletes (step 1 of script) | ✅ |
 | Stock repointed, nothing moved | holder rows 205 / legacy-location rows 0 (205 preserved) | ✅ |
 | No name-based lookups | static scan of the script: none found (UUID literals only) | ✅ |
@@ -86,12 +88,12 @@ Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 wareho
 
 ## Reconciliation with the spec snapshot (2026-10-29)
 
-The acceptance numbers (225 products / 2,022 customers / 3,297 attributed orders / 753 + 1,200 pool / 96 inferred) were captured at spec time. The live tenant kept trading: the extract holds **3235 customers** (spec: 3,222) and **4074 orders** (spec: 4,050). All +drift rows are new attributed rows and new unattributed counter orders; the mapping rules reproduce the spec's shape exactly (2 merges, ~96 inferences, the rest → pool).
+The acceptance numbers (225 products / 2,022 customers / 3,297 attributed orders / 753 + 1,200 pool / 96 inferred) were captured at spec time. The live tenant kept trading: the extract holds **3246 customers** (spec: 3,222) and **4092 orders** (spec: 4,050). All +drift rows are new attributed rows and new unattributed counter orders; the mapping rules reproduce the spec's shape (2 merges, ~96 inferences at spec scope, pool customers with connected-order brand evidence attributed per the 2026-11-01 ruling, the rest → pool).
 
-## Review items (Checkpoint C)
+## Review items (Checkpoint C) — verdicts recorded (human sign-off 2026-11-01)
 
-1. **Customer merge pairs** — the script merges the two audited phone/alias duplicates into the one brand customer (`c4444444-…` and `c7777777-…` → `c1111111-…`, the April storefront-QA fixture trio; zero orders each, alias rows repointed with de-duplication). One further *strict* duplicate exists in the data: `1a689ee5-…` → `4d0d1b7d-…` via an email-alias match. It is deliberately NOT merged (left in the pool) — say the word and it joins the merge table in the script.
-2. **Legacy pool tag** — pool rows are tagged `source = 'legacy migration'` on both orders and customers (customers additionally get `origin_kind = 'legacy'`), matching the spec's backticked tag and Task 15's "tagged `legacy migration`". Trade-off: the pool rows' free-text channel (`pos`/`fb/ig`) is overwritten; it survives nowhere else on orders (they have no provenance column). The tag dies with `orders.source` at Task 16, so Task 15/16 should either drain the pool first or migrate the tag to a surviving column.
-3. **Fulfillment defaults on migrated sources** — digital sources draw warehouse-first then the showroom (spec §3 example); showrooms get ship-from-store ON. All editable in the Task 7 UI.
+1. **Customer merge pairs** — RESOLVED: the script merges the two audited phone/alias duplicates into the one brand customer (`c4444444-…` and `c7777777-…` → `c1111111-…`, the April storefront-QA fixture trio; zero orders each, alias rows repointed with de-duplication). The further strict email-alias duplicate (`1a689ee5-…` → `4d0d1b7d-…`) **stays in the pool — NOT merged** (email aliases can be distinct people; a later manual merge via the pool UI is possible).
+2. **Legacy pool tag / pool customers** — RESOLVED (custom ruling): pool **customers** are auto-migrated to a brand inferred from their connected orders' products (the order's own binding + the store/brand of the products in its items) — script step 8b. Exactly one brand → that brand; products/orders from **both** brands → **the first one** (tie-break: the brand of the customer's earliest connected order). Their still-unattributed orders then follow their customer via the existing step 9 inference. The `source='legacy migration'` tag remains only on the residual pool (rows with no brand evidence) and at Task 16 migrates to a surviving column together with the `business_id` stamp.
+3. **Fulfillment defaults on migrated sources** — RESOLVED: defaults accepted (digital sources draw warehouse-first then the showroom; showrooms get ship-from-store ON; all editable in the Task 7 UI).
 
-Generated by `node scripts/task8-audit.mjs` on 2026-10-31T06:17:23.384Z.
+Generated by `node scripts/task8-audit.mjs` on 2026-11-01T13:05:27.537Z.
