@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import { isSyncableStoreUrl, NON_HTTP_STORE_URL_ERROR } from "../_shared/store-url-guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,6 +94,9 @@ function wooAuth(store: any) {
 }
 
 function baseUrl(store: any) {
+  // Store-url guard: a local:// (offline) store space must never reach a sync
+  // call, whatever route led here.
+  if (!isSyncableStoreUrl(store.url)) throw new Error(NON_HTTP_STORE_URL_ERROR);
   return store.url.replace(/\/+$/, "");
 }
 

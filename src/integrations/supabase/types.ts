@@ -1604,6 +1604,7 @@ export type Database = {
           legacy_selling_point_id: string | null
           legacy_store_id: string | null
           legacy_storefront_id: string | null
+          legacy_woo_store_id: string | null
           name: string
           ship_from_store: boolean
           sync_direction: string | null
@@ -1626,6 +1627,7 @@ export type Database = {
           legacy_selling_point_id?: string | null
           legacy_store_id?: string | null
           legacy_storefront_id?: string | null
+          legacy_woo_store_id?: string | null
           name: string
           ship_from_store?: boolean
           sync_direction?: string | null
@@ -1648,6 +1650,7 @@ export type Database = {
           legacy_selling_point_id?: string | null
           legacy_store_id?: string | null
           legacy_storefront_id?: string | null
+          legacy_woo_store_id?: string | null
           name?: string
           ship_from_store?: boolean
           sync_direction?: string | null
@@ -1660,6 +1663,13 @@ export type Database = {
             columns: ["brand_id"]
             isOneToOne: false
             referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_sources_legacy_woo_store_id_fkey"
+            columns: ["legacy_woo_store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
             referencedColumns: ["id"]
           },
         ]

@@ -9,6 +9,7 @@ import {
   buildVariationLabel,
   stripWooHtml
 } from "../_shared/woo-mapping.ts";
+import { isSyncableStoreUrl, NON_HTTP_STORE_URL_ERROR } from "../_shared/store-url-guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,6 +43,11 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (!isSyncableStoreUrl(store.url)) {
+      return new Response(JSON.stringify({ error: NON_HTTP_STORE_URL_ERROR }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const baseUrl = store.url.replace(/\/+$/, "");
     const authHeader = "Basic " + btoa(`${store.consumer_key}:${store.consumer_secret}`);
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));

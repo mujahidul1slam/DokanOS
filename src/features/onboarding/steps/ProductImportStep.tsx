@@ -16,6 +16,8 @@ import {
 } from "@/lib/productImport";
 import { downloadCsv } from "@/lib/exportCsv";
 import { kickSyncWorker } from "@/lib/wooNotes";
+import { localStoreUrl, provisionOperationalStore } from "@/lib/operationalStores";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { useStoresList } from "@/hooks/useStoresList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +43,7 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
   // Operational `stores` rows (the Products page's space via useStoresList) —
   // NOT brand_stores rows: products.store_id is a stores.id (RLS + FK).
   const stores = useStoresList();
+  const { refresh } = useBusinessContext();
 
   const [wooSources, setWooSources] = useState<OrderSourceRow[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
@@ -51,6 +54,7 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
   const [parseErrors, setParseErrors] = useState<{ line: number; message: string }[]>([]);
   const [fileName, setFileName] = useState<string>("");
   const [importing, setImporting] = useState(false);
+  const [provisioningLocal, setProvisioningLocal] = useState(false);
 
   const brandIds = useMemo(() => brands.map((b) => b.id), [brands]);
 
@@ -142,6 +146,35 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
     downloadCsv("product-import-template.csv", headers, rows);
   };
 
+  // Local-store convenience (option B): pure-CSV/manual merchants need a store
+  // space without connecting WooCommerce. `local://` rows are created
+  // 'disconnected' and can never be picked up by a sync worker.
+  const addLocalStore = async () => {
+    if (provisioningLocal) return;
+    const brand = brands[0];
+    if (!brand) {
+      toast.error("Create a brand first (step 2) — a store space lives under a brand.");
+      return;
+    }
+    setProvisioningLocal(true);
+    try {
+      await provisionOperationalStore({
+        brandId: brand.id,
+        name: `${brand.name} (local store)`,
+        url: localStoreUrl(brand.name),
+        status: "disconnected",
+      });
+      await refresh(); // brand link changed → useStoresList re-scopes
+      toast.success(`Local store added for “${brand.name}” — pick it as the import target.`);
+    } catch (err) {
+      toast.error(
+        `Could not add a local store: ${err instanceof Error ? err.message : "unknown error"}`,
+      );
+    } finally {
+      setProvisioningLocal(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <section className="space-y-3 rounded-md border border-border p-4">
@@ -227,7 +260,7 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
           </p>
         </div>
         {stores.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border px-3 py-2.5">
+          <div className="space-y-2 rounded-md border border-dashed border-border px-3 py-2.5">
             <p className="text-xs text-muted-foreground">
               CSV import needs a connected store as its target — the catalog is store-scoped.{" "}
               <button
@@ -238,6 +271,25 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
                 Connect a WooCommerce store on Order Sources
               </button>{" "}
               to get one, then come back to import.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => void addLocalStore()}
+              disabled={provisioningLocal}
+            >
+              {provisioningLocal ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Store className="h-3.5 w-3.5" />
+              )}
+              Add a local store
+            </Button>
+            <p className="text-[10px] text-muted-foreground">
+              Selling from a spreadsheet or by hand? A local store is an offline
+              store space for CSV and manual products — it never syncs anywhere.
             </p>
           </div>
         ) : (
@@ -334,6 +386,12 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
         >
           <Store className="h-4 w-4" /> Add a product manually
         </Button>
+        {stores.length === 0 && (
+          <p className="text-[10px] text-muted-foreground">
+            Manual products also live on a store — add a local store in the CSV
+            section above first.
+          </p>
+        )}
       </section>
 
       <StepFooter onBack={onBack} onSkip={() => void onFinished("skipped")} busy={importing}>
