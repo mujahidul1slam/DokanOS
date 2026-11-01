@@ -10,7 +10,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 //   • an occupied brand keeps its link: the new row is only the source's sync
 //     record and must never be linked away from the catalog store;
 //   • bridgeWooSourceToStore stamps order_sources.legacy_woo_store_id and sets
-//     stores.status='connected' only for a full http(s) connection.
+//     stores.status='connected' only for a full http(s) connection;
+//   • the stores insert is a BARE insert with a client-assigned uuid — never
+//     `.select()`/`.single()` (= INSERT … RETURNING, which the SELECT policy
+//     rejects for newborn unlinked store rows: the RLS landmine pinned by
+//     supabase/tests/rls/operational_store_provisioning_test.sql).
 
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: vi.fn() } }));
 
@@ -29,6 +33,8 @@ const queues: Record<string, Result[]> = {};
 const insertPayloads: Record<string, unknown[]> = {};
 const updatePayloads: Record<string, unknown[]> = {};
 let trace: Array<{ table: string; method: string; args: unknown[] }> = [];
+/** Deterministic stand-in for crypto.randomUUID (the store row id). */
+let nextUuid = "store-1";
 
 function push(table: string, ...results: Result[]) {
   (queues[table] ??= []).push(...results);
@@ -39,6 +45,8 @@ beforeEach(() => {
   for (const key of Object.keys(insertPayloads)) delete insertPayloads[key];
   for (const key of Object.keys(updatePayloads)) delete updatePayloads[key];
   trace = [];
+  nextUuid = "store-1";
+  vi.stubGlobal("crypto", { randomUUID: () => nextUuid });
   vi.clearAllMocks();
   (supabase.from as ReturnType<typeof vi.fn>).mockImplementation((table: string) => {
     const queue = queues[table] ?? [];
@@ -70,8 +78,14 @@ beforeEach(() => {
         record("is", args);
         return builder;
       },
-      single: () => builder,
-      maybeSingle: () => builder,
+      single: () => {
+        record("single", []);
+        return builder;
+      },
+      maybeSingle: () => {
+        record("maybeSingle", []);
+        return builder;
+      },
       then: (resolve, reject) =>
         Promise.resolve(queue.shift() ?? { data: null, error: null }).then(resolve, reject),
     };
@@ -107,7 +121,7 @@ describe("store URL classification", () => {
 describe("provisionOperationalStore", () => {
   it("creates the store row and links a free brand (guarded link-when-free)", async () => {
     push("brands", { data: { id: "brand-1", woo_store_id: null }, error: null });
-    push("stores", { data: { id: "store-1" }, error: null });
+    push("stores", { data: null, error: null }); // bare insert — no RETURNING
     push("brands", { data: [{ id: "brand-1" }], error: null });
 
     const result = await provisionOperationalStore({
@@ -121,12 +135,19 @@ describe("provisionOperationalStore", () => {
 
     expect(result).toEqual({ storeId: "store-1", linked: true });
     expect(insertPayloads.stores[0]).toEqual({
+      id: "store-1",
       name: "Acme Store",
       url: "https://acme.test",
       status: "connected",
       consumer_key: "ck",
       consumer_secret: "cs",
     });
+    // LANDMINE PIN: the stores insert must never be read back through
+    // `.select()`/`.single()` — INSERT … RETURNING fails the SELECT policy for
+    // newborn unlinked store rows ("new row violates row-level security policy").
+    expect(methodsOf("stores", "select")).toHaveLength(0);
+    expect(methodsOf("stores", "single")).toHaveLength(0);
+    expect(methodsOf("stores", "maybeSingle")).toHaveLength(0);
     // The link update must be guarded (.is("woo_store_id", null)).
     const updates = methodsOf("brands", "update");
     expect(updates).toHaveLength(1);
@@ -137,8 +158,9 @@ describe("provisionOperationalStore", () => {
   });
 
   it("keeps an occupied brand link and reports linked=false (no dead second link)", async () => {
+    nextUuid = "store-2";
     push("brands", { data: { id: "brand-1", woo_store_id: "store-existing" }, error: null });
-    push("stores", { data: { id: "store-2" }, error: null });
+    push("stores", { data: null, error: null });
 
     const result = await provisionOperationalStore({
       brandId: "brand-1",
@@ -176,7 +198,7 @@ describe("provisionOperationalStore", () => {
 describe("bridgeWooSourceToStore", () => {
   it("provisions a connected store and stamps the source's provenance", async () => {
     push("brands", { data: { id: "brand-1", woo_store_id: null }, error: null });
-    push("stores", { data: { id: "store-1" }, error: null });
+    push("stores", { data: null, error: null }); // bare insert — no RETURNING
     push("brands", { data: [{ id: "brand-1" }], error: null });
     push("order_sources", { data: null, error: null });
 
@@ -204,7 +226,7 @@ describe("bridgeWooSourceToStore", () => {
 
   it("keeps a half-configured connection disconnected (never picked up by sync)", async () => {
     push("brands", { data: { id: "brand-1", woo_store_id: null }, error: null });
-    push("stores", { data: { id: "store-1" }, error: null });
+    push("stores", { data: null, error: null }); // bare insert — no RETURNING
     push("brands", { data: [{ id: "brand-1" }], error: null });
     push("order_sources", { data: null, error: null });
 
@@ -227,7 +249,7 @@ describe("bridgeWooSourceToStore", () => {
 
   it("throws when the provenance stamp is rejected (caller keeps source fail-soft)", async () => {
     push("brands", { data: { id: "brand-1", woo_store_id: null }, error: null });
-    push("stores", { data: { id: "store-1" }, error: null });
+    push("stores", { data: null, error: null }); // bare insert — no RETURNING
     push("brands", { data: [{ id: "brand-1" }], error: null });
     push("order_sources", { data: null, error: { message: "no column" } });
 

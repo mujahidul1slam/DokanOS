@@ -49,6 +49,30 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 RESET ROLE;
 
+-- LANDMINE PIN (2026-11-01, proven by DB probe): INSERT … RETURNING on `stores`
+-- is subject to the SELECT policy at the newborn row's birth moment —
+-- user_can_access_store(id) is false until the brand link (brands.woo_store_id)
+-- exists — so a returning insert FAILS with 42501 even for an owner who can
+-- insert plain rows. The client must insert WITHOUT RETURNING and assign the id
+-- client-side (src/lib/operationalStores.ts:randomUuid). This case keeps anyone
+-- from "simplifying" the client back to `.insert().select()`.
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}';
+DO $$
+DECLARE v_id uuid;
+BEGIN
+  BEGIN
+    INSERT INTO public.stores (name, url, status)
+    VALUES ('Fixture Returning Landmine', 'https://landmine.test', 'disconnected')
+    RETURNING id INTO v_id;
+    RAISE EXCEPTION 'FAIL: INSERT ... RETURNING on an unlinked store unexpectedly succeeded'
+      USING ERRCODE = 'P0001';
+  EXCEPTION
+    WHEN SQLSTATE '42501' THEN NULL;
+  END;
+END $$;
+RESET ROLE;
+
 -- …005 (business role 'staff') is NOT on the operator ladder → denied.
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000005","role":"authenticated"}';
@@ -98,7 +122,7 @@ BEGIN
   INSERT INTO public.order_sources
     (name, type, brand_id, config, accepted_payment_methods, fulfillment_preference, ship_from_store)
   VALUES
-    ('Fixture Stamp Source', 'manual', v_brand, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, false);
+    ('Fixture Stamp Source', 'manual', v_brand, '{}'::jsonb, '[]'::jsonb, '[]'::jsonb, false);
   UPDATE public.order_sources
   SET legacy_woo_store_id = v_store
   WHERE name = 'Fixture Stamp Source';

@@ -140,8 +140,13 @@ BEGIN
                       AND step_key = 'first_brand' AND status = 'skipped') THEN
     RAISE EXCEPTION 'FAIL: manager-saved onboarding marks did not survive' USING ERRCODE = 'P0001';
   END IF;
+  -- Residue of the DENIED writes above can only land in the fixture business;
+  -- scope the check accordingly. (A table-wide scan would false-positive on a
+  -- long-lived dev DB where real businesses legitimately hold 'order_sources'
+  -- step rows — dirty-DB safety, same semantics.)
   IF EXISTS (SELECT 1 FROM public.business_onboarding_steps
-             WHERE step_key = 'order_sources') THEN
+             WHERE business_id = '11111111-0000-0000-0000-000000000001'
+               AND step_key = 'order_sources') THEN
     RAISE EXCEPTION 'FAIL: denied writes left residue' USING ERRCODE = 'P0001';
   END IF;
 END $$;

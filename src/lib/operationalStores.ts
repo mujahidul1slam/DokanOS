@@ -54,6 +54,28 @@ export function isSyncableStoreUrl(url: string | null | undefined): boolean {
   return /^https?:\/\//i.test((url ?? "").trim());
 }
 
+/**
+ * RFC-4122 v4 uuid for pre-assigning store row ids.
+ *
+ * RLS LANDMINE (2026-11-01, proven by DB probe): `INSERT … RETURNING` on
+ * `stores` is subject to the SELECT policy at the newborn row's birth moment —
+ * `user_can_access_store(id)` is false there because the brand link
+ * (`brands.woo_store_id`, the load-bearing RLS key) is only written in the NEXT
+ * statement. So supabase-js `.insert().select()` (= `INSERT … RETURNING`) fails
+ * for every member with `new row violates row-level security policy`, even
+ * though the INSERT policy passes. Therefore: assign the id client-side and
+ * insert WITHOUT returning the row.
+ */
+const randomUuid = (): string => {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    const v = ch === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 const slugify = (value: string): string =>
   value
     .toLowerCase()
@@ -89,19 +111,17 @@ export async function provisionOperationalStore(
   if (brandError) throw new Error(`Could not read the brand: ${brandError.message}`);
   if (!brand) throw new Error("Brand not found or not accessible.");
 
-  const { data: store, error: storeError } = await supabase
-    .from("stores")
-    .insert({
-      name,
-      url,
-      status: params.status,
-      ...(params.consumerKey ? { consumer_key: params.consumerKey } : {}),
-      ...(params.consumerSecret ? { consumer_secret: params.consumerSecret } : {}),
-    })
-    .select("id")
-    .single();
+  // Bare insert — never `.select()`/`.single()` here (see randomUuid above).
+  const storeId = randomUuid();
+  const { error: storeError } = await supabase.from("stores").insert({
+    id: storeId,
+    name,
+    url,
+    status: params.status,
+    ...(params.consumerKey ? { consumer_key: params.consumerKey } : {}),
+    ...(params.consumerSecret ? { consumer_secret: params.consumerSecret } : {}),
+  });
   if (storeError) throw new Error(`Could not create the store space: ${storeError.message}`);
-  const storeId = store.id;
 
   if (brand.woo_store_id) {
     // Keep the existing link (link-when-free); the new row is still useful as
