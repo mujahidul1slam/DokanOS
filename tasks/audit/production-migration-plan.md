@@ -1,16 +1,24 @@
-# Production migration plan — 16 pending migrations + 1 repair
+# Production migration plan — 28 pending migrations (catch-up batch + schema wave + integration)
 
-Status: **NOT APPLIED — awaiting explicit user go-ahead.** All findings below come from a
+Status: **Gate 1 APPROVED 2026-11-01 — 28 files, not applied yet.** All findings below come from a
 read-only audit (2026-10-30) comparing production schema identifiers against a fresh local
-build of the full migration chain. Raw data: [prod-vs-repo.json](prod-vs-repo.json).
+build of the full migration chain, re-verified read-only on 2026-11-01
+([task17-readiness-report.md](task17-readiness-report.md)). Raw data:
+[prod-vs-repo.json](prod-vs-repo.json).
+
+> **Scope correction (2026-11-01).** This document was written for the 19-file catch-up batch.
+> The repo has since grown the domain-revamp schema wave plus the Tasks 13/15/option-B work, so the
+> genuinely-pending set is **28 files** (rows 20–28 below). The user approved all 28 at Gate 1.
 
 Target: Supabase project `jiwndicvfkiltgageqwv` — the real database, tenant **Enveil Vincent**
 (brands Vincent + Enveil). Never run `supabase db reset --linked` (it wipes data).
 
 ## Where production stands
 
-- Ledger head `20261014120000` (162 of 178 repo migrations applied at audit time) →
-  the 16 pending, the drift repair, and the two Phase-1 migrations = **19 files to apply**.
+- Ledger head `20261014120000` (162 of 190 repo migrations applied at the 2026-11-01 re-check) →
+  the 16 pending, the drift repair, and the two Phase-1 migrations = the **19-file catch-up batch**;
+  plus the **5-file schema wave** (Tasks 4/5/9/10/12) and the **4 integration migrations**
+  (Tasks 13/15 ×2, option B) = **28 files to apply** in filename order.
 - **Signup on production is currently broken**: `is_signup_open()` does not exist there
   (verified `PGRST202`), and the frontend since commit `2435c1b` calls exactly that RPC and
   fails closed ("Unable to check sign-up availability"). Migration #10 below fixes it.
@@ -38,6 +46,18 @@ Target: Supabase project `jiwndicvfkiltgageqwv` — the real database, tenant **
 | 17 | 20261030090000_repair_audit_drift *(new)* | `orders.payment_meta` + `webhook_events` convergence | low |
 | 18 | 20261030180000_profiles_default_business *(new, Task 2)* | `profiles.default_business_id` + index | low |
 | 19 | 20261030200000_profile_setup *(new, Task 3)* | `profiles.phone`, `profiles.profile_setup_completed_at` + backfill | low |
+| 20 | 20261031090000_unified_order_sources *(Task 4)* | **renames** legacy `order_sources` → `legacy_order_channels`, creates new `order_sources` (+`order_source_type`) | high |
+| 21 | 20261031113000_warehouses_stock *(Task 5)* | `warehouses` + stock-holder columns on `product_locations` | med |
+| 22 | 20261031140000_courier_services *(Task 9)* | `courier_services` (+`courier_providers` registry) | med |
+| 23 | 20261031180000_payment_accounts *(Task 9)* | `payment_accounts` (+`payment_providers`) | low |
+| 24 | 20261101090000_role_ladder_rename *(Task 12)* | role ladder owner/admin/member/viewer → Owner/Admin/Manager/Staff | med |
+| 25 | 20261102090000_business_onboarding *(Task 13)* | `businesses.onboarding_completed_at`, `business_onboarding_steps`, `joined_via` | low |
+| 26 | 20261102120000_legacy_pool_rls *(Task 15)* | pool RLS policies | low |
+| 27 | 20261102150000_storefront_brand_scoped_rls *(Task 15)* | storefront brand-scoped RLS | med |
+| 28 | 20261103090000_operational_store_provisioning *(option B)* | `order_sources.legacy_woo_store_id` + stores insert policy | low |
+
+> Rows 20–28 are the post-audit additions. #20 is the one that reshapes a live table the deployed
+> frontend still reads by its old column set — see the apply-order warning below.
 
 ## Safety analysis
 
@@ -61,40 +81,66 @@ Target: Supabase project `jiwndicvfkiltgageqwv` — the real database, tenant **
 
 ## Apply-order warning (frontend)
 
-- If the currently deployed frontend **predates** `2435c1b`, it reads `app_config` directly —
-  #15/#16 revoke that surface and it will 401. **Ship the frontend built from this branch
-  together with the migrations.**
-- Since the current code path is already the RPC one (and signup is down *now*),
-  migrations-first is also acceptable; signup stays down only until the frontend ships.
+Measured against the **actual deployed bundle** on 2026-11-01 (`https://dokanos.vercel.app`,
+`/assets/index-DSV-o5nx.js`, `last-modified: Fri, 30 Oct 2026 04:28:06 GMT`): all 89 reachable
+chunks were crawled read-only. The deploy **contains zero references to `app_config`** — the old
+"deployed frontend reads `app_config` directly and will 401" concern does **not** apply to this
+build; nothing in it calls `app_config` or `is_signup_open` at all. (The `is_signup_open` RPC path
+was added in commit `2435c1b`, which is **not** in this deploy — so signup in the deployed UI does
+not depend on #10 landing.)
+
+What *does* matter for apply order:
+
+- **The deploy still queries legacy row shapes.** With `20261031090000_unified_order_sources`
+  (#20) the new `order_sources` table has `brand_id`/`type`/`config`, **not**
+  `is_default`/`sort_order`. The deployed chunks call `order_sources.select("id, name, is_default")`
+  (Orders page), `select("*").order("sort_order")` and `insert({name, sort_order})` (Settings page)
+  — those PostgREST requests **fail once #20 lands**, until the new frontend is deployed.
+  `legacy_order_channels` preserves the old rows, so no data is lost; the old UI just errors until
+  replaced.
+- **Therefore the new frontend must deploy in the same window as the chain**, and the read-only
+  freeze should span it. Practically this can be sequenced as: apply chain → deploy frontend →
+  resume trading, with the freeze covering the whole stretch.
 - `scripts/verify-live-deployment.mjs`'s deployment URL returns **410 Gone** — confirm which
-  deployment is current before applying.
+  deployment is current before applying (the live production alias is `https://dokanos.vercel.app`).
+- The repo has **no `.vercel/` link** and the branch is **51 commits ahead of `origin`**, so the
+  Vercel project is presumably Git-integration-based on the remote branch: the new build only
+  reaches production after those commits are pushed. Pushing is a user-visible, outbound action and
+  has not been done.
 
 ## Pre-checks (read-only)
 
-1. Take a Supabase backup / confirm PITR. There are no DOWN scripts; backup is the rollback.
-2. `select count(*) from webhook_events where created_at is null or status_code is null or topic is null;` → expect 0 (re-verify at apply time; #17 backfills if not).
-3. `select to_regprocedure('public.is_signup_open()')` → expect `null` (still pending).
+1. Rollback basis: production has **no native backup and no PITR** (org on the `free` plan,
+   `pitr_enabled: false`, `backups: []`). Gate 1 decision (2026-11-01): proceed on the **proven
+   logical dump** — `prod-schema-public.sql` + `prod-data-public.sql`, restored end-to-end into a
+   local DB with exact row-count match; see
+   [task17-readiness-report.md](task17-readiness-report.md) §1 for checksums and the durable copy
+   location. There are no DOWN scripts; this dump is the rollback.
+2. `select count(*) from webhook_events where created_at is null or status_code is null or topic is null;` → expect 0 (re-verified 2026-11-01: 0; #17 backfills if not).
+3. `select to_regprocedure('public.is_signup_open()')` → expect `null` (still pending; re-verified 2026-11-01).
 4. Snapshot row counts (orders/customers/products/webhook_events) to compare after.
 5. Save a grants snapshot: `select grantee, table_name, privilege_type from information_schema.role_table_grants where table_schema = 'public';`
 
 ## Apply
 
 - `supabase db push` from this repo (applies pending in order, each file transactional),
-  or the dashboard SQL editor running the 19 files in filename order.
-- Expected duration: seconds. Largest touched table is `webhook_events` (885 rows).
+  or the dashboard SQL editor running the 28 files in filename order.
+- Expected duration: seconds. Largest touched table is `webhook_events` (771 rows at the
+  2026-11-01 re-check; an earlier audit noted 885 — recount at apply time).
 
 ## Post-checks
 
 1. `is_signup_open()` answers over anon REST → `true` (production `app_config.signup_open = true`).
-2. Ledger head = `20261030090000`, count = 179.
-3. `/signup` renders the form (not the error gate) on the deployed frontend.
-4. Smoke: login, business list, create brand, invite member, storefront checkout inserts an order (`payment_meta` path).
-5. Re-run the schema diff → expected zero unexplained drift.
+2. Ledger head = **`20261103090000`**, count = **190**.
+3. Frontend deploy of this branch is live (legacy `order_sources` shape is gone from the UI).
+4. `/signup` renders the form (not the error gate) on the deployed frontend.
+5. Smoke: login, business list, create brand, invite member, storefront checkout inserts an order (`payment_meta` path).
+6. Re-run the schema diff → expected zero unexplained drift.
 
 ## Rollback
 
-- Restore the pre-apply backup (PITR). For a partial issue caused by #15/#16, re-apply the
-  saved grants snapshot instead of restoring.
+- Restore the pre-apply logical dump (Gate 1 decision; the folder also holds the pre-apply schema).
+  For a partial issue caused by #15/#16, re-apply the saved grants snapshot instead of restoring.
 
 ## Out of scope
 

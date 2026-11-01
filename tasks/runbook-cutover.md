@@ -67,13 +67,14 @@ and refuses to run outside them (guard `:33-45`).
 1. **Checkpoints A–E complete** (Task 17 dependency, `tasks/todo.md` Task 17): Tasks 1–15 done,
    tests/typecheck/build green, dry-run report reviewed with the human (Checkpoint C).
 2. **Production migration chain applied first** — reconciled with
-   `tasks/audit/production-migration-plan.md`:
-   - The **19-file catch-up batch** (its §"The batch": 16 pending migrations + repair
+   `tasks/audit/production-migration-plan.md`: **28 files, in filename order**
+   (re-verified read-only 2026-11-01, `tasks/audit/task17-readiness-report.md` §2).
+   **Gate 1 approved 2026-11-01 (user): rollback basis = proven logical dump; scope = all 28.**
+   - The **19-file catch-up batch** (16 pending migrations + repair
      `20261030090000_repair_audit_drift` + Phase-1 `20261030180000_profiles_default_business`,
-     `20261030200000_profile_setup`), applied in filename order. **Signup on production is
-     fail-closed until #10 `20261022120000_signup_config_accessor` lands** (`is_signup_open()`
-     missing there — verified `PGRST202`, `tasks/audit/production-migration-plan.md` §"Where
-     production stands").
+     `20261030200000_profile_setup`). **Signup on production is fail-closed until #10
+     `20261022120000_signup_config_accessor` lands** (`is_signup_open()` missing there — verified
+     `PGRST202`, `tasks/audit/production-migration-plan.md` §"Where production stands").
    - Then the **domain-revamp schema wave** (5 files, in filename order):
      `20261031090000_unified_order_sources`, `20261031113000_warehouses_stock`,
      `20261031140000_courier_services`, `20261031180000_payment_accounts`,
@@ -82,14 +83,28 @@ and refuses to run outside them (guard `:33-45`).
      `warehouses`/`product_locations` stock holders, and `courier_services`
      (`scripts/migrate-enveil-vincent.sql:184-205`) — note the script header says "Tasks 4–5
      schema" but step 2b also requires `courier_services` from `20261031140000`.
-   - ⚠ **Known worktree blocker:** migrations `20261022120000_signup_config_accessor.sql` and
-     `20261023100000_signup_service_role_grants.sql` (batch #10/#11) are currently **deleted
-     from the worktree by a foreign actor** (uncommitted; still in git history). They must be
-     restored or re-supplied before the batch can apply — without #10 signup stays fail-closed.
-     Resolve with the user; do not commit over the foreign change unasked.
+   - Then the **4 integration migrations**: `20261102090000_business_onboarding` (Task 13),
+     `20261102120000_legacy_pool_rls` + `20261102150000_storefront_brand_scoped_rls` (Task 15),
+     `20261103090000_operational_store_provisioning` (option B).
+   - ⚠ **#20 `20261031090000_unified_order_sources` renames the legacy `order_sources` table** to
+     `legacy_order_channels` and recreates `order_sources` with a different column set. The
+     currently deployed frontend (build of 2026-10-30) still queries the legacy shape
+     (`is_default`/`sort_order`), so those pages error from #20 onward until the new frontend
+     ships — no data loss, but the deploy must be part of this window (§1 precondition 3).
+   - ✅ **Resolved (2026-11-01):** the earlier worktree blocker — batch files #10/#11 apparently
+     deleted by a foreign actor — is **dissolved**. Both files are present, clean, and committed
+     (`20261022120000_signup_config_accessor.sql` blob `f3e80e8c79c7a823ee3569f962c43bea37d5da4f`,
+     `20261023100000_signup_service_role_grants.sql` blob `c07b6a333e9f042ffdf7ceeee3ff79b9a1924b34`;
+     `git status --short -- supabase/migrations` empty). No restore action is needed.
 3. **Frontend deployed together with the batch** (apply-order warning,
-   `tasks/audit/production-migration-plan.md` §"Apply-order warning"): the currently deployed
-   frontend predates `2435c1b` reads `app_config` directly and #15/#16 revoke that surface.
+   `tasks/audit/production-migration-plan.md` §"Apply-order warning"). Measured against the actual
+   deployed bundle (all 89 chunks crawled read-only, 2026-11-01): the live build references
+   **no `app_config`** at all, so the older "app_config 401" concern does not apply. The real
+   constraint is legacy row shapes: the deployed UI still reads `order_sources.select("id, name,
+   is_default")` / `order("sort_order")` and inserts `{name, sort_order}`, which **break at #20**.
+   Sequence the window as **chain → frontend deploy → smoke → lift freeze**. Note the repo has no
+   `.vercel/` link and the branch is 51 commits ahead of `origin`; the new build reaches production
+   only after those commits are pushed (outbound action — user-visible, not yet done).
 4. **Fresh rehearsal green** (Phase 1 below) on an extract taken ≤24 h before the window.
 
 ## 2. Phase 1 — Rehearsal on a scratch DB (no production writes)
@@ -132,14 +147,18 @@ totals drift upward — take a fresh extract in the same window before applying 
 Per `DOMAIN-REVAMP-SPEC.md` §7: one-shot in a short maintenance window (brief read-only freeze),
 rollback = the pre-migration backup.
 
-1. **Gate 1 — user go-ahead.** Record it (who/when) before anything below. (If the 19-file batch
-   has not yet been applied, that batch is separately user-gated —
-   `tasks/audit/production-migration-plan.md` status banner — and follows its own pre/post-checks.
-   Apply order: batch → schema wave → this runbook.)
+1. **Gate 1 — user go-ahead.** ✅ **GIVEN 2026-11-01** (user, via readiness review):
+   rollback basis = the proven logical dump (no native backup/PITR exists); scope = **all 28
+   migrations**. Record who/when for any *further* go-ahead before anything below. (The 28-file
+   chain is separately gated from the data script — Gate 2 — and follows the plan's pre/post-checks.
+   Apply order: chain (28) → frontend deploy → this runbook.)
 2. **Backup** (the rollback — there are NO DOWN scripts,
-   `tasks/audit/production-migration-plan.md` §"Pre-checks" 1): take a Supabase backup / confirm
-   PITR and **record the recovery timestamp**. Take it after the schema wave lands, immediately
-   before the data script.
+   `tasks/audit/production-migration-plan.md` §"Pre-checks" 1): production has no native backup and
+   no PITR, so the rollback is the **logical dump** taken and restore-verified on 2026-11-01
+   (`prod-schema-public.sql` + `prod-data-public.sql`; checksums and durable copy location in
+   `tasks/audit/task17-readiness-report.md` §1). **Re-take it after the 28-file chain lands,
+   immediately before the data script**, and record the dump time + checksums here as the recovery
+   timestamp. Confirm the durable copy is readable before proceeding.
 3. **Maintenance window + brief read-only freeze** (spec §7): pause order entry/POS/trading for
    the window (minutes, not hours). Note: both Woo stores currently report `status=error`
    (`tasks/plan.md` risks table) — flag to the user separately; the migration does not depend on
@@ -387,10 +406,13 @@ Orders per new source after (2026-11-01 rehearsal; identify sources by UUID — 
 
 - **Before COMMIT:** nothing to do — the script is one transaction
   (`scripts/migrate-enveil-vincent.sql:28`, `:442`); any error aborts the whole apply.
-- **After COMMIT (verification failure or user decision):** restore the pre-migration backup /
-  PITR to the recovery timestamp recorded in Phase 3 step 2. **There are no DOWN scripts — the
-  backup is the rollback** (`tasks/audit/production-migration-plan.md` §"Pre-checks" 1).
-- Roll back only the data script (PITR to just before Gate 2) if the schema chain itself is
+- **After COMMIT (verification failure or user decision):** restore the pre-migration **logical
+  dump** taken immediately before the data script (production has no native backup/PITR — Gate 1
+  decision 2026-11-01; dump time + checksums recorded in Phase 3 step 2). **There are no DOWN
+  scripts — the dump is the rollback**
+  (`tasks/audit/production-migration-plan.md` §"Pre-checks" 1,
+  `tasks/audit/task17-readiness-report.md` §1).
+- Roll back only the data script (restore the pre-Gate-2 dump) if the schema chain itself is
   fine — the batch + schema wave are additive DDL and may stay. If the batch's #15/#16 grants
   misfire, re-apply the saved grants snapshot instead of restoring
   (`tasks/audit/production-migration-plan.md` §"Rollback").
@@ -407,13 +429,13 @@ sign-off on the live audit report.**
 
 | # | Gate / step | Done when | Who | When |
 |---|---|---|---|---|
-| ☐ | Checkpoints A–E complete; dry-run report reviewed (Checkpoint C) | `tasks/audit/task8-dry-run-report.md` reviewed incl. the 3 review items | user | |
-| ☐ | 19-file catch-up batch + 5-file schema wave applied (its own go-ahead + checks) | ledger head `20261101090000`; `is_signup_open()` NOT NULL | operator | |
+| ☐ | Checkpoints A–E complete; dry-run report reviewed (Checkpoint C) | `tasks/audit/task8-dry-run-report.md` reviewed incl. the 3 review items | user | 2026-11-01 |
+| ☐ | **28-file chain applied** (19-file catch-up batch + 5-file schema wave + 4 integration migrations) | ledger head **`20261103090000`**, count **190**; `is_signup_open()` NOT NULL | operator | |
 | ☐ | Fresh scratch rehearsal: all 12 checks ✅ | refreshed report saved (dated copy), including the connected-order evidence cohort | operator | |
-| ☐ | Backup / PITR taken, recovery timestamp recorded | recorded here: ____ | operator | |
+| ☐ | Backup taken, recovery timestamp recorded — logical dump (no native backup/PITR) | recorded here: ____ | operator | |
 | ☐ | Maintenance window announced; read-only freeze on | | operator | |
 | ☐ | Pre-flight read-only queries all green | §3 (Phase 2 step 4) | operator | |
-| ☐ | **GATE 1 — user go-ahead for the production chain** | explicit yes from the user | **user** | |
+| ☐ | **GATE 1 — user go-ahead for the production chain** | explicit yes from the user | **user** | 2026-11-01 ✅ |
 | ☐ | **GATE 2 — user go-ahead for the data migration** | explicit yes, immediately before | **user** | |
 | ☐ | `scripts/migrate-enveil-vincent.sql` applied (one transaction, no edits) | COMMIT succeeded | operator | |
 | ☐ | Live audit report produced (`tasks/audit/task17-live-audit-report.md`) | Phase 3 queries run read-only | operator | |
@@ -446,13 +468,14 @@ Recorded while verifying this runbook against the actual scripts (Task 17 verifi
    (`:184-205`) writes `courier_services`, created by `20261031140000_courier_services.sql`
    (Task 9) — the schema wave must include it (and does, in §1).
 3. `tasks/audit/production-migration-plan.md` post-check "Ledger head = `20261030090000`,
-   count = 179" is **stale**: written for the 17-file version of the batch. The plan's own batch
-   is 19 files → after it, head should read `20261030200000` (count 181); after the schema wave
-   too, head `20261101090000` (186 tracked migrations in this checkout). Re-count at execution
-   time — more migrations may land meanwhile.
-4. Foreign worktree deletions (uncommitted, not ours): batch files #10/#11
+   count = 179" was **stale** (written for the 17-file version of the batch); it has been updated to
+   the reconciled **28-file** scope → head `20261103090000`, count 190. The plan's own 19-file batch
+   alone would end at head `20261030200000`. Re-count at execution time — more migrations may land
+   meanwhile.
+4. ✅ **Resolved (2026-11-01):** the foreign worktree deletions of batch files #10/#11
    (`20261022120000_signup_config_accessor.sql`, `20261023100000_signup_service_role_grants.sql`)
-   are missing from the worktree — blocker for the batch, see §1 (precondition 2).
+   no longer exist — both files are present, clean, and committed, and
+   `git status --short -- supabase/migrations` is empty. No blocker remains.
 5. The audit's wipe check samples **7 tracked ids** across storefronts/brands/businesses
    (`scripts/task8-audit.mjs:40-45`) — it proves the headline rows are gone, not every deleted
    row; full wipe completeness rests on the script's own UUID lists (steps 11–12).

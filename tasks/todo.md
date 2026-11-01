@@ -363,11 +363,13 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §7: prepare the runbook (backup → maintenance window → run Task 8 script → audit → verify → enable new UI) and **execute only on explicit user go-ahead**. Real tenant: Enveil Vincent `de31fd60-…`. Wipe test data per Q24/Q27 (by UUID, sever AGS→Enveil-store link first).
 
 **Acceptance criteria:**
-- [x] Runbook documents exact steps, rollback (backup), and verification queries — [runbook-cutover.md](runbook-cutover.md) (`dcd3454`, 2026-10-31): three user gates + sign-off checklist; precondition chain (Checkpoints A–E → 19-file catch-up batch → 5-file schema wave → data script); rehearsal flow; line-cited migration walkthrough; Q24/Q27 wipe rules; live-audit queries; expected counts + drift rules; rollback. Cross-checked against the scripts and the dry-run report — discrepancies recorded in its appendix (incl. the stale card counts corrected above)
-- [ ] User explicitly approves execution before any production write *(awaiting go-ahead)*
-- [ ] Post-migration audit matches Task 8's expected counts; user signs off *(after the gated execution)*
+- [x] Runbook documents exact steps, rollback (backup), and verification queries — [runbook-cutover.md](runbook-cutover.md) (`dcd3454`, 2026-10-31): three user gates + sign-off checklist; precondition chain (Checkpoints A–E → **28-file production chain** → data script); rehearsal flow; line-cited migration walkthrough; Q24/Q27 wipe rules; live-audit queries; expected counts + drift rules; rollback. Cross-checked against the scripts and the dry-run report — discrepancies recorded in its appendix (incl. the stale card counts corrected above). Refreshed 2026-11-01 after the read-only readiness review ([audit/task17-readiness-report.md](audit/task17-readiness-report.md)): scope corrected 19 → 28, rollback basis switched from "backup/PITR" to the proven logical dump (production has no native backup or PITR), and the deployed-frontend apply-order risk re-measured against the live bundle
+- [x] **Gate 1 — user approved** (2026-11-01): rollback basis = proven logical dump (restore-verified locally, checksums + durable copy in the readiness report); scope = all 28 migrations
+- [ ] User explicitly approves the data write before any production write *(Gate 2 — awaiting go-ahead; nothing written yet)*
+- [ ] Post-migration audit matches Task 8's expected counts; user signs off *(Gate 3 — after the gated execution)*
 
 **Verification:**
+- [x] Read-only readiness review complete (2026-11-01) — production preflight, migration scope, conflict scan, backup/PITR finding + restore-tested logical dump, deployed-frontend dependency crawl
 - [ ] Dry-run already validated (Task 8); live audit report produced and reviewed *(runbook ready; the live run is user-gated)*
 
 **Dependencies:** Task 8 (script + dry-run), Checkpoints A–E
