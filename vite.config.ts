@@ -20,6 +20,11 @@ export default defineConfig(({ mode }) => ({
         "**/test-results/**",
         "**/.tmp*",
         "**/.tmp*/**",
+        // Atomic-write temp artifacts from file editors (e.g. tasks/wiki/):
+        // ".<name>.<uuid>.tmpdir/" dirs and "*.tmp" files beside the target.
+        "**/*.tmp",
+        "**/*.tmpdir",
+        "**/*.tmpdir/**",
         "**/.OMS-WORKFLOW-HANDOVER.md*",
         "**/.OMS-WORKFLOW-HANDOVER.md*/**",
         "**/backups/**",
