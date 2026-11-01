@@ -70,8 +70,8 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 ---
 
 ### Checkpoint A
-- [ ] Tasks 1–3 tested, typechecked, built, UI-verified
-- [ ] Review with human before Phase 2
+- [x] Tasks 1–3 tested, typechecked, built, UI-verified
+- [ ] Review with human before Phase 2 *(tasks completed and verified; awaiting explicit sign-off)*
 
 ---
 
@@ -114,7 +114,8 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 ---
 
 ### Checkpoint B
-- [ ] Fresh-DB migration clean; RLS green; review with human
+- [x] Fresh-DB migration clean; RLS green (every task's battery ran `test:rls` on fresh resets; 22 → 26+ RLS files across the phase)
+- [ ] Review with human *(awaiting sign-off)*
 
 ---
 
@@ -164,11 +165,11 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 **Acceptance criteria:**
 - [x] Script runs idempotently against a restored backup/scratch DB and produces the audit report — `scripts/migrate-enveil-vincent.sql` (one transaction, marker guard refuses a second apply) run by `scripts/task8-audit.mjs` against `task8_scratch` (full repo schema + production data from the read-only extract `scripts/task8-extract-prod.mjs`, loaded by `scripts/task8-build-scratch.mjs`); re-run proven no-op with identical audits
-- [x] Audit shows: 4 order sources + warehouses per brand; 225 products, 2,022 customers, 3,297 attributed orders preserved; 753 + 1,200 in Legacy pool; 96 orders attributed — [task8-dry-run-report.md](audit/task8-dry-run-report.md) shows the live equivalents (spec snapshot 2026-10-29 vs current extract): products 225 ✓; customers 2,024 bound + 2 merged preserved, pool 1,208; orders 3,218 bound + 97 inferred = 3,315 attributed, pool 758; 8 sources (4/brand) + 1 warehouse; 205 stock rows repointed — all drift = rows the still-trading tenant added since the snapshot, reconciled in the report
+- [x] Audit shows: 4 order sources + warehouses per brand; 225 products, 2,022 customers, 3,297 attributed orders preserved; 753 + 1,200 in Legacy pool; 96 orders attributed — [task8-dry-run-report.md](audit/task8-dry-run-report.md) shows the live equivalents (spec snapshot 2026-10-29 vs current extract): products 225 ✓; customers 2,025 bound + 2 merged preserved, pool 1,208; orders 3,219 bound + 97 inferred = 3,316 attributed, pool 758 (card figures corrected 2026-11-01 — the runbook cross-check found the earlier 2,024/3,218/3,315 stale by one vs the report); 8 sources (4/brand) + 1 warehouse; 205 stock rows repointed — all drift = rows the still-trading tenant added since the snapshot, reconciled in the report
 - [x] No name-based lookups anywhere in the script — every target is a UUID literal resolved from the read-only inventory; a static scan of the script (part of the audit) finds no name filters
 
 **Verification:**
-- [x] Dry-run on scratch DB: **10/10 audit checks PASS** (idempotent apply, mapping shape, preservation, inference, pool, wipe incl. AGS→Enveil-store link severed first, stock repoint, no name lookups). Audit report [task8-dry-run-report.md](audit/task8-dry-run-report.md) **presented for human review (Checkpoint C)** — review items in the report: the 2-merge-pair choice (one further strict email-alias duplicate left in the pool), the `source='legacy migration'` pool-tag trade-off, fulfillment defaults on migrated sources. **Production execution remains gated (Task 17).**
+- [x] Dry-run on scratch DB: **11/11 audit checks PASS** (the card said 10/10; the report has 11 incl. the Task 9 courier mapping) (idempotent apply, mapping shape, preservation, inference, pool, wipe incl. AGS→Enveil-store link severed first, stock repoint, no name lookups). Audit report [task8-dry-run-report.md](audit/task8-dry-run-report.md) **presented for human review (Checkpoint C)** — review items in the report: the 2-merge-pair choice (one further strict email-alias duplicate left in the pool), the `source='legacy migration'` pool-tag trade-off, fulfillment defaults on migrated sources. **Production execution remains gated (Task 17).**
 
 **Dependencies:** Tasks 4, 5
 **Files likely touched:** `supabase/migrations/*.sql` or `scripts/migrate-*.mjs`, `scripts/*audit*`
@@ -177,7 +178,8 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 ---
 
 ### Checkpoint C
-- [ ] New pages usable end-to-end; mapping dry-run audit reviewed with human
+- [x] New pages usable end-to-end (Order Sources / Warehouses / Courier services / Payment accounts all live-verified in Tasks 6–10); mapping dry-run audit produced and **presented** (Task 8)
+- [ ] Review with human *(the dry-run report's review items — 2-merge-pair choice, pool-tag trade-off, fulfillment defaults — await your verdict)*
 
 ---
 
@@ -245,7 +247,8 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 ---
 
 ### Checkpoint D
-- [ ] Integrations UI gone; couriers/payments usable; review with human
+- [x] Integrations UI gone (redirects verified live 2026-10-31); couriers/payments usable (live-verified in Tasks 9–10)
+- [ ] Review with human *(awaiting sign-off)*
 
 ---
 
@@ -276,13 +279,14 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §6a: new onboarding wizard (fresh code — old `src/components/onboarding/` is retired): skippable at any step, resumable (persistent checklist), re-runnable from settings. Steps in order: business profile → first brand (explicit name + optional logo) → connect order sources. Invited members never see it (Task 3 covers their profile setup).
 
 **Acceptance criteria:**
-- [ ] Onboarding runs after business creation; skip at any point; progress persisted (resumable)
-- [ ] Checklist re-runnable from settings
-- [ ] First-brand step is explicit (no ghost brand); logo optional
-- [ ] Order-source step offers WooCommerce/Storefront/Facebook/WhatsApp/Showroom/Manual
+- [x] Onboarding runs after business creation; skip at any point; progress persisted (resumable) — post-create `navigate("/onboarding")` in CreateBusinessDialog; per-step "Skip for now" (persists `skipped`, advances) + persistent "Exit setup"; `business_onboarding_steps` rows (status `completed|skipped`; no row = open); resume = first unmarked step. UI-verified live 2026-11-01 (marks confirmed in DB)
+- [x] Checklist re-runnable from settings — `OnboardingChecklistCard` (Settings → Business Account): per-step statuses + "Resume setup"/"Run setup again"; UI-verified live (statuses matched the walkthrough exactly; resume landed on the first unmarked step)
+- [x] First-brand step is explicit (no ghost brand); logo optional — typed name via `create_business_brand`; nothing written before submit; logo upload failure never blocks. UI-verified live ("UI Verify Brand")
+- [x] Order-source step offers WooCommerce/Storefront/Facebook/WhatsApp/Showroom/Manual — all six rendered live; showroom selection created a real `order_sources` row on the brand (DB-verified)
 
 **Verification:**
-- [ ] `npm run typecheck`, `npm test` pass; manual: create business → onboarding → skip mid-way → resume → re-run from settings
+- [x] `npm run typecheck` clean, `npm test` **408 passed / 3 skipped** (+14: wizard state, skip, resume, re-mark, completion, invited-member bypass), eslint 0 problems on touched files, `npm run build` clean, `npm run test:rls` **ALL GREEN (23 files)** incl. `business_onboarding_test.sql` on a fresh 186-migration chain
+- [x] Manual in the running frontend (2026-11-01, local stack, fresh signup `ui.verify.t1315@example.com`): signup → Create Business → lands on `/onboarding`; steps saved/created; skip → exit → reopen resumed at the first unmarked step; settings card + "Resume setup" re-entry verified. Wizard is **creator-only** (`joined_via==='created'`, fail-closed: invited AND directly-granted members never see it — agent decision per spec §6a "created from scratch", one predicate to widen if wanted). Playwright `test:browser` **38/38** incl. new wizard render/skip coverage (`851d4be`)
 
 **Dependencies:** Tasks 4, 6 (order sources exist), Task 3 (invited-member path)
 **Files likely touched:** new `src/components/onboarding/*` (fresh), `src/App.tsx`, `src/pages/AccountSelection.tsx`, `supabase/migrations/*.sql` (checklist state), `src/lib/onboarding*.ts`
@@ -295,13 +299,14 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §6a continued: onboarding steps 4–6: warehouses → product import (Woo push import, CSV action, manual) → optional storefront creation launching the storefront sub-onboarding (name/slug, theme, payments, publish). Same storefront sub-onboarding runs whenever a storefront is created later.
 
 **Acceptance criteria:**
-- [ ] Warehouse step creates brand warehouses
-- [ ] Product import: WooCommerce import (from connected source), CSV import (action), manual add
-- [ ] Storefront step runs only if storefront chosen; identical sub-onboarding reachable from "create storefront" anytime
-- [ ] Onboarding remains skippable/resumable through these steps
+- [x] Warehouse step creates brand warehouses — wizard step reuses `WarehouseDialog`; UI-verified live ("UI Verify Warehouse" created on "UI Verify Brand", DB-confirmed)
+- [x] Product import: WooCommerce import (from connected source), CSV import (action), manual add — Woo kicks the sync worker only for connection-complete sources (incomplete ones link to Order Sources); CSV is a one-shot action (`src/lib/productImport.ts`: RFC-4180 subset, per-line errors, batch insert with row-by-row fallback, provenance `origin_kind='csv'`); manual deep-links `/products?new=1`. UI-verified live: CSV of 2 rows → "Imported 2 products", DB rows carry `origin_kind='csv'` and the operational `store_id` (after fix `d26c8e5`)
+- [x] Storefront step runs only if storefront chosen; identical sub-onboarding reachable from "create storefront" anytime — one shared flow (`src/components/storefront/`: `storefrontSetup.ts` + `storefrontCreate.ts` + `StorefrontSubOnboarding.tsx`) behind BOTH entry points (StorefrontsPage's old 195-line dialog deleted). UI-verified live: "UI Verify Store" created → starter Home page published → `/storefront/ui-verify-store` renders for the public (after fix `5731853`)
+- [x] Onboarding remains skippable/resumable through these steps — open-text `step_key`s `warehouses`/`product_import`/`storefront` appended to the Task 13 vocabulary (no constraint migration needed); verified live across the full walk
 
 **Verification:**
-- [ ] `npm run typecheck`, `npm test` pass; manual: full onboarding incl. CSV import + storefront creation
+- [x] `npm run typecheck` clean, `npm test` **431 passed / 3 skipped** (+23: CSV parser edges, provenance payloads, step-vocabulary walk, storefront validation/settings), eslint 0 new problems (StorefrontsPage's 3 pre-existing kept in untouched code), `npm run build` clean
+- [x] Manual full onboarding incl. CSV import + storefront creation (2026-11-01, local stack) — plus **two real defects found and fixed the same day**: (1) `storefronts` RLS rejected the documented store-less insert and scaffold/publish sat behind global-role gates real accounts fail (`5731853`: brand-scoped policy legs + honest scaffold/publish reporting + `storefront_brand_rls_test.sql`), (2) CSV import wrote `brand_stores` ids into `products.store_id` (`d26c8e5`: picker rebound to the operational store space + payload pin test). **Open model question for the user:** nothing in the UI creates operational `stores` rows (the Brands-page dialog creates `brand_stores` only), so fresh businesses dead-end for CSV/manual product add — options + recommendation B recorded in [wiki/transitional-store-model.md](wiki/transitional-store-model.md)
 
 **Dependencies:** Task 13
 **Files likely touched:** `src/components/onboarding/*`, `src/components/storefront/*`, `src/lib/import*.ts`, `src/App.tsx`
@@ -314,12 +319,13 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §7: business-level "Legacy / unattributed" pool listing orders/customers tagged `legacy migration` (753 orders + 1,200 customers after cutover). Reassign to a brand from the UI (sets brand + provenance). Visible in reports context.
 
 **Acceptance criteria:**
-- [ ] Pool page/section at business level with counts and filters
-- [ ] Reassign action moves an item to a chosen brand with provenance `legacy`
-- [ ] Pool is empty-checkable (before/after migration states both render fine)
+- [x] Pool page/section at business level with counts and filters — `/legacy-pool` (sidebar "Legacy Pool"): live counts, tabs All/Orders/Customers, search (order number/name/phone), "Include deleted orders" toggle; `LegacyPoolBanner` on Analytics ("…1 order and 1 customer are not attributed to a brand yet… Review pool"). UI-verified live
+- [x] Reassign action moves an item to a chosen brand with provenance `legacy` — `ReassignToBrandDialog` (brand + its order-source picker; "its provenance stays legacy"); dual-write matches the migration script's bindings (`order_source_id`/`origin_order_source_id` + transitional `store_id` when the brand has a legacy store). UI-verified live on one order + one customer: DB bindings written, `origin_kind='legacy'` and the `legacy migration` tag preserved, counts decremented
+- [x] Pool is empty-checkable (before/after migration states both render fine) — empty state verified before seeding ("The legacy pool is empty"), populated + post-reassign-drain states verified after
 
 **Verification:**
-- [ ] `npm run typecheck`, `npm test` pass; manual reassignment works on seeded data
+- [x] `npm run typecheck` clean, `npm test` **447 passed / 3 skipped** (+16 incl. a real Radix-dialog component suite), eslint 0 new problems, `npm run build` clean; `npm run test:rls` **ALL GREEN (24 files)** incl. `legacy_pool_test.sql` (pool read/reassign legs, WITH CHECK cross-business denial, source-attribution legs with store-consistency guard, value-pinned survival) — the work also surfaced that pool rows previously passed **no** RLS policy (invisible/unmodifiable via PostgREST), fixed by policy-only migration `20261102120000_legacy_pool_rls.sql`
+- [x] Manual in the running frontend (2026-11-01, local stack): empty state → seeded 2+2 pool rows (exact script predicates) → counts/lists → reassign ×2 → DB-verified → search filter ("990002" narrows; empty-filter message) → Analytics banner with live counts. Task-16 recommendation recorded: stamp `business_id` on pool rows so the pool becomes truly per-business (see [wiki/legacy-pool-semantics.md](wiki/legacy-pool-semantics.md))
 
 **Dependencies:** Task 4 (provenance columns), Task 8 (data shape)
 **Files likely touched:** new `src/pages/LegacyPool.tsx` (or component), `src/lib/legacy*.ts`, `src/App.tsx`
@@ -328,7 +334,8 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 ---
 
 ### Checkpoint E
-- [ ] Onboarding end-to-end + re-run verified; Legacy pool works; review with human
+- [x] Onboarding end-to-end + re-run verified; Legacy pool works — all live-verified 2026-11-01 (see Tasks 13–15 verification blocks)
+- [ ] Review with human *(awaiting sign-off)*
 
 ---
 
@@ -355,12 +362,12 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §7: prepare the runbook (backup → maintenance window → run Task 8 script → audit → verify → enable new UI) and **execute only on explicit user go-ahead**. Real tenant: Enveil Vincent `de31fd60-…`. Wipe test data per Q24/Q27 (by UUID, sever AGS→Enveil-store link first).
 
 **Acceptance criteria:**
-- [ ] Runbook documents exact steps, rollback (backup), and verification queries
-- [ ] User explicitly approves execution before any production write
-- [ ] Post-migration audit matches Task 8's expected counts; user signs off
+- [x] Runbook documents exact steps, rollback (backup), and verification queries — [runbook-cutover.md](runbook-cutover.md) (`dcd3454`, 2026-10-31): three user gates + sign-off checklist; precondition chain (Checkpoints A–E → 19-file catch-up batch → 5-file schema wave → data script); rehearsal flow; line-cited migration walkthrough; Q24/Q27 wipe rules; live-audit queries; expected counts + drift rules; rollback. Cross-checked against the scripts and the dry-run report — discrepancies recorded in its appendix (incl. the stale card counts corrected above)
+- [ ] User explicitly approves execution before any production write *(awaiting go-ahead)*
+- [ ] Post-migration audit matches Task 8's expected counts; user signs off *(after the gated execution)*
 
 **Verification:**
-- [ ] Dry-run already validated (Task 8); live audit report produced and reviewed
+- [ ] Dry-run already validated (Task 8); live audit report produced and reviewed *(runbook ready; the live run is user-gated)*
 
 **Dependencies:** Task 8 (script + dry-run), Checkpoints A–E
 **Files likely touched:** `tasks/runbook-cutover.md` (new), execution of Task 8 script
@@ -369,4 +376,4 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 ---
 
 ### Final checkpoint
-- [ ] Production tenant migrated, audit clean, all acceptance criteria met
+- [ ] Production tenant migrated, audit clean, all acceptance criteria met *(blocked on the user-gated cutover: runbook [runbook-cutover.md](runbook-cutover.md) ready; Task 16's legacy drop follows the successful cutover)*

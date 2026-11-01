@@ -17,16 +17,14 @@ Implement [DOMAIN-REVAMP-SPEC.md](../DOMAIN-REVAMP-SPEC.md) (grill-agreed 2026-1
 - **Default business** controls post-login landing only; quick-create/search follow the *current* business; notifications merged across businesses, grouped (spec §5).
 - **No feature flags** — the app is pre-launch except one tenant; new pages replace old ones per slice, legacy pages stay until the contract phase.
 
-## Session handoff (2026-10-31, after Task 8)
+## Session handoff (2026-11-01, after Task 15 + verification fixes)
 
-- **Done: Tasks 1–8.** Task 8 = the Enveil Vincent mapping migration **dry-run only**: `scripts/migrate-enveil-vincent.sql` + read-only extractor / scratch-builder / audit tooling, executed against `task8_scratch` (production data), **10/10 audit checks PASS**, report at [audit/task8-dry-run-report.md](audit/task8-dry-run-report.md) — **awaiting human review (Checkpoint C)**. Production execution is Task 17 (user-gated) and depends on the catch-up batch landing first.
-- **Next: Task 9** (Courier services at business level) — Phase 4. Start from `tasks/todo.md`. Task 8 deliberately left the 2 Pathao courier connectors (`43c2b501-…` Enveil, `2a01ee63-…` Vincent) and `pathao_integrations` (2 rows) in place for Task 9 to map.
-- **Task 8 review items (see the report):** (1) merge pairs = the 2 audited phone/alias duplicates → the one brand customer (`c4444444-…`, `c7777777-…` → `c1111111-…`); one further strict email-alias duplicate (`1a689ee5-…` → `4d0d1b7d-…`) deliberately left in the pool — easy to add to the merge table on request; (2) legacy-pool tag = `source='legacy migration'` on orders + customers (customers also `origin_kind='legacy'`) — pool rows' channel text is overwritten and the tag dies with `orders.source` at Task 16 (Task 15/16 must drain the pool or move the tag first); (3) migrated sources' fulfillment defaults (digital: warehouse→showroom draw; showroom: ship-from-store ON) — editable in Task 7's UI.
-- **Task 8 gotchas:** the script assumes production order **catch-up batch → Tasks 4–5 schema → this script**. Tooling lessons: pg returns bigint as string (audit coerces `Number()`); `min(uuid)` doesn't exist (use `min(x::text)::uuid`); CASE-assigned uuid literals need `::uuid` casts; customer-alias merges must de-dupe against `uq_customer_alias_value`. The extract (`scripts/task8-extract-prod.mjs`) is strictly SELECT-only against the Management API and writes PII to untracked `.tmp-task8/extract/` — never commit it. Rebuild/rerun: `node scripts/task8-build-scratch.mjs` then `node scripts/task8-audit.mjs`.
-- **Schema state:** unchanged by Tasks 6–8 (no migrations since `20261031113000`). Production ledger `20261014120000` + the user-gated 19-file batch.
-- **Local stack:** Docker + Supabase at `127.0.0.1:54321`. Dev server: `npm run dev -- --port 8080 --strictPort --host 127.0.0.1` (use the IP, not `localhost`). Vite's watcher **crashes with `EBUSY` on atomic file saves** — restart it after editing. Browser-automation gotchas: text clicks match the FIRST DOM occurrence (behind-dialog text steals them) — click portal targets via `[role="dialog"]`-scoped JS; cmdk options are `[cmdk-item]`. Seeded UI fixtures: `task6.verify@example.com` / `Task6Verify-2026!` (business "Task 6 Verify Co" etc.).
-- **Pre-existing, not ours:** `account-lifecycle-rehearsal.spec.ts` 2 failing signup-form tests (fail on clean `HEAD` too); legacy `no-explicit-any` lint debt in big order/POS files. **Foreign changes in the worktree** (another actor deleted `src/test/signupConfiguration.test.tsx`, `signupGate.test.ts`, `supabase/functions/_shared/signup-*`, `signup-event`, and 2 signup migrations + 2 signup RLS tests) — untouched and NOT in any commit of ours.
-- **User-gated, not executed:** the production catch-up batch (19 files, [audit/production-migration-plan.md](audit/production-migration-plan.md)); Task 8's migration script against production (Task 17). Production signup is fail-closed until the batch runs.
+- **Done: Tasks 1–15 + Task 17's runbook.** Task 13 (onboarding wizard, `24246c6`), Task 14 (steps 4–6 + shared storefront sub-onboarding, `1a7d2d9`), Task 15 (legacy pool, `338461e`), Playwright drift fix (`851d4be`), cutover runbook (Task 17 docs, `dcd3454`). All live-verified 2026-11-01: fresh signup → business → full wizard incl. skip/exit/resume + settings re-run → storefront created live with published Home → CSV import → legacy pool reassign → Analytics banner.
+- **Three real RLS defects found by the UI pass, fixed same day:** `5731853` (`storefronts` brand-scoped insert legs + `storefront_pages`/`storefront_page_sections` membership legs — revives the visual page builder for real accounts; scaffold/publish reports honestly) and `d26c8e5` (CSV import wrote `brand_stores` ids into `products.store_id` — rebound to the operational `stores` space). Pinned by `storefront_brand_rls_test.sql` + `productImportStoreSpace.test.tsx`.
+- **Next: the user-gated tail.** (1) Human sign-offs: Checkpoints A–E + Task 8's dry-run review items; (2) Task 17 execution (runbook ready, three gates); (3) Task 16 contract drop after cutover. **Open model question for the user:** nothing in the UI creates operational `stores` rows (the Brands-page dialog creates `brand_stores` only) → fresh businesses dead-end for CSV/manual product add — options + recommendation B in [wiki/transitional-store-model.md](wiki/transitional-store-model.md).
+- **Schema state:** +3 migrations since Task 12: `20261102090000_business_onboarding.sql` (`business_onboarding_steps` + `joined_via`), policy-only `20261102120000_legacy_pool_rls.sql`, policy-only `20261102150000_storefront_brand_scoped_rls.sql`. 188 files locally.
+- **Local stack notes:** signup gate = `app_config.signup_open` (fail-closed by default; flipped open for the verification user). The foreign signup deletions were **restored per user decision** (5 runtime files + 2 `src/test` files + 2 RLS tests — see [wiki/foreign-worktree-state.md](wiki/foreign-worktree-state.md)). Vite's watcher is now hardened against editor `*.tmpdir`/`*.tmp` artifacts (they EBUSY-crash chokidar mid-run).
+- **Wiki:** [wiki/index.md](wiki/index.md) — tribal knowledge (transitional store model, environment quirks, task conventions).
 
 ## Task List (ordered index; full cards in [todo.md](todo.md))
 
@@ -58,16 +56,16 @@ Implement [DOMAIN-REVAMP-SPEC.md](../DOMAIN-REVAMP-SPEC.md) (grill-agreed 2026-1
 **Checkpoint D** — no integrations UI anywhere; couriers/payments usable from business settings.
 
 ### Phase 5 — Roles, onboarding, legacy pool
-- [ ] Task 12: Roles ladder + invite role picker *(S)*
-- [ ] Task 13: Business onboarding — shell, skip/resume/re-run, profile + brand + order-source steps *(M)*
-- [ ] Task 14: Onboarding — warehouses, product import (Woo/CSV), storefront sub-onboarding hook *(M)*
-- [ ] Task 15: Legacy / unattributed pool UI (business level) *(S)*
+- [x] Task 12: Roles ladder + invite role picker *(S)* — enum-rename migration `20261101090000`; RLS 22/22, Playwright 37/37, API e2e green
+- [x] Task 13: Business onboarding — shell, skip/resume/re-run, profile + brand + order-source steps *(M)* — `24246c6` + migration `20261102090000`; live-verified 2026-11-01
+- [x] Task 14: Onboarding — warehouses, product import (Woo/CSV), storefront sub-onboarding hook *(M)* — `1a7d2d9` + fixes `5731853`/`d26c8e5`; live-verified 2026-11-01
+- [x] Task 15: Legacy / unattributed pool UI (business level) *(S)* — `338461e` + migration `20261102120000`; live-verified 2026-11-01
 
 **Checkpoint E** — full onboarding runs end-to-end and re-runs from settings; invited members see only profile setup.
 
 ### Phase 6 — Contract & cutover
-- [ ] Task 16: Contract: drop legacy tables/columns, delete orphaned onboarding + Dispatch.tsx *(M)*
-- [ ] Task 17: Cutover runbook + **execute migration with user go-ahead** *(M)*
+- [ ] Task 16: Contract: drop legacy tables/columns, delete orphaned onboarding + Dispatch.tsx *(M)* — **runs after the successful cutover**; candidate list collected in [wiki/cutover-status.md](wiki/cutover-status.md)
+- [ ] Task 17: Cutover runbook + **execute migration with user go-ahead** *(M)* — runbook DONE (`dcd3454`, [runbook-cutover.md](runbook-cutover.md)); execution awaits the user's explicit go-ahead
 
 **Final checkpoint** — production tenant migrated, audit clean, all acceptance criteria met.
 
