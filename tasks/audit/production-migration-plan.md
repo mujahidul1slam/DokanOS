@@ -41,8 +41,8 @@ Target: Supabase project `jiwndicvfkiltgageqwv` — the real database, tenant **
 | 12 | 20261024100000_active_business_context | **new table** `active_business_context` + RPCs | low |
 | 13 | 20261026100000_active_business_context_service_role_grants | grants | low |
 | 14 | 20261026120000_active_business_context_operational_rls | RLS | low |
-| 15 | 20261026140000_explicit_api_table_grants | deliberate grant rebalance (−459/+19 table grants) | **attention** |
-| 16 | 20261026150000_fix_anon_public_surface | revokes anon's direct table surface | **attention** |
+| 15 | 20261026140000_explicit_api_table_grants | grants only — **grant-only, no REVOKE** (the "−459" claim was wrong; measured +252/−0 after the whole chain) | **attention** |
+| 16 | 20261026150000_fix_anon_public_surface | splits the storefronts SELECT policy + grants `invoice_settings` columns to anon — **no anon revoke either** | **attention** |
 | 17 | 20261030090000_repair_audit_drift *(new)* | `orders.payment_meta` + `webhook_events` convergence | low |
 | 18 | 20261030180000_profiles_default_business *(new, Task 2)* | `profiles.default_business_id` + index | low |
 | 19 | 20261030200000_profile_setup *(new, Task 3)* | `profiles.phone`, `profiles.profile_setup_completed_at` + backfill | low |
@@ -66,6 +66,13 @@ Target: Supabase project `jiwndicvfkiltgageqwv` — the real database, tenant **
 - Expected schema delta (from the fresh-build diff): +3 tables, +29 columns, +17 functions,
   +1 trigger, policies +67/−58, table grants +19/−459, routine grants +20/−84. The large
   negative sides are the old broad grant/policy surface that #4/#15/#16 deliberately remove.
+  ⚠ **Corrected 2026-11-01 after the actual apply:** the measured production diff was
+  **table grants +252 / −0**. #15 and #16 contain only `GRANT` statements; the sole table-level
+  anon revoke in the whole history is the older `20260620172022:4 REVOKE SELECT ON public.products
+  FROM anon;`. The `−459` figure came from the fresh-build diff (where default grants never existed)
+  and does not describe production. Consequently the anon surface did **not** shrink: anon keeps
+  ALL on every default-granted table, the `products.cost_price` carve-out is unenforced, and nine
+  public tables have RLS disabled — see §8 of `task17-readiness-report.md`.
 - **Drift found (pre-existing, not caused by the batch):**
   - `orders.payment_meta` (jsonb, nullable) exists only on production — added out of band;
     no migration creates it, yet the checkout RPCs INSERT it. Fresh builds break at checkout

@@ -207,3 +207,111 @@ Nothing has been written to production. The user answered both Gate 1 questions:
 
 Gates still ahead: **Gate 2** (immediate go-ahead before `scripts/migrate-enveil-vincent.sql`) and
 **Gate 3** (sign-off of `tasks/audit/task17-live-audit-report.md` before enabling the new UI).
+
+---
+
+## 7. Chain applied 2026-11-01 19:54 — post-apply verification
+
+`npx supabase db push --linked --yes` exited 0 and applied all 28 files in filename order, ending
+`20261103090000_operational_store_provisioning.sql`. Only benign NOTICEs (skipped re-adds, a
+truncated identifier name, a missing policy/constraint to drop).
+
+| Signal | Before | After |
+| --- | --- | --- |
+| `schema_migrations` rows / head | 162 / `20261014120000` | **190 / `20261103090000`** |
+| `is_signup_open()` | absent | **present** (anon RPC → `true`) |
+| `legacy_order_channels` | absent | **present, 3 rows** (legacy order sources preserved) |
+| new tables | — | `brand_stores` (0), `business_onboarding_steps`, `courier_services`, `payment_accounts`, `warehouses` |
+| `order_sources` | 3 rows, 5 legacy cols | 0 rows, brand-scoped shape + `order_source_type` enum |
+| `user_business_access.joined_via` | absent | present on all 9 rows |
+| grants rows | 1,892 | **2,144** (no revocations — see §8) |
+| business/customers/orders/products counts | 8 / 3,246 / 4,092 / 225 | unchanged |
+
+`stores.business_id` and `orders.business_id` **still do not exist**, confirming the §4 gap: Task 16's
+"pool rows stamped with `business_id`" item (`tasks/todo.md:350`) has no column yet.
+
+The deployed bundle was re-checked after the push and is **still `index-DSV-o5nx.js`** — the Vercel
+build for the pushed branch has not landed, so the Orders/Settings pages remain broken on the legacy
+`order_sources` shape until it does. Expected; it is the documented window.
+
+Confirmed read-only against production PostgREST with the real anon key (the deployed app's own query
+strings, replayed verbatim):
+
+| Deployed query | Result |
+| --- | --- |
+| `order_sources?select=id,name,is_default&order=sort_order` (Orders page `AddOrderDialog`) | **400 `42703` "column order_sources.is_default does not exist"** |
+| `order_sources?select=*&order=sort_order` (Settings page `OrderSourcesTab`) | **400 `42703` "column order_sources.sort_order does not exist"** |
+| `legacy_order_channels?select=id,name,is_default,sort_order` | 200 (rows preserved) |
+
+A full crawl of all **89** deployed chunks (2,041,499 bytes) extracted every `from("…")` call and
+reconciled it against production's live columns: **49** tables are queried, **all still exist**, and
+`order_sources` is the **only chain-caused break** — the other column mismatches the scan flagged
+(`product_categories.name`, `stores.store_currency`) are pre-existing gaps in the old build, not
+effects of this chain. The deployed bundle has no `joined_via`, `origin_order_source_id` or
+`business_onboarding_steps` reference, confirming it predates the whole revamp.
+
+---
+
+## 8. Security finding — nine public tables have RLS disabled
+
+Found while reconciling the post-apply grant diff (added 252 / removed 0). The chain did not revoke
+anything; it only *added* privileges on the tables it created. Investigating the added 56 anon grants
+exposed a **pre-existing** hole, present in both production and the local stack (so it comes from
+committed migrations, not drift):
+
+**Nine `public` tables never had `ALTER TABLE … ENABLE ROW LEVEL SECURITY`:**
+
+| Table | Policies defined | anon privileges | Reachable by a real anon REST caller |
+| --- | --- | --- | --- |
+| `sync_queue` | 0 | ALL (7) | **YES — 254 rows, `order_id` + `store_id` + `error_log`** |
+| `sync_queue_cleanup_log` | 0 | ALL (7) | **YES — 20 rows** |
+| `product_locations` | 4 (authenticated only) | ALL (7) | **YES — 205 rows of stock levels** |
+| `payment_providers` | 0 | ALL (7) | **YES — 4 lookup rows** (created by `20261031180000`) |
+| `courier_integrations` / `courier_providers` / `courier_shipments` / `courier_tokens` | 0 | none | no (42501) — earlier `REVOKE ALL … FROM anon` holds |
+| `webhook_events` | 0 | none | no (42501) — same |
+
+Measured with the real public anon key against production PostgREST (read-only probes):
+
+- `GET /rest/v1/sync_queue` → **200**, returning order UUIDs and internal `error_log` text
+  (`"Abandoned 2026-08-26: accumulated while pg_cron was down…"`). 142 of 254 rows carry non-empty
+  `error_log`.
+- `GET /rest/v1/product_locations` → **200**, exposing product/location UUIDs and stock quantities.
+- `GET /rest/v1/payment_providers` → **200**.
+- The policies that *do* exist on `product_locations` are moot: **RLS is off, so policies never run.**
+  The table is still governed solely by grants.
+
+Everywhere RLS *is* enabled the posture is sound — `customers`, `orders`, `businesses`,
+`user_business_access`, `audit_log`, `consent_records`, `legacy_order_channels` all return `200 []` to
+anon because RLS filters every row. **No customer, order or tenant PII is exposed.** The exposure is
+internal plumbing metadata (order UUIDs, sync error text, stock levels, provider lookup).
+
+Two further observations from the same pass:
+
+- The plan document's `production-migration-plan.md:44,67` claim of a **"deliberate grant rebalance
+  (−459/+19 table grants)"** is **wrong**. Migration 15
+  (`20261026140000_explicit_api_table_grants.sql`) and 16 (`20261026150000_fix_anon_public_surface.sql`)
+  contain **only `GRANT`s**; the sole table-level anon revoke in the whole history is the older
+  `20260620172022:4 REVOKE SELECT ON public.products FROM anon;`. Net measured effect: **+252, −0**.
+- The anon `products` **`cost_price` carve-out is not enforced in production**: the migration grants
+  column-level SELECT on the public catalog columns, but anon still holds the table-level grant from
+  Supabase defaults, so `cost_price` (margin data) is readable. This is the same root cause — grants
+  granted but never revoked.
+
+**Proposed remediation (not applied — needs your go-ahead; it is a write to production):**
+
+1. `ALTER TABLE … ENABLE ROW LEVEL SECURITY` on the four reachable tables, with policies mirroring
+   intent: `sync_queue` / `sync_queue_cleanup_log` → service-role only (RLS on, no anon/authenticated
+   policy); `product_locations` → its existing four policies start working as written;
+   `payment_providers` → SELECT for anon/authenticated (public lookup), writes denied.
+2. `REVOKE` the default-grant surface from `anon` to match policy intent, restoring the `cost_price`
+   carve-out.
+3. Regression test that **fails if any `public` table has `relrowsecurity = false`** — the existing
+   `api_table_grants_test.sql` checks the policy/privilege *pairing* but never asserts RLS is enabled,
+   which is why the battery stayed green through all of this.
+4. Correct the plan document's grant-rebalance claim.
+
+Blast radius: all four tables are read by **edge functions using the service-role key** (which has
+`rolbypassrls = true`, verified) or by the Postgres owner, never by the browser — `src/` has zero
+`from("sync_queue")`, `from("payment_providers")` references; `product_locations` is read in
+`src/lib/stockHolders.ts` under an authenticated session, which the existing policies permit
+(0 of 205 rows are orphaned and 0 of 225 products have a NULL `store_id`, so no row is lost).

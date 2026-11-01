@@ -70,6 +70,13 @@ and refuses to run outside them (guard `:33-45`).
    `tasks/audit/production-migration-plan.md`: **28 files, in filename order**
    (re-verified read-only 2026-11-01, `tasks/audit/task17-readiness-report.md` §2).
    **Gate 1 approved 2026-11-01 (user): rollback basis = proven logical dump; scope = all 28.**
+   ✅ **APPLIED 2026-11-01 19:54** — `supabase db push --linked --yes`, exit 0, all 28 in filename
+   order. Post-state: ledger **190**, head **`20261103090000`**, `is_signup_open()` live,
+   `legacy_order_channels` keeps its 3 rows, new tables + `joined_via` present, business/customer/
+   order/product counts unchanged (8 / 3,246 / 4,092 / 225). Verification table:
+   `tasks/audit/task17-readiness-report.md` §7. Two follow-ups it surfaced: the Vercel build for the
+   pushed branch had **not** landed at the time of writing (the live bundle still queries the legacy
+   `order_sources` shape), and nine public tables are RLS-disabled (§8 of the report).
    - The **19-file catch-up batch** (16 pending migrations + repair
      `20261030090000_repair_audit_drift` + Phase-1 `20261030180000_profiles_default_business`,
      `20261030200000_profile_setup`). **Signup on production is fail-closed until #10
@@ -430,7 +437,7 @@ sign-off on the live audit report.**
 | # | Gate / step | Done when | Who | When |
 |---|---|---|---|---|
 | ☐ | Checkpoints A–E complete; dry-run report reviewed (Checkpoint C) | `tasks/audit/task8-dry-run-report.md` reviewed incl. the 3 review items | user | 2026-11-01 |
-| ☐ | **28-file chain applied** (19-file catch-up batch + 5-file schema wave + 4 integration migrations) | ledger head **`20261103090000`**, count **190**; `is_signup_open()` NOT NULL | operator | |
+| ☐ | **28-file chain applied** (19-file catch-up batch + 5-file schema wave + 4 integration migrations) | ledger head **`20261103090000`**, count **190**; `is_signup_open()` NOT NULL | operator | 2026-11-01 ✅ (162→190) |
 | ☐ | Fresh scratch rehearsal: all 12 checks ✅ | refreshed report saved (dated copy), including the connected-order evidence cohort | operator | |
 | ☐ | Backup taken, recovery timestamp recorded — logical dump (no native backup/PITR) | recorded here: ____ | operator | |
 | ☐ | Maintenance window announced; read-only freeze on | | operator | |
