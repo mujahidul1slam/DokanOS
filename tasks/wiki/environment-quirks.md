@@ -21,5 +21,14 @@
 - **Capture fast-disappearing toasts:** install a MutationObserver on `document.body` (collect added-node text under 300 chars into `window.__cap`), click, then read `window.__cap`. This is how two silent RLS failures were diagnosed (see [transitional-store-model.md](transitional-store-model.md)).
 - **Upload files to file inputs:** construct `new File([...], 'x.csv', {type:'text/csv'})`, put it in a `DataTransfer`, assign `input.files = dt.files`, dispatch `change` with bubbles. Works in Chromium via execute.
 
+## Port 8080 squatting (seen 2026-11-01)
+- After harness restarts, the Vite dev server is gone but **Steam** (`steamwebhelper.exe --remote-debugging-port=8080`) can grab `127.0.0.1:8080` first. Do NOT kill it (user's game client).
+- Run the app on another port (`npx vite --port 8081 --strictPort`). The Supabase session lives in `localhost:8080`'s localStorage (`sb-127-auth-token`), so the login must be carried over: open any page on the old origin (Steam's debug page qualifies — same origin), stash the token in `window.name` (survives cross-origin same-tab navigation), navigate to the new port, `localStorage.setItem("sb-127-auth-token", window.name)`, clear `window.name`, reload. The token never passes through the agent's context this way.
+
+## PostgreSQL RLS landmines (proven by DB probes, 2026-11-01)
+- **`INSERT … RETURNING` re-checks the SELECT policy on the newborn row.** On `stores`, the SELECT policy is `user_can_access_store(id)`, which needs the `brands.woo_store_id` link written only in the NEXT statement — so `supabase-js .insert().select()` fails every member insert with `new row violates row-level security policy for table "stores"` (SQLSTATE 42501) even when WITH CHECK passes. Fix pattern: assign the id client-side and insert WITHOUT returning (see `src/lib/operationalStores.ts` `randomUuid`).
+- **Permissive WITH CHECKs are OR'd** across policies (a false policy + a true policy passes), so dropping probe policies is unnecessary when bisecting.
+- **RLS test files run as one implicit batch transaction** (`scripts/run-rls-tests.mjs:1011` sends the whole file as a single query): a stray `ROLLBACK;` anywhere rolls back EVERYTHING since the last `COMMIT;`, including cleanup statements written outside transaction blocks. Healing blocks and paired cleanups must each own a `BEGIN; … COMMIT;` (see `supabase/tests/rls/app_settings_test.sql`). The runner's own error path (`scripts/run-rls-tests.mjs:1018`) does `ROLLBACK; RESET ROLE;` — files must be self-contained after that.
+
 ## Test-count baselines (recorded as each task landed)
 - Task 12: 394 passed, 3 skipped. Task 13: 408. Task 14: 431. Task 15 phase 1: 447 (uncommitted at the time).
