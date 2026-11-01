@@ -23,6 +23,8 @@ const SCRATCH_DB = process.argv.includes("--db")
   ? process.argv[process.argv.indexOf("--db") + 1]
   : "task8_scratch";
 const REPORT = "tasks/audit/task8-dry-run-report.md";
+const EXTRACT_DIR = ".tmp-task8/extract";
+const extractDirLabel = EXTRACT_DIR;
 
 const VINCENT_STORE = "1e69bece-51f8-414c-ab8b-341702e008f5";
 const ENVEIL_STORE = "4f3e88d1-c592-48d9-ba0d-aa50a12e82fd";
@@ -197,9 +199,28 @@ async function main() {
   // ---- report ----
   const lines = [];
   const push = (s = "") => lines.push(s);
+  // Extract freshness: prefer the extractor's own stamp; fall back to the newest extract file mtime.
+  let extractedAt = null;
+  try {
+    const summaryPath = path.join(EXTRACT_DIR, "_summary.json");
+    if (fs.existsSync(summaryPath)) {
+      const s = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+      extractedAt = s.extractedAt ?? null;
+    }
+    if (!extractedAt) {
+      let newest = 0;
+      for (const f of fs.readdirSync(EXTRACT_DIR)) {
+        if (!f.endsWith(".json")) continue;
+        const m = fs.statSync(path.join(EXTRACT_DIR, f)).mtimeMs;
+        if (m > newest) newest = m;
+      }
+      if (newest) extractedAt = new Date(newest).toISOString();
+    }
+  } catch { /* report still renders without a stamp */ }
+  const extractLabel = extractedAt ? `${extractedAt} (${extractDirLabel})` : "see .tmp-task8/extract/_summary.json";
   push("# Task 8 dry-run report — Enveil Vincent mapping migration");
   push();
-  push(`Status: **DRY-RUN ONLY — executed against scratch database \`${SCRATCH_DB}\` (production data extracted read-only on ${new Date().toISOString().slice(0, 10)}). Production execution is Task 17, user-gated.**`);
+  push(`Status: **DRY-RUN ONLY — executed against scratch database \`${SCRATCH_DB}\` (production data extracted read-only at ${extractLabel}). Production execution is Task 17, user-gated.**`);
   push();
   push("Script: [migrate-enveil-vincent.sql](../../scripts/migrate-enveil-vincent.sql) · Extractor: [task8-extract-prod.mjs](../../scripts/task8-extract-prod.mjs) · Scratch builder: [task8-build-scratch.mjs](../../scripts/task8-build-scratch.mjs) · This audit: [task8-audit.mjs](../../scripts/task8-audit.mjs)");
   push();

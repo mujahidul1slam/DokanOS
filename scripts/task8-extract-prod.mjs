@@ -143,6 +143,7 @@ async function main() {
     fs.writeFileSync(path.join(outDir, `${name}.json`), JSON.stringify(rows, null, 1));
     summary[name] = rows.length;
   }
+  summary.extractedAt = new Date().toISOString();
   fs.writeFileSync(path.join(outDir, "_summary.json"), JSON.stringify(summary, null, 2));
   console.log(`\nExtract written to ${outDir}`);
   console.log(JSON.stringify(summary, null, 2));
