@@ -7,6 +7,7 @@ Created 2026-11-01 by the chief-of-staff session pursuing the remaining tasks of
 - [task-conventions.md](task-conventions.md) — how tasks in this repo are implemented, verified, and committed (the pattern every task session follows).
 
 ## Decisions
+- [signup-flow.md](signup-flow.md) — signup gate, email-verification chain (local auto-confirm!), duplicate-email handling and its anti-enumeration fix.
 - [onboarding-design.md](onboarding-design.md) — Task 13/14 wizard design: `joined_via` provenance, creator-only gate, step vocabulary, storefront sub-onboarding.
 - [legacy-pool-semantics.md](legacy-pool-semantics.md) — Task 15 pool predicates, reassign semantics, the RLS gap and its policy migration.
 - [transitional-store-model.md](transitional-store-model.md) — the three store id spaces mid-migration and the RLS landmines they produce (storefronts, pages scaffold, CSV import).
