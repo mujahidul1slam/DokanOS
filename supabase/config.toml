@@ -52,3 +52,9 @@ verify_jwt = false
 [functions.team-manage]
 verify_jwt = true
 
+# Local email verification: send real confirmation emails (captured by Mailpit
+# at http://127.0.0.1:54324) instead of auto-confirming signups at creation.
+# Revert by removing this section to return to the auto-confirm dev default.
+[auth.email]
+enable_confirmations = true
+
