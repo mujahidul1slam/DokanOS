@@ -365,7 +365,14 @@ Orders per new source after (baseline; identify sources by UUID — names repeat
    §"Apply-order warning"). There are **no feature flags** (`tasks/plan.md` architecture
    decisions) — "enable the new UI" = ship this branch's UI; the old surfaces were already
    replaced per slice (Task 11 retired `/integrations` + StoresHub).
-3. Smoke-verify (deployed frontend + production): login; `/order-sources` shows 4 sources per
+3. **Auth redirect allow-list (cutover-critical — found live 2026-11-01 on the local stack):**
+   Supabase Auth → URL Configuration must list the production app origin in `Site URL` /
+   `Additional redirect URLs`. GoTrue **silently** replaces an unlisted `emailRedirectTo`
+   with its default SITE_URL, so every verification/recovery email dead-ends at a wrong
+   origin (locally: `http://127.0.0.1:3000`) while the token still verifies server-side —
+   users end up confirmed but never reach `/auth/confirm` → `/profile/setup`. Verify with a
+   test signup: the mail's link must carry `redirect_to=<app-origin>/auth/confirm`.
+4. Smoke-verify (deployed frontend + production): login; `/order-sources` shows 4 sources per
    brand with per-source order counts matching the Phase 4 table; Settings → Warehouses shows
    the 1 warehouse with on-hand stock; Settings → Courier services shows the 2 Pathao services
    (Configured); storefront checkout inserts an order (`payment_meta` path); `/signup` renders
@@ -373,7 +380,7 @@ Orders per new source after (baseline; identify sources by UUID — names repeat
    note its hard-coded deployment URL currently returns **410 Gone**
    (`tasks/audit/production-migration-plan.md` §"Apply-order warning"); confirm which deployment
    is current first.
-4. Lift the freeze; announce. Flag the `status=error` Woo stores to the user (pre-existing).
+5. Lift the freeze; announce. Flag the `status=error` Woo stores to the user (pre-existing).
 
 ## 8. Rollback plan
 
