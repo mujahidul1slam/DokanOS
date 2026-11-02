@@ -12,6 +12,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:browser": "playwright test --config playwright.accounts.config.ts",
+    "test:smoke": "node scripts/run-smoke.mjs",
+    "verify:env": "node scripts/verify-env.mjs",
     "test:rls": "supabase db reset && node scripts/run-rls-tests.mjs"
   },
   "dependencies": {

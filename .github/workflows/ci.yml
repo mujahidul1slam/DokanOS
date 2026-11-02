@@ -1,0 +1,96 @@
+## CI guardrail — typecheck, unit tests, mocked browser tests
+##
+## WHY THIS EXISTS
+## PR checks were Vercel-only. typecheck and test existed in package.json, were
+## green and fast, and ran nowhere. A repo with no guardrail is itself a finding:
+## this workflow would have flagged 2435c1b's breakage at the commit that caused
+## it, not at merge time, by hand.
+##
+## The mocked Playwright suite (test:browser) runs against the real Vite app
+## with intercepted Supabase API calls. It does NOT require Docker, a local
+## database, or edge functions — only Node and a Chromium install.
+##
+## Real-stack smoke tests (test:smoke) are opt-in via the SMOKE environment
+## variable because they need a running Supabase stack + Mailpit.
+
+name: CI
+
+on:
+  push:
+    branches: [main, Frontpage, "integration/**", "fix/**", "feat/**"]
+  pull_request:
+    branches: [main, Frontpage]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Typecheck + Test + Browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Mocked browser tests (Playwright/mocked API)
+        run: npm run test:browser
+        env:
+          PLAYWRIGHT_CHANNEL: ""
+
+  smoke:
+    ## Opt-in: set repository variable SMOKE=true or dispatch manually.
+    ## Requires a Supabase stack, so it runs only when explicitly requested.
+    name: Real-stack smoke (opt-in)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      vars.SMOKE == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase stack
+        run: supabase start
+
+      - name: Apply migrations
+        run: supabase db reset
+
+      - name: Run smoke journey
+        run: npm run test:smoke
+        env:
+          SMOKE_SUPABASE_URL: http://127.0.0.1:54321
+          VERIFY_APP_URL: http://127.0.0.1:5173
+
+      - name: Stop stack
+        if: always()
+        run: supabase stop
