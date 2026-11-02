@@ -454,20 +454,20 @@ sign-off on the live audit report.**
 
 | # | Gate / step | Done when | Who | When |
 |---|---|---|---|---|
-| ☐ | Checkpoints A–E complete; dry-run report reviewed (Checkpoint C) | `tasks/audit/task8-dry-run-report.md` reviewed incl. the 3 review items | user | 2026-11-01 |
+| ☐ | Checkpoints A–E complete; dry-run report reviewed (Checkpoint C) | `tasks/audit/task8-dry-run-report.md` reviewed incl. the 3 review items | user | 2026-11-01 ✅ |
 | ☐ | **28-file chain applied** (19-file catch-up batch + 5-file schema wave + 4 integration migrations) | ledger head **`20261103090000`**, count **190**; `is_signup_open()` NOT NULL | operator | 2026-11-01 ✅ (162→190) |
-| ☐ | Fresh scratch rehearsal: all 12 checks ✅ | refreshed report saved (dated copy), including the connected-order evidence cohort | operator | |
-| ☐ | Backup taken, recovery timestamp recorded — logical dump (no native backup/PITR) | recorded here: ____ | operator | |
-| ☐ | Maintenance window announced; read-only freeze on | | operator | |
-| ☐ | Pre-flight read-only queries all green | §3 (Phase 2 step 4) | operator | |
+| ☐ | Fresh scratch rehearsal: all 12 checks ✅ | refreshed report saved (dated copy), including the connected-order evidence cohort | operator | 2026-11-02 ✅ (fresh extract 2026-11-01T22:56Z, 12/12 PASS) |
+| ☐ | Backup taken, recovery timestamp recorded — logical dump (no native backup/PITR) | recorded here: ____ | operator | 2026-11-01 ✅ pre-chain (`20261101-pre-cutover`) + 2026-11-02 ✅ pre-data (`20261102-pre-data`, sha256-verified) |
+| ☐ | Maintenance window announced; read-only freeze on | | operator | 2026-11-02 ✅ (live-traffic drift in the window: 0) |
+| ☐ | Pre-flight read-only queries all green | §3 (Phase 2 step 4) | operator | 2026-11-02 ✅ |
 | ☐ | **GATE 1 — user go-ahead for the production chain** | explicit yes from the user | **user** | 2026-11-01 ✅ |
-| ☐ | **GATE 2 — user go-ahead for the data migration** | explicit yes, immediately before | **user** | |
-| ☐ | `scripts/migrate-enveil-vincent.sql` applied (one transaction, no edits) | COMMIT succeeded | operator | |
-| ☐ | Live audit report produced (`tasks/audit/task17-live-audit-report.md`) | Phase 3 queries run read-only | operator | |
-| ☐ | **GATE 3 — user signs off the live audit report** | explicit sign-off, recorded here: ____ | **user** | |
-| ☐ | New UI deployed + smoke verified | Phase 5 checks green | operator | |
-| ☐ | Freeze lifted; Woo `status=error` flagged to user | | operator | |
-| ☐ | **Task 16 (drop legacy tables) NOT run** — separate user decision after the audit passes | deferred | **user** | |
+| ☐ | **GATE 2 — user go-ahead for the data migration** | explicit yes, immediately before | **user** | 2026-11-02 06:00 ✅ ("Run it now") |
+| ☐ | `scripts/migrate-enveil-vincent.sql` applied (one transaction, no edits) | COMMIT succeeded | operator | 2026-11-02 06:02 ✅ (Management API, HTTP 201, zero errors) |
+| ☐ | Live audit report produced (`tasks/audit/task17-live-audit-report.md`) | Phase 3 queries run read-only | operator | 2026-11-02 06:03 ✅ (`.tmp-task8/preflight/gate3-audit.json`; 23/23 match) |
+| ☐ | **GATE 3 — user signs off the live audit report** | explicit sign-off, recorded here: ____ | **user** | 2026-11-02 06:06 ✅ ("Sign off") |
+| ☐ | New UI deployed + smoke verified | Phase 5 checks green | operator | 2026-11-02 04:38–04:54 ✅ (`index-CR_kWxJC.js`, 5 pages smoke-tested) |
+| ☐ | Freeze lifted; Woo `status=error` flagged to user | | operator | 2026-11-02 ✅ (drift 0; Woo stores remain `status=error` — pre-existing, flagged) |
+| ☐ | **Task 16 (drop legacy tables) NOT run** — separate user decision after the audit passes | deferred | **user** | pending — Task 16 is now unblocked and next |
 
 ## 10. After cutover (out of this runbook's scope, but ordered here)
 
