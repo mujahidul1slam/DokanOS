@@ -85,6 +85,33 @@ export const LabelWithHint = ({
 };
 
 /**
+ * Invisible registration of a tab's save handler with the universal save bar
+ * (the sticky save bar / save popup). Replaces the visible per-element
+ * SaveButton: the tab keeps its pending edits and dirty tracking, and the
+ * sticky bar commits them generically through the save registry. Nothing is
+ * rendered — the save affordance lives in the bar alone.
+ */
+export const SettingsSaveHandler = ({
+  label,
+  disabled,
+  run,
+}: {
+  /** Registry key and label; "Save …" entries are the primary save actions. */
+  label: string;
+  /** True while the section should not be saved (saving, invalid or clean). */
+  disabled?: boolean;
+  run: () => void | Promise<void>;
+}) => {
+  const id = useId();
+  useRegisterSettingsSave(id, {
+    label,
+    disabled: Boolean(disabled),
+    run,
+  });
+  return null;
+};
+
+/**
  * Standard save button used inside SettingsSection footer. Matches phrasing
  * and disabled/saving state across every tab.
  */

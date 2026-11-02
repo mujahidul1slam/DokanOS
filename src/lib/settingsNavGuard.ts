@@ -211,6 +211,9 @@ function onDocumentClickCapture(event: MouseEvent): void {
   const target = event.target;
   const anchor = target instanceof Element ? target.closest("a[href]") : null;
   if (!(anchor instanceof HTMLAnchorElement)) return;
+  // Expand-only controls (e.g. the sidebar group chevron) live inside their
+  // nav anchor but never navigate — clicking one must not open the guard.
+  if (target instanceof Element && target.closest("[data-nav-expander]")) return;
   if (anchor.hasAttribute("download")) return;
   const anchorTarget = anchor.getAttribute("target");
   if (anchorTarget && anchorTarget.toLowerCase() !== "_self") return;

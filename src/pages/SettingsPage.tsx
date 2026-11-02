@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { logChange } from "@/lib/auditLog";
-import { SettingsSection, SaveButton } from "@/components/settings/SettingsSection";
+import { SettingsSection, SettingsSaveHandler } from "@/components/settings/SettingsSection";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
 import OrdersSettingsTab from "@/components/settings/OrdersSettingsTab";
@@ -33,9 +33,9 @@ import { SettingsDirtyContext, useSettingsDirty, useRegisterDirty } from "@/hook
 import { runSettingsSaveHandlers } from "@/lib/settingsSaveRegistry";
 import { useSettingsNavGuard, type SettingsNavTarget } from "@/lib/settingsNavGuard";
 import {
-  AlertDialog, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 
 type TabId =
   | "profile" | "account" | "brands"
@@ -480,23 +480,27 @@ const UnsavedChangesDialog = ({
   onDiscard: () => void;
   onStay: () => void;
 }) => (
-  <AlertDialog open={open} onOpenChange={(o) => { if (!o) onStay(); }}>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>You have unsaved changes</AlertDialogTitle>
-        <AlertDialogDescription>
+  // Plain Dialog (not AlertDialog) on purpose: the alert variant swallows all
+  // outside interaction, which turned a spurious prompt into a full dead-end
+  // ("the screen went dark and nothing was selectable"). Here any outside
+  // click / Escape / X resolves to "Stay" — the safe, non-destructive choice.
+  <Dialog open={open} onOpenChange={(o) => { if (!o) onStay(); }}>
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>You have unsaved changes</DialogTitle>
+        <DialogDescription>
           Leaving now will discard your edits. Save them first, or discard to continue.
-        </AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel onClick={onStay} disabled={saving}>Stay</AlertDialogCancel>
+        </DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button variant="outline" onClick={onStay} disabled={saving}>Stay</Button>
         <Button variant="outline" onClick={onDiscard} disabled={saving}>Discard</Button>
         <Button onClick={onSave} disabled={saving} className="min-w-[120px]">
           {saving ? "Saving…" : "Save"}
         </Button>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 );
 
 /**
@@ -556,28 +560,31 @@ const InventorySettings = () => {
     return () => setDirty(false);
   }, [changed, setDirty]);
 
+  const handleSaveInventory = async () => {
+    setSaving(true);
+    try {
+      await setGlobalStockEnabled(globalStock);
+      await logChange("settings_inventory", undefined, { globalStock: persistedGlobalStock }, { globalStock });
+      toast.success("Inventory settings saved");
+    } catch {
+      toast.error("Inventory settings could not be saved");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <SettingsSection
-      title="Inventory Settings"
-      description="Control how stock is tracked across all channels."
-      footer={
-        <SaveButton
-          saving={saving}
-          onClick={async () => {
-            setSaving(true);
-            try {
-              await setGlobalStockEnabled(globalStock);
-              await logChange("settings_inventory", undefined, { globalStock: persistedGlobalStock }, { globalStock });
-              toast.success("Inventory settings saved");
-            } catch {
-              toast.error("Inventory settings could not be saved");
-            } finally {
-              setSaving(false);
-            }
-          }}
-        />
-      }
-    >
+    <>
+      {/* Universal save: the sticky save bar commits the stock toggle. */}
+      <SettingsSaveHandler
+        label="Save Inventory Settings"
+        disabled={saving || !changed}
+        run={handleSaveInventory}
+      />
+      <SettingsSection
+        title="Inventory Settings"
+        description="Control how stock is tracked across all channels."
+      >
       <div className="rounded-lg border border-border p-4 space-y-3">
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5 min-w-0">
@@ -596,7 +603,8 @@ const InventorySettings = () => {
           </div>
         )}
       </div>
-    </SettingsSection>
+      </SettingsSection>
+    </>
   );
 };
 

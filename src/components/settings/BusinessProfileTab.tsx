@@ -9,7 +9,7 @@ import { Upload, X, FileText } from "lucide-react";
 import { logChange } from "@/lib/auditLog";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { useRegisterDirty } from "@/hooks/useSettingsDirty";
-import { SettingsSection, SaveButton } from "./SettingsSection";
+import { SettingsSection, SettingsSaveHandler } from "./SettingsSection";
 
 interface BusinessProfile {
   id: string;
@@ -120,11 +120,17 @@ export default function BusinessProfileTab() {
   }
 
   return (
-    <SettingsSection
-      title="Invoice & Print Header"
-      description="Name, logo and contact block printed on invoices and pickup slips. This is print copy — your business account details live in Business Account."
-      footer={<SaveButton saving={saving} onClick={handleSave} label="Save Profile" />}
-    >
+    <>
+      {/* Universal save: the sticky save bar commits the print-header draft. */}
+      <SettingsSaveHandler
+        label="Save Print Header"
+        disabled={saving || !isDirty}
+        run={handleSave}
+      />
+      <SettingsSection
+        title="Invoice & Print Header"
+        description="Name, logo and contact block printed on invoices and pickup slips. This is print copy — your business account details live in Business Account."
+      >
       <div className="flex justify-end">
         <Button variant="outline" size="sm" onClick={handleSyncFromBusiness} disabled={!active} className="gap-1.5">
           <FileText className="h-3.5 w-3.5" />
@@ -184,6 +190,7 @@ export default function BusinessProfileTab() {
           <Input type="email" value={data.email || ""} onChange={(e) => update("email", e.target.value)} />
         </div>
       </div>
-    </SettingsSection>
+      </SettingsSection>
+    </>
   );
 }

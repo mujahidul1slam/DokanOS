@@ -18,8 +18,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logChange } from "@/lib/auditLog";
 import { slugify } from "@/lib/slug";
+import { defaultPathaoStoreForAccount } from "@/lib/dispatchAccounts";
 import { useBusinessContext, type Brand } from "@/hooks/useBusinessContext";
-import { SettingsSection } from "./SettingsSection";
+import { useRegisterDirty } from "@/hooks/useSettingsDirty";
+import { SettingsSection, SettingsSaveHandler } from "./SettingsSection";
 
 interface BrandDraft {
   name: string;
@@ -40,9 +42,13 @@ const sameDraft = (a?: BrandDraft | null, b?: BrandDraft | null) =>
 
 export default function BrandSettingsTab() {
   const { active, brands, loading, refresh } = useBusinessContext();
+  const setDirty = useRegisterDirty();
   const [drafts, setDrafts] = useState<Record<string, BrandDraft>>({});
   const [originals, setOriginals] = useState<Record<string, BrandDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  // Per-brand dirty flags for the "Order identity defaults" sub-sections
+  // (Selling Point / Pathao Account), reported up by BrandIdentityDefaults.
+  const [identityDirty, setIdentityDirty] = useState<Record<string, boolean>>({});
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newSlug, setNewSlug] = useState("");
@@ -74,6 +80,20 @@ export default function BrandSettingsTab() {
   };
 
   const isDirty = (id: string) => !sameDraft(drafts[id], originals[id]);
+
+  // Universal save: brand card drafts and the identity-default sections all
+  // count towards the tab's dirty state so the sticky save bar and the
+  // route-away guard cover every pending edit.
+  const anyBrandDirty = brands.some((b) => isDirty(b.id));
+  const anyIdentityDirty = Object.values(identityDirty).some(Boolean);
+  useEffect(() => {
+    setDirty(anyBrandDirty || anyIdentityDirty);
+    return () => setDirty(false);
+  }, [anyBrandDirty, anyIdentityDirty, setDirty]);
+
+  const setIdentityDirtyFor = (brandId: string, dirty: boolean) => {
+    setIdentityDirty((prev) => (prev[brandId] === dirty ? prev : { ...prev, [brandId]: dirty }));
+  };
 
   const handleSave = async (brand: Brand) => {
     const draft = drafts[brand.id];
@@ -114,6 +134,13 @@ export default function BrandSettingsTab() {
     setDrafts((prev) => ({ ...prev, [brand.id]: next }));
     await refresh();
     toast.success(`Brand "${next.name}" saved`);
+  };
+
+  /** Universal save: persist every dirty brand card, in list order. */
+  const handleSaveAll = async () => {
+    for (const brand of brands) {
+      if (isDirty(brand.id)) await handleSave(brand);
+    }
   };
 
   const handleCreate = async () => {
@@ -172,6 +199,14 @@ export default function BrandSettingsTab() {
           : "Selling identities under your business."
       }
     >
+      {/* Universal save: the sticky save bar commits every dirty brand card
+          and the per-brand identity defaults. The former per-card and
+          per-select Save buttons are gone. */}
+      <SettingsSaveHandler
+        label="Save Brands"
+        disabled={savingId !== null || !anyBrandDirty}
+        run={handleSaveAll}
+      />
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {brands.length} brand{brands.length === 1 ? "" : "s"}
@@ -245,11 +280,12 @@ export default function BrandSettingsTab() {
               brand={brand}
               draft={drafts[brand.id]}
               dirty={isDirty(brand.id)}
-              saving={savingId === brand.id}
               onField={updateField}
-              onSave={() => handleSave(brand)}
             />
-            <BrandIdentityDefaults brand={brand} />
+            <BrandIdentityDefaults
+              brand={brand}
+              onDirtyChange={(dirty) => setIdentityDirtyFor(brand.id, dirty)}
+            />
           </div>
         ))}
       </div>
@@ -261,16 +297,12 @@ function BrandCard({
   brand,
   draft,
   dirty,
-  saving,
   onField,
-  onSave,
 }: {
   brand: Brand;
   draft?: BrandDraft;
   dirty: boolean;
-  saving: boolean;
   onField: (id: string, key: keyof BrandDraft, value: string | boolean) => void;
-  onSave: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -359,9 +391,6 @@ function BrandCard({
               onCheckedChange={(v) => onField(brand.id, "is_active", v)}
             />
           </div>
-          <Button size="sm" disabled={saving || !dirty} onClick={onSave} className="min-w-[72px]">
-            {saving ? "Saving…" : "Save"}
-          </Button>
         </div>
       </div>
     </div>
@@ -398,9 +427,17 @@ interface IdentityPathaoLink {
 /**
  * Existing-table defaults used by order entry and courier dispatch.
  * Selling Point defaults live on selling_points; Pathao defaults live on the
- * existing Woo-store-to-Pathao mapping.
+ * existing Woo-store-to-Pathao mapping. Pending edits are committed through
+ * the universal save bar (SettingsSaveHandler) and reported to the parent for
+ * the tab-level dirty flag.
  */
-function BrandIdentityDefaults({ brand }: { brand: Brand }) {
+function BrandIdentityDefaults({
+  brand,
+  onDirtyChange,
+}: {
+  brand: Brand;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const [sellingPoints, setSellingPoints] = useState<IdentitySellingPoint[]>([]);
   const [integrations, setIntegrations] = useState<IdentityPathaoIntegration[]>([]);
   const [pathaoStores, setPathaoStores] = useState<IdentityPathaoStore[]>([]);
@@ -408,10 +445,18 @@ function BrandIdentityDefaults({ brand }: { brand: Brand }) {
   const [selectedSellingPoint, setSelectedSellingPoint] = useState("");
   const [selectedIntegration, setSelectedIntegration] = useState("");
   const [selectedPathaoStore, setSelectedPathaoStore] = useState("");
+  // Server-side snapshots of the three selections; a selection differing from
+  // its snapshot is a pending edit the universal save must commit.
+  const [savedSellingPoint, setSavedSellingPoint] = useState("");
+  const [savedIntegration, setSavedIntegration] = useState("");
+  const [savedPathaoStore, setSavedPathaoStore] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingStores, setLoadingStores] = useState(false);
   const [savingSellingPoint, setSavingSellingPoint] = useState(false);
   const [savingPathao, setSavingPathao] = useState(false);
+  // Set when the user switches the Default Courier (Pathao account): the new
+  // account's default pickup store is auto-selected once its stores load.
+  const autoPickDefaultStoreRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -448,17 +493,21 @@ function BrandIdentityDefaults({ brand }: { brand: Brand }) {
       setIntegrations(activeIntegrations);
       setPathaoLink(link);
       const serverDefault = rows.find((row) => row.is_default);
-      setSelectedSellingPoint(serverDefault?.id || (rows.length === 1 ? rows[0].id : ""));
+      const initialSellingPoint = serverDefault?.id || (rows.length === 1 ? rows[0].id : "");
+      setSelectedSellingPoint(initialSellingPoint);
+      setSavedSellingPoint(initialSellingPoint);
 
       const linkedIntegration = link && activeIntegrations.some((item) => item.id === link!.pathao_integration_id)
         ? link.pathao_integration_id
         : "";
-      setSelectedIntegration(linkedIntegration);
-      setSelectedPathaoStore(
+      const initialStore =
         linkedIntegration && link?.default_pathao_store_id != null
           ? String(link.default_pathao_store_id)
-          : "",
-      );
+          : "";
+      setSelectedIntegration(linkedIntegration);
+      setSavedIntegration(linkedIntegration);
+      setSelectedPathaoStore(initialStore);
+      setSavedPathaoStore(initialStore);
       setLoading(false);
     };
     void load();
@@ -483,13 +532,34 @@ function BrandIdentityDefaults({ brand }: { brand: Brand }) {
       if (cancelled) return;
       const stores = (data || []) as IdentityPathaoStore[];
       setPathaoStores(stores);
-      setSelectedPathaoStore((current) =>
-        current && stores.some((store) => String(store.pathao_store_id) === current) ? current : "",
-      );
+      setSelectedPathaoStore((current) => {
+        // Default Courier just changed: auto-select the new account's default
+        // pickup store instead of keeping the old account's store or leaving
+        // the field blank.
+        if (autoPickDefaultStoreRef.current) {
+          autoPickDefaultStoreRef.current = false;
+          const accountDefault = defaultPathaoStoreForAccount(stores);
+          return accountDefault ? String(accountDefault.pathao_store_id) : "";
+        }
+        return current && stores.some((store) => String(store.pathao_store_id) === current) ? current : "";
+      });
       setLoadingStores(false);
     })();
     return () => { cancelled = true; };
   }, [selectedIntegration]);
+
+  // A blank placeholder selection ("Choose …") is not a pending edit — the
+  // save actions cannot persist it, so it must not dirty the tab either.
+  const spDirty = Boolean(selectedSellingPoint) && selectedSellingPoint !== savedSellingPoint;
+  const pathaoDirty =
+    Boolean(selectedIntegration) &&
+    (selectedIntegration !== savedIntegration || selectedPathaoStore !== savedPathaoStore);
+  const dirty = spDirty || pathaoDirty;
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  useEffect(() => {
+    onDirtyChangeRef.current(dirty);
+  }, [dirty]);
 
   const saveSellingPoint = async () => {
     if (!selectedSellingPoint || !sellingPoints.some((row) => row.id === selectedSellingPoint)) {
@@ -518,6 +588,7 @@ function BrandIdentityDefaults({ brand }: { brand: Brand }) {
       return;
     }
     setSellingPoints((current) => current.map((row) => ({ ...row, is_default: row.id === selectedSellingPoint })));
+    setSavedSellingPoint(selectedSellingPoint);
     toast.success("Default Selling Point saved");
   };
 
@@ -561,11 +632,26 @@ function BrandIdentityDefaults({ brand }: { brand: Brand }) {
       return;
     }
     if (result.data) setPathaoLink(result.data as IdentityPathaoLink);
+    setSavedIntegration(selectedIntegration);
+    setSavedPathaoStore(selectedPathaoStore);
     toast.success("Default Pathao Account saved");
   };
 
   return (
-    <div className="rounded-lg border border-border bg-card/60 p-4 space-y-4">
+    <>
+      {/* Universal save: the sticky save bar commits the pending Selling
+          Point and Pathao Account defaults for this brand. */}
+      <SettingsSaveHandler
+        label="Save Selling Points"
+        disabled={savingSellingPoint || !spDirty || !selectedSellingPoint}
+        run={saveSellingPoint}
+      />
+      <SettingsSaveHandler
+        label="Save Pathao Accounts"
+        disabled={savingPathao || !pathaoDirty || !selectedIntegration}
+        run={savePathaoDefault}
+      />
+      <div className="rounded-lg border border-border bg-card/60 p-4 space-y-4">
       <div>
         <h3 className="text-sm font-semibold">Order identity defaults</h3>
         <p className="text-xs text-muted-foreground">
@@ -595,9 +681,6 @@ function BrandIdentityDefaults({ brand }: { brand: Brand }) {
                   {sellingPoints.length > 1 && <option value="">Choose a Selling Point…</option>}
                   {sellingPoints.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
                 </select>
-                <Button size="sm" onClick={saveSellingPoint} disabled={savingSellingPoint || !selectedSellingPoint}>
-                  {savingSellingPoint ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
-                </Button>
               </div>
             )}
           </div>
@@ -614,15 +697,18 @@ function BrandIdentityDefaults({ brand }: { brand: Brand }) {
                   <select
                     className="flex h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
                     value={selectedIntegration}
-                    onChange={(event) => setSelectedIntegration(event.target.value)}
+                    onChange={(event) => {
+                      // Changing the Default Courier: the new account's
+                      // default pickup store is auto-selected once its stores
+                      // load (see the stores effect above).
+                      autoPickDefaultStoreRef.current = true;
+                      setSelectedIntegration(event.target.value);
+                    }}
                     disabled={integrations.length === 0}
                   >
                     <option value="">Choose a Pathao Account…</option>
                     {integrations.map((integration) => <option key={integration.id} value={integration.id}>{integration.name}</option>)}
                   </select>
-                  <Button size="sm" onClick={savePathaoDefault} disabled={savingPathao || !selectedIntegration}>
-                    {savingPathao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
-                  </Button>
                 </div>
                 {integrations.length === 0 && (
                   <p className="text-xs text-muted-foreground">No active Pathao Accounts. Add one under Integrations.</p>
@@ -652,7 +738,8 @@ function BrandIdentityDefaults({ brand }: { brand: Brand }) {
           </div>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

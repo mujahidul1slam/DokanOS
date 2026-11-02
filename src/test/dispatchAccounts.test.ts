@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPathaoAccountOptions,
+  defaultPathaoStoreForAccount,
   findPathaoAccount,
   groupOrdersForDispatch,
   isAccountOverride,
@@ -74,6 +75,40 @@ describe("dispatchAccounts", () => {
       expect(legacy.integrationId).toBeNull();
       expect(legacy.accountName).toBe("Pathao account");
       expect(legacy.key).toBe(pathaoAccountKey(null, 66));
+    });
+  });
+
+  describe("defaultPathaoStoreForAccount (brand settings auto-select)", () => {
+    it("picks the account's first store in display order (name, then id)", () => {
+      expect(defaultPathaoStoreForAccount([])).toBeUndefined();
+
+      const only = [{ pathao_store_id: 5, store_name: "Banani Hub" }];
+      expect(defaultPathaoStoreForAccount(only)?.pathao_store_id).toBe(5);
+
+      // Display order wins over input order.
+      expect(
+        defaultPathaoStoreForAccount([
+          { pathao_store_id: 22, store_name: "Uttara Hub" },
+          { pathao_store_id: 11, store_name: "Mirpur Hub" },
+        ])?.pathao_store_id,
+      ).toBe(11);
+
+      // Same name: tie-broken by pathao_store_id.
+      expect(
+        defaultPathaoStoreForAccount([
+          { pathao_store_id: 2, store_name: "Same Name" },
+          { pathao_store_id: 1, store_name: "Same Name" },
+        ])?.pathao_store_id,
+      ).toBe(1);
+    });
+
+    it("does not mutate its input", () => {
+      const stores = [
+        { pathao_store_id: 22, store_name: "Uttara Hub" },
+        { pathao_store_id: 11, store_name: "Mirpur Hub" },
+      ];
+      defaultPathaoStoreForAccount(stores);
+      expect(stores.map((s) => s.pathao_store_id)).toEqual([22, 11]);
     });
   });
 

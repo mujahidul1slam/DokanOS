@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import SizePresetsEditor from "@/components/measurements/SizePresetsEditor";
+import { useRegisterDirty } from "@/hooks/useSettingsDirty";
+import { SettingsSaveHandler } from "./SettingsSection";
 import { loadMeasurementRulesConfig, saveMeasurementRulesConfig } from "@/lib/measurements";
 import {
   getDescendantIds,
@@ -78,6 +80,7 @@ const MeasurementsTab = () => {
   const [scopePrompt, setScopePrompt] = useState<ScopePromptState | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const setDirty = useRegisterDirty();
 
   const load = async () => {
     setLoading(true);
@@ -129,6 +132,9 @@ const MeasurementsTab = () => {
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => () => setDirty(false), [setDirty]);
+
+  const markDirty = () => setDirty(true);
 
   const addGroup = () => {
     const tmp: Group = {
@@ -141,10 +147,12 @@ const MeasurementsTab = () => {
       assignments: [],
     };
     setGroups([...groups, tmp]);
+    markDirty();
   };
 
   const updateGroup = (id: string, patch: Partial<Group>) => {
     setGroups(groups.map((g) => (g.id === id ? { ...g, ...patch } : g)));
+    markDirty();
   };
 
   const deleteGroup = async (id: string) => {
@@ -153,6 +161,7 @@ const MeasurementsTab = () => {
       await supabase.from("measurement_groups" as any).delete().eq("id", id);
     }
     setGroups(groups.filter((g) => g.id !== id));
+    markDirty();
     toast.success("Group deleted");
   };
 
@@ -178,6 +187,7 @@ const MeasurementsTab = () => {
     const next = [...groups];
     next.splice(idx + 1, 0, copy);
     setGroups(next);
+    markDirty();
     toast.success("Group duplicated — remember to Save");
   };
 
@@ -186,6 +196,7 @@ const MeasurementsTab = () => {
       ...g,
       fields: [...g.fields, { id: `tmp-${crypto.randomUUID()}`, name: "", sort_order: g.fields.length, _isNew: true }],
     } : g));
+    markDirty();
   };
 
   const updateField = (groupId: string, fieldId: string, name: string) => {
@@ -193,6 +204,7 @@ const MeasurementsTab = () => {
       ...g,
       fields: g.fields.map((f) => f.id === fieldId ? { ...f, name } : f),
     } : g));
+    markDirty();
   };
 
   const deleteField = async (groupId: string, fieldId: string) => {
@@ -202,9 +214,11 @@ const MeasurementsTab = () => {
     setGroups(groups.map((g) => g.id === groupId ? {
       ...g, fields: g.fields.filter((f) => f.id !== fieldId),
     } : g));
+    markDirty();
   };
 
   const toggleAssignment = (groupId: string, kind: "product" | "category", targetId: string) => {
+    markDirty();
     setGroups(groups.map((g) => {
       if (g.id !== groupId) return g;
       const key = kind === "product" ? "product_id" : "category_id";
@@ -233,6 +247,7 @@ const MeasurementsTab = () => {
     const hasChildren = categories.some((c) => c.parent_id === categoryId);
     if (hasChildren) {
       setScopePrompt({ groupId, categoryId, mode: "all", checkedIds: [] });
+    markDirty();
     } else {
       toggleAssignment(groupId, "category", categoryId);
     }
@@ -257,6 +272,7 @@ const MeasurementsTab = () => {
     if (!p) return;
     const scope: MeasurementScope =
       p.mode === "all" ? "cascade_all" : p.mode === "selected" ? "cascade_selected" : "cascade_except";
+    markDirty();
     setGroups(groups.map((g) => {
       if (g.id !== p.groupId) return g;
       const existing = g.assignments.find((a) => a.category_id === p.categoryId && !a._toDelete);
@@ -282,6 +298,7 @@ const MeasurementsTab = () => {
     setNeverMeasureIds((prev) =>
       prev.includes(productId) ? prev.filter((x) => x !== productId) : [...prev, productId]
     );
+    markDirty();
   };
 
   /** Depth of a category in the tree (roots are 0), cycle-safe. */
@@ -374,6 +391,7 @@ const MeasurementsTab = () => {
       await saveMeasurementRulesConfig(rulesConfig);
 
       toast.success("Measurement settings saved");
+      setDirty(false);
       load();
     } catch (e: any) {
       console.error(e);
@@ -406,7 +424,7 @@ const MeasurementsTab = () => {
             <Label className="text-sm font-medium">Enable in POS</Label>
             <p className="text-xs text-muted-foreground">Show the Custom Measurements toggle in the POS variation dialog.</p>
           </div>
-          <Switch checked={globalEnabled} onCheckedChange={setGlobalEnabled} />
+          <Switch checked={globalEnabled} onCheckedChange={(value) => { setGlobalEnabled(value); markDirty(); }} />
         </div>
       </div>
 
@@ -663,11 +681,11 @@ const MeasurementsTab = () => {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Slip Title</Label>
-            <Input value={slipTpl.title || ""} onChange={(e) => setSlipTpl({ ...slipTpl, title: e.target.value })} placeholder="MEASUREMENT SLIP" />
+            <Input value={slipTpl.title || ""} onChange={(e) => { setSlipTpl({ ...slipTpl, title: e.target.value }); markDirty(); }} placeholder="MEASUREMENT SLIP" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Print Format</Label>
-            <Select value={slipTpl.print_format || "thermal"} onValueChange={(v) => setSlipTpl({ ...slipTpl, print_format: v })}>
+            <Select value={slipTpl.print_format || "thermal"} onValueChange={(v) => { setSlipTpl({ ...slipTpl, print_format: v }); markDirty(); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="thermal">Thermal (80mm)</SelectItem>
@@ -677,7 +695,7 @@ const MeasurementsTab = () => {
           </div>
           <div className="space-y-1.5 col-span-2">
             <Label className="text-xs">Default Display Format Override</Label>
-            <Select value={slipTpl.default_format || "per_group"} onValueChange={(v) => setSlipTpl({ ...slipTpl, default_format: v })}>
+            <Select value={slipTpl.default_format || "per_group"} onValueChange={(v) => { setSlipTpl({ ...slipTpl, default_format: v }); markDirty(); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="per_group">Use each group's own format</SelectItem>
@@ -707,7 +725,7 @@ const MeasurementsTab = () => {
               <span className="text-muted-foreground">{label}</span>
               <Switch
                 checked={slipTpl[key] !== false}
-                onCheckedChange={(v) => setSlipTpl({ ...slipTpl, [key]: v })}
+                onCheckedChange={(v) => { setSlipTpl({ ...slipTpl, [key]: v }); markDirty(); }}
               />
             </label>
           ))}
@@ -715,7 +733,7 @@ const MeasurementsTab = () => {
 
         <div className="space-y-1.5">
           <Label className="text-xs">Footer Text</Label>
-          <Textarea value={slipTpl.footer_text || ""} onChange={(e) => setSlipTpl({ ...slipTpl, footer_text: e.target.value })} rows={2} />
+          <Textarea value={slipTpl.footer_text || ""} onChange={(e) => { setSlipTpl({ ...slipTpl, footer_text: e.target.value }); markDirty(); }} rows={2} />
         </div>
       </div>
 
@@ -814,9 +832,11 @@ const MeasurementsTab = () => {
         </DialogContent>
       </Dialog>
 
-      <div className="flex justify-end">
-        <Button onClick={saveAll} disabled={saving}>{saving ? "Saving…" : "Save All Changes"}</Button>
-      </div>
+      {/* Universal save: the sticky save bar commits groups, fields,
+          assignments and the slip template together. Destructive flows
+          (delete/duplicate group) stay draft-based and "remember to Save"
+          now means the save bar. */}
+      <SettingsSaveHandler label="Save Measurements" disabled={saving} run={saveAll} />
     </div>
   );
 };

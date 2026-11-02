@@ -132,6 +132,24 @@ export function resolveDefaultAccount(
 }
 
 /**
+ * The account's default pickup store: its first active store in display order
+ * (store name, then id). `pathao_stores` carries no per-account default flag,
+ * so the first listed store is the account's default — the same pick the
+ * exchange dialog makes when it preselects `stores[0]`. Used by brand settings
+ * to auto-select the pickup store when the Default Courier (Pathao account)
+ * changes.
+ */
+export function defaultPathaoStoreForAccount(
+  stores: readonly { pathao_store_id: number; store_name: string }[],
+): { pathao_store_id: number; store_name: string } | undefined {
+  return [...stores].sort(
+    (a, b) =>
+      a.store_name.localeCompare(b.store_name) ||
+      a.pathao_store_id - b.pathao_store_id,
+  )[0];
+}
+
+/**
  * A selection only counts as an override when a default exists and the chosen
  * account differs from it. Picking an account where no default is configured
  * is a plain choice, not an override.

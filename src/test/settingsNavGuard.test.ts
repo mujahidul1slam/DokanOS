@@ -133,6 +133,28 @@ describe("settingsNavGuard interception", () => {
     expect(intercepted[0].path).toBe("/orders");
   });
 
+  it("ignores clicks on expand-only controls nested inside anchors", () => {
+    // Sidebar group expander chevrons live inside their nav anchor; clicking
+    // one only expands the submenu — it must never be treated as navigation.
+    const anchor = document.createElement("a");
+    anchor.href = "/orders";
+    const chevron = document.createElement("div");
+    chevron.setAttribute("data-nav-expander", "");
+    anchor.appendChild(chevron);
+    document.body.appendChild(anchor);
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    let preventedAtTarget = false;
+    chevron.addEventListener("click", (e) => {
+      preventedAtTarget = e.defaultPrevented;
+      e.preventDefault();
+    });
+    chevron.dispatchEvent(event);
+    anchor.remove();
+
+    expect(preventedAtTarget).toBe(false);
+    expect(intercepted).toHaveLength(0);
+  });
+
   it("leaves anchor clicks to settings routes alone", () => {
     const anchor = document.createElement("a");
     anchor.href = "/settings?tab=pos";

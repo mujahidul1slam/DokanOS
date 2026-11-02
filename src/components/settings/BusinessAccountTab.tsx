@@ -18,7 +18,7 @@ import { slugify } from "@/lib/slug";
 import { useBusinessContext, type Business } from "@/hooks/useBusinessContext";
 import { useAuth } from "@/hooks/useAuth";
 import { useRegisterDirty } from "@/hooks/useSettingsDirty";
-import { SettingsSection, SaveButton, LabelWithHint } from "./SettingsSection";
+import { SettingsSection, SaveButton, SettingsSaveHandler, LabelWithHint } from "./SettingsSection";
 import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
 
 const CURRENCIES = ["BDT", "USD", "EUR", "GBP", "INR", "MYR", "SAR", "AED"];
@@ -241,11 +241,16 @@ export default function BusinessAccountTab() {
         </Button>
       </div>
 
+      {/* Universal save: the sticky save bar commits the business draft. */}
+      <SettingsSaveHandler
+        label="Save Business"
+        disabled={saving || !canEdit || !isDraftDirty}
+        run={handleSave}
+      />
       <SettingsSection
         title="Business Account"
         description="Details for the business selected in the sidebar switcher. Used across DokanOS."
         icon={Building2}
-        footer={<SaveButton saving={saving} disabled={!canEdit} onClick={handleSave} label="Save Business" />}
       >
         {!canEdit && (
           <div className="rounded-md bg-muted/40 border border-border px-3 py-2">
