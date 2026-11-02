@@ -8,24 +8,53 @@ import { thermalTextCss } from "@/lib/pickupSlipHtml";
 import { PRINT_BOOTSTRAP, openPrintWindow } from "@/lib/printWindow";
 import { parseVariationAttributes } from "@/lib/variations";
 import { fetchSlipOrderDetails, type SlipOrderDetail } from "./PickupSlipPrint";
+import { addMakingCandidate, type MakingCandidate } from "@/lib/makingPromotionStore";
 
 /**
- * If the order is currently in pre_order_pending status, promote it to
- * pre_order_making (the "in production" stage) — printing the measurement
- * slip is the trigger that production has begun.
+ * If the order is a pre-order candidate, promote it to pre_order_making (the
+ * "in production" stage). Kept as the single source of truth for the status
+ * write; the UI now calls this explicitly from the "change to making" prompt
+ * rather than it firing automatically on slip print.
  */
-async function promotePreOrderOnSlipPrint(orderId: string) {
+export async function applyMakingPromotion(orderId: string, fromLabel: string, fromStatus: string) {
+  try {
+    const { error: orderError } = await supabase
+      .from("orders")
+      .update({ status: "pre_order_making" })
+      .eq("id", orderId);
+    if (orderError) throw orderError;
+
+    await addOrderTimeline({
+      order_id: orderId,
+      event: "status_changed",
+      description: `Status changed from "${fromLabel}" to "Making" — measurement slip printed`,
+      metadata: { from: fromStatus, to: "pre_order_making", trigger: "measurement_slip_print" },
+    });
+    return true;
+  } catch (e) {
+    console.warn("applyMakingPromotion failed:", e);
+    return false;
+  }
+}
+
+/**
+ * Read-only check: would printing this order's measurement slip qualify it for
+ * promotion to "making"? Returns the candidate (order number + source label/
+ * status) or null when the order is not a pre-order candidate or has already
+ * passed the making stage. Performs no writes.
+ */
+export async function checkMakingEligibility(orderId: string): Promise<MakingCandidate | null> {
   try {
     const { data: order } = await supabase
       .from("orders")
-      .select("id, status, consignment_id")
+      .select("id, order_number, status, consignment_id")
       .eq("id", orderId)
       .single();
-    if (!order) return;
+    if (!order) return null;
 
     // Already past the "making" stage — nothing to do.
     if (["pre_order_making", "pre_order_ready", "ready_to_ship", "shipped", "delivered", "cancelled", "returned"].includes(order.status)) {
-      return;
+      return null;
     }
 
     // Detect whether this order is treated as a pre-order: either it sits in
@@ -47,17 +76,17 @@ async function promotePreOrderOnSlipPrint(orderId: string) {
       }
     }
 
-    if (!isPreOrder) return;
+    if (!isPreOrder) return null;
 
-    await supabase.from("orders").update({ status: "pre_order_making" }).eq("id", orderId);
-    await addOrderTimeline({
-      order_id: orderId,
-      event: "status_changed",
-      description: `Status changed from "${fromLabel}" to "Making" — measurement slip printed`,
-      metadata: { from: fromStatus, to: "pre_order_making", trigger: "measurement_slip_print" },
-    });
+    return {
+      orderId,
+      orderNumber: (order as any).order_number ?? null,
+      fromLabel,
+      fromStatus,
+    };
   } catch (e) {
-    console.warn("promotePreOrderOnSlipPrint failed:", e);
+    console.warn("checkMakingEligibility failed:", e);
+    return null;
   }
 }
 
@@ -442,8 +471,10 @@ export async function printMeasurementSlip(orderId: string) {
     console.warn("Failed to stamp/log measurement slip print:", e);
   }
 
-  // Auto-promote pre-order to "making" once the slip is printed.
-  await promotePreOrderOnSlipPrint(orderId);
+  // Do NOT auto-promote to "making" — queue the order in the persistent
+  // prompt so the status change is a deliberate, manual confirmation.
+  const candidate = await checkMakingEligibility(orderId);
+  if (candidate) addMakingCandidate(candidate);
 }
 
 /**
