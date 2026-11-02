@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { useStoresList } from "@/hooks/useStoresList";
 import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -112,19 +113,24 @@ const AppSidebar = ({
     }
   };
   
-  // Fetch product categories for sidebar
+  // Fetch product categories for the active business's stores. The previous
+  // query compared categories.store_id to the business id, which can never
+  // match in the current tenant model and left the sidebar category tree empty.
+  const businessStores = useStoresList();
+  const storeIds = businessStores.map((store) => store.id);
   const { data: productCategories } = useQuery({
-    queryKey: ['product_categories', active?.id],
+    queryKey: ['product_categories', active?.id, storeIds],
     queryFn: async () => {
+      if (storeIds.length === 0) return [];
       const { data, error } = await supabase
         .from('categories')
         .select('id, name')
-        .eq('store_id', active?.id)
+        .in('store_id', storeIds)
         .order('name');
       if (error) throw error;
       return data || [];
     },
-    enabled: !!active?.id,
+    enabled: !!active?.id && storeIds.length > 0,
   });
 
   const navGroups = useMemo(() => {
@@ -324,6 +330,11 @@ const AppSidebar = ({
                     const isOpen = openMenus[item.path] || (isActive && !collapsed); // auto open if active
 
                     const handleItemClick = (e: React.MouseEvent) => {
+                      // The settings route-away guard already claimed this
+                      // click (it runs in the document capture phase and
+                      // preventDefaults) — don't also fire an explicit
+                      // navigate(), which would open a second interception.
+                      if (e.defaultPrevented) return;
                       if (hasChildren && !collapsed) {
                         e.preventDefault();
                         navigate(item.path);
@@ -350,8 +361,9 @@ const AppSidebar = ({
                         <item.icon className={`shrink-0 ${collapsed ? "h-5 w-5" : "h-4 w-4"} ${isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground transition-colors"}`} />
                         {!collapsed && <span className="flex-1">{item.label}</span>}
                         {!collapsed && hasChildren && (
-                          <div 
+                          <div
                             onClick={(e) => toggleSubmenu(item.path, e)}
+                            data-nav-expander=""
                             className="p-1 -mr-2 rounded-md hover:bg-secondary/50 transition-colors"
                           >
                             {isOpen ? <ChevronDown className="h-4 w-4 opacity-70" /> : <ChevronRight className="h-4 w-4 opacity-70" />}

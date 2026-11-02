@@ -17,7 +17,7 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div 
-      className="flex min-h-screen bg-background relative overflow-hidden transition-colors duration-500"
+      className="flex h-screen bg-background relative overflow-hidden transition-colors duration-500"
       style={{ backgroundImage: 'var(--app-bg-gradient)' }}
     >
       {/* Ambient glass glow */}
