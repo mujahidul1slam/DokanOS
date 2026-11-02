@@ -1,7 +1,7 @@
 # Task 16 production apply — pre-flight record + gated run card
 
-**Status: PREPARED 2026-11-02, awaiting the user's explicit go-ahead.** No production write has been
-performed. The migration is `supabase/migrations/20261103120000_task16_contract_drop.sql` (committed
+**Status: APPLIED 2026-11-02 (user-approved), post-verified 24/24, UI smoke green after a frontend
+redeploy.** The migration is `supabase/migrations/20261103120000_task16_contract_drop.sql` (committed
 `231f773`, battery-green locally: RLS 28/28, vitest 496 passed | 3 skipped, typecheck + build clean).
 
 ## 1. Pre-state probe — 22/22 PASS (2026-11-02, read-only Management-API probe)
@@ -59,9 +59,36 @@ Expected output: `20261103120000_task16_contract_drop.sql` applied; NOTICE lines
 2. **Fix**: the two `ALTER TABLE … ADD COLUMN business_id` statements moved above the stamping block
    (now §1 columns → §2 stamping); lesson recorded in [../wiki/environment-quirks.md](../wiki/environment-quirks.md);
    full `db reset` battery re-run proves the fixed file applies on a clean database.
-3. **Second push**: {{SECOND_PUSH}}
+3. **Second push SUCCEEDED** (2026-11-02 ~09:25 +06, log `.tmp/task16-push2.log`): applied
+   `20261103120000_task16_contract_drop.sql` with the expected NOTICEs —
+   `task16: stamped 51 pool customers with legacy business de31fd60-a520-4d42-aef2-c72ededc4c09`,
+   `task16: stamped 48 pool orders with legacy business de31fd60-…`,
+   `pool customers 51 (51 stamped), pool orders 48 (48 stamped)`.
 
-## 4. Post-verify (read-only)
+## 4. Post-verify — 24/24 PASS (2026-11-02, read-only Management-API probe)
+
+All §4 checks green: ledger **192 / `20261103120000`**; 7 tables dropped (regclass NULL); 5 dead
+columns gone; `business_id` present on orders + customers; pool stamped **48/48 orders + 51/51
+customers, 0 unstamped**; `publish_my_storefront` rewritten (selling_points refs = false, brand leg
+= true); dead RPCs gone; one-holder CHECK two-way
+`CHECK (((warehouse_id IS NOT NULL)::integer + (stock_holder_order_source_id IS NOT NULL)::integer) = 1)`;
+4 pool policies, none referencing `selling_point_id`; 3/3 `order_sources.legacy_*` mapping columns
+survive; `is_signup_open()` still true. Row snapshot **identical to the pre-apply probe** — orders
+4,095 / customers 3,247 / products 225 / order_items 5,329 (zero data loss).
+
+**UI smoke + one incident**: the first smoke on `dokanos.vercel.app` found Order Sources failing
+("Failed to load order sources") — the deployed bundle `index-CR_kWxJC.js` predated the Task 16
+client surgery and still queried the dropped tables (no compat views exist by design). **Remedy:
+redeployed the frontend** — build clean (29.06s, new bundle `index-CuPRDVZ_.js`), `vercel --prod`
+aliased to `dokanos.vercel.app` (Ready in 44s). Re-smoke **all green**: Dashboard renders (Dispatch
+gone from the sidebar); Order Sources loads 8 sources with the legacy section showing only the two
+Woo-store sync rows (Enveil + Vincent, mapping columns intact); Brands shows no store UI (subtitle
+"Legacy Woo store linked" kept); Settings → Courier services shows the 2 Pathao services with the
+legacy-mapped badge and no legacy section; an order detail sheet renders with the source binding
+("Vincent WooCommerce") and no "Fulfill From" picker; Legacy Pool shows 48 orders + 51 customers
+with Reassign actions under the Enveil Vincent context (the account leg live).
+
+## 4a. Post-verify checks (the SQL that was run)
 
 ```sql
 SELECT count(*)::int AS n, max(version) AS head FROM supabase_migrations.schema_migrations;  -- 192 / 20261103120000
@@ -89,9 +116,6 @@ SELECT count(*) FROM pg_policies WHERE tablename IN ('orders','customers')
   AND schemaname='public' AND policyname LIKE '%pool%';                                      -- 4 pool policies, none referencing selling_point_id
 SELECT public.is_signup_open();                                                              -- true (signup still open)
 ```
-
-Plus a UI smoke (read-only page loads): Dashboard, Order Sources (legacy section now shows the Woo
-store row only), Brands, Settings → Courier services, an order detail sheet.
 
 ## 5. Follow-ups recorded (not blockers)
 
