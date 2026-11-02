@@ -1,6 +1,7 @@
 # Key-model migration production apply — pre-flight record + gated run card
 
-**Status: PREPARED (read-only) 2026-11-02; production apply USER-GATED — not yet executed.**
+**Status: APPLIED to production 2026-11-02 ~10:29 +06 (user-approved), post-verified 14/14, UI smoke
+green.**
 
 Migration: `supabase/migrations/20261103140000_key_model_attribution.sql` (committed `dbfde1c`,
 battery-green locally on a clean DB: RLS **29/29 files**, vitest 496 passed | 3 skipped, typecheck +
@@ -73,23 +74,45 @@ tag refs in policies 0, manual customers still missing origin source 0
 
 Ledger 192 → **193**, head `20261103140000`.
 
-**Attempt log:** _(none yet — the apply has not been approved)_
+**Attempt log:** **APPLIED 2026-11-02 ~10:29 +06 in one attempt** (`npx supabase db push --linked --yes`,
+log `.tmp/keymodel-push.log`) — exit 0; NOTICEs `trigger "trg_orders_derive_business_id" … does not
+exist, skipping` (expected, first create) + `key model: unstamped bound orders 0, unstamped bound
+customers 0, triggers 2, policies 5+5, tag refs in policies 0, manual customers still missing origin
+source 0`. Ledger 192 → **193**.
 
-## 5. Post-apply verification (24 checks, SELECT-only)
+## 5. Post-apply verification — 14/14 PASS (2026-11-02, read-only)
 
-Run `.tmp-keymodel-postverify.mjs` after the apply:
+`.tmp-keymodel-postverify.mjs` (SELECT-only via the Management API; the first run reported 13/14 on a
+probe artifact — the API JSON-escapes `proconfig` as `{"search_path=\"\""}`, so the literal compare
+missed; fixed the probe, not the database):
 
-1. Ledger 193 / head `20261103140000`.
-2. Both derivation triggers exist and are enabled; functions are `SECURITY DEFINER` with
-   `search_path=""`.
-3. Exactly 5 policies per table; **0** policies reference `legacy migration`.
-4. `orders.business_id` / `customers.business_id` NULL counts are exactly the residual pool
-   (0 orders, 0 customers besides the atomic 0 the §5 block guarantees for BOUND rows — the pool is
-   already stamped by Task 16, so expect **0 NULL on both tables**).
-5. Backfill closure: 0 bound rows left unstamped.
-6. The 2 manual customers carry `origin_order_source_id` = Vincent WooCommerce.
-7. Row snapshot IDENTICAL to the pre-apply snapshot (4,095 / 3,247 / 225 / 5,329 / 2) — zero data loss.
-8. RLS posture: `relrowsecurity` true on both tables; `is_signup_open()` still true.
+| Check | Result |
+| --- | --- |
+| 1. Ledger | ✅ 193 / head `20261103140000` |
+| 2. Both derivation triggers exist + enabled | ✅ `tgname=O` for orders and customers |
+| 3. Functions `SECURITY DEFINER` + locked `search_path` | ✅ both |
+| 4. Exactly 5 policies per table | ✅ orders 5 / customers 5 |
+| 5. Policies referencing the pool tag | ✅ 0 |
+| 6. Bound rows left unstamped | ✅ 0 / 0 |
+| 7. ALL rows stamped (pool included) | ✅ orders NULL 0 / customers NULL 0 |
+| 8. Distinct businesses behind the rows | ✅ 1 |
+| 9. Manual customers repaired | ✅ 2 repaired / 0 unrepaired |
+| 10. RLS enabled on both tables | ✅ true / true |
+| 11. Row snapshot | ✅ 4,095 / 3,247 / 225 / 5,329 / 2 stores — IDENTICAL to pre-apply (zero data loss) |
+| 12. `is_signup_open()` | ✅ true |
+| 13. Pool rows structurally intact | ✅ 48 orders / 51 customers |
+| 14. Expected policy set | ✅ read/insert/update/delete + the pool reassign ladder on both tables |
+
+## 6. UI smoke — GREEN (2026-11-02, live production as Enveil Vincent)
+
+No redeploy needed (the migration drops nothing); the deployed bundle was smoked as-is:
+
+- **Dashboard** — renders, no Dispatch entry, live counters.
+- **Orders** — 908 orders across statuses; table + filters render.
+- **Order Sources** — 8 sources with live order counts; the legacy section is stores-only with the new copy; **the repair is visible**: `VC-4721M · shoriful islam sorif` and `VC-4720M · nabil` now hang off Vincent WooCommerce (previously unattributed).
+- **Customers** — 3,196 unique customers (grouped by phone) render.
+- **Brands** — both brands with the "Legacy Woo store linked" subtitle; no store UI (Task 16).
+- **Legacy Pool** — **48 orders / 51 customers** under the new structural RLS, rows + Reassign actions render.
 
 ## 6. Frontend coupling — none required
 
