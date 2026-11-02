@@ -186,6 +186,24 @@ export function getMissingMeasurementGroups(
 }
 
 /**
+ * Expected groups that have NO row at all yet. Unlike
+ * `getMissingMeasurementGroups`, a row with empty values still covers its
+ * group here — an open-but-untouched entry is "being entered", not missing —
+ * so a UI offering "add measurements" never duplicates an entry that is
+ * already on screen. Matching is name-based (rows carry no group id), so
+ * preset rows whose group name carries a "(Size X)" suffix cover their group
+ * too.
+ */
+export function getGroupsWithoutRows<T extends ExpectedGroupRef>(
+  expected: T[],
+  captured: CapturedMeasurementRef[]
+): T[] {
+  return expected.filter(
+    (e) => !captured.some((c) => normalizeGroupName(c.groupName) === normalizeGroupName(e.name))
+  );
+}
+
+/**
  * Entry status for a product/order item:
  * - "not_required": no groups are expected (nothing blocks; measurements optional)
  * - "pending":     groups expected, none captured yet

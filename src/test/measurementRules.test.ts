@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatMeasurementPendingMarker,
   getDescendantIds,
+  getGroupsWithoutRows,
   getMeasurementEntryStatus,
   getMissingMeasurementGroups,
   parseMeasurementRulesConfig,
@@ -331,6 +332,48 @@ describe("missing measurement groups", () => {
     ).toEqual([{ id: "g2", name: "Waist" }]);
     expect(getMissingMeasurementGroups(expected, [])).toEqual(expected);
     expect(getMissingMeasurementGroups([], [])).toEqual([]);
+  });
+});
+
+describe("groups without any measurement row (add-measurements affordance)", () => {
+  const expected = [
+    { id: "g1", name: "Pant Measurements" },
+    { id: "g2", name: "Waist" },
+  ];
+
+  it("lists every expected group when nothing was entered yet", () => {
+    expect(getGroupsWithoutRows(expected, [])).toEqual(expected);
+    expect(getGroupsWithoutRows([], [])).toEqual([]);
+  });
+
+  it("treats a row with empty values as an open entry that covers its group", () => {
+    // Unlike getMissingMeasurementGroups: the entry UI is already on screen,
+    // so 'Add measurements' must not offer the same group a second time.
+    expect(
+      getGroupsWithoutRows(expected, [
+        { groupName: "Pant Measurements", values: [{ name: "Length", value: "" }] },
+      ])
+    ).toEqual([{ id: "g2", name: "Waist" }]);
+    expect(
+      getGroupsWithoutRows(expected, [{ groupName: "Pant Measurements", values: [] }])
+    ).toEqual([{ id: "g2", name: "Waist" }]);
+  });
+
+  it("matches rows whose group name carries a size-preset suffix", () => {
+    expect(
+      getGroupsWithoutRows(expected, [
+        { groupName: "Pant Measurements (Size L)", values: [{ name: "Length", value: "32" }] },
+      ])
+    ).toEqual([{ id: "g2", name: "Waist" }]);
+  });
+
+  it("returns nothing when every group already has a row", () => {
+    expect(
+      getGroupsWithoutRows(expected, [
+        { groupName: "Pant Measurements", values: [] },
+        { groupName: "Waist (Size M)", values: [{ name: "W", value: "34" }] },
+      ])
+    ).toEqual([]);
   });
 });
 

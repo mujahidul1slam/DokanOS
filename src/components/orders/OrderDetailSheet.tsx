@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
-import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset } from "@/lib/measurements";
+import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type MeasurementGroup, type SizePreset } from "@/lib/measurements";
+import { getGroupsWithoutRows } from "@/lib/measurementRules";
 import { postWooOrderNote } from "@/lib/wooNotes";
 import { kickSyncWorker } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
@@ -227,6 +228,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
   const [measurements, setMeasurements] = useState<EditableMeas[]>([]);
   const [deletedMeasIds, setDeletedMeasIds] = useState<string[]>([]);
+  // Measurement groups per product (lazy cache): drives the "Add measurements"
+  // affordance and the entry fields staged for newly added products.
+  const [groupsByProduct, setGroupsByProduct] = useState<Record<string, MeasurementGroup[]>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -565,6 +569,33 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     })();
   }, [open]);
 
+  // Lazy-load measurement groups for every product on the order (issue:
+  // "add measurements later to product lines"): the Measurements section and
+  // its "Add measurements" affordance need to know which items can be
+  // measured before anything is clicked. Cached per product; an empty array
+  // is a real answer ("nothing to measure"), not a missing load.
+  useEffect(() => {
+    if (!open) return;
+    const productIds = Array.from(
+      new Set(editedItems.map((i) => i.product_id).filter((id): id is string => !!id)),
+    );
+    const missing = productIds.filter((id) => !(id in groupsByProduct));
+    if (missing.length === 0) return;
+    let mounted = true;
+    (async () => {
+      const entries = await Promise.all(
+        missing.map(async (pid) => [pid, await getGroupsForProduct(pid)] as const),
+      );
+      if (!mounted) return;
+      setGroupsByProduct((prev) => {
+        const next = { ...prev };
+        for (const [pid, grps] of entries) next[pid] = grps;
+        return next;
+      });
+    })();
+    return () => { mounted = false; };
+  }, [open, editedItems, groupsByProduct]);
+
   // Identity options (issue #32): active Selling Points of the active business
   // plus the selectable Pathao Accounts and per-brand default links (issue #22).
   // Errors degrade to empty lists so the sheet still renders.
@@ -610,28 +641,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           for (const g of groups) {
             const preset = await resolveSizePreset(g.id, item.product_id, sizeLabel);
             if (!preset || preset.values.length === 0) continue;
-            additions.push({
-              id: `new-${item.id}-${g.id}`,
-              order_item_id: item.id,
-              group_name: `${g.name} (Size ${sizeLabel})`,
-              display_format: g.display_format,
-              unit: g.unit,
-              values: preset.values.map((v) => ({ name: v.name, value: v.value })),
-              notes: null,
-              source: "preset",
-              _isNew: true,
-              _sizeLabel: sizeLabel,
-            });
+            additions.push(buildPresetMeasRow(item.id, g, preset, sizeLabel));
           }
         } catch { /* ignore */ }
       }
       if (cancelled || additions.length === 0) return;
-      setMeasurements((prev) => {
-        // Avoid duplicates if the effect reruns
-        const existingIds = new Set(prev.map((m) => m.id));
-        const fresh = additions.filter((a) => !existingIds.has(a.id));
-        return fresh.length ? [...prev, ...fresh] : prev;
-      });
+      appendMeasRows(additions);
     })();
     return () => { cancelled = true; };
     // We intentionally depend on items only; re-run when items reload.
@@ -664,11 +679,158 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     }
   };
 
+  /* ---------- measurement entry ("add measurements later") ----------
+   *
+   * Orders are never blocked on measurements: items save without them and
+   * measurements are captured afterwards. The helpers below stage rows in the
+   * same EditableMeas model the editors above mutate, so entries opened later
+   * ride the existing Save Changes persistence — including the entry for a
+   * product added from this sheet, mirroring how Add Order attaches the
+   * measurement entry to every cart item with measurement groups.
+   */
+
+  /** One staged size-preset row — the shared shape for auto-attached ("preselected") size charts. */
+  const buildPresetMeasRow = (
+    itemId: string,
+    group: MeasurementGroup,
+    preset: SizePreset,
+    sizeLabel: string,
+  ): EditableMeas => ({
+    id: `new-${itemId}-${group.id}`,
+    order_item_id: itemId,
+    group_name: `${group.name} (Size ${sizeLabel})`,
+    display_format: group.display_format,
+    unit: group.unit,
+    values: preset.values.map((v) => ({ name: v.name, value: v.value })),
+    notes: null,
+    source: "preset",
+    _isNew: true,
+    _sizeLabel: sizeLabel,
+  });
+
+  /** One staged empty entry row — the measurement-group entry fields (values + notes) for an item. */
+  const buildEmptyMeasRow = (itemId: string, group: MeasurementGroup): EditableMeas => ({
+    id: `new-${itemId}-${group.id}`,
+    order_item_id: itemId,
+    group_name: group.name,
+    display_format: group.display_format,
+    unit: group.unit,
+    values: group.fields.map((f) => ({ name: f.name, value: "" })),
+    notes: null,
+    source: "pos",
+    _isNew: true,
+  });
+
+  /**
+   * Append staged rows, skipping ids already present — the dedupe that makes
+   * the preset effect and the add-measurement actions safe to re-run.
+   */
+  const appendMeasRows = (fresh: EditableMeas[]) => {
+    setMeasurements((prev) => {
+      const existingIds = new Set(prev.map((m) => m.id));
+      const toAdd = fresh.filter((a) => !existingIds.has(a.id));
+      return toAdd.length ? [...prev, ...toAdd] : prev;
+    });
+  };
+
+  /** Cached measurement-group lookup shared by the lazy-load effect and the add-measurement actions. */
+  const loadGroupsForProduct = async (productId: string): Promise<MeasurementGroup[]> => {
+    const cached = groupsByProduct[productId];
+    if (cached) return cached;
+    const groups = await getGroupsForProduct(productId);
+    setGroupsByProduct((prev) => ({ ...prev, [productId]: groups }));
+    return groups;
+  };
+
+  /**
+   * Groups of this item's product that have no measurement row yet. An
+   * open-but-untouched entry row already covers its group, so the affordance
+   * never duplicates an entry that is on screen.
+   */
+  const unmeasuredGroupsFor = (item: LineItem): MeasurementGroup[] => {
+    const productId = item.product_id;
+    if (!productId) return [];
+    const groups = groupsByProduct[productId];
+    if (!groups || groups.length === 0) return [];
+    return getGroupsWithoutRows(
+      groups,
+      measurements
+        .filter((m) => m.order_item_id === item.id)
+        .map((m) => ({ groupName: m.group_name, values: m.values })),
+    );
+  };
+
+  /**
+   * "Add measurements": open the group entry (fields + notes) for every group
+   * of this item's product that has no row yet. The rows are staged empty and
+   * persisted by handleSave; an untouched entry is dropped on save instead of
+   * writing an empty row (matching Add Order, where an unfilled group
+   * captures nothing).
+   */
+  const addMeasurementsForItem = async (item: LineItem) => {
+    const productId = item.product_id;
+    if (!productId) return;
+    let groups: MeasurementGroup[];
+    try {
+      groups = await loadGroupsForProduct(productId);
+    } catch (e) {
+      console.warn("Failed to load measurement groups:", e);
+      toast.error("Failed to load measurement groups");
+      return;
+    }
+    const missing = getGroupsWithoutRows(
+      groups,
+      measurements
+        .filter((m) => m.order_item_id === item.id)
+        .map((m) => ({ groupName: m.group_name, values: m.values })),
+    );
+    if (missing.length === 0) return;
+    appendMeasRows(missing.map((g) => buildEmptyMeasRow(item.id, g)));
+  };
+
+  /**
+   * Stage the measurement entry for a freshly added order line (issue: add
+   * measurements from Order Info). Size presets the picked size qualifies for
+   * ("preselected" measurements) are attached right away — pre-filled and
+   * editable — and any remaining groups open empty entry rows, so the entry
+   * is included with the line and saved with that order item.
+   */
+  const attachNewLineMeasurements = async (lineId: string, pick: VariationPick) => {
+    try {
+      const groups = await loadGroupsForProduct(pick.product.id);
+      if (groups.length === 0) return;
+      const sizeLabel = detectSizeFromItem({ product_name: pick.lineName });
+      const fresh: EditableMeas[] = [];
+      for (const g of groups) {
+        const preset = sizeLabel
+          ? await resolveSizePreset(g.id, pick.product.id, sizeLabel)
+          : null;
+        if (sizeLabel && preset && preset.values.length > 0) {
+          fresh.push(buildPresetMeasRow(lineId, g, preset, sizeLabel));
+        } else {
+          fresh.push(buildEmptyMeasRow(lineId, g));
+        }
+      }
+      appendMeasRows(fresh);
+    } catch (e) {
+      // The line itself is still added; the "Add measurements" affordance can
+      // retry the entry later. Never fail the add on measurement lookup.
+      console.warn("Failed to stage measurements for the new order line:", e);
+    }
+  };
+
   /* ---------- helpers ---------- */
 
   const activeItems = editedItems.filter((i) => !deletedItemIds.includes(i.id));
   const computedSubtotal = activeItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
   const computedTotal = computedSubtotal - discount + shippingCost;
+
+  // The Measurements section shows whenever something can be edited — or added:
+  // an item whose product has measurement groups but no entry yet must expose
+  // the "Add measurements" affordance even when the order has no rows at all.
+  const showMeasurementsSection =
+    measurements.length > 0 ||
+    (canEdit && activeItems.some((it) => unmeasuredGroupsFor(it).length > 0));
 
   const updateItemQty = (id: string, qty: number) => {
     setEditedItems((prev) =>
@@ -712,6 +874,10 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         _isNew: true,
       },
     ]);
+    // The measurement entry travels with the new line: size presets the
+    // picked size qualifies for are auto-attached, the remaining groups open
+    // for entry — and everything persists with the item on Save Changes.
+    void attachNewLineMeasurements(tempId, pick);
   };
 
   const addProductToOrder = (productId: string) => {
@@ -907,19 +1073,39 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         }
       }
 
-      // Insert new items
+      // Insert new items. Returning the inserted ids lets measurement rows
+      // staged against the temp line ids (`new-…`) attach to the real
+      // order_items rows — without them the rows would carry a temp id and
+      // fail the order_item_id foreign key.
       const newItems = activeItems.filter((i) => i._isNew);
+      const orderItemIdByTemp = new Map<string, string>();
       if (newItems.length > 0) {
-        await supabase.from("order_items").insert(
-          newItems.map((i) => ({
-            order_id: order.id,
-            product_id: i.product_id,
-            product_name: i.product_name,
-            quantity: i.quantity,
-            unit_price: i.unit_price,
-            line_total: i.quantity * i.unit_price,
-          }))
-        );
+        const { data: insertedItems } = await supabase
+          .from("order_items")
+          .insert(
+            newItems.map((i) => ({
+              order_id: order.id,
+              product_id: i.product_id,
+              product_name: i.product_name,
+              quantity: i.quantity,
+              unit_price: i.unit_price,
+              line_total: i.quantity * i.unit_price,
+            }))
+          )
+          .select("id, product_id, product_name");
+        // Match back the way Add Order attaches measurements at creation time
+        // (by product + line name, consuming each inserted row once) so the
+        // map does not depend on insertion order.
+        const used = new Set<string>();
+        for (const item of newItems) {
+          const match = (insertedItems || []).find(
+            (oi) => !used.has(oi.id) && oi.product_id === item.product_id && oi.product_name === item.product_name,
+          );
+          if (match) {
+            used.add(match.id);
+            orderItemIdByTemp.set(item.id, match.id);
+          }
+        }
       }
 
       // Add timeline entry for status change
@@ -1130,15 +1316,31 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         if (deletedMeasIds.length > 0) {
           await supabase.from("order_item_measurements" as any).delete().in("id", deletedMeasIds);
         }
-        // Inserts (new resolved presets or new entries with any value filled)
+        // Inserts: staged entries with any value filled — or notes only,
+        // matching Add Order where a group with just a note still captures.
         const newMeas = measurements.filter(
-          (m) => m._isNew && m.values.some((v) => v.value && String(v.value).trim() !== "")
+          (m) =>
+            m._isNew &&
+            (m.values.some((v) => v.value && String(v.value).trim() !== "") ||
+              !!(m.notes && m.notes.trim()))
         );
-        if (newMeas.length > 0) {
+        // Rows staged against temp line ids resolve to the ids inserted above;
+        // rows for lines removed in this edit — or whose item insert produced
+        // no match — are skipped, since one bad order_item_id fails the
+        // foreign key and voids the whole batch.
+        const insertRows = newMeas.flatMap((m) => {
+          const rawItemId = m.order_item_id;
+          if (rawItemId == null) return [{ meas: m, orderItemId: null }];
+          if (deletedItemIds.includes(rawItemId)) return [];
+          if (!rawItemId.startsWith("new-")) return [{ meas: m, orderItemId: rawItemId }];
+          const dbId = orderItemIdByTemp.get(rawItemId);
+          return dbId ? [{ meas: m, orderItemId: dbId }] : [];
+        });
+        if (insertRows.length > 0) {
           await supabase.from("order_item_measurements" as any).insert(
-            newMeas.map((m) => ({
+            insertRows.map(({ meas: m, orderItemId }) => ({
               order_id: order.id,
-              order_item_id: m.order_item_id,
+              order_item_id: orderItemId,
               group_name: m.group_name,
               display_format: m.display_format,
               unit: m.unit,
@@ -1159,12 +1361,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
             } as any)
             .eq("id", m.id);
         }
-        if (newMeas.length > 0 || dirtyMeas.length > 0 || deletedMeasIds.length > 0) {
+        if (insertRows.length > 0 || dirtyMeas.length > 0 || deletedMeasIds.length > 0) {
           await addOrderTimeline({
             order_id: order.id,
             event: "measurements_updated",
-            description: `Measurements updated — ${newMeas.length} added, ${dirtyMeas.length} edited, ${deletedMeasIds.length} removed`,
-            metadata: { added: newMeas.length, edited: dirtyMeas.length, removed: deletedMeasIds.length },
+            description: `Measurements updated — ${insertRows.length} added, ${dirtyMeas.length} edited, ${deletedMeasIds.length} removed`,
+            metadata: { added: insertRows.length, edited: dirtyMeas.length, removed: deletedMeasIds.length },
           });
         }
       } catch (e) {
@@ -2208,7 +2410,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 </section>
 
                 {/* Measurements (editable) */}
-                {measurements.length > 0 && (
+                {showMeasurementsSection && (
                   <section>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -2224,14 +2426,24 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       </Button>
                     </div>
                     <p className="text-[11px] text-muted-foreground mb-2">
-                      Edits here are saved when you press <span className="font-medium">Save Changes</span>. Preset values from S/M/L size charts are pre-filled and editable.
+                      Edits here are saved when you press <span className="font-medium">Save Changes</span>. Preset values from S/M/L size charts are pre-filled and editable. Products with measurement groups that have no entry yet offer <span className="font-medium">Add measurements</span>.
                     </p>
                     <div className="space-y-3">
                       {[
-                        ...activeItems.map((it) => ({ key: it.id, label: it.product_name, items: measurements.filter((m) => m.order_item_id === it.id) })),
-                        { key: "__general__", label: "General", items: measurements.filter((m) => !m.order_item_id || !activeItems.some((it) => it.id === m.order_item_id)) },
+                        ...activeItems.map((it) => ({
+                          key: it.id,
+                          label: it.product_name,
+                          items: measurements.filter((m) => m.order_item_id === it.id),
+                          addable: unmeasuredGroupsFor(it),
+                        })),
+                        {
+                          key: "__general__",
+                          label: "General",
+                          items: measurements.filter((m) => !m.order_item_id || !activeItems.some((it) => it.id === m.order_item_id)),
+                          addable: [] as MeasurementGroup[],
+                        },
                       ]
-                        .filter((b) => b.items.length > 0)
+                        .filter((b) => b.items.length > 0 || (canEdit && b.addable.length > 0))
                         .map((bucket) => (
                           <div key={`m-${bucket.key}`} className="rounded-lg border border-border p-3 bg-secondary/30">
                             <div className="text-xs font-semibold text-foreground mb-2">{bucket.label}</div>
@@ -2288,13 +2500,28 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                 />
                               </div>
                             ))}
+                            {canEdit && bucket.addable.length > 0 && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 gap-1 text-xs"
+                                title={`Open measurement entry for ${bucket.addable.map((g) => g.name).join(", ")}`}
+                                onClick={() => {
+                                  const target = activeItems.find((i) => i.id === bucket.key);
+                                  if (target) void addMeasurementsForItem(target);
+                                }}
+                              >
+                                <Plus className="h-3 w-3" /> Add measurements
+                              </Button>
+                            )}
                           </div>
                         ))}
                     </div>
                   </section>
                 )}
 
-                {measurements.length > 0 && <Separator />}
+                {showMeasurementsSection && <Separator />}
 
                 {/* Notes */}
                 <section>
