@@ -344,7 +344,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 **Description:** Per spec §7/§8: after cutover audit passes — drop legacy tables/columns, delete orphaned code (old `src/components/onboarding/` Step1–4, `src/pages/Dispatch.tsx`, `mockData` legacy bits). Keep `legacy_*` mapping columns on new rows. **Scope decided with the user (2026-11-02, "Safe contract"):** drop the seven genuinely-dead tables (`legacy_order_channels`, `connectors`, `product_sources`, `customer_sources`, `brand_stores`, `selling_points`, `locations`) + the dead binding columns (`orders.selling_point_id`/`location_id`, `product_locations.location_id`, `purchase_orders.location_id`, `pos_shifts.selling_point_id`); **keep** `stores` + every `store_id` binding (operational per option B) and `orders.source`/`customers.source` (the key-model migration is a separate documented follow-up — so the pool tag survives in place and AC4's "tag dies with orders.source" premise dissolves).
 
 **Acceptance criteria:**
-- [x] Legacy tables/columns dropped via migration — `supabase/migrations/20261103120000_task16_contract_drop.sql` (§1 `business_id` columns on orders/customers → §2 pool account stamping → §3 `publish_my_storefront` rewritten on the brand leg → §4 pool RLS recreated without the dropped column + the account leg → §5 FK/column drops + the one-holder CHECK rebuilt two-way → §6/§7 table + dead-RPC drops → §8 verification DO block). Applied to the local stack; **production apply is user-gated**
+- [x] Legacy tables/columns dropped via migration — `supabase/migrations/20261103120000_task16_contract_drop.sql` (§1 `business_id` columns on orders/customers → §2 pool account stamping → §3 `publish_my_storefront` rewritten on the brand leg → §4 pool RLS recreated without the dropped column + the account leg → §5 FK/column drops + the one-holder CHECK rebuilt two-way → §6/§7 table + dead-RPC drops → §8 verification DO block). **APPLIED TO PRODUCTION 2026-11-02 ~09:25 +06 (user-approved)** — post-verify 24/24, zero data loss; record in [audit/task16-production-apply.md](audit/task16-production-apply.md)
 - [x] Orphaned components/pages deleted — `src/components/onboarding/Step1Store/Step2Locations/Step3SellingPoints/Step4Storefront.tsx`, `src/pages/Dispatch.tsx` (dead `/dispatch` links retargeted to `/orders`), `src/lib/mockData.ts`, `src/components/stores/CreateBrandStoreDialog.tsx`, `src/lib/brandStores.ts`
 - [x] `legacy_*` mapping columns retained on order sources (`legacy_store_id`/`legacy_selling_point_id`/`legacy_woo_store_id` — pinned by `supabase/tests/rls/task16_contract_drop_test.sql` 1h)
 - [x] Pool rows stamped with `business_id` (§2 stamps from the legacy account when the mapping is unambiguous; production's 99 pool rows stamp to Enveil Vincent `de31fd60-…`) + pool RLS gains the account leg (`business_id IS NULL OR business_id = current_business_context()`); the `source='legacy migration'` tag SURVIVES (orders.source kept in this scope)
@@ -376,7 +376,7 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 **Verification:**
 - [x] Read-only readiness review complete (2026-11-01) — production preflight, migration scope, conflict scan, backup/PITR finding + restore-tested logical dump, deployed-frontend dependency crawl
-- [ ] Dry-run already validated (Task 8); live audit report produced and reviewed *(runbook ready; the live run is user-gated)*
+- [x] Dry-run already validated (Task 8); live audit report produced and reviewed *(**DONE 2026-11-02 06:03 +06** — live audit 23/23 checks matched the rehearsal; user signed off at 06:06)*
 
 **Dependencies:** Task 8 (script + dry-run), Checkpoints A–E
 **Files likely touched:** `tasks/runbook-cutover.md` (new), execution of Task 8 script
@@ -385,4 +385,4 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 ---
 
 ### Final checkpoint
-- [ ] Production tenant migrated, audit clean, all acceptance criteria met *(blocked on the user-gated cutover: runbook [runbook-cutover.md](runbook-cutover.md) ready; Task 16's legacy drop follows the successful cutover)*
+- [x] Production tenant migrated, audit clean, all acceptance criteria met *(**COMPLETE 2026-11-02**: cutover Gates 1–3 signed off — schema chain 2026-11-01, data migration 06:02 +06 with a 23/23 live audit, RLS hardening applied 2026-11-01; Task 16's legacy drop applied 09:25 +06 with a 24/24 post-verify and a green UI smoke after the frontend redeploy. The Domain Revamp series Tasks 1–16 is fully executed; Task 17's runbook consumed end-to-end. Remaining documented follow-up: the key-model migration — `orders.source`/`customers.source` → structured attribution — deliberately deferred by the Safe-contract scope)*

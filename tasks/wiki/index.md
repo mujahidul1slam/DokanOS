@@ -3,7 +3,7 @@
 Created 2026-11-01 by the chief-of-staff session pursuing the remaining tasks of [../todo.md](../todo.md). Pages record decisions and findings as dated history with commit citations — they never claim to describe the code "now".
 
 ## Status & strategy
-- [cutover-status.md](cutover-status.md) — where the user-gated cutover (Task 17) and the contract drop (Task 16) stand; known blockers and discrepancies.
+- [cutover-status.md](cutover-status.md) — where the user-gated cutover (Task 17) and the contract drop (Task 16) stood; **the series is complete as of 2026-11-02** (all gates signed off, Task 16 applied + verified); kept as the dated record of gates, discrepancies, and follow-ups.
 - [task-conventions.md](task-conventions.md) — how tasks in this repo are implemented, verified, and committed (the pattern every task session follows).
 
 ## Decisions
