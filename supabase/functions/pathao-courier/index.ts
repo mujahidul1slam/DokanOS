@@ -10,8 +10,40 @@ const corsHeaders = {
 
 const PATHAO_BASE = "https://api-hermes.pathao.com";
 
-// In-memory token cache per integration (lives for the function's runtime)
+// In-memory token cache, keyed by integration AND the credentials that minted
+// the token (lives for the function's runtime).
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
+
+// Non-cryptographic cache key over the credential tuple (FNV-1a). This is a
+// staleness detector, not a security boundary: it only decides whether a cached
+// token may be reused for the credentials currently stored. Pathao issues 90-day
+// tokens, so a plain per-integration key kept replaying a token minted under the
+// PREVIOUS credentials after a save — every dispatch then 401'd with
+// "Unauthorized User" while issue-token itself kept succeeding.
+function credFingerprint(creds: {
+  client_id: string;
+  client_secret: string;
+  username: string;
+  password: string;
+}): string {
+  const s = `${creds.client_id}\u0000${creds.client_secret}\u0000${creds.username}\u0000${creds.password}`;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+function tokenCacheKey(creds: {
+  id: string;
+  client_id: string;
+  client_secret: string;
+  username: string;
+  password: string;
+}): string {
+  return `${creds.id}|${credFingerprint(creds)}`;
+}
 
 // Legacy order-status bucket mapper (shipped/delivered/returned/cancelled/
 // processing) — delegates to the adapter's status map.
@@ -37,7 +69,7 @@ async function upsertShipmentRow(
     last_tracked_at?: string | null;
     cancelled_at?: string | null;
   },
-): Promise<void> {
+): Promise<boolean> {
   try {
     const payload: Record<string, any> = {
       order_id: row.order_id,
@@ -52,9 +84,14 @@ async function upsertShipmentRow(
       payload.cancelled_at = row.cancelled_at;
     }
     const { error } = await sb.from("courier_shipments").upsert(payload, { onConflict: "provider,consignment_id" });
-    if (error) console.warn(`[pathao-courier] courier_shipments upsert warn: ${error.message}`);
+    if (error) {
+      console.warn(`[pathao-courier] courier_shipments upsert warn: ${error.message}`);
+      return false;
+    }
+    return true;
   } catch (e: unknown) {
     console.warn(`[pathao-courier] courier_shipments upsert failed: ${(e as Error)?.message || e}`);
+    return false;
   }
 }
 
@@ -147,8 +184,10 @@ async function getAccessToken(creds: PathaoCreds): Promise<string> {
   //      issue-token round-trips in practice.
   const sb = supabaseAdmin();
   const now = Date.now();
+  const fp = credFingerprint(creds);
+  const key = tokenCacheKey(creds);
 
-  const cached = tokenCache.get(creds.id);
+  const cached = tokenCache.get(key);
   if (cached && cached.expiresAt > now + 60_000) return cached.token;
 
   if (creds.id !== "env") {
@@ -159,7 +198,7 @@ async function getAccessToken(creds: PathaoCreds): Promise<string> {
       .eq("integration_id", creds.id)
       .maybeSingle();
     if (row && new Date(row.expires_at).getTime() > now + 60_000) {
-      tokenCache.set(creds.id, {
+      tokenCache.set(key, {
         token: row.token,
         expiresAt: new Date(row.expires_at).getTime(),
       });
@@ -184,7 +223,7 @@ async function getAccessToken(creds: PathaoCreds): Promise<string> {
   }
   const data = await res.json();
   const expiresAt = now + (data.expires_in || 3600) * 1000;
-  tokenCache.set(creds.id, { token: data.access_token, expiresAt });
+  tokenCache.set(key, { token: data.access_token, expiresAt });
 
   // Persist for other (possibly cold) instances. Best-effort: env creds and
   // transient DB errors must not break dispatch/tracking over a cache write.
@@ -201,6 +240,27 @@ async function getAccessToken(creds: PathaoCreds): Promise<string> {
       });
   }
   return data.access_token;
+}
+
+// Drop a cached Pathao token from BOTH tiers (in-memory Map + courier_tokens
+// row) so the next getAccessToken re-mints. Pathao issues 90-day tokens and
+// getAccessToken trusts expires_at without validating, so after a credential
+// save the function would keep replaying the token minted under the OLD
+// credentials and every dispatch would 401 with "Unauthorized User".
+async function evictCachedToken(
+  sb: ReturnType<typeof supabaseAdmin>,
+  creds: PathaoCreds,
+): Promise<void> {
+  for (const k of [...tokenCache.keys()]) {
+    if (k === creds.id || k.startsWith(`${creds.id}|`)) tokenCache.delete(k);
+  }
+  if (creds.id === "env") return;
+  const { error } = await sb
+    .from("courier_tokens")
+    .delete()
+    .eq("provider", "pathao")
+    .eq("integration_id", creds.id);
+  if (error) console.warn(`[pathao-courier] courier_tokens evict failed: ${error.message}`);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -395,6 +455,33 @@ async function cancelPreviousParcel(
   return { success: true, cancelledOnPathao: cancelRes.success, noop: !!cancelRes.noop, error: cancelRes.error };
 }
 
+// Resolve an order's CURRENT courier entries from courier_shipments — the
+// table the UI lists — NOT from the legacy orders.consignment_id column. That
+// single column goes stale or NULL across add-new history, legacy flows and
+// entry deletes, and anchoring replace/idempotency logic on it silently skipped
+// real entries ("the previous entry didn't get cancelled", double bookings).
+// Legacy rows without any courier_shipments entry fall back to the column.
+async function getActiveCourierEntries(
+  sb: ReturnType<typeof supabaseAdmin>,
+  orderId: string,
+  legacyConsignment: string | null,
+): Promise<Array<{ id: string | null; consignment_id: string; integration_id: string | null }>> {
+  const { data: rows, error } = await sb
+    .from("courier_shipments")
+    .select("id, consignment_id, integration_id")
+    .eq("order_id", orderId)
+    .is("cancelled_at", null)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.warn(`[pathao-courier] active-entry lookup failed: ${error.message}`);
+  }
+  if (rows && rows.length > 0) return rows;
+  if (legacyConsignment) {
+    return [{ id: null, consignment_id: legacyConsignment, integration_id: null }];
+  }
+  return [];
+}
+
 // Issue #23: courier product descriptions ride in Pathao's `item_description`
 // (parcel description). The official API docs publish no length cap for it, so
 // mirror the client-side safe cap from src/lib/courierDescription.ts (255) at
@@ -513,11 +600,34 @@ Deno.serve(async (req: Request) => {
     }
 
     const creds = await loadIntegration(sb, integration_id);
+    // A credential save sends force_refresh: evict the cached token first so
+    // getAccessToken re-mints with the (possibly new) credentials instead of
+    // replaying a stale one for the rest of its 90-day life.
+    if (params.force_refresh) await evictCachedToken(sb, creds);
     const token = await getAccessToken(creds);
 
     let result: unknown;
 
     switch (action) {
+      case "reauth": {
+        // `force_refresh` evicted the cached token above and getAccessToken
+        // re-minted `token` with the stored credentials. Verify the fresh token
+        // is actually accepted by Pathao (rotated/incorrect credentials 401
+        // here) and report the outcome WITHOUT throwing, so the Settings screen
+        // can show a precise message instead of a generic 500.
+        try {
+          const data = await pathaoGet(token, "/aladdin/api/v1/stores");
+          const stores = data.data?.data || data.data || [];
+          result = {
+            reauthorized: true,
+            stores: Array.isArray(stores) ? stores.length : 0,
+          };
+        } catch (e: any) {
+          result = { reauthorized: false, error: e?.message || "Pathao re-auth failed" };
+        }
+        break;
+      }
+
       case "get_cities": {
         const data = await pathaoGet(token, "/aladdin/api/v1/countries/1/city-list");
         const cities = data.data?.data || data.data || [];
@@ -649,69 +759,76 @@ Deno.serve(async (req: Request) => {
               { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
             );
           }
-          if (existing?.consignment_id) {
+          // Same divergence fix as attach_parcel: resolve the previous entries
+          // from courier_shipments (the legacy column can miss real ones).
+          const prevEntries = await getActiveCourierEntries(sb, order_id, existing?.consignment_id ?? null);
+          if (prevEntries.length > 0) {
+            const prevConsignment = prevEntries[0].consignment_id;
             if (!replace) {
               result = {
                 skipped: true,
                 has_existing: true,
-                consignment_id: existing.consignment_id,
-                existing_consignment_id: existing.consignment_id,
-                reason: `Order ${existing.order_number} already has a courier entry (${existing.consignment_id}).`,
+                consignment_id: prevConsignment,
+                existing_consignment_id: prevConsignment,
+                reason: `Order ${existing.order_number} already has a courier entry (${prevConsignment}).`,
               };
               break;
             }
-            // Replace: cancel the previous parcel on Pathao first, then detach it.
-            const r = await cancelPreviousParcel(sb, {
-              defaultToken: token,
-              currentCredsId: creds.id,
-              orderId: order_id,
-              orderNumber: existing.order_number,
-              oldConsignment: existing.consignment_id,
-              orderIntegId: existing.pathao_integration_id,
-              force,
-              callerId,
-              callerEmail,
-              callerName,
-            });
-            if (!r.success) {
-              return new Response(
-                JSON.stringify({
-                  error: `Could not cancel previous parcel ${existing.consignment_id} on Pathao: ${r.error}`,
-                  pathao_failed: true,
-                  reason: r.error,
-                  consignment_id: existing.consignment_id,
-                }),
-                { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-              );
-            }
-            await sb.from("orders").update({ consignment_id: null, tracking_status: null }).eq("id", order_id);
-            await sb.from("order_timeline").insert({
-              order_id,
-              event: "parcel_detached",
-              description: `Previous Pathao parcel ${existing.consignment_id} cancelled${r.cancelledOnPathao ? " on Pathao" : " locally (Pathao API cancel failed/forced)"} and marked for replacement.`,
-              metadata: {
-                old_consignment_id: existing.consignment_id,
-                pathao_cancel_success: r.cancelledOnPathao,
-                pathao_cancel_error: r.error || null,
+            // Replace: cancel every previous active parcel on Pathao first,
+            // then detach them (cancel-then-create).
+            for (const entry of prevEntries) {
+              const r = await cancelPreviousParcel(sb, {
+                defaultToken: token,
+                currentCredsId: creds.id,
+                orderId: order_id,
+                orderNumber: existing.order_number,
+                oldConsignment: entry.consignment_id,
+                orderIntegId: existing.pathao_integration_id,
+                force,
+                callerId,
+                callerEmail,
+                callerName,
+              });
+              if (!r.success) {
+                return new Response(
+                  JSON.stringify({
+                    error: `Could not cancel previous parcel ${entry.consignment_id} on Pathao: ${r.error}`,
+                    pathao_failed: true,
+                    reason: r.error,
+                    consignment_id: entry.consignment_id,
+                  }),
+                  { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+                );
+              }
+              await sb.from("order_timeline").insert({
+                order_id,
+                event: "parcel_detached",
+                description: `Previous Pathao parcel ${entry.consignment_id} cancelled${r.cancelledOnPathao ? " on Pathao" : " locally (Pathao API cancel failed/forced)"} and marked for replacement.`,
+                metadata: {
+                  old_consignment_id: entry.consignment_id,
+                  pathao_cancel_success: r.cancelledOnPathao,
+                  pathao_cancel_error: r.error || null,
+                  user_id: callerId,
+                  user_email: callerEmail,
+                  user_name: callerName,
+                },
+              });
+              await sb.from("audit_log").insert({
                 user_id: callerId,
                 user_email: callerEmail,
-                user_name: callerName,
-              },
-            });
-            await sb.from("audit_log").insert({
-              user_id: callerId,
-              user_email: callerEmail,
-              action: "parcel_detached",
-              entity_type: "order",
-              entity_id: order_id,
-              details: {
-                old_consignment_id: existing.consignment_id,
-                pathao_cancel_success: r.cancelledOnPathao,
-                pathao_cancel_error: r.error || null,
-                pending_replacement: true,
-                courier: "pathao",
-              },
-            });
+                action: "parcel_detached",
+                entity_type: "order",
+                entity_id: order_id,
+                details: {
+                  old_consignment_id: entry.consignment_id,
+                  pathao_cancel_success: r.cancelledOnPathao,
+                  pathao_cancel_error: r.error || null,
+                  pending_replacement: true,
+                  courier: "pathao",
+                },
+              });
+            }
+            await sb.from("orders").update({ consignment_id: null, tracking_status: null }).eq("id", order_id);
           }
         }
 
@@ -719,15 +836,11 @@ Deno.serve(async (req: Request) => {
         const consignment_id = data.data?.consignment_id || data.consignment_id;
 
         if (order_id && consignment_id) {
-          await sb.from("orders").update({
-            consignment_id,
-            tracking_status: "Pickup Pending",
-            status: "shipped",
-            pathao_integration_id: creds.id !== "env" ? creds.id : null,
-            pathao_store_id: order_payload.store_id || null,
-          }).eq("id", order_id);
-
-          await upsertShipmentRow(sb, {
+          // Record the courier_shipments entry FIRST, then only flip the order
+          // to "shipped" once that entry is confirmed written. If the courier
+          // entry fails, the consignment is still noted (tracking_status) but
+          // the order must NOT be marked shipped.
+          const courierEntryOk = await upsertShipmentRow(sb, {
             order_id,
             consignment_id,
             integration_id: creds.id,
@@ -735,10 +848,21 @@ Deno.serve(async (req: Request) => {
             canonical_status: "pending",
           });
 
+          const orderUpdate: Record<string, any> = {
+            consignment_id,
+            tracking_status: "Pickup Pending",
+            pathao_integration_id: creds.id !== "env" ? creds.id : null,
+            pathao_store_id: order_payload.store_id || null,
+          };
+          // Only mark the order shipped once the courier_shipments entry is
+          // confirmed written; otherwise it stays in its current status.
+          if (courierEntryOk) orderUpdate.status = "shipped";
+          await sb.from("orders").update(orderUpdate).eq("id", order_id);
+
           await sb.from("order_timeline").insert({
             order_id,
             event: "dispatched",
-            description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
+            description: `Dispatched to Pathao. Consignment: ${consignment_id}${courierEntryOk ? "" : " (courier entry pending)"}`,
             metadata: {
               consignment_id,
               integration_id: creds.id,
@@ -807,70 +931,77 @@ Deno.serve(async (req: Request) => {
                     orderIntegId = existing.pathao_integration_id;
                   }
 
-                  if (existingConsignment) {
+                  // Same divergence fix as attach_parcel/create_order: resolve
+                  // the previous entries from courier_shipments.
+                  const prevEntries = await getActiveCourierEntries(sb, entry.order_id, existingConsignment);
+                  if (prevEntries.length > 0) {
+                    const prevConsignment = prevEntries[0].consignment_id;
+                    existingConsignment = prevConsignment;
                     if (!replace) {
                       return {
                         order_id: entry.order_id,
                         success: false,
                         skipped: true,
                         has_existing: true,
-                        existing_consignment_id: existingConsignment,
-                        consignment_id: existingConsignment,
-                        error: `Order ${orderNumber} already has a courier entry (${existingConsignment}).`,
+                        existing_consignment_id: prevConsignment,
+                        consignment_id: prevConsignment,
+                        error: `Order ${orderNumber} already has a courier entry (${prevConsignment}).`,
                       };
                     }
-                    // Replace: cancel the previous parcel on Pathao, mark it
+                    // Replace: cancel every previous parcel on Pathao, mark it
                     // cancelled locally, and detach it before creating the new one.
-                    const r = await cancelPreviousParcel(sb, {
-                      defaultToken: token,
-                      currentCredsId: creds.id,
-                      orderId: entry.order_id,
-                      orderNumber,
-                      oldConsignment: existingConsignment,
-                      orderIntegId,
-                      force,
-                      callerId,
-                      callerEmail,
-                      callerName,
-                    });
-                    if (!r.success) {
-                      return {
+                    for (const prev of prevEntries) {
+                      const r = await cancelPreviousParcel(sb, {
+                        defaultToken: token,
+                        currentCredsId: creds.id,
+                        orderId: entry.order_id,
+                        orderNumber,
+                        oldConsignment: prev.consignment_id,
+                        orderIntegId,
+                        force,
+                        callerId,
+                        callerEmail,
+                        callerName,
+                      });
+                      if (!r.success) {
+                        return {
+                          order_id: entry.order_id,
+                          success: false,
+                          error: `Could not cancel previous parcel ${prev.consignment_id} on Pathao: ${r.error}`,
+                          pathao_failed: true,
+                          reason: r.error,
+                          consignment_id: prev.consignment_id,
+                        };
+                      }
+                      await sb.from("order_timeline").insert({
                         order_id: entry.order_id,
-                        success: false,
-                        error: `Could not cancel previous parcel ${existingConsignment} on Pathao: ${r.error}`,
-                        pathao_failed: true,
-                        reason: r.error,
-                        consignment_id: existingConsignment,
-                      };
-                    }
-                    await sb.from("orders").update({ consignment_id: null, tracking_status: null }).eq("id", entry.order_id);
-                    await sb.from("order_timeline").insert({
-                      order_id: entry.order_id,
-                      event: "parcel_detached",
-                      description: `Previous Pathao parcel ${existingConsignment} cancelled${r.cancelledOnPathao ? " on Pathao" : " locally (Pathao API cancel failed/forced)"} and marked for replacement.`,
-                      metadata: {
-                        old_consignment_id: existingConsignment,
-                        pathao_cancel_success: r.cancelledOnPathao,
-                        pathao_cancel_error: r.error || null,
+                        event: "parcel_detached",
+                        description: `Previous Pathao parcel ${prev.consignment_id} cancelled${r.cancelledOnPathao ? " on Pathao" : " locally (Pathao API cancel failed/forced)"} and marked for replacement.`,
+                        metadata: {
+                          old_consignment_id: prev.consignment_id,
+                          pathao_cancel_success: r.cancelledOnPathao,
+                          pathao_cancel_error: r.error || null,
+                          user_id: callerId,
+                          user_email: callerEmail,
+                          user_name: callerName,
+                        },
+                      });
+                      await sb.from("audit_log").insert({
                         user_id: callerId,
                         user_email: callerEmail,
-                        user_name: callerName,
-                      },
-                    });
-                    await sb.from("audit_log").insert({
-                      user_id: callerId,
-                      user_email: callerEmail,
-                      action: "parcel_detached",
-                      entity_type: "order",
-                      entity_id: entry.order_id,
-                      details: {
-                        old_consignment_id: existingConsignment,
-                        pathao_cancel_success: r.cancelledOnPathao,
-                        pathao_cancel_error: r.error || null,
-                        pending_replacement: true,
-                        courier: "pathao",
-                      },
-                    });
+                        action: "parcel_detached",
+                        entity_type: "order",
+                        entity_id: entry.order_id,
+                        details: {
+                          old_consignment_id: prev.consignment_id,
+                          pathao_cancel_success: r.cancelledOnPathao,
+                          pathao_cancel_error: r.error || null,
+                          pending_replacement: true,
+                          courier: "pathao",
+                        },
+                      });
+                    }
+                    await sb.from("orders").update({ consignment_id: null, tracking_status: null }).eq("id", entry.order_id);
                   }
                 }
 
@@ -878,15 +1009,9 @@ Deno.serve(async (req: Request) => {
                 const consignment_id = data.data?.consignment_id || data.consignment_id;
 
                 if (entry.order_id && consignment_id) {
-                  await sb.from("orders").update({
-                    consignment_id,
-                    tracking_status: "Pickup Pending",
-                    status: "shipped",
-                    pathao_integration_id: creds.id !== "env" ? creds.id : null,
-                    pathao_store_id: entry.order_payload.store_id || null,
-                  }).eq("id", entry.order_id);
-
-                  await upsertShipmentRow(sb, {
+                  // Record the courier_shipments entry FIRST, then only flip
+                  // the order to "shipped" once that entry is confirmed written.
+                  const courierEntryOk = await upsertShipmentRow(sb, {
                     order_id: entry.order_id,
                     consignment_id,
                     integration_id: creds.id,
@@ -894,10 +1019,21 @@ Deno.serve(async (req: Request) => {
                     canonical_status: "pending",
                   });
 
+                  const orderUpdate: Record<string, any> = {
+                    consignment_id,
+                    tracking_status: "Pickup Pending",
+                    pathao_integration_id: creds.id !== "env" ? creds.id : null,
+                    pathao_store_id: entry.order_payload.store_id || null,
+                  };
+                  // Only mark the order shipped once the courier_shipments
+                  // entry is confirmed written; otherwise status is unchanged.
+                  if (courierEntryOk) orderUpdate.status = "shipped";
+                  await sb.from("orders").update(orderUpdate).eq("id", entry.order_id);
+
                   await sb.from("order_timeline").insert({
                     order_id: entry.order_id,
                     event: "dispatched",
-                    description: `Dispatched to Pathao. Consignment: ${consignment_id}`,
+                    description: `Dispatched to Pathao. Consignment: ${consignment_id}${courierEntryOk ? "" : " (courier entry pending)"}`,
                     metadata: {
                       consignment_id,
                       integration_id: creds.id,
@@ -1172,11 +1308,15 @@ Deno.serve(async (req: Request) => {
           );
         }
 
-        // --- Handle existing consignment (replace vs add_new) ---
-        const oldConsignment = targetOrder.consignment_id;
-        let cancelRes: { success: boolean; error?: string } = { success: false };
+        // --- Resolve existing entries (replace vs add_new) ---
+        // Previous entries come from courier_shipments (see
+        // getActiveCourierEntries): the legacy orders.consignment_id column can
+        // be stale/NULL while a real entry is still active, and anchoring the
+        // cancel on it left the previous entry uncancelled.
+        const previousEntries = await getActiveCourierEntries(sb, order_id, targetOrder.consignment_id);
+        const oldConsignment = previousEntries[0]?.consignment_id ?? null;
 
-        if (oldConsignment) {
+        if (previousEntries.length > 0) {
           if (!replace && !add_new) {
             return new Response(
               JSON.stringify({
@@ -1187,79 +1327,24 @@ Deno.serve(async (req: Request) => {
               { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
             );
           }
-
-          if (replace) {
-            // Overwrite mode: cancel previous active parcel on Pathao and mark cancelled in courier_shipments
-            let oldToken = token;
-            const { data: oldShipment } = await sb
-              .from("courier_shipments")
-              .select("id, integration_id")
-              .eq("order_id", order_id)
-              .eq("consignment_id", oldConsignment)
-              .maybeSingle();
-
-            const oldIntegId = oldShipment?.integration_id || targetOrder.pathao_integration_id;
-            if (oldIntegId && oldIntegId !== creds.id) {
-              try {
-                const oldCreds = await loadIntegration(sb, oldIntegId);
-                oldToken = await getAccessToken(oldCreds);
-              } catch (e) {
-                console.warn("Could not load credentials for previous integration:", e);
-              }
-            }
-
-            cancelRes = await cancelPathaoOrder(oldToken, oldConsignment);
-            if (!cancelRes.success && !force) {
-              return new Response(
-                JSON.stringify({
-                  error: `Could not cancel previous parcel ${oldConsignment} on Pathao: ${cancelRes.error}`,
-                  pathao_failed: true,
-                  reason: cancelRes.error,
-                  consignment_id: oldConsignment,
-                }),
-                { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-              );
-            }
-
-            const cancelNow = new Date().toISOString();
-            await sb.from("courier_shipments").update({
-              cancelled_at: cancelNow,
-              canonical_status: "cancelled",
-              raw_status: "Cancelled",
-            }).eq("order_id", order_id).eq("consignment_id", oldConsignment);
-
-            // Log the cancellation and detachment before overwriting
-            await sb.from("order_timeline").insert({
-              order_id,
-              event: "parcel_detached",
-              description: `Previous Pathao parcel ${oldConsignment} cancelled${cancelRes.success ? " on Pathao" : " locally (Pathao API cancel failed/forced)"} and replaced with ${cid}.`,
-              metadata: {
-                old_consignment_id: oldConsignment,
-                old_tracking_status: targetOrder.tracking_status,
-                pathao_cancel_success: cancelRes.success,
-                pathao_cancel_error: cancelRes.error || null,
-                user_id: callerId,
-                user_email: callerEmail,
-                user_name: callerName,
-              },
-            });
-            await sb.from("audit_log").insert({
-              user_id: callerId,
-              user_email: callerEmail,
-              action: "parcel_detached",
-              entity_type: "order",
-              entity_id: order_id,
-              details: {
-                old_consignment_id: oldConsignment,
-                old_tracking_status: targetOrder.tracking_status,
-                new_consignment_id: cid,
-                pathao_cancel_success: cancelRes.success,
-                pathao_cancel_error: cancelRes.error || null,
-                courier: "pathao",
-              },
-            });
+          if (previousEntries.some((e) => e.consignment_id === cid)) {
+            // Replacing (or re-adding) the parcel that is already the current
+            // entry is a no-op at best and self-cancels the parcel at worst —
+            // refuse instead of cancelling it on Pathao and re-attaching it.
+            return new Response(
+              JSON.stringify({
+                error: `Consignment ${cid} is already an entry on order #${targetOrder.order_number}. Nothing to replace.`,
+                existing_consignment_id: cid,
+              }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
           }
         }
+        // Destructive work (cancelling previous entries) is deferred until the
+        // NEW consignment is fully validated below (cross-order conflict + live
+        // Pathao verification): a refused attach must never have already
+        // cancelled the order's previous parcel.
+        const entriesToCancel = replace ? previousEntries : [];
 
         // --- Check no OTHER order already uses this consignment ---
         const { data: conflicting } = await sb
@@ -1305,6 +1390,70 @@ Deno.serve(async (req: Request) => {
         // --- Map Pathao status to DokanOS status ---
         const mappedStatus = mapPathaoStatus(liveStatus) || "shipped";
 
+        // --- Cancel the previous entries (replace) — now that the new
+        // consignment is fully validated. Each entry is cancelled with its own
+        // integration's credentials and marked cancelled in courier_shipments.
+        if (entriesToCancel.length > 0) {
+          const cancelledIds: string[] = [];
+          for (const entry of entriesToCancel) {
+            const r = await cancelPreviousParcel(sb, {
+              defaultToken: token,
+              currentCredsId: creds.id,
+              orderId: order_id,
+              orderNumber: targetOrder.order_number,
+              oldConsignment: entry.consignment_id,
+              orderIntegId: targetOrder.pathao_integration_id,
+              force: !!force,
+              callerId,
+              callerEmail,
+              callerName,
+            });
+            if (!r.success) {
+              return new Response(
+                JSON.stringify({
+                  error: `Could not cancel previous parcel ${entry.consignment_id} on Pathao: ${r.error}`,
+                  pathao_failed: true,
+                  reason: r.error,
+                  consignment_id: entry.consignment_id,
+                }),
+                { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+              );
+            }
+            cancelledIds.push(entry.consignment_id);
+          }
+
+          // Log the cancellation and detachment before overwriting
+          await sb.from("order_timeline").insert({
+            order_id,
+            event: "parcel_detached",
+            description: `Previous Pathao parcel${cancelledIds.length > 1 ? "s" : ""} ${cancelledIds.join(", ")} cancelled and replaced with ${cid}.`,
+            metadata: {
+              old_consignment_id: oldConsignment,
+              old_consignment_ids: cancelledIds,
+              old_tracking_status: targetOrder.tracking_status,
+              pathao_cancel_success: true,
+              user_id: callerId,
+              user_email: callerEmail,
+              user_name: callerName,
+            },
+          });
+          await sb.from("audit_log").insert({
+            user_id: callerId,
+            user_email: callerEmail,
+            action: "parcel_detached",
+            entity_type: "order",
+            entity_id: order_id,
+            details: {
+              old_consignment_id: oldConsignment,
+              old_consignment_ids: cancelledIds,
+              old_tracking_status: targetOrder.tracking_status,
+              new_consignment_id: cid,
+              pathao_cancel_success: true,
+              courier: "pathao",
+            },
+          });
+        }
+
         // --- Update the order ---
         const now = new Date().toISOString();
         const { error: updateErr } = await sb.from("orders").update({
@@ -1321,14 +1470,20 @@ Deno.serve(async (req: Request) => {
           );
         }
 
+        const mappedCanonical = canonicalStatusFor(liveStatus) || null;
         await upsertShipmentRow(sb, {
           order_id,
           consignment_id: cid,
           integration_id: creds.id,
           raw_status: liveStatus,
-          canonical_status: canonicalStatusFor(liveStatus) || null,
+          canonical_status: mappedCanonical,
           last_tracked_at: now,
-          cancelled_at: null,
+          // Only a live (non-terminal) parcel becomes active. Never force
+          // cancelled_at back to null: re-attaching a terminal parcel must not
+          // un-cancel its existing row.
+          ...(mappedCanonical && TERMINAL_CANONICAL_STATUSES.has(mappedCanonical)
+            ? {}
+            : { cancelled_at: null }),
         });
 
         // --- Timeline entry ---
