@@ -126,7 +126,7 @@ const Orders = () => {
   // guard, pagination, error surfacing) lives in useOrdersData — the page
   // renders its state and the error/retry banner.
   const {
-    orders, setOrders, orderCategoryMap, loading, loadError, sellingPointError,
+    orders, setOrders, orderCategoryMap, loading, loadError, orderSourceError,
     loadOrders, retryLoad,
   } = useOrdersData();
   const { can } = usePermissions();
@@ -776,13 +776,13 @@ const Orders = () => {
 
       {/* Issue #9: load failures used to be silent (empty/stale list, no
           feedback). Surface them with a Retry action — retry also re-runs
-          the selling-point scope fetch, since a failed scope fetch leaves
+          the order-source scope fetch, since a failed scope fetch leaves
           the query under-scoped rather than merely un-executed. */}
-      {(loadError || sellingPointError) && (
+      {(loadError || orderSourceError) && (
         <div className="flex items-start justify-between gap-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-950">
           <div>
             <strong>Couldn&rsquo;t load all orders.</strong>{" "}
-            {loadError || sellingPointError}
+            {loadError || orderSourceError}
           </div>
           <Button variant="outline" size="sm" className="shrink-0" onClick={retryLoad}>
             <RotateCcw className="h-4 w-4 mr-1" /> Retry

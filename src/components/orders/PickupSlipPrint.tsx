@@ -86,7 +86,7 @@ export async function fetchSlipOrderDetails(ids: string[]): Promise<Map<string, 
     const { data: orderRows } = await supabase
       .from("orders")
       .select(
-        "id, source, consignment_id, pathao_integration_id, pathao_store_id, store_id, selling_point_id, stores(name), selling_points(id, name, woo_store_id, brand_id, brands(id, name, logo_url, woo_store_id))",
+        "id, source, consignment_id, pathao_integration_id, pathao_store_id, store_id, order_source_id, stores(name), order_source:order_sources(id, name, brand_id, brands(id, name, logo_url, woo_store_id))",
       )
       .in("id", unique);
 
@@ -115,8 +115,11 @@ export async function fetchSlipOrderDetails(ids: string[]): Promise<Map<string, 
     const accountOptions = buildPathaoAccountOptions(resolved.integrations, resolved.stores);
 
     for (const row of rows) {
-      const sellingPoint = row.selling_points || null;
-      const canonicalBrand = sellingPoint?.brands || null;
+      // Task 16 renamed "selling point" to Order Source; the slip detail field
+      // keeps its historical name because pickup-slip templates store
+      // `show_selling_point` as a persisted config key.
+      const orderSource = row.order_source || null;
+      const canonicalBrand = orderSource?.brands || null;
       const legacyBrand = canonicalBrand
         ? null
         : deriveBrandForStore(legacyBrands, row.store_id) || null;
@@ -133,7 +136,6 @@ export async function fetchSlipOrderDetails(ids: string[]): Promise<Map<string, 
       const dispatched = Boolean(row.consignment_id);
       const selected = describeAccount(resolved, row.pathao_integration_id, row.pathao_store_id);
       const defaultAccount = resolveDefaultAccount(accountOptions, resolved.links, [
-        sellingPoint?.woo_store_id,
         brandRow?.woo_store_id,
         row.store_id,
       ]);
@@ -158,7 +160,7 @@ export async function fetchSlipOrderDetails(ids: string[]): Promise<Map<string, 
 
       details.set(row.id, {
         brand,
-        sellingPointName: sellingPoint?.name || row.stores?.name || null,
+        sellingPointName: orderSource?.name || row.stores?.name || null,
         sourceLabel: sourceLabel(row.source),
         source: row.source ?? null,
         pathaoAccount,

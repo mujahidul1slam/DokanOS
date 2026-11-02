@@ -86,8 +86,7 @@ export interface SplitParentOrder {
   payment_status: string;
   payment_method: string | null;
   store_id: string | null;
-  selling_point_id: string | null;
-  location_id: string | null;
+  order_source_id: string | null;
   customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
@@ -317,8 +316,7 @@ export function splitChildOrderFields(
   const childFields = { source: SPLIT_ORDER_SOURCE, payment_method, payment_status };
   return {
     store_id: parent.store_id,
-    selling_point_id: parent.selling_point_id,
-    location_id: parent.location_id,
+    order_source_id: parent.order_source_id,
     customer_id: parent.customer_id,
     customer_name: parent.customer_name,
     customer_phone: parent.customer_phone,

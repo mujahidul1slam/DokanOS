@@ -28,7 +28,7 @@ const fromMock = supabase.from as unknown as Mock;
  * race: the scope inputs resolve asynchronously, so several load runs overlap
  * and the last *response* used to win — a slow scope-partial response could
  * overwrite the newer full list, and nothing refetched it. The missing rows
- * were the class one scope didn't cover (selling-point-only, app-created
+ * were the class one scope didn't cover (order-source-only, app-created
  * orders = the "new"/"pre-order" pipeline). These tests drive the overlap
  * deliberately, resolving the OLDER request LAST, which reproduces the exact
  * stuck-partial symptom.
@@ -90,7 +90,7 @@ beforeEach(() => {
   ctxMock.mockReset();
   storesMock.mockReset();
   fromMock.mockReset();
-  ctxMock.mockReturnValue({ brands: [], active: { id: "b1" } });
+  ctxMock.mockReturnValue({ brands: [{ id: "b1", name: "Brand One", woo_store_id: null }], active: { id: "b1" } });
   storesMock.mockReturnValue([]);
   fromMock.mockImplementation((table: string) => {
     const { builder, resolve } = makeBuilder();
@@ -103,17 +103,17 @@ describe("useOrdersData (issue #9)", () => {
   it("a stale scope-partial response never overwrites the newer full list (race regression)", async () => {
     const { result, rerender } = renderHook(() => useOrdersData());
 
-    // Selling-point scope fetch is in flight; the row load runs with no
+    // Order-source scope fetch is in flight; the row load runs with no
     // scope and shows the placeholder empty state.
-    await waitFor(() => expect(queriesFor("selling_points")).toHaveLength(1));
+    await waitFor(() => expect(queriesFor("order_sources")).toHaveLength(1));
 
-    // Selling points land first → run A (SP-scope ONLY: a partial row set,
+    // Order sources land first → run A (source-scope ONLY: a partial row set,
     // missing store-bound orders) starts and stays in flight.
-    await resolveQuery(queriesFor("selling_points")[0], { data: [{ id: "sp1" }], error: null });
+    await resolveQuery(queriesFor("order_sources")[0], { data: [{ id: "src1" }], error: null });
     await waitFor(() => expect(queriesFor("orders")).toHaveLength(1));
     const runA = queriesFor("orders")[0];
     expect(runA.builder.or).not.toHaveBeenCalled(); // single-scope: .in(), not .or()
-    expect(runA.builder.in).toHaveBeenCalledWith("selling_point_id", ["sp1"]);
+    expect(runA.builder.in).toHaveBeenCalledWith("order_source_id", ["src1"]);
 
     // Store scope lands second → run B (both scopes: full row set) starts.
     storesMock.mockReturnValue([{ id: "s1", name: "Store One" }]);
@@ -122,7 +122,7 @@ describe("useOrdersData (issue #9)", () => {
     const runB = queriesFor("orders")[1];
     expect(runB.builder.or).toHaveBeenCalledTimes(1); // both scopes present
 
-    // The NEWER run answers first: the full list (store-bound + SP-only rows).
+    // The NEWER run answers first: the full list (store-bound + source-only rows).
     await resolveQuery(runB, { data: [row("o1"), row("o2")], error: null });
     await waitFor(() =>
       expect(result.current.orders.map((o) => o.id)).toEqual(["o1", "o2"]),
@@ -145,9 +145,9 @@ describe("useOrdersData (issue #9)", () => {
     await resolveQuery(queriesFor("orders")[0], { data: [row("o1")], error: null });
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
 
-    // Resolve the selling-point scope so its arrival doesn't add runs later.
-    await waitFor(() => expect(queriesFor("selling_points")).toHaveLength(1));
-    await resolveQuery(queriesFor("selling_points")[0], { data: [], error: null });
+    // Resolve the order-source scope so its arrival doesn't add runs later.
+    await waitFor(() => expect(queriesFor("order_sources")).toHaveLength(1));
+    await resolveQuery(queriesFor("order_sources")[0], { data: [], error: null });
     await waitFor(() => expect(queriesFor("orders").length).toBeGreaterThanOrEqual(2));
     const failing = queriesFor("orders").at(-1)!;
 
@@ -213,30 +213,30 @@ describe("useOrdersData (issue #9)", () => {
     }
   });
 
-  it("surfaces selling-point scope failures and retry re-runs the scope fetch", async () => {
+  it("surfaces order-source scope failures and retry re-runs the scope fetch", async () => {
     storesMock.mockReturnValue([{ id: "s1", name: "Store One" }]);
     const { result } = renderHook(() => useOrdersData());
 
     // A failed scope fetch used to be swallowed → the query silently ran
-    // store-scoped-only and lost selling-point-only ("new"/"pre-order") rows.
-    await waitFor(() => expect(queriesFor("selling_points")).toHaveLength(1));
-    await resolveQuery(queriesFor("selling_points")[0], {
+    // store-scoped-only and lost order-source-only ("new"/"pre-order") rows.
+    await waitFor(() => expect(queriesFor("order_sources")).toHaveLength(1));
+    await resolveQuery(queriesFor("order_sources")[0], {
       data: null,
       error: { message: "scope boom" },
     });
-    await waitFor(() => expect(result.current.sellingPointError).toBe("scope boom"));
+    await waitFor(() => expect(result.current.orderSourceError).toBe("scope boom"));
 
     await resolveQuery(queriesFor("orders")[0], { data: [row("o1")], error: null });
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
 
     // Retry must fix the SCOPE, not just re-run the same under-scoped query.
     act(() => result.current.retryLoad());
-    await waitFor(() => expect(queriesFor("selling_points")).toHaveLength(2));
-    await resolveQuery(queriesFor("selling_points")[1], {
-      data: [{ id: "sp1" }],
+    await waitFor(() => expect(queriesFor("order_sources")).toHaveLength(2));
+    await resolveQuery(queriesFor("order_sources")[1], {
+      data: [{ id: "src1" }],
       error: null,
     });
-    await waitFor(() => expect(result.current.sellingPointError).toBeNull());
+    await waitFor(() => expect(result.current.orderSourceError).toBeNull());
 
     // …and the scope change triggers a fresh, properly-scoped row load.
     await waitFor(() => expect(queriesFor("orders").length).toBeGreaterThanOrEqual(3));

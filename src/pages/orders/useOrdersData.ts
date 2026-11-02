@@ -57,10 +57,11 @@ export interface OrderBrand {
   accent: string;
 }
 
-export interface OrderSellingPoint {
+export interface OrderOrderSource {
   id: string;
   name: string;
-  brand_id: string;
+  type: string;
+  brand_id: string | null;
   brands: Omit<OrderBrand, "accent"> | null;
 }
 
@@ -85,8 +86,8 @@ export interface OrderRow {
   item_weight: number | null;
   special_instruction: string | null;
   store_id: string | null;
-  selling_point_id: string | null;
-  selling_points: OrderSellingPoint | null;
+  order_source_id: string | null;
+  order_source: OrderOrderSource | null;
   brand: (OrderBrand & { accent: string }) | null;
   woo_order_id: number | null;
   /** Issue #30: on merged source orders this points at the merged order. */
@@ -107,7 +108,7 @@ export interface OrderRow {
 
 /** The orders select — one constant so the query and its docs stay in sync. */
 const ORDERS_SELECT =
-  "id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, selling_point_id, woo_order_id, parent_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), selling_points(id, name, brand_id, brands(id, name, logo_url, woo_store_id)), order_items(id, product_id, product_name, quantity, products(stock_status))";
+  "id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, order_source_id, woo_order_id, parent_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), order_source:order_sources(id, name, brand_id, type, brands(id, name, logo_url, woo_store_id)), order_items(id, product_id, product_name, quantity, products(stock_status))";
 
 export interface UseOrdersDataResult {
   /** Display rows (brand/derived fields mapped in), newest first. */
@@ -124,15 +125,15 @@ export interface UseOrdersDataResult {
   /** Orders fetch failure message (issue #9) — shown with a Retry action. */
   loadError: string | null;
   /**
-   * Selling-point scope fetch failure message (issue #9). Distinct from
+   * Order-source scope fetch failure message (issue #9). Distinct from
    * `loadError` because it leaves the query UNDER-SCOPED (the row fetch then
-   * succeeds but misses selling-point-only orders) — retry must re-run the
-   * scope fetch, not just the row fetch.
+   * succeeds but misses source-only orders) — retry must re-run the scope
+   * fetch, not just the row fetch.
    */
-  sellingPointError: string | null;
+  orderSourceError: string | null;
   /** Refetch rows + category map with the current scope. */
   loadOrders: () => Promise<void>;
-  /** Retry action: re-runs the selling-point scope fetch AND the row load. */
+  /** Retry action: re-runs the order-source scope fetch AND the row load. */
   retryLoad: () => void;
 }
 
@@ -140,17 +141,18 @@ export function useOrdersData(): UseOrdersDataResult {
   const { brands, active } = useBusinessContext();
   const businessStores = useStoresList();
   const storeIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
+  const brandIds = useMemo(() => brands.map((brand) => brand.id), [brands]);
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [orderCategoryMap, setOrderCategoryMap] = useState<Map<string, Set<string>>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [sellingPointError, setSellingPointError] = useState<string | null>(null);
+  const [orderSourceError, setOrderSourceError] = useState<string | null>(null);
 
-  // Selling-point scoping companion: orders whose Selling Point has no
-  // Woo-store binding get store_id NULL, so store_id scoping alone would hide
-  // them. They stay visible through their selling_point_id instead.
-  const [sellingPointIds, setSellingPointIds] = useState<string[]>([]);
+  // Order-source scoping companion: orders whose source has no legacy Woo-store
+  // binding get store_id NULL, so store_id scoping alone would hide them. They
+  // stay visible through their order_source_id instead.
+  const [orderSourceIds, setOrderSourceIds] = useState<string[]>([]);
   // Issue #9: retry bumps this so the effect below re-runs the scope fetch —
   // a failed scope fetch otherwise leaves the query under-scoped forever.
   const [scopeReloadKey, setScopeReloadKey] = useState(0);
@@ -164,44 +166,44 @@ export function useOrdersData(): UseOrdersDataResult {
   const loadTokenRef = useRef(0);
 
   useEffect(() => {
-    if (!active?.id) {
-      setSellingPointIds([]);
-      setSellingPointError(null);
+    if (!active?.id || brandIds.length === 0) {
+      setOrderSourceIds([]);
+      setOrderSourceError(null);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
         const { data, error } = await supabase
-          .from("selling_points")
+          .from("order_sources")
           .select("id")
-          .eq("business_id", active.id);
+          .in("brand_id", brandIds);
         if (cancelled) return;
         if (error) {
           // Issue #9: was swallowed (`{ data }` only) — the page then ran a
-          // store-scope-only query and silently lost selling-point-only
-          // orders. Surface it; retryLoad() re-runs this fetch.
-          setSellingPointError(error.message || "Could not load selling points");
+          // store-scope-only query and silently lost source-only orders.
+          // Surface it; retryLoad() re-runs this fetch.
+          setOrderSourceError(error.message || "Could not load order sources");
           return;
         }
-        setSellingPointError(null);
-        setSellingPointIds((data || []).map((row: { id: string }) => row.id));
+        setOrderSourceError(null);
+        setOrderSourceIds((data || []).map((row: { id: string }) => row.id));
       } catch (err: any) {
-        if (!cancelled) setSellingPointError(err?.message ? String(err.message) : String(err));
+        if (!cancelled) setOrderSourceError(err?.message ? String(err.message) : String(err));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [active?.id, scopeReloadKey]);
+  }, [active?.id, brandIds, scopeReloadKey]);
 
   const loadOrders = useCallback(async () => {
     const token = ++loadTokenRef.current;
     const isStale = () => token !== loadTokenRef.current;
 
     const hasStoreScope = storeIds.length > 0;
-    const hasSellingPointScope = sellingPointIds.length > 0;
-    if (!hasStoreScope && !hasSellingPointScope) {
+    const hasOrderSourceScope = orderSourceIds.length > 0;
+    if (!hasStoreScope && !hasOrderSourceScope) {
       // Fail-closed: no scoping known yet (still resolving) or none exists.
       // When a scope source lands, this callback's deps change and a real
       // load supersedes this placeholder state.
@@ -220,16 +222,16 @@ export function useOrdersData(): UseOrdersDataResult {
       const rows = await fetchAllRows(({ from, to }) => {
         const orderQuery = supabase.from("orders").select(ORDERS_SELECT);
         // A business order is in scope through its legacy Woo store binding
-        // OR its canonical Selling Point — selling-point-only orders
+        // OR its canonical Order Source — source-only orders
         // (store_id NULL) must not disappear from the list.
         const scopedQuery =
-          hasStoreScope && hasSellingPointScope
+          hasStoreScope && hasOrderSourceScope
             ? orderQuery.or(
-                `store_id.in.(${storeIds.join(",")}),selling_point_id.in.(${sellingPointIds.join(",")})`,
+                `store_id.in.(${storeIds.join(",")}),order_source_id.in.(${orderSourceIds.join(",")})`,
               )
             : hasStoreScope
               ? orderQuery.in("store_id", storeIds)
-              : orderQuery.in("selling_point_id", sellingPointIds);
+              : orderQuery.in("order_source_id", orderSourceIds);
         return scopedQuery
           .order("created_at", { ascending: false })
           .order("id", { ascending: true })
@@ -260,8 +262,8 @@ export function useOrdersData(): UseOrdersDataResult {
       // Atomic commit — rows and map together (issue #9): a half-updated
       // pair mis-tabs orders between "new" and "pre_order".
       const mapped = (rows || []).map((o: any) => {
-        const canonicalBrand = o.selling_points?.brands
-          ? { ...o.selling_points.brands, accent: brandAccent(o.selling_points.brands.id) }
+        const canonicalBrand = o.order_source?.brands
+          ? { ...o.order_source.brands, accent: brandAccent(o.order_source.brands.id) }
           : undefined;
         const legacyBrand = canonicalBrand || (() => {
           const fallback = deriveBrandForStore(brands, o.store_id);
@@ -290,7 +292,7 @@ export function useOrdersData(): UseOrdersDataResult {
       setLoadError(err?.message ? String(err.message) : String(err));
       setLoading(false);
     }
-  }, [storeIds, sellingPointIds, brands]);
+  }, [storeIds, orderSourceIds, brands]);
 
   // Refetch whenever the scope inputs settle/change. On first render this
   // runs with no scope (placeholder above), then again per scope arrival;
@@ -322,7 +324,7 @@ export function useOrdersData(): UseOrdersDataResult {
     orderCategoryMap,
     loading,
     loadError,
-    sellingPointError,
+    orderSourceError,
     loadOrders,
     retryLoad,
   };

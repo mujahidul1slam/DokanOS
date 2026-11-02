@@ -1,21 +1,23 @@
 /**
- * Pure helpers for changing an order's Brand / Selling Point identity from
+ * Pure helpers for changing an order's Brand / Order Source identity from
  * Order Info (issue #32).
  *
  * Glossary terms (see GLOSSARY.md):
  * - Brand: commercial identity; owns a Woo store binding (`woo_store_id`).
- * - Selling point: the place/channel an order was taken at; an order belongs
- *   to exactly one for operational attribution.
+ * - Order Source: the place/channel an order was taken at; every source belongs
+ *   to exactly one brand, and an order belongs to exactly one source for
+ *   operational attribution. Task 16 retired the legacy `selling_points` table
+ *   — a selling point is now simply an order source of a physical type
+ *   (showroom / showroom_pos / physical_store / manual).
  * - Pathao account: the Pathao merchant account used to dispatch an order.
  * - Consignment: a single parcel booking with a courier; an order can hold
  *   several over its life, one active at most.
  *
- * The resolution rules mirror Add Order (issue #21): a brand's default Selling
- * Point (`selling_points.is_default`) is preselected but editable; a single
- * option is auto-selected; zero options block the change with a configure
- * hint. The per-brand default Pathao Account lives in `pathao_store_links`,
- * keyed by the brand's `woo_store_id` (issue #22) and is re-resolved through
- * `@/lib/dispatchAccounts` whenever the Brand or Selling Point changes.
+ * The resolution rules mirror Add Order (issue #21): a single available source
+ * is auto-selected; zero sources block the change with a configure hint. The
+ * per-brand default Pathao Account lives in `pathao_store_links`, keyed by the
+ * brand's `woo_store_id` (issue #22) and is re-resolved through
+ * `@/lib/dispatchAccounts` whenever the Brand or Order Source changes.
  *
  * This module is intentionally pure (no supabase) so the rules stay unit
  * testable; data loading lives in the callers.
@@ -27,73 +29,66 @@ export interface IdentityBrand {
   woo_store_id: string | null;
 }
 
-export interface IdentitySellingPoint {
+export interface IdentityOrderSource {
   id: string;
   name: string;
   brand_id: string | null;
-  woo_store_id: string | null;
-  is_default?: boolean | null;
-  is_active?: boolean | null;
+  type?: string | null;
 }
 
-/** Active Selling Points belonging to one brand (name order preserved). */
-export function sellingPointsForBrand<P extends IdentitySellingPoint>(
-  points: readonly P[],
+/** Order sources belonging to one brand (name order preserved). */
+export function orderSourcesForBrand<P extends IdentityOrderSource>(
+  sources: readonly P[],
   brandId: string | null | undefined,
 ): P[] {
   if (!brandId) return [];
-  return points.filter((point) => point.brand_id === brandId && point.is_active !== false);
+  return sources.filter((source) => source.brand_id === brandId);
 }
 
-export type SellingPointResolutionReason =
+export type OrderSourceResolutionReason =
   /** The caller's previous choice is still valid — keep it (editable). */
   | "kept"
-  /** The brand default (`is_default`) was preselected — still editable. */
-  | "default"
   /** The only available option was auto-selected. */
   | "only"
-  /** Zero options: the change is blocked until a Selling Point is configured. */
+  /** Zero options: the change is blocked until an Order Source is configured. */
   | "none";
 
-export interface SellingPointResolution {
-  sellingPointId: string | null;
-  reason: SellingPointResolutionReason;
+export interface OrderSourceResolution {
+  orderSourceId: string | null;
+  reason: OrderSourceResolutionReason;
 }
 
 /**
- * Resolve the Selling Point for a brand's option list.
+ * Resolve the Order Source for a brand's option list.
  *
  * Order of rules (issue #21): keep the previous selection when it is still an
- * option; otherwise preselect the brand default; otherwise auto-select the
- * single option; otherwise stay unresolved so the operator must configure one
- * rather than silently attributing the order.
+ * option; otherwise auto-select the single option; otherwise stay unresolved so
+ * the operator must configure one rather than silently attributing the order.
  */
-export function resolveSellingPoint<P extends IdentitySellingPoint>(
-  points: readonly P[],
+export function resolveOrderSource<P extends IdentityOrderSource>(
+  sources: readonly P[],
   previousId?: string | null,
-): SellingPointResolution {
-  if (previousId && points.some((point) => point.id === previousId)) {
-    return { sellingPointId: previousId, reason: "kept" };
+): OrderSourceResolution {
+  if (previousId && sources.some((source) => source.id === previousId)) {
+    return { orderSourceId: previousId, reason: "kept" };
   }
-  const preferred = points.find((point) => point.is_default);
-  if (preferred) return { sellingPointId: preferred.id, reason: "default" };
-  if (points.length === 1) return { sellingPointId: points[0].id, reason: "only" };
-  return { sellingPointId: null, reason: "none" };
+  if (sources.length === 1) return { orderSourceId: sources[0].id, reason: "only" };
+  return { orderSourceId: null, reason: "none" };
 }
 
 /**
- * The legacy `orders.store_id` write value: the selected Selling Point's
- * `woo_store_id`, else the Brand's `woo_store_id`, else (only when the Brand
- * is unchanged) the previous legacy binding. It is a Woo store binding ONLY —
- * NEVER a Selling Point UUID.
+ * The legacy `orders.store_id` write value: the Brand's `woo_store_id`, else
+ * (only when the Brand is unchanged) the previous legacy binding.
+ *
+ * It is a Woo store binding ONLY — never an order source / selling point UUID.
+ * Order sources carry `legacy_woo_store_id`, but that column holds a provisioned
+ * `stores.id` UUID (see `bridgeWooSourceToStore`), not a Woo numeric id, so it
+ * cannot be used as the legacy binding.
  */
 export function legacyStoreIdFor(
-  sellingPoint: Pick<IdentitySellingPoint, "woo_store_id"> | null | undefined,
   brand: Pick<IdentityBrand, "woo_store_id"> | null | undefined,
   options: { previousStoreId?: string | null; brandChanged?: boolean } = {},
 ): string | null {
-  const pointBinding = sellingPoint?.woo_store_id || null;
-  if (pointBinding) return pointBinding;
   const brandBinding = brand?.woo_store_id || null;
   if (brandBinding) return brandBinding;
   // A brand change makes the previous binding belong to the old brand — it
@@ -163,10 +158,10 @@ export function consignmentAccountConflict(
 
 export interface IdentitySelection {
   brandId: string | null;
-  sellingPointId: string | null;
+  orderSourceId: string | null;
 }
 
-/** True when the Brand or Selling Point differs from the stored order. */
+/** True when the Brand or Order Source differs from the stored order. */
 export function identityChanged(
   before: IdentitySelection,
   after: IdentitySelection,
@@ -174,26 +169,26 @@ export function identityChanged(
   const normalize = (value: string | null | undefined) => value || null;
   return (
     normalize(before.brandId) !== normalize(after.brandId) ||
-    normalize(before.sellingPointId) !== normalize(after.sellingPointId)
+    normalize(before.orderSourceId) !== normalize(after.orderSourceId)
   );
 }
 
-/** True when a Brand is selected but no Selling Point resolves — the change is blocked. */
+/** True when a Brand is selected but no Order Source resolves — the change is blocked. */
 export function identityChangeBlocked(
   brandId: string | null | undefined,
-  resolution: SellingPointResolution | null | undefined,
+  resolution: OrderSourceResolution | null | undefined,
 ): boolean {
-  return Boolean(brandId) && !resolution?.sellingPointId;
+  return Boolean(brandId) && !resolution?.orderSourceId;
 }
 
-export const SELLING_POINT_CONFIGURE_HINT =
-  "No active Selling Point is configured for this Brand. Add one in Stores.";
+export const ORDER_SOURCE_CONFIGURE_HINT =
+  "No Order Source is configured for this Brand. Add one in Brands → Order Sources.";
 
 export interface IdentitySnapshot {
   brandId: string | null;
   brandName: string | null;
-  sellingPointId: string | null;
-  sellingPointName: string | null;
+  orderSourceId: string | null;
+  orderSourceName: string | null;
   accountKey: string | null;
   accountLabel: string | null;
 }
@@ -208,7 +203,7 @@ const label = (value: string | null | undefined) => `"${value || "—"}"`;
 
 /**
  * Build the timeline description + audit metadata for an identity change,
- * covering Brand, Selling Point, and the re-resolved default Pathao Account.
+ * covering Brand, Order Source, and the re-resolved default Pathao Account.
  */
 export function describeIdentityChange(
   before: IdentitySnapshot,
@@ -218,8 +213,8 @@ export function describeIdentityChange(
   if ((before.brandId || null) !== (after.brandId || null)) {
     changes.push(`Brand: ${label(before.brandName)} → ${label(after.brandName)}`);
   }
-  if ((before.sellingPointId || null) !== (after.sellingPointId || null)) {
-    changes.push(`Selling Point: ${label(before.sellingPointName)} → ${label(after.sellingPointName)}`);
+  if ((before.orderSourceId || null) !== (after.orderSourceId || null)) {
+    changes.push(`Order Source: ${label(before.orderSourceName)} → ${label(after.orderSourceName)}`);
   }
   if ((before.accountKey || null) !== (after.accountKey || null)) {
     changes.push(`default Pathao Account: ${label(before.accountLabel)} → ${label(after.accountLabel)}`);
@@ -230,11 +225,11 @@ export function describeIdentityChange(
     metadata: {
       changes,
       brand: { from: before.brandId, to: after.brandId, from_name: before.brandName, to_name: after.brandName },
-      selling_point: {
-        from: before.sellingPointId,
-        to: after.sellingPointId,
-        from_name: before.sellingPointName,
-        to_name: after.sellingPointName,
+      order_source: {
+        from: before.orderSourceId,
+        to: after.orderSourceId,
+        from_name: before.orderSourceName,
+        to_name: after.orderSourceName,
       },
       pathao_account: {
         from: before.accountKey,

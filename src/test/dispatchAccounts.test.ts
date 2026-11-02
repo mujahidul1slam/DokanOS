@@ -43,8 +43,7 @@ const order = (id: string, over: Partial<DispatchOrderIdentity> = {}): DispatchO
   brandName: "Acme Fashion",
   brandLogoUrl: null,
   brandWooStoreId: "store-a",
-  sellingPointName: "Showroom",
-  sellingPointWooStoreId: null,
+  orderSourceName: "Showroom",
   legacyStoreId: null,
   ...over,
 });
@@ -147,7 +146,7 @@ describe("dispatchAccounts", () => {
   describe("groupOrdersForDispatch", () => {
     it("groups orders of one brand/account into one group", () => {
       const groups = groupOrdersForDispatch(
-        [order("o1"), order("o2", { sellingPointName: "Facebook" })],
+        [order("o1"), order("o2", { orderSourceName: "Facebook" })],
         links,
         accounts,
       );
@@ -156,7 +155,7 @@ describe("dispatchAccounts", () => {
         key: "brand-a|int-1:11",
         brandName: "Acme Fashion",
         orderIds: ["o1", "o2"],
-        sellingPointNames: ["Showroom", "Facebook"],
+        orderSourceNames: ["Showroom", "Facebook"],
         defaultAccountKey: "int-1:11",
       });
     });
@@ -165,7 +164,9 @@ describe("dispatchAccounts", () => {
       const groups = groupOrdersForDispatch(
         [
           order("o1"),
-          order("o2", { sellingPointWooStoreId: "store-b", sellingPointName: "Outlet" }),
+          // Order sources carry no Woo binding, so the fallback legacy store is
+          // what moves this row onto the second account.
+          order("o2", { brandWooStoreId: null, legacyStoreId: "store-b", orderSourceName: "Outlet" }),
         ],
         links,
         accounts,
@@ -200,9 +201,18 @@ describe("dispatchAccounts", () => {
     });
 
     it("computes per-order default keys with binding priority", () => {
+      // Brand binding wins over the legacy store binding...
       expect(
         orderDefaultAccountKey(
-          order("o1", { sellingPointWooStoreId: "store-b", brandWooStoreId: "store-a" }),
+          order("o1", { brandWooStoreId: "store-b", legacyStoreId: "store-a" }),
+          links,
+          accounts,
+        ),
+      ).toBe("int-2:33");
+      // ...and the legacy store binding is used when the brand has none.
+      expect(
+        orderDefaultAccountKey(
+          order("o1", { brandWooStoreId: null, legacyStoreId: "store-b" }),
           links,
           accounts,
         ),

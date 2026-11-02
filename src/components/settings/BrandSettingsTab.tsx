@@ -47,7 +47,7 @@ export default function BrandSettingsTab() {
   const [originals, setOriginals] = useState<Record<string, BrandDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   // Per-brand dirty flags for the "Order identity defaults" sub-sections
-  // (Selling Point / Pathao Account), reported up by BrandIdentityDefaults.
+  // (Pathao Account), reported up by BrandIdentityDefaults.
   const [identityDirty, setIdentityDirty] = useState<Record<string, boolean>>({});
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -397,15 +397,6 @@ function BrandCard({
   );
 }
 
-interface IdentitySellingPoint {
-  id: string;
-  name: string;
-  type: string;
-  woo_store_id: string | null;
-  is_active: boolean;
-  is_default: boolean;
-}
-
 interface IdentityPathaoIntegration {
   id: string;
   name: string;
@@ -425,11 +416,12 @@ interface IdentityPathaoLink {
 }
 
 /**
- * Existing-table defaults used by order entry and courier dispatch.
- * Selling Point defaults live on selling_points; Pathao defaults live on the
- * existing Woo-store-to-Pathao mapping. Pending edits are committed through
- * the universal save bar (SettingsSaveHandler) and reported to the parent for
- * the tab-level dirty flag.
+ * Existing-table defaults used by order entry and courier dispatch. Pathao
+ * defaults live on the existing Woo-store-to-Pathao mapping (keyed by the
+ * brand's woo_store_id). Task 16 retired selling_points, so there is no
+ * per-brand default order source to set here — an order's source is chosen at
+ * order entry. Pending edits are committed through the universal save bar
+ * (SettingsSaveHandler) and reported to the parent for the tab-level dirty flag.
  */
 function BrandIdentityDefaults({
   brand,
@@ -438,21 +430,17 @@ function BrandIdentityDefaults({
   brand: Brand;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const [sellingPoints, setSellingPoints] = useState<IdentitySellingPoint[]>([]);
   const [integrations, setIntegrations] = useState<IdentityPathaoIntegration[]>([]);
   const [pathaoStores, setPathaoStores] = useState<IdentityPathaoStore[]>([]);
   const [pathaoLink, setPathaoLink] = useState<IdentityPathaoLink | null>(null);
-  const [selectedSellingPoint, setSelectedSellingPoint] = useState("");
   const [selectedIntegration, setSelectedIntegration] = useState("");
   const [selectedPathaoStore, setSelectedPathaoStore] = useState("");
-  // Server-side snapshots of the three selections; a selection differing from
-  // its snapshot is a pending edit the universal save must commit.
-  const [savedSellingPoint, setSavedSellingPoint] = useState("");
+  // Server-side snapshots of the selections; a selection differing from its
+  // snapshot is a pending edit the universal save must commit.
   const [savedIntegration, setSavedIntegration] = useState("");
   const [savedPathaoStore, setSavedPathaoStore] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingStores, setLoadingStores] = useState(false);
-  const [savingSellingPoint, setSavingSellingPoint] = useState(false);
   const [savingPathao, setSavingPathao] = useState(false);
   // Set when the user switches the Default Courier (Pathao account): the new
   // account's default pickup store is auto-selected once its stores load.
@@ -462,22 +450,13 @@ function BrandIdentityDefaults({
     let cancelled = false;
     const load = async () => {
       setLoading(true);
-      const [{ data: spData }, { data: integrationData }] = await Promise.all([
-        supabase
-          .from("selling_points")
-          .select("id, name, type, woo_store_id, is_active, is_default")
-          .eq("brand_id", brand.id)
-          .eq("is_active", true)
-          .order("name"),
-        supabase
-          .from("pathao_integrations_safe" as any)
-          .select("id, name, is_active")
-          .eq("is_active", true)
-          .order("name"),
-      ]);
+      const { data: integrationData } = await supabase
+        .from("pathao_integrations_safe" as any)
+        .select("id, name, is_active")
+        .eq("is_active", true)
+        .order("name");
       if (cancelled) return;
 
-      const rows = (spData || []) as IdentitySellingPoint[];
       const activeIntegrations = (integrationData || []) as unknown as IdentityPathaoIntegration[];
       let link: IdentityPathaoLink | null = null;
       if (brand.woo_store_id) {
@@ -489,13 +468,8 @@ function BrandIdentityDefaults({
         link = (data || null) as IdentityPathaoLink | null;
       }
 
-      setSellingPoints(rows);
       setIntegrations(activeIntegrations);
       setPathaoLink(link);
-      const serverDefault = rows.find((row) => row.is_default);
-      const initialSellingPoint = serverDefault?.id || (rows.length === 1 ? rows[0].id : "");
-      setSelectedSellingPoint(initialSellingPoint);
-      setSavedSellingPoint(initialSellingPoint);
 
       const linkedIntegration = link && activeIntegrations.some((item) => item.id === link!.pathao_integration_id)
         ? link.pathao_integration_id
@@ -550,47 +524,15 @@ function BrandIdentityDefaults({
 
   // A blank placeholder selection ("Choose …") is not a pending edit — the
   // save actions cannot persist it, so it must not dirty the tab either.
-  const spDirty = Boolean(selectedSellingPoint) && selectedSellingPoint !== savedSellingPoint;
   const pathaoDirty =
     Boolean(selectedIntegration) &&
     (selectedIntegration !== savedIntegration || selectedPathaoStore !== savedPathaoStore);
-  const dirty = spDirty || pathaoDirty;
+  const dirty = pathaoDirty;
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
   useEffect(() => {
     onDirtyChangeRef.current(dirty);
   }, [dirty]);
-
-  const saveSellingPoint = async () => {
-    if (!selectedSellingPoint || !sellingPoints.some((row) => row.id === selectedSellingPoint)) {
-      toast.error("Choose an active Selling Point first");
-      return;
-    }
-    setSavingSellingPoint(true);
-    const clearResult = await supabase
-      .from("selling_points")
-      .update({ is_default: false })
-      .eq("brand_id", brand.id);
-    if (clearResult.error) {
-      setSavingSellingPoint(false);
-      toast.error(clearResult.error.message || "Could not clear the previous Selling Point default");
-      return;
-    }
-    const setResult = await supabase
-      .from("selling_points")
-      .update({ is_default: true })
-      .eq("id", selectedSellingPoint)
-      .eq("brand_id", brand.id)
-      .eq("is_active", true);
-    setSavingSellingPoint(false);
-    if (setResult.error) {
-      toast.error(setResult.error.message || "Could not save the Selling Point default");
-      return;
-    }
-    setSellingPoints((current) => current.map((row) => ({ ...row, is_default: row.id === selectedSellingPoint })));
-    setSavedSellingPoint(selectedSellingPoint);
-    toast.success("Default Selling Point saved");
-  };
 
   const savePathaoDefault = async () => {
     if (!brand.woo_store_id) {
@@ -639,13 +581,8 @@ function BrandIdentityDefaults({
 
   return (
     <>
-      {/* Universal save: the sticky save bar commits the pending Selling
-          Point and Pathao Account defaults for this brand. */}
-      <SettingsSaveHandler
-        label="Save Selling Points"
-        disabled={savingSellingPoint || !spDirty || !selectedSellingPoint}
-        run={saveSellingPoint}
-      />
+      {/* Universal save: the sticky save bar commits the pending Pathao
+          Account default for this brand. */}
       <SettingsSaveHandler
         label="Save Pathao Accounts"
         disabled={savingPathao || !pathaoDirty || !selectedIntegration}
@@ -655,7 +592,7 @@ function BrandIdentityDefaults({
       <div>
         <h3 className="text-sm font-semibold">Order identity defaults</h3>
         <p className="text-xs text-muted-foreground">
-          Defaults used by Add Order and courier dispatch. Brand, Selling Point and Pathao Account remain separate choices.
+          Defaults used by Add Order and courier dispatch. The order's Brand and Order Source are chosen at order entry; the Pathao Account default below is what dispatch resolves against.
         </p>
       </div>
 
@@ -665,26 +602,6 @@ function BrandIdentityDefaults({
         </div>
       ) : (
         <>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Default Selling Point</Label>
-            {sellingPoints.length === 0 ? (
-              <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                No active Selling Points. Add one under Stores → Selling Points before creating orders.
-              </p>
-            ) : (
-              <div className="flex items-center gap-2">
-                <select
-                  className="flex h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
-                  value={selectedSellingPoint}
-                  onChange={(event) => setSelectedSellingPoint(event.target.value)}
-                >
-                  {sellingPoints.length > 1 && <option value="">Choose a Selling Point…</option>}
-                  {sellingPoints.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-                </select>
-              </div>
-            )}
-          </div>
-
           <div className="space-y-1.5">
             <Label className="text-xs">Default Pathao Account</Label>
             {!brand.woo_store_id ? (

@@ -34,12 +34,12 @@ import {
   identityChangeBlocked,
   identityChanged,
   legacyStoreIdFor,
-  resolveSellingPoint,
-  sellingPointsForBrand,
-  SELLING_POINT_CONFIGURE_HINT,
+  orderSourcesForBrand,
+  resolveOrderSource,
+  ORDER_SOURCE_CONFIGURE_HINT,
   type IdentityBrand,
+  type IdentityOrderSource,
   type IdentitySnapshot,
-  type IdentitySellingPoint,
 } from "@/lib/orderIdentity";
 import {
   pathaoAccountKey,
@@ -107,21 +107,19 @@ interface OrderDetail {
   fulfillment_type: string;
   woo_order_id: number | null;
   store_id: string | null;
-  selling_point_id: string | null;
+  order_source_id: string | null;
   pathao_integration_id: string | null;
   pathao_store_id: number | null;
-  selling_points: {
-    id: string;
-    name: string | null;
-    brand_id: string | null;
-    woo_store_id: string | null;
-    is_default: boolean | null;
-    brands: { id: string; name: string | null; woo_store_id: string | null } | null;
-  } | null;
   storefront_id?: string | null;
   stock_restored_at?: string | null;
   stores: { url: string | null; name?: string | null } | null;
-  order_source?: { name: string; type: string } | null;
+  order_source: {
+    id: string;
+    name: string;
+    type: string;
+    brand_id: string | null;
+    brands: { id: string; name: string | null; woo_store_id: string | null } | null;
+  } | null;
 }
 
 /** Stored identity of the order, snapshotted at load for change detection (issue #32). */
@@ -129,9 +127,8 @@ interface InitialIdentity {
   brandId: string | null;
   brandName: string | null;
   brandWooStoreId: string | null;
-  sellingPointId: string | null;
-  sellingPointName: string | null;
-  sellingPointWooStoreId: string | null;
+  orderSourceId: string | null;
+  orderSourceName: string | null;
 }
 
 interface LineItem {
@@ -263,15 +260,15 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [variationPickerProductId, setVariationPickerProductId] = useState<string | null>(null);
   const [addProductId, setAddProductId] = useState<string>("");
 
-  // Order identity (issue #32): editable Brand + Selling Point on Order Info,
+  // Order identity (issue #32): editable Brand + Order Source on Order Info,
   // resolved with the same rules as Add Order (issue #21). The default Pathao
   // Account derives from the selection (issue #22) and is never written back
   // over an existing courier booking.
-  const [identityPoints, setIdentityPoints] = useState<IdentitySellingPoint[]>([]);
+  const [identitySources, setIdentitySources] = useState<IdentityOrderSource[]>([]);
   const [pathaoAccounts, setPathaoAccounts] = useState<PathaoAccountOption[]>([]);
   const [pathaoLinks, setPathaoLinks] = useState<PathaoStoreLinkRow[]>([]);
   const [brandId, setBrandId] = useState("");
-  const [sellingPointId, setSellingPointId] = useState("");
+  const [orderSourceId, setOrderSourceId] = useState("");
   const [initialIdentity, setInitialIdentity] = useState<InitialIdentity | null>(null);
 
   // Exchange dialog
@@ -431,7 +428,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const orderRes = await scopeStoreIds(
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, pathao_integration_id, pathao_store_id, selling_points(id, name, brand_id, woo_store_id, is_default, brands(id, name, woo_store_id)), stores(url, name), order_source:order_sources(name, type)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, order_source_id, pathao_integration_id, pathao_store_id, stores(url, name), order_source:order_sources(id, name, type, brand_id, brands(id, name, woo_store_id))")
         .eq("id", orderId),
       businessStoreIds,
     ).single();
@@ -487,23 +484,22 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setPaymentMethod(o.payment_method || "");
 
       // Identity snapshot (issue #32): same derivation as the Orders page brand
-      // column — selling_points->brands first, legacy store binding as fallback.
-      const currentSp = o.selling_points ?? null;
+      // column — order_source->brands first, legacy store binding as fallback.
+      const currentSource = o.order_source ?? null;
       const derivedBrand: IdentityBrand | null =
-        (currentSp?.brands as IdentityBrand | null) ??
+        (currentSource?.brands as IdentityBrand | null) ??
         (deriveBrandForStore(brandsRef.current, o.store_id) as IdentityBrand | undefined) ??
         null;
       const initial: InitialIdentity = {
         brandId: derivedBrand?.id ?? null,
         brandName: derivedBrand?.name ?? null,
         brandWooStoreId: derivedBrand?.woo_store_id ?? null,
-        sellingPointId: currentSp?.id ?? null,
-        sellingPointName: currentSp?.name ?? null,
-        sellingPointWooStoreId: currentSp?.woo_store_id ?? null,
+        orderSourceId: currentSource?.id ?? null,
+        orderSourceName: currentSource?.name ?? null,
       };
       setInitialIdentity(initial);
       setBrandId(initial.brandId ?? "");
-      setSellingPointId(initial.sellingPointId ?? "");
+      setOrderSourceId(initial.orderSourceId ?? "");
 
       const shipments = (shipmentsRes.data as CourierShipmentEntry[]) || [];
       if (o.consignment_id && !shipments.some(s => s.consignment_id === o.consignment_id)) {
@@ -627,31 +623,31 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     return () => { mounted = false; };
   }, [open, editedItems, groupsByProduct]);
 
-  // Identity options (issue #32): active Selling Points of the active business
-  // plus the selectable Pathao Accounts and per-brand default links (issue #22).
+  // Identity options (issue #32): the business's Order Sources plus the
+  // selectable Pathao Accounts and per-brand default links (issue #22).
   // Errors degrade to empty lists so the sheet still renders.
+  const identityBrandIds = useMemo(() => brands.map((brand) => brand.id), [brands]);
   useEffect(() => {
     if (!open) return;
     let mounted = true;
     (async () => {
-      const [pointsRes, accountData] = await Promise.all([
-        active?.id
+      const [sourcesRes, accountData] = await Promise.all([
+        identityBrandIds.length > 0
           ? supabase
-              .from("selling_points")
-              .select("id, name, brand_id, woo_store_id, is_default, is_active")
-              .eq("business_id", active.id)
-              .eq("is_active", true)
+              .from("order_sources")
+              .select("id, name, brand_id, type")
+              .in("brand_id", identityBrandIds)
               .order("name")
-          : Promise.resolve({ data: [] as IdentitySellingPoint[] }),
+          : Promise.resolve({ data: [] as IdentityOrderSource[] }),
         fetchPathaoAccountData(),
       ]);
       if (!mounted) return;
-      setIdentityPoints(((pointsRes.data || []) as IdentitySellingPoint[]) || []);
+      setIdentitySources(((sourcesRes.data || []) as IdentityOrderSource[]) || []);
       setPathaoAccounts(accountData.accounts);
       setPathaoLinks(accountData.links);
     })();
     return () => { mounted = false; };
-  }, [open, active?.id]);
+  }, [open, identityBrandIds]);
 
   // Resolve preset measurements (e.g. S/M/L size charts) for items that have no
   // measurement rows yet, so they show up — and stay editable — in the sheet.
@@ -933,24 +929,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
   /* ---------- Order identity (issue #32) ---------- */
 
-  // The order's current Selling Point stays selectable even when it is no
-  // longer in the active list, so opening the sheet never silently swaps it.
-  const mergedPoints = useMemo<IdentitySellingPoint[]>(() => {
-    const current = order?.selling_points;
-    if (!current) return identityPoints;
-    if (identityPoints.some((point) => point.id === current.id)) return identityPoints;
+  // The order's current Order Source stays selectable even when it is no longer
+  // in the active list, so opening the sheet never silently swaps it.
+  const mergedSources = useMemo<IdentityOrderSource[]>(() => {
+    const current = order?.order_source;
+    if (!current) return identitySources;
+    if (identitySources.some((source) => source.id === current.id)) return identitySources;
     return [
-      ...identityPoints,
-      {
-        id: current.id,
-        name: current.name ?? "",
-        brand_id: current.brand_id,
-        woo_store_id: current.woo_store_id,
-        is_default: current.is_default,
-        is_active: true,
-      },
+      ...identitySources,
+      { id: current.id, name: current.name, brand_id: current.brand_id, type: current.type },
     ];
-  }, [identityPoints, order?.selling_points]);
+  }, [identitySources, order?.order_source]);
 
   // Brand choices: active brands plus the order's current brand (possibly
   // inactive or absent from context) so it displays instead of vanishing.
@@ -974,43 +963,42 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     return list;
   }, [brands, initialIdentity]);
 
-  const brandSellingPoints = useMemo(
-    () => sellingPointsForBrand(mergedPoints, brandId),
-    [mergedPoints, brandId],
+  const brandSources = useMemo(
+    () => orderSourcesForBrand(mergedSources, brandId),
+    [mergedSources, brandId],
   );
 
-  // Issue #21 resolution rules: the brand default is preselected-but-editable,
-  // a single option is auto-selected, and a brand change re-resolves from its
-  // own options (the previous Selling Point belongs to the old brand).
+  // Issue #21 resolution rules: a single source is auto-selected and a brand
+  // change re-resolves from its own options (the previous Order Source belongs
+  // to the old brand).
   useEffect(() => {
     if (!brandId) {
-      setSellingPointId("");
+      setOrderSourceId("");
       return;
     }
-    setSellingPointId((previous) => resolveSellingPoint(brandSellingPoints, previous).sellingPointId ?? "");
-  }, [brandId, brandSellingPoints]);
+    setOrderSourceId((previous) => resolveOrderSource(brandSources, previous).orderSourceId ?? "");
+  }, [brandId, brandSources]);
 
   const selectedBrand = brandChoices.find((brand) => brand.id === brandId) || null;
-  const selectedSellingPoint = brandSellingPoints.find((point) => point.id === sellingPointId) || null;
+  const selectedSource = brandSources.find((source) => source.id === orderSourceId) || null;
 
-  // Brand default Pathao Account (brand -> woo_store_id -> pathao_store_links),
-  // resolved through the Selling Point binding first when it has one (issue
-  // #22) — re-derived whenever the Brand or Selling Point changes.
+  // Brand default Pathao Account (brand -> woo_store_id -> pathao_store_links).
+  // Order Sources carry no Woo binding of their own (their legacy_woo_store_id
+  // is a stores.id), so the brand binding is the only honest key (issue #22).
   const defaultAccount = useMemo(
     () =>
       resolveDefaultAccount(pathaoAccounts, pathaoLinks, [
-        selectedSellingPoint?.woo_store_id,
         selectedBrand?.woo_store_id,
       ]),
-    [pathaoAccounts, pathaoLinks, selectedSellingPoint, selectedBrand],
+    [pathaoAccounts, pathaoLinks, selectedBrand],
   );
 
   const identityDirty =
     !!initialIdentity &&
-    identityChanged(initialIdentity, { brandId: brandId || null, sellingPointId: sellingPointId || null });
-  // Zero Selling Points (or multiple with no default and no pick) block the
-  // identity change with a configure hint — same rules as Add Order.
-  const identityResolution = resolveSellingPoint(brandSellingPoints, sellingPointId);
+    identityChanged(initialIdentity, { brandId: brandId || null, orderSourceId: orderSourceId || null });
+  // Zero Order Sources (or several with no pick) block the identity change with
+  // a configure hint — same rules as Add Order.
+  const identityResolution = resolveOrderSource(brandSources, orderSourceId);
   const identityBlocked =
     identityDirty &&
     brands.some((brand) => brand.is_active) &&
@@ -1046,16 +1034,16 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       const savePaymentStatus = gateLockedNow ? order.payment_status : paymentStatus;
 
       // Identity change (issue #32): written only when the operator actually
-      // changed Brand/Selling Point. store_id stays a legacy Woo store binding
-      // (the Selling Point's, else the Brand's) — NEVER a Selling Point UUID.
+      // changed Brand/Order Source. store_id stays a legacy Woo store binding
+      // (the Brand's) — NEVER an order source UUID.
       const identityIsChanging = identityChanged(
-        initialIdentity ?? { brandId: null, sellingPointId: null },
-        { brandId: brandId || null, sellingPointId: sellingPointId || null },
+        initialIdentity ?? { brandId: null, orderSourceId: null },
+        { brandId: brandId || null, orderSourceId: orderSourceId || null },
       );
       const identityPatch: Record<string, unknown> = {};
       if (identityIsChanging) {
-        identityPatch.selling_point_id = selectedSellingPoint?.id || null;
-        identityPatch.store_id = legacyStoreIdFor(selectedSellingPoint, selectedBrand, {
+        identityPatch.order_source_id = selectedSource?.id || null;
+        identityPatch.store_id = legacyStoreIdFor(selectedBrand, {
           previousStoreId: order.store_id,
           brandChanged: (initialIdentity?.brandId ?? null) !== (brandId || null),
         });
@@ -1259,11 +1247,10 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       }
 
       // Identity change (issue #32): timeline + audit entry covering Brand,
-      // Selling Point, and the re-resolved default Pathao Account — including
+      // Order Source, and the re-resolved default Pathao Account — including
       // whether an active consignment stays booked on another account.
       if (identityIsChanging) {
         const beforeAccount = resolveDefaultAccount(pathaoAccounts, pathaoLinks, [
-          initialIdentity?.sellingPointWooStoreId,
           initialIdentity?.brandWooStoreId,
         ]);
         const accountLabel = (account: PathaoAccountOption | undefined) =>
@@ -1271,16 +1258,16 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         const beforeSnap: IdentitySnapshot = {
           brandId: initialIdentity?.brandId ?? null,
           brandName: initialIdentity?.brandName ?? null,
-          sellingPointId: initialIdentity?.sellingPointId ?? null,
-          sellingPointName: initialIdentity?.sellingPointName ?? null,
+          orderSourceId: initialIdentity?.orderSourceId ?? null,
+          orderSourceName: initialIdentity?.orderSourceName ?? null,
           accountKey: beforeAccount?.key ?? null,
           accountLabel: accountLabel(beforeAccount),
         };
         const afterSnap: IdentitySnapshot = {
           brandId: brandId || null,
           brandName: selectedBrand?.name ?? null,
-          sellingPointId: selectedSellingPoint?.id ?? null,
-          sellingPointName: selectedSellingPoint?.name ?? null,
+          orderSourceId: selectedSource?.id ?? null,
+          orderSourceName: selectedSource?.name ?? null,
           accountKey: defaultAccount?.key ?? null,
           accountLabel: accountLabel(defaultAccount),
         };
@@ -1916,19 +1903,19 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Selling Point</Label>
+                      <Label className="text-xs text-muted-foreground">Order Source</Label>
                       <Select
-                        value={sellingPointId}
-                        onValueChange={setSellingPointId}
-                        disabled={!canEdit || !brandId || brandSellingPoints.length === 0}
+                        value={orderSourceId}
+                        onValueChange={setOrderSourceId}
+                        disabled={!canEdit || !brandId || brandSources.length === 0}
                       >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder={brandId ? "Choose Selling Point" : "—"} />
+                          <SelectValue placeholder={brandId ? "Choose Order Source" : "—"} />
                         </SelectTrigger>
                         <SelectContent>
-                          {brandSellingPoints.map((point) => (
-                            <SelectItem key={point.id} value={point.id}>
-                              {point.name}{point.is_default ? " · Default" : ""}
+                          {brandSources.map((source) => (
+                            <SelectItem key={source.id} value={source.id}>
+                              {source.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1943,16 +1930,16 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       </div>
                     </div>
                   </div>
-                  {brandId && brandSellingPoints.length === 0 && (
-                    <p className="text-[11px] text-destructive mt-2">{SELLING_POINT_CONFIGURE_HINT}</p>
+                  {brandId && brandSources.length === 0 && (
+                    <p className="text-[11px] text-destructive mt-2">{ORDER_SOURCE_CONFIGURE_HINT}</p>
                   )}
-                  {identityDirty && brandId && !identityResolution.sellingPointId && brandSellingPoints.length > 0 && (
-                    <p className="text-[11px] text-destructive mt-2">Choose a Selling Point to save this identity change.</p>
+                  {identityDirty && brandId && !identityResolution.orderSourceId && brandSources.length > 0 && (
+                    <p className="text-[11px] text-destructive mt-2">Choose an Order Source to save this identity change.</p>
                   )}
                   {identityDirty && (
                     <p className="text-[11px] text-muted-foreground mt-2">
                       Saved with <span className="font-medium">Save Changes</span>. Changing the Brand re-resolves
-                      the Selling Point and the default Pathao Account above.
+                      the Order Source and the default Pathao Account above.
                     </p>
                   )}
                   {identityDirty && consignmentConflict.conflicted && (

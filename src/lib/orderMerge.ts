@@ -62,7 +62,7 @@ export interface MergeOrder {
   payment_status?: "paid" | "partial" | "unpaid" | "online" | null;
   source?: string | null;
   store_id?: string | null;
-  selling_point_id?: string | null;
+  order_source_id?: string | null;
 }
 
 /**
@@ -249,7 +249,7 @@ export interface MergedOrder {
   customer_phone: string | null;
   source: string | null;
   store_id: string | null;
-  selling_point_id: string | null;
+  order_source_id: string | null;
   /** The shared source state (status) the merged order keeps. */
   state: string;
   items: MergedItem[];
@@ -369,7 +369,7 @@ export function mergeOrders(orders: MergeOrder[]): MergeOutcome {
       customer_phone: orders[0].customer_phone ?? null,
       source: orders[0].source ?? null,
       store_id: orders[0].store_id ?? null,
-      selling_point_id: orders[0].selling_point_id ?? null,
+      order_source_id: orders[0].order_source_id ?? null,
       state: orders[0].status,
       items,
       payments,

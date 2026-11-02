@@ -87,7 +87,6 @@ interface OrderRowLike {
   pickup_slip_printed_at?: string | null;
   measurement_slip_printed_at?: string | null;
   stores: { name: string } | null;
-  selling_points?: { name: string } | null;
   brand?: OrderBrandPresentation | null;
   order_source?: { name: string; type: string } | null;
   productItems: { name: string; qty: number }[];
@@ -187,7 +186,7 @@ function OrderTable<T extends OrderRowLike>({
               <TableCell>
                 <BrandPresentation
                   brand={order.brand}
-                  sellingPointName={order.selling_points?.name}
+                  sellingPointName={order.order_source?.name}
                   storeName={order.stores?.name || (order.source === "pos" ? "POS" : null)}
                 />
               </TableCell>

@@ -171,8 +171,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         brandName: null,
         brandLogoUrl: null,
         brandWooStoreId: null,
-        sellingPointName: null,
-        sellingPointWooStoreId: null,
+        orderSourceName: null,
         legacyStoreId: o.store_id ?? null,
       },
     [identityMap],
@@ -738,10 +737,10 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
                       />
                     }
                   />
-                  {/* Selling Point(s) covered by this group */}
+                  {/* Order Source(s) covered by this group */}
                   <IdentitySegment
-                    label="Selling Point"
-                    value={group.sellingPointNames.join(", ") || "—"}
+                    label="Order Source"
+                    value={group.orderSourceNames.join(", ") || "—"}
                     subValue={`${group.orderIds.length} order${group.orderIds.length === 1 ? "" : "s"}`}
                   />
                   {/* Pathao Account — account name + pickup store, click to change */}

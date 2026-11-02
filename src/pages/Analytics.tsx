@@ -79,17 +79,18 @@ const COLORS = [
 
 const Analytics = () => {
   const { symbol } = useCurrency();
-  const { active } = useBusinessContext();
+  const { active, brands } = useBusinessContext();
   const businessStores = useStoresList();
-  const [businessSellingPointIds, setBusinessSellingPointIds] = useState<string[]>([]);
+  const [businessOrderSourceIds, setBusinessOrderSourceIds] = useState<string[]>([]);
+  const brandIds = useMemo(() => brands.map((brand) => brand.id), [brands]);
   useEffect(() => {
-    if (!active?.id) { setBusinessSellingPointIds([]); return; }
+    if (!active?.id || brandIds.length === 0) { setBusinessOrderSourceIds([]); return; }
     let cancelled = false;
-    supabase.from("selling_points").select("id").eq("business_id", active.id).then(({ data }) => {
-      if (!cancelled) setBusinessSellingPointIds((data || []).map((row: { id: string }) => row.id));
+    supabase.from("order_sources").select("id").in("brand_id", brandIds).then(({ data }) => {
+      if (!cancelled) setBusinessOrderSourceIds((data || []).map((row: { id: string }) => row.id));
     });
     return () => { cancelled = true; };
-  }, [active?.id]);
+  }, [active?.id, brandIds]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [prevOrders, setPrevOrders] = useState<OrderRow[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([]);
@@ -105,9 +106,9 @@ const Analytics = () => {
 
   useEffect(() => {
     // Fail closed: no brand-store links (or no business context) means the
-    // business has no Selling Points to report on — never fall back to all
+    // business has no Order Sources to report on — never fall back to all
     // readable stores.
-    if (businessStoreIdSet.length === 0 && businessSellingPointIds.length === 0) {
+    if (businessStoreIdSet.length === 0 && businessOrderSourceIds.length === 0) {
       setOrders([]);
       setPrevOrders([]);
       setOrderItems([]);
@@ -133,12 +134,12 @@ const Analytics = () => {
       const { from: dateFrom, to: dateTo, days } = resolveRange(datePreset, customRange);
       const prevFrom = dateFrom && days ? subDays(dateFrom, days) : null;
 
-      const baseSelect = "id, total, subtotal, discount, shipping_cost, tax_amount, source, status, payment_status, created_at, customer_id, customer_name, customer_city, consignment_id, salesperson_name, store_id, selling_point_id";
-      const scope = businessStoreIds.length > 0 && businessSellingPointIds.length > 0
-        ? `store_id.in.(${businessStoreIds.join(",")}),selling_point_id.in.(${businessSellingPointIds.join(",")})`
+      const baseSelect = "id, total, subtotal, discount, shipping_cost, tax_amount, source, status, payment_status, created_at, customer_id, customer_name, customer_city, consignment_id, salesperson_name, store_id, order_source_id";
+      const scope = businessStoreIds.length > 0 && businessOrderSourceIds.length > 0
+        ? `store_id.in.(${businessStoreIds.join(",")}),order_source_id.in.(${businessOrderSourceIds.join(",")})`
         : businessStoreIds.length > 0
           ? `store_id.in.(${businessStoreIds.join(",")})`
-          : `selling_point_id.in.(${businessSellingPointIds.join(",")})`;
+          : `order_source_id.in.(${businessOrderSourceIds.join(",")})`;
 
       let ordersQuery = scopeStoreIds(supabase.from("orders").select(baseSelect).is("deleted_at", null).order("created_at", { ascending: false }), businessStoreIds);
       let prevQuery = scopeStoreIds(supabase.from("orders").select(baseSelect).is("deleted_at", null), businessStoreIds);

@@ -10,6 +10,8 @@ export interface BrandIdentityBrand {
   readonly id: string;
   readonly name: string;
   readonly woo_store_id: string | null;
+  /** Optional: only present when the caller selected it (dispatch identity cards). */
+  readonly logo_url?: string | null;
 }
 
 export interface BrandIdentityProduct {

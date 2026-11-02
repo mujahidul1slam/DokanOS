@@ -65,7 +65,7 @@ export function buildMergedOrderRow(
     // Sources are same-customer/same-state; retain identity from the first source row.
     source: merged.source,
     store_id: merged.store_id,
-    selling_point_id: merged.selling_point_id,
+    order_source_id: merged.order_source_id,
     subtotal: merged.totals.subtotal,
     discount: merged.totals.discount,
     shipping_cost: merged.totals.shipping_cost,

@@ -3,7 +3,8 @@
  *
  * Glossary terms (see GLOSSARY.md):
  * - Brand: commercial identity; owns a Woo store binding (`woo_store_id`).
- * - Selling point: the place/channel an order was taken at.
+ * - Order Source: the place/channel an order was taken at (the legacy
+ *   "selling point" concept, retired into `order_sources` by Task 16).
  * - Pathao account: the Pathao merchant account used to dispatch an order
  *   (courier credentials + pickup configuration). Avoid "Pathao store".
  *
@@ -168,8 +169,7 @@ export interface DispatchOrderIdentity {
   brandName: string | null;
   brandLogoUrl: string | null;
   brandWooStoreId: string | null;
-  sellingPointName: string | null;
-  sellingPointWooStoreId: string | null;
+  orderSourceName: string | null;
   /** Legacy `orders.store_id` binding (pre-Brand rows). */
   legacyStoreId: string | null;
 }
@@ -181,8 +181,8 @@ export interface DispatchBrandGroup {
   brandName: string;
   brandLogoUrl: string | null;
   orderIds: string[];
-  /** Distinct Selling Point names in first-seen order (display chips). */
-  sellingPointNames: string[];
+  /** Distinct Order Source names in first-seen order (display chips). */
+  orderSourceNames: string[];
   defaultAccountKey: string | null;
   defaultAccount: PathaoAccountOption | null;
 }
@@ -192,8 +192,9 @@ export function orderDefaultAccountKey(
   links: readonly PathaoStoreLinkRow[],
   accounts: readonly PathaoAccountOption[],
 ): string | null {
+  // Order sources carry no Woo store binding of their own (`legacy_woo_store_id`
+  // holds a provisioned `stores.id`), so the brand binding leads.
   const account = resolveDefaultAccount(accounts, links, [
-    order.sellingPointWooStoreId,
     order.brandWooStoreId,
     order.legacyStoreId,
   ]);
@@ -227,16 +228,16 @@ export function groupOrdersForDispatch(
         brandName: order.brandName?.trim() || "No Brand",
         brandLogoUrl: order.brandLogoUrl,
         orderIds: [],
-        sellingPointNames: [],
+        orderSourceNames: [],
         defaultAccountKey,
         defaultAccount,
       };
       groups.set(key, group);
     }
     group.orderIds.push(order.id);
-    const sellingPointName = order.sellingPointName?.trim();
-    if (sellingPointName && !group.sellingPointNames.includes(sellingPointName)) {
-      group.sellingPointNames.push(sellingPointName);
+    const orderSourceName = order.orderSourceName?.trim();
+    if (orderSourceName && !group.orderSourceNames.includes(orderSourceName)) {
+      group.orderSourceNames.push(orderSourceName);
     }
   }
 

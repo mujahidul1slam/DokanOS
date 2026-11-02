@@ -53,7 +53,7 @@ export const useActiveBusinessStoreIds = (): string[] => {
 
 /** The shape a store-id filter is applied to: any supabase-js filter builder. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type StoreScopedQuery = PostgrestFilterBuilder<any, any, any, any, any, any, any, any>;
+export type StoreScopedQuery = PostgrestFilterBuilder<any, any, any, any, any, any, any>;
 
 /**
  * Applies the tenant predicate to a query. Passing the empty scope is a caller

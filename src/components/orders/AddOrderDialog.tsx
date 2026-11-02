@@ -90,14 +90,14 @@ const normalizeBdPhone = (raw?: string | null) => {
 };
 
 // Issue #29 (warn-only duplicate detection): one recent order row as the
-// detector needs it. The brand identity comes from the Selling Point binding
+// detector needs it. The brand identity comes from the Order Source binding
 // first, falling back to the legacy store binding (see brandIdentity.ts).
 interface RecentOrderRow {
   id: string;
   order_number: string;
   created_at: string;
   customer_phone: string | null;
-  selling_point_id: string | null;
+  order_source_id: string | null;
   store_id: string | null;
   order_items: { product_id: string | null; product_name: string }[] | null;
 }
@@ -109,7 +109,7 @@ async function fetchRecentDuplicateOrders(
   const since = new Date(Date.now() - DUPLICATE_ORDER_WINDOW_MS).toISOString();
   const { data, error } = await supabase
     .from("orders")
-    .select("id, order_number, created_at, customer_phone, selling_point_id, store_id, order_items(product_id, product_name)")
+    .select("id, order_number, created_at, customer_phone, order_source_id, store_id, order_items(product_id, product_name)")
     .gte("created_at", since)
     .order("created_at", { ascending: false })
     .limit(500);
@@ -120,7 +120,6 @@ async function fetchRecentDuplicateOrders(
     customerPhone: row.customer_phone,
     brandId: resolveBrandId(row),
     storeId: row.store_id,
-    sellingPointId: row.selling_point_id,
     items: (row.order_items || []).map((item) => ({
       productId: item.product_id,
       productName: item.product_name,
@@ -155,16 +154,6 @@ interface SearchResult {
   variationLabel?: string;
   sku: string | null;
   price: number;
-}
-
-interface SellingPointRow {
-  id: string;
-  name: string;
-  type: string;
-  brand_id: string;
-  woo_store_id: string | null;
-  is_active: boolean;
-  is_default: boolean;
 }
 
 interface OrderItem {
@@ -267,12 +256,10 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const sourceTouchedRef = useRef(false);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [storeId, setStoreId] = useState<string>(localStorage.getItem("last_selected_store_id") || "");
-  const [sellingPoints, setSellingPoints] = useState<SellingPointRow[]>([]);
   const [selectedBrandId, setSelectedBrandId] = useState<string>(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("last_selected_order_brand_id") || "";
   });
-  const [selectedSellingPointId, setSelectedSellingPointId] = useState("");
   const [brandWarningDismissed, setBrandWarningDismissed] = useState(false);
   // Pathao Account identity (issue #22): selectable accounts + the per-brand
   // default links (brand -> woo_store_id -> pathao_store_links).
@@ -430,30 +417,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setOrderSourceId((prev) => (prev === next ? prev : next));
   }, [brandSources, fulfillment, orderSourceId]);
 
-  // Load active Selling Points for the active business. Selling Points are the
-  // canonical brand-owned identity; the legacy Woo store binding is kept only
-  // for order numbering/sync compatibility.
-  useEffect(() => {
-    if (!open || !active?.id) return;
-    let mounted = true;
-    supabase
-      .from("selling_points")
-      .select("id, name, type, brand_id, woo_store_id, is_active, is_default")
-      .eq("business_id", active.id)
-      .eq("is_active", true)
-      .order("name")
-      .then(({ data, error }) => {
-        if (!mounted) return;
-        if (error) {
-          toast.error(error.message || "Could not load Selling Points");
-          setSellingPoints([]);
-          return;
-        }
-        setSellingPoints((data || []) as SellingPointRow[]);
-      });
-    return () => { mounted = false; };
-  }, [open, active?.id]);
-
   // Pathao Account options + per-brand default links for the identity strip.
   useEffect(() => {
     if (!open) return;
@@ -494,27 +457,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     });
   }, [open, activeBrands]);
 
-  const brandSellingPoints = useMemo(
-    () => sellingPoints.filter((point) => point.brand_id === selectedBrandId && point.is_active),
-    [sellingPoints, selectedBrandId],
-  );
-
-  // Resolve the brand default, or the only available Selling Point. Multiple
-  // points with no default deliberately remain unresolved so the operator must
-  // choose rather than silently attributing the order.
-  useEffect(() => {
-    if (!selectedBrandId) {
-      setSelectedSellingPointId("");
-      return;
-    }
-    setSelectedSellingPointId((previous) => {
-      if (brandSellingPoints.some((point) => point.id === previous)) return previous;
-      const preferred = brandSellingPoints.find((point) => point.is_default) ||
-        (brandSellingPoints.length === 1 ? brandSellingPoints[0] : undefined);
-      return preferred?.id || "";
-    });
-  }, [selectedBrandId, brandSellingPoints]);
-
   const cartBrands = useMemo(() => {
     const resolved = items
       .map((item) => products.find((product) => product.id === item.productId))
@@ -528,15 +470,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     selectedBrandId && cartBrands.some((brand) => brand.id !== selectedBrandId),
   );
   const selectedBrand = activeBrands.find((brand) => brand.id === selectedBrandId) || null;
-  const selectedSellingPoint = brandSellingPoints.find((point) => point.id === selectedSellingPointId) || null;
-  // Brand default Pathao Account (brand -> woo_store_id -> pathao_store_links),
-  // resolved through the Selling Point binding first when it has one.
+  // Brand default Pathao Account (brand -> woo_store_id -> pathao_store_links).
+  // Order Sources carry no Woo binding of their own (their legacy_woo_store_id
+  // is a stores.id), so the brand binding is the only honest fallback.
   const defaultAccount = useMemo(
     () => resolveDefaultAccount(pathaoAccounts, pathaoLinks, [
-      selectedSellingPoint?.woo_store_id,
       selectedBrand?.woo_store_id,
     ]),
-    [pathaoAccounts, pathaoLinks, selectedSellingPoint, selectedBrand],
+    [pathaoAccounts, pathaoLinks, selectedBrand],
   );
   const selectedAccount = pathaoAccounts.find((account) => account.key === selectedAccountKey) || null;
   const accountOverridden = isAccountOverride(selectedAccountKey, defaultAccount?.key);
@@ -546,7 +487,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   useEffect(() => {
     setSelectedAccountKey(defaultAccount?.key ?? "");
     setAccountWarningDismissed(false);
-  }, [defaultAccount?.key, selectedBrandId, selectedSellingPointId, open]);
+  }, [defaultAccount?.key, selectedBrandId, orderSourceId, open]);
 
   // Per-brand item chips shown inside the strip for mixed-brand orders.
   const mixedBrandChips = useMemo<MixedBrandChip[]>(() => {
@@ -571,7 +512,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     return Array.from(chipMap.values());
   }, [items, products, activeBrands]);
   const identityBlocked = activeBrands.length > 0 && (
-    !selectedBrandId || !selectedSellingPoint || brandSellingPoints.length === 0
+    !selectedBrandId || !selectedSourceRow
   );
 
   useEffect(() => {
@@ -588,12 +529,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     }
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      const sellingPointBrand = new Map(sellingPoints.map((point) => [point.id, point.brand_id]));
+      const sourceBrand = new Map(orderSources.map((source) => [source.id, source.brand_id]));
       const resolveBrandId = (row: RecentOrderRow): string | null => {
-        const viaSellingPoint = row.selling_point_id
-          ? sellingPointBrand.get(row.selling_point_id)
+        const viaSource = row.order_source_id
+          ? sourceBrand.get(row.order_source_id)
           : undefined;
-        return viaSellingPoint ?? deriveBrandForStore(activeBrands, row.store_id)?.id ?? null;
+        return viaSource ?? deriveBrandForStore(activeBrands, row.store_id)?.id ?? null;
       };
       const candidate: DuplicateOrderCandidate = {
         // Draft order numbers cannot collide with saved orders (the detector
@@ -603,7 +544,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
         customerPhone,
         brandId: selectedBrandId,
         storeId,
-        sellingPointId: selectedSellingPoint?.id ?? null,
         items: items.map((item) => ({
           productId: item.isCustomItem || !item.productId ? null : item.productId,
           productName: formatOrderItemProductName(item.name, item.variationLabel),
@@ -618,7 +558,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, items, customerPhone, selectedBrandId, selectedSellingPoint, sellingPoints, activeBrands, storeId]);
+  }, [open, items, customerPhone, selectedBrandId, activeBrands, orderSources, storeId]);
 
   // Re-show a dismissed banner only when the match set actually changes.
   const duplicateBannerKey = useMemo(() => {
@@ -1039,7 +979,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const resetForm = () => {
     setItems([]); setCustomerName(""); setCustomerPhone(""); setCustomerAddress("");
     setSelectedBrandId(activeBrands.length === 1 ? activeBrands[0].id : "");
-    setSelectedSellingPointId("");
     setBrandWarningDismissed(false);
     setAccountWarningDismissed(false);
     setFulfillment("delivery");
@@ -1214,12 +1153,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       toast.error("Choose a Brand before creating the order");
       return false;
     }
-    if (activeBrands.length > 0 && brandSellingPoints.length === 0) {
-      toast.error("Configure a Selling Point for this Brand in Stores");
+    if (activeBrands.length > 0 && brandSources.length === 0) {
+      toast.error("Configure an Order Source for this Brand in Brands → Order Sources");
       return false;
     }
-    if (activeBrands.length > 0 && !selectedSellingPoint) {
-      toast.error("Choose a Selling Point before creating the order");
+    if (activeBrands.length > 0 && !selectedSourceRow) {
+      toast.error("Choose an Order Source before creating the order");
       return false;
     }
     return true;
@@ -1308,8 +1247,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           }
         }
 
-        const legacyStoreId = selectedSellingPoint?.woo_store_id ||
-          activeBrands.find((brand) => brand.id === selectedBrandId)?.woo_store_id ||
+        // Order Sources carry no Woo binding (their legacy_woo_store_id is a
+        // stores.id), so order numbering falls back to the brand binding first.
+        const legacyStoreId = activeBrands.find((brand) => brand.id === selectedBrandId)?.woo_store_id ||
           storeId || null;
         const { data: genNum } = await supabase.rpc("generate_pos_order_number" as any, { p_store_id: legacyStoreId, p_source: "manual" });
         const orderNumber = (genNum as string) || `ORD-${Date.now().toString(36).toUpperCase()}`;
@@ -1329,7 +1269,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           customer_phone: normalizedCustomerPhone,
           customer_address: customerAddress || null,
           customer_city: cityName || null,
-          selling_point_id: selectedSellingPoint?.id || null,
           store_id: legacyStoreId,
           subtotal,
           discount,
@@ -1585,7 +1524,6 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                         type="button"
                         onClick={() => {
                           setSelectedBrandId(brand.id);
-                          setSelectedSellingPointId("");
                           setBrandWarningDismissed(false);
                           if (activeBrands.length === 1) localStorage.setItem("last_selected_order_brand_id", brand.id);
                         }}
@@ -1598,41 +1536,40 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                     ))}
                   </PopoverContent>
                 </Popover>
-                {/* Selling Point — click to change (a disabled segment must not
-                    open its popover, so it renders outside one) */}
-                {!selectedBrandId || brandSellingPoints.length === 0 ? (
+                {/* Order Source — the brand-owned identity every order is attributed
+                    to. A disabled segment must not open its popover, so it
+                    renders outside one. */}
+                {!selectedBrandId || brandSources.length === 0 ? (
                   <IdentitySegment
-                    label="Selling Point"
+                    label="Order Source"
                     value={
-                      selectedSellingPoint?.name ??
-                      (brandSellingPoints.length === 0 ? "Configure in Stores" : "Choose Selling Point")
+                      selectedSourceRow?.name ??
+                      (brandSources.length === 0 ? "Configure in Brands" : "Choose Order Source")
                     }
-                    subValue={selectedSellingPoint?.is_default ? "Default Selling Point" : undefined}
                     disabled
                   />
                 ) : (
                 <Popover>
                   <PopoverTrigger asChild>
                     <IdentitySegment
-                      label="Selling Point"
-                      value={
-                        selectedSellingPoint?.name ??
-                        (brandSellingPoints.length === 0 ? "Configure in Stores" : "Choose Selling Point")
-                      }
-                      subValue={selectedSellingPoint?.is_default ? "Default Selling Point" : undefined}
+                      label="Order Source"
+                      value={selectedSourceRow?.name ?? "Choose Order Source"}
                       onClick={() => {}}
                     />
                   </PopoverTrigger>
                   <PopoverContent align="start" side="top" className="w-[280px] p-1">
-                    {brandSellingPoints.map((point) => (
+                    {brandSources.map((source) => (
                       <button
-                        key={point.id}
+                        key={source.id}
                         type="button"
-                        onClick={() => setSelectedSellingPointId(point.id)}
+                        onClick={() => {
+                          sourceTouchedRef.current = true;
+                          setOrderSourceId(source.id);
+                        }}
                         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent"
                       >
-                        <span className="flex-1 truncate">{point.name}{point.is_default ? " · Default" : ""}</span>
-                        {point.id === selectedSellingPointId && <Check className="h-3.5 w-3.5" />}
+                        <span className="flex-1 truncate">{source.name}</span>
+                        {source.id === orderSourceId && <Check className="h-3.5 w-3.5" />}
                       </button>
                     ))}
                   </PopoverContent>
@@ -1712,8 +1649,8 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 </Popover>
                 )}
               </div>
-              {brandSellingPoints.length === 0 && selectedBrandId && (
-                <p className="text-[11px] text-destructive">No active Selling Point is configured for this Brand. Add one in Stores.</p>
+              {brandSources.length === 0 && selectedBrandId && (
+                <p className="text-[11px] text-destructive">No Order Source is configured for this Brand. Add one in Brands → Order Sources.</p>
               )}
               {/* Mixed-brand orders: per-brand item chips + warning inside the strip */}
               {cartHasMixedBrands && <MixedBrandItemChips chips={mixedBrandChips} />}
@@ -2189,7 +2126,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                   value={storeId}
                   onValueChange={(v) => { setStoreId(v); localStorage.setItem("last_selected_store_id", v); }}
                 >
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Use Selling Point binding" /></SelectTrigger>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Use Brand Woo store" /></SelectTrigger>
                   <SelectContent>
                     {stores.map((store) => <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>)}
                   </SelectContent>

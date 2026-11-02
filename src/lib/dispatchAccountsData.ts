@@ -55,19 +55,17 @@ export async function fetchPathaoAccountData(): Promise<PathaoAccountData> {
 interface OrderIdentityRow {
   id: string;
   store_id: string | null;
-  selling_point_id: string | null;
-  selling_points: {
+  order_source_id: string | null;
+  order_sources: {
     id: string;
     name: string | null;
     brand_id: string | null;
-    woo_store_id: string | null;
-    brands: { id: string; name: string | null; logo_url: string | null; woo_store_id: string | null } | null;
   } | null;
 }
 
 /**
- * Resolve per-order Brand/Selling Point identity for a dispatch batch.
- * The Selling Point's Brand binding wins; rows without one fall back to the
+ * Resolve per-order Brand/Order Source identity for a dispatch batch.
+ * The Order Source's Brand binding wins; rows without one fall back to the
  * legacy `store_id` binding through `deriveBrandForStore`.
  */
 export async function fetchDispatchOrderIdentity(
@@ -77,9 +75,7 @@ export async function fetchDispatchOrderIdentity(
   if (orderIds.length === 0) return [];
   const { data, error } = await supabase
     .from("orders")
-    .select(
-      "id, store_id, selling_point_id, selling_points(id, name, brand_id, woo_store_id, brands(id, name, logo_url, woo_store_id))",
-    )
+    .select("id, store_id, order_source_id, order_sources(id, name, brand_id)")
     .in("id", [...orderIds]);
   if (error) {
     console.warn("fetchDispatchOrderIdentity failed:", error.message);
@@ -87,16 +83,18 @@ export async function fetchDispatchOrderIdentity(
   }
 
   return ((data || []) as unknown as OrderIdentityRow[]).map((row) => {
-    const brandRow = row.selling_points?.brands;
-    const fallbackBrand = brandRow ? undefined : deriveBrandForStore(brands, row.store_id);
+    const source = row.order_sources;
+    const sourceBrand = source?.brand_id
+      ? brands.find((brand) => brand.id === source.brand_id)
+      : undefined;
+    const fallbackBrand = sourceBrand ? undefined : deriveBrandForStore(brands, row.store_id);
     return {
       id: row.id,
-      brandId: brandRow?.id ?? fallbackBrand?.id ?? null,
-      brandName: brandRow?.name ?? fallbackBrand?.name ?? null,
-      brandLogoUrl: brandRow?.logo_url ?? null,
-      brandWooStoreId: brandRow?.woo_store_id ?? fallbackBrand?.woo_store_id ?? null,
-      sellingPointName: row.selling_points?.name ?? null,
-      sellingPointWooStoreId: row.selling_points?.woo_store_id ?? null,
+      brandId: sourceBrand?.id ?? fallbackBrand?.id ?? null,
+      brandName: sourceBrand?.name ?? fallbackBrand?.name ?? null,
+      brandLogoUrl: sourceBrand?.logo_url ?? null,
+      brandWooStoreId: sourceBrand?.woo_store_id ?? fallbackBrand?.woo_store_id ?? null,
+      orderSourceName: source?.name ?? null,
       legacyStoreId: row.store_id,
     };
   });

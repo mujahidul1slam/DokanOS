@@ -6,109 +6,85 @@ import {
   identityChangeBlocked,
   identityChanged,
   legacyStoreIdFor,
-  resolveSellingPoint,
-  sellingPointsForBrand,
-  type IdentitySellingPoint,
+  orderSourcesForBrand,
+  resolveOrderSource,
+  type IdentityOrderSource,
 } from "@/lib/orderIdentity";
 
-const point = (
+const source = (
   id: string,
-  over: Partial<IdentitySellingPoint> = {},
-): IdentitySellingPoint => ({
+  over: Partial<IdentityOrderSource> = {},
+): IdentityOrderSource => ({
   id,
   name: id,
   brand_id: "brand-a",
-  woo_store_id: null,
-  is_default: false,
-  is_active: true,
+  type: "showroom",
   ...over,
 });
 
 describe("orderIdentity", () => {
-  describe("sellingPointsForBrand", () => {
-    it("keeps only the brand's active selling points", () => {
-      const points = [
-        point("sp-1"),
-        point("sp-2", { brand_id: "brand-b" }),
-        point("sp-3", { is_active: false }),
+  describe("orderSourcesForBrand", () => {
+    it("keeps only the brand's order sources", () => {
+      const sources = [
+        source("src-1"),
+        source("src-2", { brand_id: "brand-b" }),
+        source("src-3", { type: "facebook" }),
       ];
-      expect(sellingPointsForBrand(points, "brand-a").map((p) => p.id)).toEqual(["sp-1"]);
+      expect(orderSourcesForBrand(sources, "brand-a").map((s) => s.id)).toEqual(["src-1", "src-3"]);
     });
 
     it("returns empty for a missing brand", () => {
-      expect(sellingPointsForBrand([point("sp-1")], null)).toEqual([]);
-      expect(sellingPointsForBrand([point("sp-1")], "")).toEqual([]);
+      expect(orderSourcesForBrand([source("src-1")], null)).toEqual([]);
+      expect(orderSourcesForBrand([source("src-1")], "")).toEqual([]);
     });
   });
 
-  describe("resolveSellingPoint (issue #21 rules)", () => {
+  describe("resolveOrderSource (issue #21 rules)", () => {
     it("keeps the previous selection when it is still an option (editable)", () => {
-      const points = [point("sp-1", { is_default: true }), point("sp-2")];
-      expect(resolveSellingPoint(points, "sp-2")).toEqual({ sellingPointId: "sp-2", reason: "kept" });
-    });
-
-    it("preselects the brand default when there is no previous selection", () => {
-      const points = [point("sp-1"), point("sp-2", { is_default: true })];
-      expect(resolveSellingPoint(points, "")).toEqual({ sellingPointId: "sp-2", reason: "default" });
+      const sources = [source("src-1"), source("src-2")];
+      expect(resolveOrderSource(sources, "src-2")).toEqual({ orderSourceId: "src-2", reason: "kept" });
     });
 
     it("auto-selects the single option", () => {
-      expect(resolveSellingPoint([point("sp-only")], null)).toEqual({
-        sellingPointId: "sp-only",
+      expect(resolveOrderSource([source("src-only")], null)).toEqual({
+        orderSourceId: "src-only",
         reason: "only",
       });
     });
 
-    it("stays unresolved with multiple options and no default", () => {
-      const points = [point("sp-1"), point("sp-2")];
-      expect(resolveSellingPoint(points, null)).toEqual({ sellingPointId: null, reason: "none" });
+    it("stays unresolved with multiple options and no previous choice", () => {
+      const sources = [source("src-1"), source("src-2")];
+      expect(resolveOrderSource(sources, null)).toEqual({ orderSourceId: null, reason: "none" });
     });
 
     it("stays unresolved with zero options (blocked)", () => {
-      expect(resolveSellingPoint([], "sp-gone")).toEqual({ sellingPointId: null, reason: "none" });
+      expect(resolveOrderSource([], "src-gone")).toEqual({ orderSourceId: null, reason: "none" });
     });
 
     it("ignores a previous id that is no longer among the options", () => {
-      const points = [point("sp-1", { is_default: true })];
-      expect(resolveSellingPoint(points, "sp-old")).toEqual({ sellingPointId: "sp-1", reason: "default" });
+      expect(resolveOrderSource([source("src-1")], "src-old")).toEqual({
+        orderSourceId: "src-1",
+        reason: "only",
+      });
     });
   });
 
-  describe("legacyStoreIdFor (Woo store binding only — never a Selling Point UUID)", () => {
-    it("prefers the Selling Point's woo binding", () => {
-      expect(
-        legacyStoreIdFor(
-          point("sp-uuid", { woo_store_id: "store-sp" }),
-          { woo_store_id: "store-brand" },
-        ),
-      ).toBe("store-sp");
-    });
-
-    it("falls back to the brand's woo binding", () => {
-      expect(
-        legacyStoreIdFor(
-          point("sp-uuid", { woo_store_id: null }),
-          { woo_store_id: "store-brand" },
-        ),
-      ).toBe("store-brand");
-    });
-
-    it("never writes a Selling Point UUID when no binding exists", () => {
-      expect(
-        legacyStoreIdFor(point("sp-uuid", { woo_store_id: null }), null, {
-          previousStoreId: null,
-          brandChanged: true,
-        }),
-      ).toBeNull();
+  describe("legacyStoreIdFor (Woo store binding only — never an order source UUID)", () => {
+    it("prefers the brand's woo binding", () => {
+      expect(legacyStoreIdFor({ woo_store_id: "store-brand" })).toBe("store-brand");
     });
 
     it("keeps the previous legacy binding only when the brand is unchanged", () => {
-      const sp = point("sp-uuid", { woo_store_id: null });
       const brand = { id: "b", name: "B", woo_store_id: null };
-      expect(legacyStoreIdFor(sp, brand, { previousStoreId: "store-legacy", brandChanged: false })).toBe(
+      expect(legacyStoreIdFor(brand, { previousStoreId: "store-legacy", brandChanged: false })).toBe(
         "store-legacy",
       );
-      expect(legacyStoreIdFor(sp, brand, { previousStoreId: "store-legacy", brandChanged: true })).toBeNull();
+      expect(legacyStoreIdFor(brand, { previousStoreId: "store-legacy", brandChanged: true })).toBeNull();
+    });
+
+    it("never writes an order source UUID when no binding exists", () => {
+      expect(legacyStoreIdFor(null, { previousStoreId: null, brandChanged: true })).toBeNull();
+      expect(legacyStoreIdFor(undefined)).toBeNull();
     });
   });
 
@@ -153,49 +129,49 @@ describe("orderIdentity", () => {
   });
 
   describe("identityChanged / identityChangeBlocked", () => {
-    it("detects brand or selling point moves and ignores empty-string noise", () => {
-      const before = { brandId: "b1", sellingPointId: "sp1" };
-      expect(identityChanged(before, { brandId: "b1", sellingPointId: "sp1" })).toBe(false);
-      expect(identityChanged(before, { brandId: "b2", sellingPointId: "sp1" })).toBe(true);
-      expect(identityChanged(before, { brandId: "b1", sellingPointId: "sp2" })).toBe(true);
+    it("detects brand or order source moves and ignores empty-string noise", () => {
+      const before = { brandId: "b1", orderSourceId: "src1" };
+      expect(identityChanged(before, { brandId: "b1", orderSourceId: "src1" })).toBe(false);
+      expect(identityChanged(before, { brandId: "b2", orderSourceId: "src1" })).toBe(true);
+      expect(identityChanged(before, { brandId: "b1", orderSourceId: "src2" })).toBe(true);
       expect(
-        identityChanged({ brandId: null, sellingPointId: null }, { brandId: "", sellingPointId: "" }),
+        identityChanged({ brandId: null, orderSourceId: null }, { brandId: "", orderSourceId: "" }),
       ).toBe(false);
     });
 
-    it("blocks only when a brand is selected and no selling point resolves", () => {
-      expect(identityChangeBlocked("b1", { sellingPointId: null, reason: "none" })).toBe(true);
-      expect(identityChangeBlocked("b1", { sellingPointId: "sp1", reason: "default" })).toBe(false);
-      expect(identityChangeBlocked(null, { sellingPointId: null, reason: "none" })).toBe(false);
+    it("blocks only when a brand is selected and no order source resolves", () => {
+      expect(identityChangeBlocked("b1", { orderSourceId: null, reason: "none" })).toBe(true);
+      expect(identityChangeBlocked("b1", { orderSourceId: "src1", reason: "only" })).toBe(false);
+      expect(identityChangeBlocked(null, { orderSourceId: null, reason: "none" })).toBe(false);
     });
   });
 
   describe("describeIdentityChange", () => {
-    it("describes brand + selling point + re-resolved account changes for timeline and audit", () => {
+    it("describes brand + order source + re-resolved account changes for timeline and audit", () => {
       const result = describeIdentityChange(
         {
           brandId: "b1",
           brandName: "Acme",
-          sellingPointId: "sp1",
-          sellingPointName: "Showroom",
+          orderSourceId: "src1",
+          orderSourceName: "Showroom",
           accountKey: "int-1:11",
           accountLabel: "Pathao Main · Mirpur Hub",
         },
         {
           brandId: "b2",
           brandName: "Bolt",
-          sellingPointId: "sp2",
-          sellingPointName: "Facebook",
+          orderSourceId: "src2",
+          orderSourceName: "Facebook",
           accountKey: "int-2:33",
           accountLabel: "Pathao Outlet · Chattogram Hub",
         },
       );
       expect(result.description).toContain('Brand: "Acme" → "Bolt"');
-      expect(result.description).toContain('Selling Point: "Showroom" → "Facebook"');
+      expect(result.description).toContain('Order Source: "Showroom" → "Facebook"');
       expect(result.description).toContain("default Pathao Account");
       expect(result.changes).toHaveLength(3);
       expect(result.metadata.brand).toMatchObject({ from: "b1", to: "b2" });
-      expect(result.metadata.selling_point).toMatchObject({ from: "sp1", to: "sp2" });
+      expect(result.metadata.order_source).toMatchObject({ from: "src1", to: "src2" });
       expect(result.metadata.pathao_account).toMatchObject({ from: "int-1:11", to: "int-2:33" });
     });
 
@@ -203,13 +179,13 @@ describe("orderIdentity", () => {
       const snapshot = {
         brandId: "b1",
         brandName: "Acme",
-        sellingPointId: "sp1",
-        sellingPointName: "Showroom",
+        orderSourceId: "src1",
+        orderSourceName: "Showroom",
         accountKey: "int-1:11",
         accountLabel: "Pathao Main · Mirpur Hub",
       };
-      const result = describeIdentityChange(snapshot, { ...snapshot, sellingPointId: "sp2", sellingPointName: "Facebook" });
-      expect(result.changes).toEqual(['Selling Point: "Showroom" → "Facebook"']);
+      const result = describeIdentityChange(snapshot, { ...snapshot, orderSourceId: "src2", orderSourceName: "Facebook" });
+      expect(result.changes).toEqual(['Order Source: "Showroom" → "Facebook"']);
     });
   });
 });

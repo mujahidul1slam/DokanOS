@@ -115,7 +115,7 @@ export default function SplitOrderDialog({ orderId, open, onOpenChange, onSplitD
         supabase
           .from("orders")
           .select(
-            "id, order_number, status, payment_status, payment_method, store_id, selling_point_id, location_id, customer_id, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, subtotal, discount, shipping_cost, tax_amount, total",
+            "id, order_number, status, payment_status, payment_method, store_id, order_source_id, customer_id, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, subtotal, discount, shipping_cost, tax_amount, total",
           )
           .eq("id", orderId)
           .single(),
