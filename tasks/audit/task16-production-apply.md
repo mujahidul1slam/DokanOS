@@ -119,7 +119,9 @@ SELECT public.is_signup_open();                                                 
 
 ## 5. Follow-ups recorded (not blockers)
 
-- Key-model migration (`orders.source`/`customers.source` → structured attribution) remains a
-  separate documented follow-up; the pool tag survives until then.
+- Key-model migration (`orders.source`/`customers.source` → structured attribution): **EXECUTED
+  2026-11-02** as `20261103140000_key_model_attribution.sql` — `business_id` backfilled for every
+  order/customer, derivation triggers added, RLS rewritten to plain `business_id` tenancy, pool
+  membership made structural. The tag survives as data only. Production apply is user-gated.
 - `tasks/wiki/transitional-store-model.md` records that all `legacy_*` mapping columns survive as
   the historical sync record.

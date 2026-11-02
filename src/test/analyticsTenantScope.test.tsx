@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
@@ -205,9 +205,14 @@ describe("Analytics reads are scoped to the active business's stores", () => {
           (c.args[1] as { head?: boolean }).head === true,
       ),
     ).toBe(true);
+    // The pool read is structurally scoped: every attribution binding NULL
+    // (the tag is data, not a predicate, under the key model).
+    expect(
+      poolRead.calls.some((c) => c.method === "is" && c.args[0] === "store_id" && c.args[1] === null),
+    ).toBe(true);
     expect(
       poolRead.calls.some(
-        (c) => c.method === "eq" && c.args[0] === "source" && c.args[1] === "legacy migration",
+        (c) => c.method === "is" && c.args[0] === "order_source_id" && c.args[1] === null,
       ),
     ).toBe(true);
 

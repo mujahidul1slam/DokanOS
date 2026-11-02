@@ -46,10 +46,11 @@ interface ReassignRequest {
 
 /**
  * Task 15 — the business-level "Legacy / unattributed" pool (spec §7): orders
- * and customers the cutover migration tagged `legacy migration` and left
- * unattributed. Staff drains the pool by reassigning rows to a brand; the
- * provenance stays `legacy`. Renders empty (not broken) both before the
- * cutover migration and after the pool is drained.
+ * and customers left unattributed by the cutover — under the key model
+ * (migration 20261103140000) the pool is structural: every attribution
+ * binding is NULL. Staff drains the pool by reassigning rows to a brand; the
+ * `legacy migration` provenance tag survives as data. Renders empty (not
+ * broken) both before the cutover migration and after the pool is drained.
  */
 export default function LegacyPool() {
   const { active, brands, myRole, contextReady } = useBusinessContext();
@@ -231,9 +232,9 @@ export default function LegacyPool() {
           <CardContent className="py-12 text-center">
             <p className="text-lg font-medium">The legacy pool is empty</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Nothing is waiting for attribution. Rows tagged{" "}
-              <code>legacy migration</code> by the cutover migration appear
-              here until they are reassigned to a brand.
+              Nothing is waiting for attribution. Unattributed rows — every
+              order-source and store binding empty — appear here until they
+              are reassigned to a brand.
             </p>
           </CardContent>
         </Card>

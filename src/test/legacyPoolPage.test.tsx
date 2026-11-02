@@ -230,7 +230,8 @@ describe("LegacyPool page", () => {
       store_id: "store-1",
     });
 
-    // The pool guard rides on the UPDATE: id + tag + all four binding NULLs.
+    // The pool guard rides on the UPDATE: id + the three binding NULLs
+    // (structural pool membership under the key model).
     const guardCalls = (updateQuery?.calls ?? []).map((call) => [
       call.method,
       call.args[0],
@@ -239,7 +240,6 @@ describe("LegacyPool page", () => {
     expect(guardCalls).toEqual(
       expect.arrayContaining([
         ["eq", "id", "order-1"],
-        ["eq", "source", "legacy migration"],
         ["is", "store_id", null],
         ["is", "storefront_id", null],
         ["is", "order_source_id", null],

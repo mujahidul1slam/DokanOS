@@ -491,8 +491,9 @@ sign-off on the live audit report.**
   (3) fulfillment defaults are accepted and remain editable in the Task 7 UI
   (`tasks/audit/task8-dry-run-report.md` §"Review items").
 - Legacy `orders.source`/`customers.source` free-text is consumed read-only — **and stays in the
-  schema**: the Safe-contract scope kept both columns (the key-model migration is a separate
-  documented follow-up), so the pool tag survives in place.
+  schema**: the Safe-contract scope kept both columns. The **key-model migration
+  (`20261103140000`, 2026-11-02)** retired them as load-bearing: `business_id` is backfilled for
+  every row and kept correct by derivation triggers, so the pool tag survives as data only.
 
 ## Appendix — cross-check notes (runbook ↔ scripts ↔ audit docs)
 

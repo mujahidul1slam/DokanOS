@@ -1,20 +1,23 @@
--- Task 15: the Legacy / unattributed pool (spec §7). Pool rows are the ones
--- scripts/migrate-enveil-vincent.sql step 10 (lines 361-374) tags:
---   orders    source='legacy migration' + the three surviving binding columns
---             NULL (Task 16 dropped selling_point_id; storefront_id remains a
---             pool predicate)
---   customers source='legacy migration' + origin_kind='legacy' + the two
---             binding columns NULL
--- They carry NO business/brand binding, so their RLS leg is membership in the
--- server-side ACTIVE business context (documented trade-off in
--- 20261102120000_legacy_pool_rls.sql: unowned rows are shared by whichever
--- business a member has active; post-migration there is one tenant/one pool).
--- Task 16 adds the account leg: a stamped pool row (business_id set) is
--- visible only to its own business; unstamped rows stay shared.
--- Once reassigned they are tenanted again through the brand's order source
--- (the binding the migration's own inference writes) — and cross-business
--- denial then holds. Spec §5 ladder (post-Task-12 values): all members read;
--- owner/admin/manager reassign; staff read-only. Fixture ids per _harness.md.
+-- Task 15: the Legacy / unattributed pool (spec §7), under the key model
+-- (migration 20261103140000). Pool membership is STRUCTURAL: every attribution
+-- binding is NULL —
+--   orders    store_id, storefront_id, order_source_id all NULL
+--   customers store_id, origin_order_source_id both NULL
+-- (the fixtures still carry the `legacy migration` / origin_kind='legacy'
+-- tags the cutover wrote; the tag survives as data and provenance only).
+-- Tenancy is business_id: the unified read shows a business its own rows plus
+-- the shared unstamped pool (business_id NULL — documented trade-off in
+-- 20261102120000_legacy_pool_rls.sql and kept by the key model's INSERT
+-- policies, which are fail-closed so members cannot create new shared rows).
+-- Task 16 added the account leg: a stamped pool row (business_id set) is
+-- visible only to its own business; unstamped rows stay shared. The
+-- derivation trigger stamps business_id on reassignment, so a reassigned row
+-- is tenanted again through the brand's order source (the binding the
+-- migration's own inference writes) — and cross-business denial then holds
+-- (a foreign binding re-derives business_id to the foreign business, which
+-- the WITH CHECK rejects). Spec §5 ladder (post-Task-12 values): all members
+-- read; owner/admin/manager reassign; staff read-only. Fixture ids per
+-- _harness.md.
 
 BEGIN;
 

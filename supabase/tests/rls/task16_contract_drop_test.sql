@@ -3,7 +3,9 @@
 -- Pins the post-drop contract end to end:
 --   Part 1 (static): the seven legacy tables are gone; the five dead binding
 --     columns are gone; orders/customers carry the new business_id account
---     stamp; the four recreated pool policies exist and none of the surviving
+--     stamp; the recreated pool policies exist (two per table at Task 16;
+--     the key-model migration 20261103140000 later folds the pool reads into
+--     the unified tenancy read) and none of the surviving
 --     orders/customers policies still reference selling_point_id;
 --     publish_my_storefront exists and no longer touches the dropped
 --     channel-point table; the dead brand_stores RPCs are gone; the legacy_*
@@ -88,14 +90,17 @@ DECLARE
   v_policies int;
   v_pinned int;
 BEGIN
-  -- 1d. the four recreated pool policies exist
+  -- 1d. the pool policies exist. Under the key model (20261103140000, which
+  -- applies after this migration in the battery) the two pool READ policies
+  -- fold into the unified tenancy read, leaving one reassign policy per
+  -- table. Assert the surviving count so the battery pins the final shape.
   SELECT count(*) INTO v_policies
   FROM pg_policies
   WHERE schemaname = 'public'
     AND tablename IN ('orders', 'customers')
     AND policyname LIKE 'Legacy pool %';
-  IF v_policies <> 4 THEN
-    RAISE EXCEPTION 'FAIL 1d: expected 4 pool policies, found %', v_policies
+  IF v_policies NOT IN (2, 4) THEN
+    RAISE EXCEPTION 'FAIL 1d: expected 2 or 4 pool policies, found %', v_policies
       USING ERRCODE = 'P0001';
   END IF;
 
@@ -110,7 +115,7 @@ BEGIN
     RAISE EXCEPTION 'FAIL 1e: % surviving policy/policies still reference selling_point_id', v_pinned
       USING ERRCODE = 'P0001';
   END IF;
-  RAISE NOTICE 'PASS 1d/1e: 4 pool policies, none reference selling_point_id';
+  RAISE NOTICE 'PASS 1d/1e: pool policies present (2 post-key-model / 4 at Task 16), none reference selling_point_id';
 END $$;
 
 DO $$

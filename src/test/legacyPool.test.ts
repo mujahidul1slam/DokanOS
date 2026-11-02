@@ -13,10 +13,10 @@ import {
 } from "@/lib/legacyPool";
 
 /**
- * Task 15 (spec §7): the pool predicates must stay the EXACT shapes
- * `scripts/migrate-enveil-vincent.sql` step 10 writes (tag + unbound binding
- * columns), and a reassignment must write the brand binding the migration's
- * attribution uses — with `legacy` provenance preserved.
+ * Task 15 (spec §7), under the key model (migration 20261103140000): the pool
+ * predicates are STRUCTURAL — every attribution binding NULL — and a
+ * reassignment must write the brand binding the migration's attribution uses,
+ * with `legacy` provenance preserved. The tag is data, not a predicate.
  */
 
 const brandWithStore: ReassignTarget["brand"] = {
@@ -31,26 +31,23 @@ const brandStoreless: ReassignTarget["brand"] = {
 };
 const source: ReassignTarget["source"] = { id: "source-1", name: "Main Showroom" };
 
-describe("legacy pool predicates (scripts/migrate-enveil-vincent.sql step 10)", () => {
-  it("orders: the legacy migration tag plus the three binding NULLs the script targets (post Task 16)", () => {
+describe("legacy pool predicates (structural under the key model)", () => {
+  it("orders: the three binding NULLs (tag retired from the predicate)", () => {
     expect(poolOrderFilters).toEqual([
-      { column: "source", op: "eq", value: "legacy migration" },
       { column: "store_id", op: "is", value: null },
       { column: "storefront_id", op: "is", value: null },
       { column: "order_source_id", op: "is", value: null },
     ]);
   });
 
-  it("customers: the tag, origin_kind 'legacy', and the two binding NULLs", () => {
+  it("customers: the two binding NULLs (tag retired from the predicate)", () => {
     expect(poolCustomerFilters).toEqual([
-      { column: "source", op: "eq", value: "legacy migration" },
-      { column: "origin_kind", op: "eq", value: "legacy" },
       { column: "store_id", op: "is", value: null },
       { column: "origin_order_source_id", op: "is", value: null },
     ]);
   });
 
-  it("the tag and kind constants are the script's literals", () => {
+  it("the tag and kind constants survive as data (provenance + page badge)", () => {
     expect(LEGACY_POOL_TAG).toBe("legacy migration");
     expect(LEGACY_POOL_ORIGIN_KIND).toBe("legacy");
   });
@@ -69,8 +66,6 @@ describe("legacy pool predicates (scripts/migrate-enveil-vincent.sql step 10)", 
     };
     applyPoolFilter(chain, poolCustomerFilters);
     expect(calls).toEqual([
-      ["eq", "source", "legacy migration"],
-      ["eq", "origin_kind", "legacy"],
       ["is", "store_id", null],
       ["is", "origin_order_source_id", null],
     ]);

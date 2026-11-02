@@ -1,38 +1,41 @@
 import { supabase } from "@/integrations/supabase/client";
 
 /**
- * Task 15 — Legacy / unattributed pool (spec §7).
+ * Task 15 — Legacy / unattributed pool (spec §7), under the key model
+ * (migration 20261103140000).
  *
  * After the cutover migration, rows nobody could attribute live in a
  * business-level "Legacy / unattributed" pool until staff reassign them to a
- * brand. The pool predicates below are the EXACT shapes
- * `scripts/migrate-enveil-vincent.sql` step 10 writes, as they read after the
- * Task 16 contract drop (the selling_point_id leg is gone with its column):
+ * brand. Under the key model the pool is STRUCTURAL: a row is pool-shaped
+ * when every attribution binding is NULL —
  *
- *   orders    UPDATE … SET source = 'legacy migration'
- *             WHERE store_id IS NULL AND storefront_id IS NULL
- *               AND order_source_id IS NULL
- *   customers UPDATE … SET source = 'legacy migration', origin_kind = 'legacy',
- *                          origin_order_source_id = NULL
- *             WHERE store_id IS NULL AND origin_order_source_id IS NULL
+ *   orders    store_id IS NULL AND storefront_id IS NULL
+ *             AND order_source_id IS NULL
+ *   customers store_id IS NULL AND origin_order_source_id IS NULL
  *
- * So membership of the pool is: the `legacy migration` tag (which identifies
- * the row as a pool row) AND the unbound binding columns the script's WHERE
- * targeted (which is what makes a reassignment drain the row from the pool —
- * the reassign write sets those binding columns).
+ * — because the key-model INSERT policies are fail-closed (business_id must
+ * equal the writer's context, which the derivation trigger stamps from the
+ * bindings or the context), no new unbound rows can appear from member
+ * writes, and the reassignment write sets the binding columns, which drains
+ * the row from the pool. Row-level security scopes the page by tenancy
+ * (business_id), so these predicates carry no business filter and stay
+ * static.
+ *
+ * The `legacy migration` tag (and customers' `origin_kind = 'legacy'`) is no
+ * longer load-bearing: it survives as DATA — provenance and the page badge —
+ * but no policy or query predicate depends on it.
  *
  * Reassignment follows the same mapping the migration uses for attribution
  * (spec §7 "Data mapping"): brand level carries provenance — the order source
  * plus the "how". A pool row's "how" IS `legacy`, so reassigning keeps
  * `origin_kind = 'legacy'` on customers and binds the row to the chosen
  * brand's order source (`orders.order_source_id` /
- * `customers.origin_order_source_id`) — the binding that survives Task 16's
- * contract. Until then it also writes the transitional brand binding the
- * operational queries still scope by (`store_id` = the brand's legacy store,
- * same pattern as POS/AddOrderDialog writes). Orders carry no origin_kind
- * column; their surviving provenance is the `source = 'legacy migration'`
- * tag itself, which reassignment deliberately leaves in place (the tag
- * survives the Task 16 contract drop — `orders.source` is kept).
+ * `customers.origin_order_source_id`). Until then it also writes the
+ * transitional brand binding the operational queries still scope by
+ * (`store_id` = the brand's legacy store, same pattern as POS/AddOrderDialog
+ * writes). Orders carry no origin_kind column; their surviving provenance is
+ * the `source = 'legacy migration'` tag itself, which reassignment
+ * deliberately leaves in place.
  */
 
 export const LEGACY_POOL_TAG = "legacy migration";
@@ -47,16 +50,18 @@ export type PoolFilterOp =
  * the RLS migration (supabase/migrations/*_legacy_pool_rls.sql) pin the same
  * shape.
  */
+/**
+ * Canonical pool predicates — structural under the key model (every
+ * attribution binding NULL). Kept as data so the queries, the unit tests and
+ * the RLS migrations pin the same shape.
+ */
 export const poolOrderFilters: readonly PoolFilterOp[] = Object.freeze([
-  { column: "source", op: "eq", value: LEGACY_POOL_TAG },
   { column: "store_id", op: "is", value: null },
   { column: "storefront_id", op: "is", value: null },
   { column: "order_source_id", op: "is", value: null },
 ]);
 
 export const poolCustomerFilters: readonly PoolFilterOp[] = Object.freeze([
-  { column: "source", op: "eq", value: LEGACY_POOL_TAG },
-  { column: "origin_kind", op: "eq", value: LEGACY_POOL_ORIGIN_KIND },
   { column: "store_id", op: "is", value: null },
   { column: "origin_order_source_id", op: "is", value: null },
 ]);
