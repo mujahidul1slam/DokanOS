@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -84,7 +84,6 @@ const setActiveBusiness = (id: string, brands: Array<{ woo_store_id: string | nu
     active: { id, name: "Business", logo_url: null },
     businesses: [{ id, name: "Business", logo_url: null }],
     brands,
-    brandStores: [],
     activeBrand: null,
     myRole: "owner",
     rolesByBusiness: { [id]: "owner" },
@@ -94,7 +93,6 @@ const setActiveBusiness = (id: string, brands: Array<{ woo_store_id: string | nu
     setActive: vi.fn(),
     setActiveBrand: vi.fn(),
     refresh: vi.fn(),
-    sellingPointsCount: 0,
     onboardingCompletedAt: null,
   };
 };

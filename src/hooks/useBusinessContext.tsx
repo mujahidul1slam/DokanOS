@@ -2,15 +2,13 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode, useC
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
-import type { BrandStore } from "@/lib/brandStores";
 
 /**
  * Multi-business restructure Phase 1: the REAL business context.
  *
- * Hierarchy: User → Business (org) → Brand → {Locations, Selling points,
- * Connectors}. One login may belong to multiple businesses
- * (user_business_access). The active business is persisted in localStorage
- * ("dokanos-active-business-id").
+ * Hierarchy: User → Business (org) → Brand → Stores and order sources. One
+ * login may belong to multiple businesses (user_business_access). The active
+ * business is persisted in localStorage ("dokanos-active-business-id").
  *
  * Falls back gracefully: if no businesses exist yet (fresh install), the
  * context exposes an empty list and UI keeps working with legacy
@@ -49,8 +47,6 @@ interface BusinessContextValue {
   businesses: Business[];
   /** Brands under the active business. */
   brands: Brand[];
-  /** Explicit physical/online stores under the active business's brands. */
-  brandStores: BrandStore[];
   /** The active brand (persisted per business; null = all brands). */
   activeBrand: Brand | null;
   /** The caller's role in the active business (user_business_access.role). */
@@ -72,8 +68,6 @@ interface BusinessContextValue {
   setActive: (id: string) => Promise<boolean>;
   setActiveBrand: (id: string | null) => void;
   refresh: () => Promise<void>;
-  /** Count of selling_points rows under the active business (plan 01-04 guard input). */
-  sellingPointsCount: number;
   /** Onboarding done marker read from the loaded active business (plan 01-04, D-09/D-12). */
   onboardingCompletedAt: string | null;
 }
@@ -91,7 +85,6 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
   const currentBusinesses = useRef<Business[]>([]);
   const [rolesByBusiness, setRolesByBusiness] = useState<Record<string, string>>({});
   const [brands, setBrands] = useState<Brand[]>([]);
-  const [brandStores, setBrandStores] = useState<BrandStore[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() =>
     localStorage.getItem(STORAGE_KEY)
   );
@@ -103,7 +96,6 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
    * succeeded for the effective business (see the context value's doc).
    */
   const [contextReady, setContextReady] = useState(false);
-  const [sellingPointsCount, setSellingPointsCount] = useState(0);
   const scopedLoadToken = useRef(0);
   /**
    * Active business id the server-side context has been converged to during
@@ -116,37 +108,20 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
    */
   const serverContextIdRef = useRef<string | null>(null);
 
-  // Brands + selling-point count for a business. Called from BOTH the
-  // activeId effect and refresh() — the wizard creates the brand mid-session
-  // (create_my_brand_store), so refresh() must re-read the scoped state too
-  // or brands.length stays stale at 0 and gates built on it (the wizard's
-  // Finish button) never re-enable in the same session.
+  // Brands for a business. Called from BOTH the activeId effect and refresh()
+  // — the wizard creates the brand mid-session (create_my_brand_store), so
+  // refresh() must re-read the scoped state too or brands.length stays stale
+  // at 0 and gates built on it (the wizard's Finish button) never re-enable
+  // in the same session.
   const loadScoped = useCallback(async (bizId: string) => {
     const token = ++scopedLoadToken.current;
-    const [brandsRes, spRes] = await Promise.all([
-      supabase.from("brands").select("*").eq("business_id", bizId).order("name"),
-      supabase.from("selling_points").select("id", { count: "exact", head: true }).eq("business_id", bizId),
-    ]);
-    if (token !== scopedLoadToken.current) return; // superseded by a newer load
-    const brandRows = (brandsRes.data as Brand[]) || [];
-    setBrands(brandRows);
-    setSellingPointsCount(spRes.count ?? 0);
-
-    // New-model stores are scoped through their parent brands. RLS also
-    // enforces the account boundary, but include only this account's brand ids
-    // so a multi-account person never sees another context's stores.
-    const brandIds = brandRows.map((brand) => brand.id);
-    if (brandIds.length === 0) {
-      setBrandStores([]);
-      return;
-    }
-    const { data: storeRows } = await supabase
-      .from("brand_stores")
+    const { data: brandRows } = await supabase
+      .from("brands")
       .select("*")
-      .in("brand_id", brandIds)
+      .eq("business_id", bizId)
       .order("name");
-    if (token !== scopedLoadToken.current) return;
-    setBrandStores((storeRows as BrandStore[]) || []);
+    if (token !== scopedLoadToken.current) return; // superseded by a newer load
+    setBrands((brandRows as Brand[]) || []);
   }, []);
 
   const clearMemberships = useCallback(() => {
@@ -156,8 +131,6 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     setActiveId(null);
     setActiveBrandId(null);
     setBrands([]);
-    setBrandStores([]);
-    setSellingPointsCount(0);
     setContextReady(false);
     setLoading(false);
   }, []);
@@ -176,8 +149,6 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
       setActiveId(null);
       setActiveBrandId(null);
       setBrands([]);
-      setBrandStores([]);
-      setSellingPointsCount(0);
       // The signed-in user (and therefore the active context) is gone: the next
       // authenticated refresh must converge the server context again.
       serverContextIdRef.current = null;
@@ -279,13 +250,11 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     };
   }, [refresh]);
 
-  // Load brands + selling-point count whenever the active business changes.
+  // Load brands whenever the active business changes.
   useEffect(() => {
     if (!activeId) {
       scopedLoadToken.current++; // invalidate any in-flight load
       setBrands([]);
-      setBrandStores([]);
-      setSellingPointsCount(0);
       return;
     }
     loadScoped(activeId);
@@ -321,8 +290,6 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
     queryClient.removeQueries();
     scopedLoadToken.current++;
     setBrands([]);
-    setBrandStores([]);
-    setSellingPointsCount(0);
     setActiveId(id);
     localStorage.setItem(STORAGE_KEY, id);
     // Per-business brand selection resets on switch.
@@ -352,7 +319,6 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
         active,
         businesses,
         brands,
-        brandStores,
         activeBrand,
         myRole,
         rolesByBusiness,
@@ -362,7 +328,6 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
         setActive,
         setActiveBrand,
         refresh,
-        sellingPointsCount,
         onboardingCompletedAt,
       }}
     >

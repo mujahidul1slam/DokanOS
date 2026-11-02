@@ -136,8 +136,11 @@ i.e. the guard reads "not applied" exactly as designed, and becomes meaningful o
 Column provenance for everything the data script writes is covered by the pending set:
 `origin_order_source_id`/`origin_kind` ← #20, `ship_from_store`/`fulfillment_preference`/
 `stock_holder_order_source_id`/`warehouse_id` ← #21, `legacy_woo_store_id` ← #28. `business_id` on the
-pool is **not** added by any pending migration — the Task 16 checklist item ("pool rows stamped with
-`business_id`") therefore has no column to write to yet and needs a decision.
+pool was **not** added by any migration in this chain — the Task 16 checklist item ("pool rows stamped
+with `business_id`") had no column to write to at rehearsal time. **RESOLVED 2026-11-02:** Task 16's
+migration `20261103120000_task16_contract_drop.sql` §2 adds `business_id uuid REFERENCES businesses(id)
+ON DELETE SET NULL` to orders + customers, and §1 stamps pool rows from the legacy `order_sources`
+mapping (production apply user-gated; see [../wiki/cutover-status.md](../wiki/cutover-status.md)).
 
 ---
 
@@ -227,8 +230,9 @@ truncated identifier name, a missing policy/constraint to drop).
 | grants rows | 1,892 | **2,144** (no revocations — see §8) |
 | business/customers/orders/products counts | 8 / 3,246 / 4,092 / 225 | unchanged |
 
-`stores.business_id` and `orders.business_id` **still do not exist**, confirming the §4 gap: Task 16's
-"pool rows stamped with `business_id`" item (`tasks/todo.md:350`) has no column yet.
+`stores.business_id` and `orders.business_id` **still do not exist** at this snapshot, confirming the
+§4 gap: Task 16's "pool rows stamped with `business_id`" item (`tasks/todo.md:350`) had no column yet
+at the chain apply. **(2026-11-02: resolved by `20261103120000` §2 — see §4's resolution note.)**
 
 The deployed bundle was re-checked after the push and is **still `index-DSV-o5nx.js`** — the Vercel
 build for the pushed branch has not landed, so the Orders/Settings pages remain broken on the legacy

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { installFakeTenantClient, type Query, type QueryCall, type Row } from "@/test/support/tenantScopedClient";
 
@@ -77,7 +77,6 @@ const setActiveBusiness = (id: string, storeIds: string[]) => {
     active: { id, name: "Business", logo_url: null, currency: "BDT" },
     businesses: [{ id, name: "Business", logo_url: null }],
     brands: storeIds.map((storeId) => ({ woo_store_id: storeId })),
-    brandStores: [],
     activeBrand: null,
     myRole: "owner",
     rolesByBusiness: { [id]: "owner" },
@@ -87,7 +86,6 @@ const setActiveBusiness = (id: string, storeIds: string[]) => {
     setActive: vi.fn(),
     setActiveBrand: vi.fn(),
     refresh: vi.fn(),
-    sellingPointsCount: 0,
     onboardingCompletedAt: null,
   };
 };
@@ -126,7 +124,7 @@ describe("ProductList scopes every products read to the active business's stores
     render(<ProductList />);
     expect((await screen.findAllByText("Widget")).length).toBeGreaterThan(0);
 
-    // The products read carries the tenant predicate — and there is exactly one.
+    // The products read carries the tenant predicate â€” and there is exactly one.
     const productsQueries = client.queriesFor("products");
     expect(productsQueries).toHaveLength(1);
     expect(storeScopeOf(productsQueries[0])).toEqual([["s1"]]);
@@ -228,7 +226,7 @@ describe("ProductList scopes every products read to the active business's stores
     fireEvent.click(within(dialog).getByRole("button", { name: /assign to 1 product/i }));
 
     await waitFor(() => expect(client.argsFor("product_categories", "insert")).toHaveLength(1));
-    // `insert(rows)` — the payload is the row array.
+    // `insert(rows)` â€” the payload is the row array.
     expect(client.argsFor("product_categories", "insert")[0][0]).toEqual([
       { product_id: "p1", category_id: "c1" },
     ]);

@@ -1,12 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // Hybrid tenancy (issue #16): the Orders surface.
 //
-// Every operational read behind the page — the orders list, the store
+// Every operational read behind the page â€” the orders list, the store
 // selector, the category selector, the product_categories mapping and the
-// single-order reprint — must carry the ACTIVE business's store ids, must fail
+// single-order reprint â€” must carry the ACTIVE business's store ids, must fail
 // closed when that scope is empty (or when the store filter names a store of
 // another business), and must re-run when the business is switched. The
 // Supabase client, the context hook and the permission hook are module-mocked
@@ -132,7 +132,6 @@ const setActiveBusiness = (id: string | null, storeIds: string[]) => {
     active: id ? { id, name: "Business", logo_url: null } : null,
     businesses: [],
     brands: storeIds.map((woo_store_id) => ({ woo_store_id })),
-    brandStores: [],
     activeBrand: null,
     myRole: "owner",
     rolesByBusiness: {},
@@ -142,7 +141,6 @@ const setActiveBusiness = (id: string | null, storeIds: string[]) => {
     setActive: vi.fn(),
     setActiveBrand: vi.fn(),
     refresh: vi.fn(),
-    sellingPointsCount: 0,
     onboardingCompletedAt: null,
   };
 };
@@ -245,7 +243,7 @@ describe("Orders reads are scoped to the active business's stores", () => {
 
     // Store selector: the seam's own scoped read, never an unscoped one. (The
     // closed detail sheet holds a scope hook of its own, so more than one scoped
-    // stores read is expected — none of them unscoped.)
+    // stores read is expected â€” none of them unscoped.)
     const storeReadScopes = argsFor("stores", "in");
     expect(storeReadScopes.length).toBeGreaterThan(0);
     expect(
@@ -283,14 +281,14 @@ describe("Orders reads are scoped to the active business's stores", () => {
 
   it("fails closed on a store filter that belongs to another business", async () => {
     // A store filter carried over from the previous business (deep link, back
-    // button, stale session) must never become a scope of its own — and must not
+    // button, stale session) must never become a scope of its own â€” and must not
     // silently degrade into "every store of this business" either.
     renderOrders("/orders?store=s9&tab=all");
 
     await waitFor(() => expect(screen.getByText("No orders found")).toBeInTheDocument());
 
-    // Not one order row is read — the filter alone can neither widen the scope
-    // back nor pick a store of its own — and no product_categories mapping can
+    // Not one order row is read â€” the filter alone can neither widen the scope
+    // back nor pick a store of its own â€” and no product_categories mapping can
     // follow from a read that never happened.
     expect(queriesFor("orders")).toEqual([]);
     expect(queriesFor("product_categories")).toEqual([]);
@@ -308,7 +306,7 @@ describe("Orders reads are scoped to the active business's stores", () => {
   it("never publishes a row whose store is outside the active business", async () => {
     // Defence in depth: even if a foreign row reaches the list payload (a
     // service-role read, a stale cache, a predicate mistake), the page must not
-    // surface it — and must not let its order_items feed the category map.
+    // surface it â€” and must not let its order_items feed the category map.
     rows.orders = [orderRow(), foreignOrderRow()];
 
     renderOrders();

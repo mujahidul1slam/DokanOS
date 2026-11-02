@@ -12,28 +12,18 @@ import {
   type RecentSourceOrder,
   type SourceOrderStat,
 } from "@/components/order-sources/BrandSourceSection";
-import {
-  type LegacyBrandStoreRow,
-  type LegacyRows,
-  type LegacySellingPointRow,
-  type LegacyStoreRow,
-  type LegacyStorefrontRow,
-} from "@/components/order-sources/LegacySourceRows";
+import { type LegacyRows, type LegacyStoreRow } from "@/components/order-sources/LegacySourceRows";
 import { OrderSourceDialog } from "@/components/order-sources/OrderSourceDialog";
 
 const EMPTY_LEGACY_ROWS: LegacyRows = {
   stores: [],
-  sellingPoints: [],
-  brandStores: [],
-  storefronts: [],
 };
 
 /**
  * Order Sources page (Task 6, spec §2/§8) — one section per brand listing its
  * order sources with type badges and connection/sync status, plus the
- * read-only legacy rows that collapse into them at the mapping migration.
- * Replaces the StoresHub "Stores / Selling Points / Connectors / Product
- * Sources / Customer Sources" tabs (which stay routable until Task 11).
+ * read-only legacy Woo-store rows that remain mapped through
+ * order_sources.legacy_* columns after the Task 16 contract drop.
  */
 export default function OrderSources() {
   const { active, brands, loading: ctxLoading, myRole } = useBusinessContext();
@@ -63,25 +53,8 @@ export default function OrderSources() {
       const storeIds = brands
         .map((b) => b.woo_store_id)
         .filter((id): id is string => typeof id === "string" && id.length > 0);
-      // Storefronts link via brand_id OR the legacy store link — cover both.
-      const storefrontsQuery = supabase
-        .from("storefronts")
-        .select("id, brand_id, name, slug, is_active");
-      const [srcRes, spRes, bsRes, sfRes, stRes] = await Promise.all([
+      const [srcRes, stRes] = await Promise.all([
         supabase.from("order_sources").select("*").in("brand_id", brandIds).order("name"),
-        supabase
-          .from("selling_points")
-          .select("id, brand_id, name, type, is_active")
-          .in("brand_id", brandIds)
-          .order("name"),
-        supabase
-          .from("brand_stores")
-          .select("id, brand_id, name, store_type")
-          .in("brand_id", brandIds)
-          .order("name"),
-        storeIds.length > 0
-          ? storefrontsQuery.or(`brand_id.in.(${brandIds.join(",")}),store_id.in.(${storeIds.join(",")})`)
-          : storefrontsQuery.in("brand_id", brandIds),
         storeIds.length > 0
           ? supabase
               .from("stores")
@@ -89,15 +62,12 @@ export default function OrderSources() {
               .in("id", storeIds)
           : supabase.from("stores").select("id, name, url, status, last_synced_at").limit(0),
       ]);
-      const failed = [srcRes, spRes, bsRes, sfRes, stRes].find((r) => r.error);
+      const failed = [srcRes, stRes].find((r) => r.error);
       if (failed?.error) throw failed.error;
       const loadedSources = (srcRes.data as OrderSourceRow[]) || [];
       setSources(loadedSources);
       setLegacy({
         stores: (stRes.data as LegacyStoreRow[]) || [],
-        sellingPoints: (spRes.data as LegacySellingPointRow[]) || [],
-        brandStores: (bsRes.data as LegacyBrandStoreRow[]) || [],
-        storefronts: (sfRes.data as LegacyStorefrontRow[]) || [],
       });
 
       // Orders attributed to each source — a created order must appear under
@@ -208,9 +178,6 @@ export default function OrderSources() {
               stats={orderStats}
               legacy={{
                 stores: legacy.stores.filter((s) => brands.find((b) => b.id === brand.id)?.woo_store_id === s.id),
-                sellingPoints: legacy.sellingPoints.filter((sp) => sp.brand_id === brand.id),
-                brandStores: legacy.brandStores.filter((bs) => bs.brand_id === brand.id),
-                storefronts: legacy.storefronts.filter((sf) => sf.brand_id === brand.id),
               }}
               canCreate={canCreate}
               onAdd={(brandId) => setDialog({ open: true, brandId, source: null })}

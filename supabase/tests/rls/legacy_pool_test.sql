@@ -1,12 +1,16 @@
 -- Task 15: the Legacy / unattributed pool (spec §7). Pool rows are the ones
 -- scripts/migrate-enveil-vincent.sql step 10 (lines 361-374) tags:
---   orders    source='legacy migration' + all four binding columns NULL
+--   orders    source='legacy migration' + the three surviving binding columns
+--             NULL (Task 16 dropped selling_point_id; storefront_id remains a
+--             pool predicate)
 --   customers source='legacy migration' + origin_kind='legacy' + the two
 --             binding columns NULL
 -- They carry NO business/brand binding, so their RLS leg is membership in the
 -- server-side ACTIVE business context (documented trade-off in
 -- 20261102120000_legacy_pool_rls.sql: unowned rows are shared by whichever
 -- business a member has active; post-migration there is one tenant/one pool).
+-- Task 16 adds the account leg: a stamped pool row (business_id set) is
+-- visible only to its own business; unstamped rows stay shared.
 -- Once reassigned they are tenanted again through the brand's order source
 -- (the binding the migration's own inference writes) — and cross-business
 -- denial then holds. Spec §5 ladder (post-Task-12 values): all members read;
@@ -45,7 +49,7 @@ DECLARE v_rc bigint;
 BEGIN
   IF (SELECT count(*) FROM public.orders
       WHERE source = 'legacy migration' AND store_id IS NULL
-        AND selling_point_id IS NULL AND storefront_id IS NULL
+        AND storefront_id IS NULL
         AND order_source_id IS NULL) <> 2 THEN
     RAISE EXCEPTION 'FAIL: manager could not read the two unowned pool orders' USING ERRCODE = 'P0001';
   END IF;
@@ -83,7 +87,7 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM public.orders
       WHERE source = 'legacy migration' AND store_id IS NULL
-        AND selling_point_id IS NULL AND storefront_id IS NULL
+        AND storefront_id IS NULL
         AND order_source_id IS NULL) <> 1 THEN
     RAISE EXCEPTION 'FAIL: reassigned order did not drain from the pool' USING ERRCODE = 'P0001';
   END IF;
@@ -114,7 +118,7 @@ DECLARE v_rc bigint;
 BEGIN
   IF (SELECT count(*) FROM public.orders
       WHERE source = 'legacy migration' AND store_id IS NULL
-        AND selling_point_id IS NULL AND storefront_id IS NULL
+        AND storefront_id IS NULL
         AND order_source_id IS NULL) <> 1 THEN
     RAISE EXCEPTION 'FAIL: staff could not read the remaining pool order' USING ERRCODE = 'P0001';
   END IF;

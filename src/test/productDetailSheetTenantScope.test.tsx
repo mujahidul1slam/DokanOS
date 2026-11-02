@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { installFakeTenantClient, type Query, type QueryCall, type Row } from "@/test/support/tenantScopedClient";
 
@@ -71,7 +71,6 @@ const setActiveBusiness = (id: string, storeIds: string[]) => {
     active: { id, name: "Business", logo_url: null, currency: "BDT" },
     businesses: [{ id, name: "Business", logo_url: null }],
     brands: storeIds.map((storeId) => ({ woo_store_id: storeId })),
-    brandStores: [],
     activeBrand: null,
     myRole: "owner",
     rolesByBusiness: { [id]: "owner" },
@@ -81,7 +80,6 @@ const setActiveBusiness = (id: string, storeIds: string[]) => {
     setActive: vi.fn(),
     setActiveBrand: vi.fn(),
     refresh: vi.fn(),
-    sellingPointsCount: 0,
     onboardingCompletedAt: null,
   };
 };
@@ -183,7 +181,7 @@ describe("ProductDetailSheet scopes its reads and writes to the active business"
     fireEvent.click(screen.getByRole("button", { name: /save product/i }));
 
     await waitFor(() => expect(client.argsFor("product_categories", "insert")).toHaveLength(1));
-    // `insert(rows)` — the payload is the row array.
+    // `insert(rows)` â€” the payload is the row array.
     expect(client.argsFor("product_categories", "insert")[0][0]).toEqual([
       { product_id: "p1", category_id: "c1" },
     ]);

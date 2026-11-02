@@ -126,8 +126,6 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM public.brands WHERE business_id = new_business)
      OR EXISTS (SELECT 1 FROM public.brands WHERE business_id = additional_business)
-     OR EXISTS (SELECT 1 FROM public.selling_points WHERE business_id = new_business)
-     OR EXISTS (SELECT 1 FROM public.selling_points WHERE business_id = additional_business)
      OR EXISTS (SELECT 1 FROM public.stores) THEN
     RAISE EXCEPTION 'FAIL: empty business implicitly created brand/store data' USING ERRCODE = 'P0001';
   END IF;

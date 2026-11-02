@@ -6,11 +6,12 @@ import { supabase } from "@/integrations/supabase/client";
  * After the cutover migration, rows nobody could attribute live in a
  * business-level "Legacy / unattributed" pool until staff reassign them to a
  * brand. The pool predicates below are the EXACT shapes
- * `scripts/migrate-enveil-vincent.sql` step 10 (lines 361-374) writes:
+ * `scripts/migrate-enveil-vincent.sql` step 10 writes, as they read after the
+ * Task 16 contract drop (the selling_point_id leg is gone with its column):
  *
  *   orders    UPDATE … SET source = 'legacy migration'
- *             WHERE store_id IS NULL AND selling_point_id IS NULL
- *               AND storefront_id IS NULL AND order_source_id IS NULL
+ *             WHERE store_id IS NULL AND storefront_id IS NULL
+ *               AND order_source_id IS NULL
  *   customers UPDATE … SET source = 'legacy migration', origin_kind = 'legacy',
  *                          origin_order_source_id = NULL
  *             WHERE store_id IS NULL AND origin_order_source_id IS NULL
@@ -30,8 +31,8 @@ import { supabase } from "@/integrations/supabase/client";
  * operational queries still scope by (`store_id` = the brand's legacy store,
  * same pattern as POS/AddOrderDialog writes). Orders carry no origin_kind
  * column; their surviving provenance is the `source = 'legacy migration'`
- * tag itself, which reassignment deliberately leaves in place (see the Task 8
- * audit note: the tag dies with `orders.source` at Task 16).
+ * tag itself, which reassignment deliberately leaves in place (the tag
+ * survives the Task 16 contract drop — `orders.source` is kept).
  */
 
 export const LEGACY_POOL_TAG = "legacy migration";
@@ -49,7 +50,6 @@ export type PoolFilterOp =
 export const poolOrderFilters: readonly PoolFilterOp[] = Object.freeze([
   { column: "source", op: "eq", value: LEGACY_POOL_TAG },
   { column: "store_id", op: "is", value: null },
-  { column: "selling_point_id", op: "is", value: null },
   { column: "storefront_id", op: "is", value: null },
   { column: "order_source_id", op: "is", value: null },
 ]);

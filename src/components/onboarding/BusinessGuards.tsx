@@ -5,7 +5,7 @@ import { decideRoute } from "./guards";
 
 /**
  * Route guard wrapping DashboardLayout (plan 01-04/01-05, D-17).
- * Reads the extended business-context fields and delegates all branching
+ * Reads the business-context membership state and delegates all branching
  * to the pure decideRoute predicate — no logic lives here.
  *
  * Decisions:
@@ -14,24 +14,14 @@ import { decideRoute } from "./guards";
  *                      business creation is an explicit choice)
  *   app              → {children}
  *
- * Onboarding is opt-in. Empty accounts and brands without stores stay usable.
+ * Onboarding is opt-in. Empty accounts stay usable.
  */
 export function BusinessGuards({ children }: { children: ReactNode }) {
-  const {
-    loading,
-    businesses,
-    brands,
-    sellingPointsCount,
-    onboardingCompletedAt,
-  } = useBusinessContext();
+  const { loading, businesses } = useBusinessContext();
 
   const decision = decideRoute({
     loading,
     memberships: businesses.length,
-    // A brand is not a store: only a brand linked to a legacy store row counts.
-    hasStore: brands.some((brand) => brand.woo_store_id !== null),
-    hasSellingPoints: (sellingPointsCount ?? 0) > 0,
-    onboardingCompletedAt: onboardingCompletedAt ?? null,
   });
 
   switch (decision) {

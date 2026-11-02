@@ -195,9 +195,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [addProductId, setAddProductId] = useState<string>("");
-  // Multi-business Phase 3: fulfillment location (warehouse/showroom)
-  const [locationId, setLocationId] = useState<string>("");
-  const [locationOptions, setLocationOptions] = useState<Array<{ id: string; name: string; type: string }>>([]);
 
   // Exchange dialog
   const [exchangeOpen, setExchangeOpen] = useState(false);
@@ -323,7 +320,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     setMeasurements([]);
     setDeletedMeasIds([]);
     setCourierShipments([]);
-    setLocationOptions([]);
     setLoading(false);
   }, []);
 
@@ -343,7 +339,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const orderRes = await scopeStoreIds(
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, stores(url, name), order_source:order_sources(name, type)")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, stores(url, name), order_source:order_sources(name, type)")
         .eq("id", orderId),
       businessStoreIds,
     ).single();
@@ -397,7 +393,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setNotes(o.notes || "");
       setFulfillmentType(o.fulfillment_type || "delivery");
       setPaymentMethod(o.payment_method || "");
-      setLocationId((o as { location_id?: string | null }).location_id || "");
 
       const shipments = (shipmentsRes.data as CourierShipmentEntry[]) || [];
       if (o.consignment_id && !shipments.some(s => s.consignment_id === o.consignment_id)) {
@@ -417,24 +412,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setCourierShipments(shipments);
     }
 
-    // Phase 3: locations for the order's brand (via store linkage) for the
-    // fulfillment-location picker. Best-effort: empty list hides the picker.
-    // The store comes from the already-verified order above, so no second
-    // (unscoped) read of `orders` is needed.
-    try {
-      if (o.store_id) {
-        const { data: locs } = await supabase
-          .from("locations")
-          .select("id, name, type, brand_id, brands!inner(woo_store_id)")
-          .eq("brands.woo_store_id", o.store_id)
-          .order("name");
-        setLocationOptions((locs as Array<{ id: string; name: string; type: string }>) || []);
-      } else {
-        setLocationOptions([]);
-      }
-    } catch {
-      setLocationOptions([]);
-    }
     const liRaw = (itemsRes.data || []) as any[];
     const li: LineItem[] = liRaw.map((r) => ({
       id: r.id,
@@ -641,7 +618,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           notes,
           fulfillment_type: fulfillmentType,
           payment_method: paymentMethod || null,
-          location_id: locationId || null,
         })
         .eq("id", order.id),
         businessStoreIds,
@@ -1408,24 +1384,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         </SelectContent>
                       </Select>
                     </div>
-                    {locationOptions.length > 0 && (
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Fulfill From</Label>
-                        <Select value={locationId || "none"} onValueChange={(v) => setLocationId(v === "none" ? "" : v)}>
-                          <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Default location" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Default location</SelectItem>
-                            {locationOptions.map((l) => (
-                              <SelectItem key={l.id} value={l.id}>
-                                {l.name} ({l.type})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
                   </div>
                 </section>
 

@@ -77,16 +77,6 @@ test("complete account-to-store and invitation rehearsal on the integrated imple
     const brandId = Array.isArray(brand) ? brand[0].id : brand.id;
     assert.ok(brandId);
 
-    const physical = await owner.rpc("create_brand_store", { p_brand_id: brandId, p_name: "Rehearsal Outlet", p_store_type: "physical" }).then(ok);
-    const online = await owner.rpc("create_brand_store", { p_brand_id: brandId, p_name: "Rehearsal Online", p_store_type: "online" }).then(ok);
-    const physicalStore = Array.isArray(physical) ? physical[0] : physical;
-    const onlineStore = Array.isArray(online) ? online[0] : online;
-    assert.equal(physicalStore.store_type, "physical");
-    assert.equal(onlineStore.store_type, "online");
-    assert.equal(physicalStore.is_published, false);
-    assert.equal(onlineStore.is_published, false);
-    assert.equal(await count("SELECT count(*)::int AS count FROM public.brand_stores WHERE brand_id = $1", [brandId]), 2);
-
     // ---- invitation for a NEW invitee: registration + verification, then acceptance ----
     const newInvitation = await owner.rpc("invite_business_member", { p_business_id: businessId, p_email: `  ${newInviteeEmail.toUpperCase()} ` }).then(ok);
     assert.equal(newInvitation.email, newInviteeEmail, "invitation normalizes the intended email");
@@ -120,8 +110,7 @@ test("complete account-to-store and invitation rehearsal on the integrated imple
     // ---- a separate account the invitee never joins, for isolation probes ----
     const foreign = await admin.rpc("create_additional_business", { p_user_id: existingId, p_business_name: `Foreign ${suffix}` }).then(ok);
     createdBusinesses.push(foreign.business_id);
-    const foreignBrand = await existingPerson.rpc("create_business_brand", { p_business_id: foreign.business_id, p_name: "Foreign Brand" }).then(ok);
-    const foreignBrandId = Array.isArray(foreignBrand) ? foreignBrand[0].id : foreignBrand.id;
+    await existingPerson.rpc("create_business_brand", { p_business_id: foreign.business_id, p_name: "Foreign Brand" }).then(ok);
 
     // ---- account switching: the invitee also owns their own account ----
     const second = await admin.rpc("create_additional_business", { p_user_id: newInviteeId, p_business_name: `Invitee Own ${suffix}` }).then(ok);
@@ -141,10 +130,6 @@ test("complete account-to-store and invitation rehearsal on the integrated imple
     assert.equal(ownBrands.length, 1, "a member reads the active account's brands");
     const foreignBrands = await newInvitee.from("brands").select("id").eq("business_id", foreign.business_id).then(ok);
     assert.deepEqual(foreignBrands, [], "a member must not read another account's brands");
-    const forgedInsert = await newInvitee.from("brand_stores").insert({ brand_id: foreignBrandId, name: "Forged", store_type: "physical" });
-    assert.ok(forgedInsert.error, "a non-member must not insert a store under a foreign brand");
-    const forgedStore = await newInvitee.rpc("create_brand_store", { p_brand_id: foreignBrandId, p_name: "Forged", p_store_type: "physical" });
-    assert.ok(forgedStore.error, "a non-member must not create a store in an account they do not operate");
 
     // ---- operational compatibility: legacy history stays readable and scoped ----
     const legacyReadable = await owner.from("orders").select("id").limit(1);

@@ -475,12 +475,24 @@ sign-off on the live audit report.**
   audit passes and the user decides (`tasks/todo.md` Task 16 dependency; spec §7 keeps
   `legacy_*` mapping columns on the new rows). Until then legacy tables keep working
   (stores 2 / locations 3 / selling_points 8 / storefronts 2 / connectors 4 remain by design).
+  → **EXECUTED 2026-11-02 (Safe-contract scope, user-decided): implemented locally as
+  `supabase/migrations/20261103120000_task16_contract_drop.sql`** — drops the seven dead tables
+  (`legacy_order_channels`, `connectors`, `product_sources`, `customer_sources`, `brand_stores`,
+  `selling_points`, `locations`) + the dead binding columns, rewrites `publish_my_storefront` on the
+  brand leg, recreates the pool RLS with a `business_id` account leg (§1 stamps the pool from the
+  legacy mapping), rebuilds the `product_locations_one_holder` CHECK two-way, and KEEPS `stores`,
+  every `store_id` binding, `orders.source`/`customers.source`, and all `legacy_*` mapping columns.
+  Local battery green (28 RLS files + vitest + build); **production apply of `20261103120000` is
+  user-gated** (pre-drop rollback dumps recommended). Record: [wiki/cutover-status.md](wiki/cutover-status.md).
 - Checkpoint C review items are resolved in the generated report: (1) the strict email-alias duplicate
   (`1a689ee5-…` → `4d0d1b7d-…`) stays in the pool; (2) pool customers with connected-order product
   evidence are attributed by the signed-off earliest-order rule, while the residual tag is a Task 16
-  migration item; (3) fulfillment defaults are accepted and remain editable in the Task 7 UI
+  migration item — **the stamping half of that item is now Task 16 §1 (done locally, prod apply gated)**;
+  (3) fulfillment defaults are accepted and remain editable in the Task 7 UI
   (`tasks/audit/task8-dry-run-report.md` §"Review items").
-- Legacy `orders.source`/`customers.source` free-text is consumed read-only until Task 16.
+- Legacy `orders.source`/`customers.source` free-text is consumed read-only — **and stays in the
+  schema**: the Safe-contract scope kept both columns (the key-model migration is a separate
+  documented follow-up), so the pool tag survives in place.
 
 ## Appendix — cross-check notes (runbook ↔ scripts ↔ audit docs)
 

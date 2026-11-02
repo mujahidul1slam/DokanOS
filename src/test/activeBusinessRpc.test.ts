@@ -86,8 +86,6 @@ const seedTables = () => {
   tables = {
     user_business_access: { data: membershipRows(), error: null },
     brands: { data: [], error: null },
-    selling_points: { data: [], error: null, count: 0 },
-    brand_stores: { data: [], error: null },
   };
 };
 

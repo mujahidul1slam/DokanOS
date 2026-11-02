@@ -11,6 +11,13 @@
  *
  * Local-only; refuses any non-local database. Never touches production.
  *
+ * ⚠ HISTORICAL (Task 16): the mapping migration reads the legacy contract
+ *   tables that supabase/migrations/20261103120000_task16_contract_drop.sql
+ *   dropped. The pipeline only works against a scratch built from a
+ *   PRE-Task-16 production extract (the local stack schema is post-drop, so
+ *   the apply fails there). The mapping ran in production on 2026-11-02 and
+ *   was audited live at Gate 3 — this tool remains as the record.
+ *
  * Usage: node scripts/task8-audit.mjs [--db task8_scratch]
  */
 
@@ -54,8 +61,12 @@ async function one(client, sql) {
 async function collectAudit(client) {
   const a = {};
   for (const table of [
-    "businesses", "brands", "stores", "locations", "selling_points", "storefronts",
-    "connectors", "products", "product_variations", "product_locations",
+    // Task 16 note: locations, selling_points, connectors, product_sources,
+    // customer_sources, brand_stores and legacy_order_channels were dropped by
+    // supabase/migrations/20261103120000_task16_contract_drop.sql — they are no
+    // longer countable (the audit's mapping checks below carry the record).
+    "businesses", "brands", "stores", "storefronts",
+    "products", "product_variations", "product_locations",
     "customers", "orders", "order_sources", "warehouses", "courier_services",
     "user_business_access",
   ]) {
@@ -235,6 +246,8 @@ async function main() {
   push("| `locations` \"Warehouse\" (Vincent) | **1 warehouse** (stock-only) |");
   push("| `pathao_integrations` + courier `connectors` | **business-level courier services** (Task 9) — credentials copied at runtime, paired via `config.integration_id` |");
   push("| `product_locations` rows | repointed to their showroom source / warehouse (205 rows stay put) |");
+  push();
+  push("Legacy contract tables (locations, selling_points, connectors, product_sources, customer_sources, brand_stores, legacy_order_channels) were dropped by `supabase/migrations/20261103120000_task16_contract_drop.sql` after this mapping was applied and audited; the mapping table above is the historical record.");
   push();
   push("Result: **4 order sources + 0–1 warehouses per brand** — 8 sources, 1 warehouse.");
   push();

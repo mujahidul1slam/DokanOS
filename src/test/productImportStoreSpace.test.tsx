@@ -19,11 +19,7 @@ window.HTMLElement.prototype.releasePointerCapture ??= () => {};
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: vi.fn() } }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/hooks/useBusinessContext", () => ({
-  useBusinessContext: () => ({
-    brandStores: [
-      { id: "bs-1", brand_id: "brand-1", name: "Brand Store", store_type: "physical", is_published: true },
-    ],
-  }),
+  useBusinessContext: () => ({}),
 }));
 vi.mock("@/hooks/useStoresList", () => ({
   useStoresList: vi.fn(),

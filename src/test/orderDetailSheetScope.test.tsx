@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // Hybrid tenancy (issue #16): the order detail sheet.
@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 // The sheet is the second way into an order's rows. Its parent read must carry
 // the tenant predicate, and its CHILD reads (order_items, order_payments,
 // order_timeline, order_item_measurements, courier_shipments) must only ever be
-// reached for an order that is inside the active business's stores — otherwise
+// reached for an order that is inside the active business's stores â€” otherwise
 // a foreign order id (deep link, stale state) would reintroduce that business's
 // child rows. The product picker is an operational read too.
 // Precedent for the mocked client: src/test/dashboardTenantScope.test.tsx.
@@ -107,7 +107,6 @@ const setActiveBusiness = (id: string | null, storeIds: string[]) => {
     active: id ? { id, name: "Business", currency: "BDT" } : null,
     businesses: [],
     brands: storeIds.map((woo_store_id) => ({ woo_store_id })),
-    brandStores: [],
     activeBrand: null,
     myRole: "owner",
     rolesByBusiness: {},
@@ -117,7 +116,6 @@ const setActiveBusiness = (id: string | null, storeIds: string[]) => {
     setActive: vi.fn(),
     setActiveBrand: vi.fn(),
     refresh: vi.fn(),
-    sellingPointsCount: 0,
     onboardingCompletedAt: null,
   };
 };

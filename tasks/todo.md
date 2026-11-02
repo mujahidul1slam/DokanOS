@@ -341,16 +341,17 @@ Verification commands: `npm run typecheck` · `npm test` · `npm run lint` · `n
 
 ## Task 16: Contract — drop legacy, delete orphaned code
 
-**Description:** Per spec §7/§8: after cutover audit passes — drop legacy tables/columns (`stores`, `selling_points`, `brand_stores`, old `order_sources` lookup, `locations` remnants, `connectors`, `product_sources`, `customer_sources`, `orders.source`, etc.), delete orphaned code (old `src/components/onboarding/` Step1–4, `src/pages/Dispatch.tsx`, `mockData` legacy bits). Keep `legacy_*` mapping columns on new rows.
+**Description:** Per spec §7/§8: after cutover audit passes — drop legacy tables/columns, delete orphaned code (old `src/components/onboarding/` Step1–4, `src/pages/Dispatch.tsx`, `mockData` legacy bits). Keep `legacy_*` mapping columns on new rows. **Scope decided with the user (2026-11-02, "Safe contract"):** drop the seven genuinely-dead tables (`legacy_order_channels`, `connectors`, `product_sources`, `customer_sources`, `brand_stores`, `selling_points`, `locations`) + the dead binding columns (`orders.selling_point_id`/`location_id`, `product_locations.location_id`, `purchase_orders.location_id`, `pos_shifts.selling_point_id`); **keep** `stores` + every `store_id` binding (operational per option B) and `orders.source`/`customers.source` (the key-model migration is a separate documented follow-up — so the pool tag survives in place and AC4's "tag dies with orders.source" premise dissolves).
 
 **Acceptance criteria:**
-- [ ] Legacy tables/columns dropped via migration; app builds and tests pass without them
-- [ ] Orphaned components/pages deleted
-- [ ] `legacy_*` mapping columns retained on order sources / stock holders
-- [ ] Pool `source='legacy migration'` tag migrated to a surviving column (it dies with `orders.source`); pool rows stamped with `business_id` (Task 15 recommendation — see [wiki/legacy-pool-semantics.md](wiki/legacy-pool-semantics.md))
+- [x] Legacy tables/columns dropped via migration — `supabase/migrations/20261103120000_task16_contract_drop.sql` (§1 pool account stamping → §2 `business_id` columns on orders/customers → §3 `publish_my_storefront` rewritten on the brand leg → §4 pool RLS recreated without the dropped column + the account leg → §5 FK/column drops + the one-holder CHECK rebuilt two-way → §6/§7 table + dead-RPC drops → §8 verification DO block). Applied to the local stack; **production apply is user-gated**
+- [x] Orphaned components/pages deleted — `src/components/onboarding/Step1Store/Step2Locations/Step3SellingPoints/Step4Storefront.tsx`, `src/pages/Dispatch.tsx` (dead `/dispatch` links retargeted to `/orders`), `src/lib/mockData.ts`, `src/components/stores/CreateBrandStoreDialog.tsx`, `src/lib/brandStores.ts`
+- [x] `legacy_*` mapping columns retained on order sources (`legacy_store_id`/`legacy_selling_point_id`/`legacy_woo_store_id` — pinned by `supabase/tests/rls/task16_contract_drop_test.sql` 1h)
+- [x] Pool rows stamped with `business_id` (§1 stamps from the legacy account when the mapping is unambiguous; production's 99 pool rows stamp to Enveil Vincent `de31fd60-…`) + pool RLS gains the account leg (`business_id IS NULL OR business_id = current_business_context()`); the `source='legacy migration'` tag SURVIVES (orders.source kept in this scope)
+- [x] Client surgery: `useBusinessContext` (brandStores/sellingPointsCount removed), OrderSources legacy section (stores-only), Brands (store UI removed), CourierServicesTab (connectors legacy section removed), OrderDetailSheet (location picker removed, storefront_id kept for the restore-stock trigger), `legacyPool.ts` filters (3 legs), signup RPC test updated to the brand-leg publish
 
 **Verification:**
-- [ ] `npm run typecheck`, `npm test`, `npm run build` pass; `npm run test:rls` pass
+- [x] Battery green (2026-11-02): `npm run typecheck` clean · `npm run test:rls` **ALL GREEN (28 files)** incl. the new `task16_contract_drop_test.sql` (7 tables gone, 5 columns gone, pool RLS shape without the dropped column + account leg, publish rewrite, dead RPCs, mapping columns survive, one-holder CHECK rebuilt two-way) · vitest **496 passed | 3 skipped (61 files)** · `npm run build` clean · eslint: no new issues (the 18 `no-explicit-any` errors in OrderDetailSheet exist identically at HEAD). The battery caught two real defects pre-commit: the auto-dropped one-holder CHECK (rebuilt in §5) and the §3 body-comment literal that would have failed §8's own verification grep
 
 **Dependencies:** Task 17 (cutover must precede drop) — run after successful cutover
 **Files likely touched:** `supabase/migrations/*.sql`, deleted `src/components/onboarding/*`, `src/pages/Dispatch.tsx`, affected imports

@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  LEGACY_BRAND_STORE_MAPPING,
-  LEGACY_STOREFRONT_MAPPING,
   LEGACY_WOO_STORE_MAPPING,
   ORDER_SOURCE_TYPES,
   isPhysicalSourceType,
-  legacySellingPointMapping,
   orderSourceConfigFields,
   orderSourceConnectionState,
   orderSourceLabel,
@@ -84,18 +81,7 @@ describe("connection config on the source (spec §2)", () => {
 });
 
 describe("spec §7 legacy mapping labels", () => {
-  it("maps selling point types to their future source", () => {
-    expect(legacySellingPointMapping("woocommerce")).toBe("1 order source · WooCommerce");
-    expect(legacySellingPointMapping("dokanos_storefront")).toBe("1 order source · Storefront");
-    expect(legacySellingPointMapping("showroom_pos")).toContain("merges into its showroom");
-    expect(legacySellingPointMapping("facebook")).toBe("1 order source · Facebook");
-    expect(legacySellingPointMapping("tiktok")).toBe("1 manual order source (user-named)");
-    expect(legacySellingPointMapping("other")).toBe("1 manual order source (user-named)");
-  });
-
-  it("labels the other legacy entities", () => {
+  it("labels the surviving legacy Woo-store record", () => {
     expect(LEGACY_WOO_STORE_MAPPING).toContain("WooCommerce");
-    expect(LEGACY_BRAND_STORE_MAPPING).toContain("audit mapping");
-    expect(LEGACY_STOREFRONT_MAPPING).toBe("1 order source · Storefront");
   });
 });

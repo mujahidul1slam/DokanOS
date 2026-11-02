@@ -8,6 +8,15 @@
 --   only (tasks/audit/task8-dry-run-report.md). Executing it against
 --   production is Task 17 and is gated on explicit user go-ahead.
 --
+-- ✅ EXECUTED IN PRODUCTION 2026-11-02 06:02 +06 (runbook Gate 2, user-gated),
+--    audited live at Gate 3 (23/23 checks, tasks/audit/task17-readiness-report.md).
+--    This file is now the HISTORICAL RECORD of what ran: it reads the legacy
+--    contract tables (locations, selling_points, connectors, product_sources,
+--    customer_sources) and the orders.selling_point_id column, which the Task 16
+--    contract migration (supabase/migrations/20261103120000_task16_contract_drop.sql)
+--    dropped afterwards. It can only be re-run against the PRE-Task-16 schema —
+--    never against a database that already has 20261103120000 applied.
+--
 -- STRICTLY id-based: every target row is a UUID literal resolved from a
 -- read-only production inventory (scripts/task8-extract-prod.mjs). There is
 -- not a single name-based lookup anywhere in this file (spec §7 name traps:

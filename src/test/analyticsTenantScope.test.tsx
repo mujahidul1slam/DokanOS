@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
@@ -108,7 +108,6 @@ const setActiveBusiness = (id: string | null, storeIds: string[]) => {
     active: id ? { id, name: "Business", logo_url: null, currency: "USD" } : null,
     businesses: [],
     brands: storeIds.map((woo_store_id) => ({ woo_store_id })),
-    brandStores: [],
     activeBrand: null,
     myRole: "owner",
     rolesByBusiness: {},
@@ -118,7 +117,6 @@ const setActiveBusiness = (id: string | null, storeIds: string[]) => {
     setActive: vi.fn(),
     setActiveBrand: vi.fn(),
     refresh: vi.fn(),
-    sellingPointsCount: 0,
     onboardingCompletedAt: null,
   };
 };
@@ -182,7 +180,7 @@ describe("Analytics reads are scoped to the active business's stores", () => {
     renderAnalytics();
     // Three store-scoped orders reads: current period, previous period,
     // all-history customers. Plus exactly ONE pinned carve-out (Task 15): the
-    // legacy-pool head count on the banner — it counts UNOWNED rows (pool rows
+    // legacy-pool head count on the banner â€” it counts UNOWNED rows (pool rows
     // carry no store binding at all), so it is deliberately not store-scoped
     // and is pinned by shape below instead.
     await waitFor(() => expect(queriesFor("orders").length).toBe(4));

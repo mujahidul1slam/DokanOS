@@ -20,24 +20,16 @@ import {
 } from "@/components/ui/table";
 import { CourierServiceDialog } from "@/components/courier/CourierServiceDialog";
 
-interface LegacyCourierRow {
-  key: string;
-  kind: string;
-  name: string;
-  detail: string;
-}
-
 /**
  * Settings → Courier services (Task 9, spec §4): one courier account per
  * business, enabled at fulfillment time — no per-brand duplication. The
- * legacy per-brand courier rows stay read-only here until the mapping
- * collapses them at cutover (their ids become the `legacy_*` audit columns).
+ * legacy per-brand courier connectors were dropped at the Task 16 contract
+ * migration; their ids survive as the service's `legacy_*` audit columns.
  */
 const CourierServicesTab = () => {
   const { active, myRole } = useBusinessContext();
   const canCreate = canCreateBusinessResources(myRole);
   const [services, setServices] = useState<CourierServiceRow[]>([]);
-  const [legacyRows, setLegacyRows] = useState<LegacyCourierRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ open: boolean; service: CourierServiceRow | null }>({
@@ -48,53 +40,19 @@ const CourierServicesTab = () => {
   const load = useCallback(async () => {
     if (!active) {
       setServices([]);
-      setLegacyRows([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const [svcRes, connRes] = await Promise.all([
-        supabase.from("courier_services").select("*").eq("business_id", active.id).order("name"),
-        supabase
-          .from("connectors")
-          .select("id, name, brand_id, config")
-          .eq("business_id", active.id)
-          .eq("category", "courier")
-          .order("name"),
-      ]);
-      const failed = [svcRes, connRes].find((r) => r.error);
-      if (failed?.error) throw failed.error;
-      setServices((svcRes.data as CourierServiceRow[]) || []);
-      const connectors = (connRes.data ?? []) as Array<{ id: string; name: string; config: Record<string, unknown> | null }>;
-      // The legacy Pathao rows the connectors point at (id link, never names).
-      const integrationIds = connectors
-        .map((c) => (typeof c.config?.integration_id === "string" ? (c.config.integration_id as string) : null))
-        .filter((id): id is string => !!id);
-      const intRes =
-        integrationIds.length > 0
-          ? await supabase
-              .from("pathao_integrations")
-              .select("id, name, environment, is_active")
-              .in("id", integrationIds)
-          : { data: [], error: null };
-      if (intRes.error) throw intRes.error;
-      const integrations = (intRes.data ?? []) as Array<{ id: string; name: string; environment: string | null; is_active: boolean }>;
-      setLegacyRows([
-        ...connectors.map((c) => ({
-          key: `conn-${c.id}`,
-          kind: "Courier connector",
-          name: c.name,
-          detail: `config.integration_id → ${typeof c.config?.integration_id === "string" ? c.config.integration_id : "none"}`,
-        })),
-        ...integrations.map((i) => ({
-          key: `int-${i.id}`,
-          kind: "Pathao integration",
-          name: i.name,
-          detail: `${i.environment ?? "env"} · ${i.is_active ? "active" : "inactive"}`,
-        })),
-      ]);
+      const { data, error: svcError } = await supabase
+        .from("courier_services")
+        .select("*")
+        .eq("business_id", active.id)
+        .order("name");
+      if (svcError) throw svcError;
+      setServices((data as CourierServiceRow[]) || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load courier services");
     } finally {
@@ -192,35 +150,6 @@ const CourierServicesTab = () => {
             })}
           </TableBody>
         </Table>
-      )}
-
-      {legacyRows.length > 0 && (
-        <section aria-label="Legacy courier rows, not yet migrated" className="rounded-md border border-dashed border-border bg-secondary/20 p-4">
-          <h3 className="text-sm font-medium">Legacy courier rows — not yet migrated (read-only)</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            The old per-brand courier rows collapse into business-level services at
-            the mapping migration — their ids become the service's legacy mapping.
-            Nothing here is editable.
-          </p>
-          <Table className="mt-3">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-40">Kind</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Detail</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {legacyRows.map((row) => (
-                <TableRow key={row.key}>
-                  <TableCell className="text-xs text-muted-foreground">{row.kind}</TableCell>
-                  <TableCell className="text-sm">{row.name}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{row.detail}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </section>
       )}
 
       <CourierServiceDialog

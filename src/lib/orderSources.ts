@@ -196,28 +196,10 @@ export function orderSourceConnectionState(
 }
 
 // ---------------------------------------------------------------------------
-// Spec §7 row mapping — what each legacy row collapses into at Task 8.
-// Used by the read-only legacy section so nothing is lost from the page before
-// the mapping migration runs. Labels are display-only; all migration logic is
-// id-based (never name-based).
+// Spec §7 row mapping — what each legacy row collapsed into at the Task 8
+// mapping migration. After the Task 16 contract drop only the Woo-store
+// record remains visible (the legacy contract tables are gone); this label
+// documents what that row became. Display-only.
 // ---------------------------------------------------------------------------
 
 export const LEGACY_WOO_STORE_MAPPING = "1 order source · WooCommerce (config: URL + API keys)";
-
-export const LEGACY_BRAND_STORE_MAPPING =
-  "absorbed — its id becomes the audit mapping on the order source";
-
-export const LEGACY_STOREFRONT_MAPPING = "1 order source · Storefront";
-
-const LEGACY_SP_MAPPING: Record<string, string> = {
-  woocommerce: "1 order source · WooCommerce",
-  dokanos_storefront: "1 order source · Storefront",
-  showroom_pos: "merges into its showroom source (POS binds there)",
-  facebook: "1 order source · Facebook",
-  instagram: "1 order source · Instagram",
-  whatsapp: "1 order source · WhatsApp",
-};
-
-export function legacySellingPointMapping(type: string): string {
-  return LEGACY_SP_MAPPING[type] ?? "1 manual order source (user-named)";
-}

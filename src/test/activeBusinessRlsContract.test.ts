@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
  *  - invoice_settings, pathao_stores: no tenant key at all (deployment-global
  *    settings row / shared courier directory) — scoping them needs a schema
  *    change tracked separately in issue #16.
- *  - brands, brand_stores, businesses: the issue #11/#12 membership-scoped
+ *  - brands, businesses: the issue #11/#12 membership-scoped
  *    model, not store-linked operational data.
  *  - pathao_integrations: admin-only rows plus a security_invoker safe view.
  */

@@ -48,17 +48,15 @@ function lit(value) {
 
 // FK-safe load order. auth.users rows use the RLS-harness insert shape
 // (run-rls-tests.mjs) — user_business_access.user_id references them.
+// Task 16 note: locations, selling_points, connectors, product_sources and
+// customer_sources were dropped by 20261103120000_task16_contract_drop.sql —
+// extracts that still contain those files skip them (missing-table rule).
 const LOAD_ORDER = [
   "businesses",
   "stores",
   "brands",
-  "locations",
   "storefronts",
   "storefront_pages",
-  "selling_points",
-  "connectors",
-  "product_sources",
-  "customer_sources",
   "products",
   "product_variations",
   "product_locations",
@@ -127,7 +125,7 @@ async function main() {
   const db = new pg.Client({ connectionString: scratchUrl.href });
   await db.connect();
 
-  const required = ["businesses", "brands", "stores", "selling_points", "orders", "order_items", "customers", "order_sources", "warehouses"];
+  const required = ["businesses", "brands", "stores", "orders", "order_items", "customers", "order_sources", "warehouses"];
   for (const table of required) {
     const { rows } = await db.query(`SELECT to_regclass('public.${table}') AS t`);
     if (!rows[0].t) {

@@ -116,26 +116,14 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.brands WHERE business_id = v_biz_id) THEN
     RAISE EXCEPTION 'R1-b: template brand rows were created';
   END IF;
-  IF EXISTS (SELECT 1 FROM public.locations WHERE business_id = v_biz_id) THEN
-    RAISE EXCEPTION 'R1-b: template location rows were created';
-  END IF;
   IF EXISTS (SELECT 1 FROM public.storefronts sf
               JOIN public.brands br ON sf.store_id = br.woo_store_id
              WHERE br.business_id = v_biz_id) THEN
     RAISE EXCEPTION 'R1-b: template storefront rows were created';
   END IF;
-  IF EXISTS (SELECT 1 FROM public.selling_points WHERE business_id = v_biz_id) THEN
-    RAISE EXCEPTION 'R1-b: template selling_points rows were created';
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.connectors WHERE business_id = v_biz_id) THEN
-    RAISE EXCEPTION 'R1-b: template connector rows were created';
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.product_sources WHERE business_id = v_biz_id) THEN
-    RAISE EXCEPTION 'R1-b: template product_source rows were created';
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.customer_sources WHERE business_id = v_biz_id) THEN
-    RAISE EXCEPTION 'R1-b: template customer_source rows were created';
-  END IF;
+  -- Task 16: locations, selling_points, connectors, product_sources and
+  -- customer_sources no longer exist (contract drop) — template rows there are
+  -- impossible by construction.
   IF EXISTS (SELECT 1 FROM public.user_store_access WHERE user_id = v_test_uid) THEN
     RAISE EXCEPTION 'R1-b: template user_store_access rows were created';
   END IF;
@@ -321,9 +309,8 @@ BEGIN
   RAISE NOTICE 'R4a-a deny matrix PASSED.';
 
   -- 7. R4-d4: publish works on the R4a-reserved storefront (wizard step-4 shape)
-  --    the wizard attaches the dokanos_storefront selling point, then publishes
-  INSERT INTO public.selling_points (business_id, brand_id, name, type, woo_store_id, storefront_id)
-  VALUES (v_biz_id, v_brand_id, v_slug || ' Storefront', 'dokanos_storefront', v_store_id, v_sf_id);
+  --    Task 16: the publish RPC resolves ownership via the brand's Woo store
+  --    (brands.woo_store_id = storefronts.store_id) — no selling-point attach.
   v_res := public.publish_my_storefront(v_sf_id);
   IF (v_res->>'status') <> 'ok' OR (v_res->>'is_active')::boolean IS NOT TRUE THEN
     RAISE EXCEPTION 'publish on the R4a storefront failed: %', v_res;

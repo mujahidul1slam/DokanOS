@@ -32,11 +32,10 @@ const brandStoreless: ReassignTarget["brand"] = {
 const source: ReassignTarget["source"] = { id: "source-1", name: "Main Showroom" };
 
 describe("legacy pool predicates (scripts/migrate-enveil-vincent.sql step 10)", () => {
-  it("orders: the legacy migration tag plus the four binding NULLs the script targets", () => {
+  it("orders: the legacy migration tag plus the three binding NULLs the script targets (post Task 16)", () => {
     expect(poolOrderFilters).toEqual([
       { column: "source", op: "eq", value: "legacy migration" },
       { column: "store_id", op: "is", value: null },
-      { column: "selling_point_id", op: "is", value: null },
       { column: "storefront_id", op: "is", value: null },
       { column: "order_source_id", op: "is", value: null },
     ]);
