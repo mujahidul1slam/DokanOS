@@ -134,21 +134,34 @@ export default function AttachParcelDialog({
       });
 
       if (error) {
-        // If the edge function returned non-200, check if error payload had pathao_failed
+        // If the edge function returned non-200, recover its JSON body so the
+        // real refusal reason reaches the user. supabase-js versions differ in
+        // where they put it: older ones stringify the body into error.message,
+        // current ones expose the Response on error.context and leave message
+        // as the generic "Edge Function returned a non-2xx status code".
+        let body: any = null;
         try {
-          const body = JSON.parse(error.message);
-          if (body?.pathao_failed) {
-            setConfirmChoiceOpen(false);
-            setPathaoFailDialog({
-              open: true,
-              reason: body.reason || body.error || "Order cancellation rejected by Pathao",
-              consignmentId: body.consignment_id || existingConsignmentId || "",
-            });
-            return;
-          }
+          body = JSON.parse((error as any).message);
         } catch {
-          // not JSON, continue
+          // not JSON, fall through to context
         }
+        if (!body && (error as any).context?.json) {
+          try {
+            body = await (error as any).context.clone().json();
+          } catch {
+            // no parseable body, fall through
+          }
+        }
+        if (body?.pathao_failed) {
+          setConfirmChoiceOpen(false);
+          setPathaoFailDialog({
+            open: true,
+            reason: body.reason || body.error || "Order cancellation rejected by Pathao",
+            consignmentId: body.consignment_id || existingConsignmentId || "",
+          });
+          return;
+        }
+        if (body?.error) throw new Error(body.error);
         throw error;
       }
 

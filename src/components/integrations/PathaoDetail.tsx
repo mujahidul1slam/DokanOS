@@ -90,14 +90,40 @@ const PathaoDetail = ({ integration, onDelete, onRefresh }: Props) => {
       username: form.username,
       password: form.password,
     }).eq("id", integration.id);
-    setSaving(false);
     if (error) {
+      setSaving(false);
       toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Pathao integration updated" });
-      setEditing(false);
-      onRefresh();
+      return;
     }
+    // Credentials changed. The edge function caches Pathao tokens for the whole
+    // token lifetime (Pathao issues 90-day tokens) and nothing else busts that
+    // cache, so without a forced re-mint every dispatch would keep replaying the
+    // token issued under the OLD credentials and 401. Re-auth now and verify the
+    // new credentials are actually accepted before telling the user it worked.
+    const { data: reauthData, error: reauthErr } = await supabase.functions.invoke(
+      "pathao-courier",
+      { body: { action: "reauth", integration_id: integration.id, force_refresh: true } },
+    );
+    setSaving(false);
+    // The edge function answers in the standard { data: result } envelope (same
+    // as every other pathao-courier action — see createDispatch.ts), so unwrap
+    // it before reading the outcome; fall back to a flat body for robustness.
+    const outcome = ((reauthData as any)?.data ?? reauthData) as
+      | { reauthorized?: boolean; error?: string }
+      | null;
+    const verified = !reauthErr && outcome?.reauthorized === true;
+    if (verified) {
+      toast({ title: "Pathao connection verified" });
+    } else {
+      toast({
+        title: "Saved, but Pathao rejected these credentials",
+        description:
+          outcome?.error || reauthErr?.message || "could not verify the connection",
+        variant: "destructive",
+      });
+    }
+    setEditing(false);
+    onRefresh();
   };
 
   const toggleSecret = (key: string) => {
