@@ -61,7 +61,7 @@ export async function fetchMergeOrderDetails(orderIds: string[]): Promise<MergeO
     supabase
       .from("orders")
       .select(
-        "id, order_number, status, consignment_id, deleted_at, customer_name, customer_phone, subtotal, discount, shipping_cost, tax_amount, total"
+        "id, order_number, status, consignment_id, deleted_at, customer_name, customer_phone, source, store_id, selling_point_id, payment_status, subtotal, discount, shipping_cost, tax_amount, total"
       )
       .in("id", orderIds),
     supabase
@@ -113,6 +113,12 @@ export async function fetchMergeOrderDetails(orderIds: string[]): Promise<MergeO
     deleted_at: o.deleted_at ?? null,
     customer_name: o.customer_name ?? null,
     customer_phone: o.customer_phone ?? null,
+    source: o.source ?? null,
+    store_id: o.store_id ?? null,
+    selling_point_id: o.selling_point_id ?? null,
+    payment_status: o.payment_status === "paid" || o.payment_status === "partial" || o.payment_status === "unpaid" || o.payment_status === "online"
+      ? o.payment_status
+      : null,
     subtotal: Number(o.subtotal) || 0,
     discount: Number(o.discount) || 0,
     shipping_cost: Number(o.shipping_cost) || 0,
