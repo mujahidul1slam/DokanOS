@@ -13,6 +13,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import CategoryFilter from "@/components/CategoryFilter";
 import { cn } from "@/lib/utils";
+import { PAYMENT_NEEDS_CONFIRMATION_LABEL } from "@/lib/paymentGate";
 
 export interface StoreOption {
   id: string;
@@ -120,7 +121,7 @@ function OrderFiltersImpl(props: OrderFiltersProps) {
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="processing">New Order</SelectItem>
-                  <SelectItem value="payment_pending">Payment Pending</SelectItem>
+                  <SelectItem value="payment_pending">{PAYMENT_NEEDS_CONFIRMATION_LABEL}</SelectItem>
                   <SelectItem value="pre_order_pending">Pre-Order</SelectItem>
                   <SelectItem value="pre_order_making">Making</SelectItem>
                   <SelectItem value="pre_order_ready">Pre-Order Ready</SelectItem>
@@ -177,17 +178,33 @@ function OrderFiltersImpl(props: OrderFiltersProps) {
                 <SelectItem value="none">No Courier Entry</SelectItem>
                 <SelectItem value="Pending">Pending</SelectItem>
                 <SelectItem value="Pickup Pending">Pickup Pending</SelectItem>
+                <SelectItem value="Waiting for Pickup">Waiting for Pickup</SelectItem>
+                <SelectItem value="Pickup Requested">Pickup Requested</SelectItem>
                 <SelectItem value="Assigned for Pickup">Assigned for Pickup</SelectItem>
+                <SelectItem value="Picked">Picked</SelectItem>
                 <SelectItem value="Picked Up">Picked Up</SelectItem>
+                <SelectItem value="Pickup On Hold">Pickup On Hold</SelectItem>
                 <SelectItem value="Pickup Failed">Pickup Failed</SelectItem>
                 <SelectItem value="Pickup Cancel">Pickup Cancel</SelectItem>
                 <SelectItem value="At Sorting Hub">At Sorting Hub</SelectItem>
+                <SelectItem value="Received at Sorting Hub">Received at Sorting Hub</SelectItem>
+                <SelectItem value="Sent to Sub Sorting Hub">Sent to Sub Sorting Hub</SelectItem>
+                <SelectItem value="Received at Sub Sorting Hub">Received at Sub Sorting Hub</SelectItem>
+                <SelectItem value="Sent to Last Mile Hub">Sent to Last Mile Hub</SelectItem>
                 <SelectItem value="In Transit">In Transit</SelectItem>
+                <SelectItem value="On the Way To Delivery Hub">On the Way To Delivery Hub</SelectItem>
+                <SelectItem value="At Delivery Hub">At Delivery Hub</SelectItem>
+                <SelectItem value="Assigned for Delivery">Assigned for Delivery</SelectItem>
+                <SelectItem value="Sent for Delivery">Sent for Delivery</SelectItem>
                 <SelectItem value="Out for Delivery">Out for Delivery</SelectItem>
+                <SelectItem value="Delivery Confirmed">Delivery Confirmed</SelectItem>
                 <SelectItem value="Delivered">Delivered</SelectItem>
+                <SelectItem value="Partial Delivery">Partial Delivery</SelectItem>
                 <SelectItem value="Partial Delivered">Partial Delivered</SelectItem>
                 <SelectItem value="Payment Invoice">Payment Invoice</SelectItem>
                 <SelectItem value="On Hold">On Hold</SelectItem>
+                <SelectItem value="On Hold By Customer Request">On Hold By Customer Request</SelectItem>
+                <SelectItem value="Hold">Hold</SelectItem>
                 <SelectItem value="Exchange">Exchange</SelectItem>
                 <SelectItem value="Return">Return</SelectItem>
                 <SelectItem value="Returned">Returned</SelectItem>
@@ -195,9 +212,16 @@ function OrderFiltersImpl(props: OrderFiltersProps) {
                 <SelectItem value="Return Requested">Return Requested</SelectItem>
                 <SelectItem value="Return In Transit">Return In Transit</SelectItem>
                 <SelectItem value="Returned to Merchant">Returned to Merchant</SelectItem>
+                <SelectItem value="Merchant Return">Merchant Return</SelectItem>
                 <SelectItem value="Return Delivered">Return Delivered</SelectItem>
                 <SelectItem value="Delivery Failed">Delivery Failed</SelectItem>
                 <SelectItem value="Customer Refused">Customer Refused</SelectItem>
+                <SelectItem value="DRT Requested">DRT Requested</SelectItem>
+                <SelectItem value="DRT Pick Requested">DRT Pick Requested</SelectItem>
+                <SelectItem value="DRT Pick Failed">DRT Pick Failed</SelectItem>
+                <SelectItem value="DRT Cancelled">DRT Cancelled</SelectItem>
+                <SelectItem value="Lost">Lost</SelectItem>
+                <SelectItem value="Damaged">Damaged</SelectItem>
                 <SelectItem value="Cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>

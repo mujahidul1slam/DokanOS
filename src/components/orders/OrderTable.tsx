@@ -13,6 +13,60 @@ import {
 import { cn } from "@/lib/utils";
 import type { TabKey } from "@/pages/orders/tabFilters";
 import { useCurrency } from "@/hooks/useCurrency";
+import { brandMonogram } from "@/lib/brandIdentity";
+
+export interface OrderBrandPresentation {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  accent: string;
+}
+
+export function BrandPresentation({
+  brand,
+  sellingPointName,
+  storeName,
+  compact = false,
+}: {
+  brand: OrderBrandPresentation | null | undefined;
+  sellingPointName?: string | null;
+  storeName?: string | null;
+  compact?: boolean;
+}) {
+  const fallbackName = sellingPointName || storeName || "—";
+  if (!brand) {
+    return <span className="text-sm text-foreground">{fallbackName}</span>;
+  }
+  const monogram = brandMonogram(brand.name);
+  return (
+    <span className={cn("inline-flex min-w-0 items-center gap-2", compact && "gap-1.5")}>
+      {brand.logo_url ? (
+        <img
+          src={brand.logo_url}
+          alt=""
+          referrerPolicy="no-referrer"
+          className={cn("shrink-0 rounded object-cover", compact ? "h-5 w-5" : "h-7 w-7")}
+          style={{ border: `2px solid ${brand.accent}` }}
+          onError={(event) => { event.currentTarget.style.display = "none"; }}
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          className={cn("inline-flex shrink-0 items-center justify-center rounded font-bold text-white", compact ? "h-5 w-5 text-[9px]" : "h-7 w-7 text-[10px]")}
+          style={{ backgroundColor: brand.accent }}
+        >
+          {monogram}
+        </span>
+      )}
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-foreground">{brand.name}</span>
+        {(sellingPointName || storeName) && (
+          <span className="block truncate text-[11px] text-muted-foreground">{sellingPointName || storeName}</span>
+        )}
+      </span>
+    </span>
+  );
+}
 
 interface OrderRowLike {
   id: string;
@@ -33,6 +87,9 @@ interface OrderRowLike {
   pickup_slip_printed_at?: string | null;
   measurement_slip_printed_at?: string | null;
   stores: { name: string } | null;
+  selling_points?: { name: string } | null;
+  brand?: OrderBrandPresentation | null;
+  order_source?: { name: string; type: string } | null;
   productItems: { name: string; qty: number }[];
 }
 
@@ -90,7 +147,7 @@ function OrderTable<T extends OrderRowLike>({
             </TableHead>
             <TableHead>Order Info</TableHead>
             <TableHead>Customer</TableHead>
-            <TableHead>Store</TableHead>
+            <TableHead>Brand / Selling Point</TableHead>
             <TableHead className="w-[240px]">Products</TableHead>
             <TableHead>Source</TableHead>
             <TableHead className="text-right">Total</TableHead>
@@ -128,21 +185,23 @@ function OrderTable<T extends OrderRowLike>({
                 )}
               </TableCell>
               <TableCell>
-                <span className="text-sm text-foreground">
-                  {order.stores?.name || (order.source === "pos" ? "POS" : "—")}
-                </span>
+                <BrandPresentation
+                  brand={order.brand}
+                  sellingPointName={order.selling_points?.name}
+                  storeName={order.stores?.name || (order.source === "pos" ? "POS" : null)}
+                />
               </TableCell>
               <TableCell>
                 <ProductsList items={order.productItems} />
               </TableCell>
-              <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} /></TableCell>
+              <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} orderSource={order.order_source} /></TableCell>
               <TableCell className="text-right">
                 <div className="font-medium text-foreground">{symbol}{Number(order.total).toLocaleString()}</div>
                 {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (
                   <div className="text-xs text-amber-400">Due: {symbol}{Number(order.amount_to_collect).toLocaleString()}</div>
                 )}
                 <div className="mt-0.5 flex flex-col items-end gap-0.5">
-                  <PaymentBadge status={order.payment_status} />
+                  <PaymentBadge status={order.payment_status} source={order.source} paymentMethod={order.payment_method} />
                   {order.payment_method && order.payment_status !== "cod" && (
                     <span className="text-[11px] text-muted-foreground">{order.payment_method}</span>
                   )}

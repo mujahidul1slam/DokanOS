@@ -12,6 +12,7 @@ import { getGroupsForProduct, type MeasurementGroup } from "@/lib/measurements";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 import type { Product, Variation, CartItem, MeasurementGroupCapture } from "./types";
 import { useCurrency } from "@/hooks/useCurrency";
+import { parseVariationAttributes } from "@/lib/variations";
 
 interface Props {
   product: Product | null;
@@ -22,14 +23,9 @@ interface Props {
 
 interface ParsedAttr { key: string; value: string; }
 
+// Delegates to the shared parser (Phase 3 §6.2); local alias keeps call sites stable.
 function parseAttributes(attrs: any): ParsedAttr[] {
-  if (!Array.isArray(attrs)) return [];
-  return attrs.map((a: any) => {
-    if (a.key && a.value) return { key: a.key, value: a.value };
-    const k = Object.keys(a).find((k) => k !== "key" && k !== "value");
-    if (k) return { key: k, value: a[k] };
-    return null;
-  }).filter(Boolean) as ParsedAttr[];
+  return parseVariationAttributes(attrs).map((a) => ({ key: a.name, value: a.option }));
 }
 
 const VariationModal = ({ product, open, onClose, onAddToCart }: Props) => {

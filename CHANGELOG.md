@@ -4,6 +4,86 @@ All notable changes to DokanOS will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026-10-27]
+
+### Added
+
+- **Brand / Selling Point / Pathao Account identity** (#21, #22, #32) — the three are now distinct, first-class choices everywhere glossary terms apply:
+  - Add Order and Dispatch carry a large identity strip (Brand logo/monogram + name, Selling Point, Pathao Account with account name + pickup store), each changeable inline; mixed-brand carts warn dismissibly and keep the first Brand.
+  - Selection rules: single-brand businesses auto-select and carry the Brand between orders; multi-brand starts clear and the first product picks the Brand; Selling Point resolves default → sole option → filtered selector → blocked with a Stores hint. Orders persist `selling_point_id` with `store_id` kept as the legacy Woo-store binding.
+  - Brand Settings gains per-brand default Selling Point and default Pathao Account (no schema change: `selling_points.is_default` + `pathao_store_links`).
+  - Smart dispatch: every dispatch starts from the brand/Selling Point default Pathao Account; non-default choices warn and are recorded to timeline + audit. Multi-brand batches auto-group per account with overrideable selectors; per-order X-remove trims the batch only.
+  - Order Info can change Brand/Selling Point with the same rules, re-resolving the default Pathao Account and warning (never rebooking) when an active consignment was booked through another account.
+  - Orders list and pickup slips show Brand with a deterministic accent + logo/monogram fallback and the Selling Point.
+- **Create & Dispatch** (#23) — second Add Order action that creates and books the consignment through the selected Pathao Account in one go; on failure the order stays saved with an idempotent Retry dispatch (duplicate creation is impossible). Optional per-Pathao-Account "send product descriptions" (default OFF) puts names + quantities + variation labels into Pathao's `item_description`.
+- **Order merge and split** (#30, #31) — merge same-customer same-state orders (pre-entry only per ADR-0002) with items rollup and payment records moved, never duplicated; split an order into two with the three distinct payment cases (COD / new payment / transferred payment) and per-result-order charge allocation.
+- **Payment gate** (#27) — WooCommerce online-payment orders awaiting confirmation are locked as **Payment Needs Confirmation** (display-only rename; stored values untouched per ADR-0001) against courier entry and status changes across Order Info, row/bulk actions, dispatch and the `pathao-courier` API. Confirmation stays manual and permission-controlled; any recorded payment releases the gate.
+- **Measurements** (#28) — deferred entry with "Measurements pending" markers on slips, category assignment cascade (all / selected / excluded subtrees, resolved live), and per-product never-measure overrides.
+- **Duplicate-order warning** (#29) — warn-only, dismissible: same customer (normalized phone) + same product + same brand within 48h, shown on Add Order and the Orders page.
+- **Fuzzy product search** (#33) — ranked search module (Bangla ↔ Latin folding, scanner-safe exact SKU/barcode short-circuit, typo tolerance, variation attribute text) adopted across Add Order and POS catalogs.
+- **Print upgrades** (#24) — independently toggleable slip elements (brand, Selling Point, source, Pathao Account, dispatch status), strictly monochrome thermal output with a bold-text option, and a one-click daily POS print (thermal + A4).
+- **Settings guard** (#25) — sticky Save/Discard bar and a route-away guard (links, anchors, back/forward) with one Unsaved-changes dialog.
+- **Products preview** (#26) — hover/tap enlarged product image preview with hotlink-safe loading.
+- **Shared variation picker** (#20) — size/variation selection in the Order Info picker and ExchangeDialog via one component; existing size labels unaffected.
+
+### Changed
+
+- Glossary language throughout UI copy: "Payment Needs Confirmation" (replacing "Payment Pending"), "Consignment" (replacing "courier entry"/"parcel"), and the Brand / Selling Point / Pathao Account distinction in selectors, list and slips.
+- Parcel cancel/replace adopted the replace/skip WIP with verified edge cases and envelope-unwrap hardening (#18).
+
+### Fixed
+
+- Add Order product images load (`referrerPolicy` + placeholder fallback) and customer autofill by phone incl. alias-reachable multi-match (#19).
+- City/Area dropdowns match mid-word fragments; address auto-detect uses scoped fuzzy area/zone matching that rejects ambiguous ties (#3).
+- Orders and Analytics lists no longer hide selling-point-only orders (store_id NULL) (#21).
+- Merged orders preserve the payment-gate marker and brand identity — merging can no longer launder a gated order (ADR-0001).
+
+> **Upgrade note:** this patch is schema-free by design (all new configuration lives in existing tables / JSON / KV rows); deploy the app and the updated `pathao-courier` edge function together.
+
+## [2026-10-01]
+
+### Added
+
+- **Self-Serve Business Owner Sign-Up & Atomic Provisioning** (migrations `20260925120000_signup_support_tables.sql`, `20260925120100_signup_provision_fns.sql`, `20260925140000_signup_publish_and_delete_rpcs.sql`):
+  - **Full Frontend Flow**: Self-serve registration (`/signup`), verification screen (`/check-email`), email link verification (`/auth/confirm`), welcome onboarding (`/welcome`), and error recovery (`/welcome/setup-failed`).
+  - **Single Atomic Transaction (`signup_create_business_core`)**: Provisions the root business, brand, default location ('Main', showroom), disconnected store, inactive storefront, 4 parity rows (`connectors`, `selling_points`, `product_sources`, `customer_sources`), `user_business_access` with role `owner`, 1 store access row, and the 32-key tenant permission bundle.
+  - **Strict Zero Global Roles**: Self-serve business owners receive strictly 0 rows in global `user_roles`. Multi-tenant access is scoped exclusively via Row-Level Security.
+  - **Server-Side Audit & Consent Anchor**: Client generates a cryptographic `signup_nonce` paired with a server-written `signup_started` row in `signup_events` tracking IP, user-agent, and server-authoritative versions in `consent_records`.
+  - **Disposable Email Protection**: Real-time screening against a client snapshot (`src/lib/disposableDomains.ts`) and authoritative PostgreSQL table `disposable_email_domains`.
+  - **Password Hygiene**: Password strength meter via `zxcvbn` (minimum 10 characters, checks against breached top-10k passwords).
+  - **Edge Functions**:
+    - `signup-event`: Records server-side audit events with Cloudflare Turnstile verification.
+    - `signup-provision`: Verifies caller JWT, enforces 24-hour setup window, validates nonce against server anchor, and calls `provision_owner_business`.
+    - `auth-resend`: Canonical email lookup via `get_auth_signup_state`, unconfirmed check, rate limiting (3/h/email, 20/h/IP), and token forwarding.
+    - `purge-unconfirmed`: Automated 26-hour purge for abandoned self-signups and 30-day sweep for unaccepted staff invitations.
+    - `create-business`: Authenticated edge function allowing provisioned users and platform admins to create additional businesses (rate-limited to 3/day/user).
+- **Member-Scoped Row Level Security (RLS)** (migration `20260929120000_member_scoped_rls.sql`):
+  - New `public.user_can_access_store(p_store_id)` helper function (`STABLE SECURITY DEFINER SET search_path = ''`).
+  - Multi-tenant isolation on operational tables: `stores`, `storefronts`, `products`, `orders`, `order_items`, and `customers`.
+  - Grants access to platform `admin`/`staff`, direct `user_store_access` holders, and business owners/members through `brands` $\rightarrow$ `user_business_access`.
+  - Shielding legacy orders (with `store_id IS NULL`) from tenant members while preserving platform staff visibility.
+  - Integration test suite (`scripts/test_tenant_rls_isolation.sql`) verifying cross-tenant read/write isolation between distinct business owners.
+- **Multi-Business Management & "Create New Business" Entry Points**:
+  - **AppSidebar Business Switcher**: Top-left header dropdown is always interactive, showing all member businesses with role badges (`owner`, `admin`, `member`, `viewer`), active checkmark, brand counts, and a persistent `+ Create new business` action.
+  - **Settings Business Account Tab**: New header card in **Settings $\rightarrow$ Business Account** displaying the active business with role badge and a prominent `+ Create new business` button, with full empty-state support for fresh accounts.
+  - **`CreateBusinessDialog` component**: Modal prompting for business name, live slug generation, Cloudflare Turnstile token validation, and instant context refresh via `useBusinessContext`.
+  - **Consumer Query Guards**: Scoped `useStoresList.ts` and `StorefrontsPage.tsx` to active business brands, preventing cross-tenant placeholder store leakage.
+- **Operations & Runbook**:
+  - Complete operations guide (`SIGNUP-OPERATIONS-AND-RUNBOOK.md`) covering conversion funnels, alert queries, retention sweeps, and Supabase dashboard checklists.
+  - Policy documentation (`MEMBER-SCOPED-RLS-MATRIX.md`) detailing per-table scope paths and index plans.
+- **Automated Tests**:
+  - 19 new signup unit/flow tests in `src/test/signup.test.ts`. Full test suite passing (94/94 across 11 test suites).
+
+### Changed
+
+- **Login & Reset Password Security**:
+  - Integrated invisible Cloudflare Turnstile tokens into `/login` and `/reset-password`.
+  - Universal account enumeration defense via `src/lib/authErrors.ts`: merged `invalid_credentials` and `email_not_confirmed` into identical generic error messages.
+  - Added universal "Didn't receive a confirmation email?" resend link to the login screen.
+- **Team Management Edge Function**:
+  - Replaced 4,000-user paginated `listUsers` scan with unpaginated, canonical SQL lookup `get_auth_signup_state`.
+  - Implemented 5-route target resolution handling existing members, unconsumed anchors, and pending invitees safely without deleting in-flight self-signups.
+
 ## [2026-08-31]
 
 ### Added

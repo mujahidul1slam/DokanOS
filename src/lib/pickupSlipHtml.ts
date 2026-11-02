@@ -2,8 +2,37 @@ import type { PickupSlipTemplateConfig } from "@/hooks/useInvoiceSettings";
 import { makeBarcodeSvg } from "./barcodeSvg";
 import { PRINT_BOOTSTRAP } from "./printWindow";
 import { getActiveCurrency, symbolFor } from "./currency";
+import { brandMonogram } from "./brandIdentity";
+
+export interface SlipBrandData {
+  id: string;
+  name: string;
+  logo_url?: string | null;
+  accent?: string | null;
+}
+
+/** Resolved Pathao Account shown on the slip (glossary: Pathao account). */
+export interface SlipPathaoAccount {
+  /** Account label — the Pathao Account (integration) name. */
+  name: string;
+  /** Pickup store shown alongside the account name. */
+  pickupStoreName?: string | null;
+  /**
+   * True when this is the brand/Selling Point DEFAULT account, i.e. the slip
+   * was printed before dispatch. Dispatched slips show the actual account and
+   * never carry the "(default)" marker (issue #24).
+   */
+  isDefault?: boolean;
+}
+
+/** Rendering switches for one slip document (thermal vs monochrome). */
+export interface SlipRenderOptions {
+  /** Monochrome output (thermal): brand accents degrade to gray. */
+  mono?: boolean;
+}
 
 export interface SlipOrderData {
+  id?: string;
   order_number: string;
   total: number;
   amount_to_collect?: number | null;
@@ -11,7 +40,25 @@ export interface SlipOrderData {
   customer_phone?: string | null;
   customer_address?: string | null;
   special_instruction?: string | null;
-  productItems: { name: string; qty: number }[];
+  productItems: { name: string; qty: number; pendingNote?: string }[];
+  brand?: SlipBrandData | null;
+  sellingPointName?: string | null;
+  /** Display label for the order source; the raw `source` is the fallback. */
+  sourceLabel?: string | null;
+  /** Raw order source slug (pos / woocommerce / manual / exchange …). */
+  source?: string | null;
+  /**
+   * The Pathao Account for this order: the actual account once dispatched, or
+   * the brand/Selling Point default account (carrying `isDefault`) before
+   * dispatch. `null` means known-none configured — the slip prints "Pathao
+   * Account not selected" (issue #24). `undefined` means the print caller did
+   * not resolve one, and the element stays hidden rather than claiming none.
+   */
+  pathaoAccount?: SlipPathaoAccount | null;
+  /** Whether the order has been dispatched to a courier (consignment created). */
+  dispatched?: boolean;
+  /** Courier consignment id, shown with the dispatch status when present. */
+  consignmentId?: string | null;
 }
 
 /*
@@ -86,15 +133,84 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export function buildSlipInnerHtml(order: SlipOrderData, tpl: PickupSlipTemplateConfig, currency: string = getActiveCurrency()): string {
+/** Escape values inserted into the print document so brand metadata cannot inject markup. */
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function safeAccent(value: string | null | undefined): string {
+  return value && /^#[0-9a-f]{6}$/i.test(value) ? value : "#334155";
+}
+
+/*
+ * Thermal output must be strictly monochrome (issue #24): brand accents and
+ * the Pathao mark degrade to a gray derived from the accent's luminance —
+ * deterministic, and clamped dark enough to stay legible as a border or text
+ * on white and as a tile background behind white text.
+ */
+export function monochromeAccent(value: string | null | undefined): string {
+  const hex = value && /^#[0-9a-f]{6}$/i.test(value) ? value : "#334155";
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const gray = Math.min(0x66, Math.max(0x22, Math.round(0.299 * r + 0.587 * g + 0.114 * b)));
+  const part = gray.toString(16).padStart(2, "0");
+  return `#${part}${part}${part}`;
+}
+
+/** The Pathao brand tile color; degrades to gray on thermal like any accent. */
+export const PATHAO_MARK_COLOR = "#F5533D";
+
+const SOURCE_LABELS: Record<string, string> = {
+  pos: "POS",
+  woo: "WooCommerce",
+  woocommerce: "WooCommerce",
+  manual: "Manual",
+  exchange: "Exchange",
+  storefront: "Storefront",
+};
+
+/** Human label for an order source (glossary terms: WooCommerce/POS/manual/exchange). */
+export function sourceLabel(source: string | null | undefined): string {
+  const raw = String(source ?? "").trim();
+  if (!raw) return "";
+  return SOURCE_LABELS[raw.toLowerCase()] ?? raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+/**
+ * Shared thermal text rules (issue #24) for print documents whose layout lives
+ * outside this file (POS invoice, measurement slip, POS daily summary).
+ *
+ * Monochrome is guaranteed by collapsing every text color inside the scope to
+ * the neutral scale — inline colors and rules added later included — so
+ * thermal output cannot contain colored text; `grayClasses` keep their gray
+ * hierarchy. `bold` renders every line bold ("Bold thermal text").
+ * Apply to thermal documents only; A4 keeps its current styling.
+ */
+export function thermalTextCss(scope: string, opts: { bold?: boolean; grayClasses?: readonly string[] } = {}): string {
+  const gray = (opts.grayClasses ?? []).map((c) => `${scope} ${c}`).join(", ");
+  return `
+    ${scope}, ${scope} * { color: #111 !important; }
+    ${gray ? `${gray} { color: #444 !important; }` : ""}
+    ${opts.bold ? `${scope}, ${scope} * { font-weight: 700 !important; }` : ""}
+  `;
+}
+
+export function buildSlipInnerHtml(order: SlipOrderData, tpl: PickupSlipTemplateConfig, currency: string = getActiveCurrency(), opts: SlipRenderOptions = {}): string {
   // Single-page render (used by preview for first page)
-  return buildSlipPagesHtml(order, tpl, currency).join("");
+  return buildSlipPagesHtml(order, tpl, currency, opts).join("");
 }
 
 /** Returns one HTML string per physical slip (paginated when items > ITEMS_PER_SLIP). */
-export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplateConfig, currency: string = getActiveCurrency()): string[] {
+export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplateConfig, currency: string = getActiveCurrency(), opts: SlipRenderOptions = {}): string[] {
   const sym = symbolFor(currency);
   const s = tpl.sizing;
+  const mono = Boolean(opts.mono);
   const dueAmount = order.amount_to_collect || 0;
   const customFieldsHtml = tpl.custom_fields.filter(f => f.label && f.value).map(f =>
     `<div class="custom-field"><strong>${f.label}:</strong> ${f.value}</div>`
@@ -110,9 +226,30 @@ export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplate
     const isLast = idx === totalPages - 1;
     const pageBadge = totalPages > 1 ? `<span class="page-badge">${idx + 1}/${totalPages}</span>` : "";
 
+    // Slip elements are independently toggleable (issue #24); each toggle is
+    // opt-out so templates stored before they existed keep rendering everything.
+    const showBrand = tpl.show_brand !== false;
+    const showSellingPoint = tpl.show_selling_point !== false;
+
+    const brand = order.brand;
+    const accent = mono ? monochromeAccent(brand?.accent) : safeAccent(brand?.accent);
+    const sellingPointSmall = showSellingPoint && order.sellingPointName
+      ? `<small>${escapeHtml(order.sellingPointName)}</small>`
+      : "";
+    const brandIdentityHtml = brand && showBrand
+      ? `<div class="brand-identity" style="--brand-accent:${accent}">
+          ${brand.logo_url
+            ? `<img class="brand-logo" src="${escapeHtml(brand.logo_url)}" alt="" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex';" />`
+            : ""}
+          <span class="brand-monogram" style="${brand.logo_url ? "display:none;" : ""}">${escapeHtml(brandMonogram(brand.name))}</span>
+          <span class="brand-copy"><strong>${escapeHtml(brand.name)}</strong>${sellingPointSmall}</span>
+        </div>`
+      : (showSellingPoint && order.sellingPointName ? `<div class="brand-identity legacy-brand"><span class="brand-copy"><strong>Selling Point</strong><small>${escapeHtml(order.sellingPointName)}</small></span></div>` : "");
+
     const header = `<div class="header">
-      <h2>${tpl.title || "PICKUP SLIP"} ${pageBadge}</h2>
-      ${tpl.show_order_number ? `<div class="order-num">#${order.order_number}</div>${barcodeSvg ? `<div class="barcode">${barcodeSvg}</div>` : ""}` : ""}
+      ${brandIdentityHtml}
+      <h2>${escapeHtml(tpl.title || "PICKUP SLIP")} ${pageBadge}</h2>
+      ${tpl.show_order_number ? `<div class="order-num">#${escapeHtml(order.order_number)}</div>${barcodeSvg ? `<div class="barcode">${barcodeSvg}</div>` : ""}` : ""}
     </div>`;
 
     const customer = (tpl.show_customer_name || tpl.show_customer_phone || tpl.show_customer_address) ? `<div class="section customer-section">
@@ -121,9 +258,45 @@ export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplate
       ${tpl.show_customer_address && order.customer_address ? `<div class="customer-detail">${ICON_PIN}<span>${order.customer_address}</span></div>` : ""}
     </div>` : "";
 
+    /*
+     * Identity + dispatch rows (issue #24): order source, Pathao Account and
+     * dispatch status. Before dispatch the brand/Selling Point default Pathao
+     * Account is shown with a "(default)" marker; once dispatched the actual
+     * account is shown; with nothing configured the slip says so in full.
+     */
+    const sourceText = order.sourceLabel?.trim() || sourceLabel(order.source);
+    const sourceRow = tpl.show_source !== false && sourceText
+      ? `<div class="meta-row"><span class="meta-label">Source</span><span class="meta-value">${escapeHtml(sourceText)}</span></div>`
+      : "";
+    // `undefined` = not resolved by the caller (element hidden); `null` =
+    // known-none configured, which the slip states in full.
+    const pathaoRow = tpl.show_pathao_account !== false && order.pathaoAccount !== undefined
+      ? (() => {
+          const mark = `<span class="pathao-mark" style="background:${mono ? monochromeAccent(PATHAO_MARK_COLOR) : PATHAO_MARK_COLOR}">P</span>`;
+          const acct = order.pathaoAccount;
+          if (!acct?.name) {
+            return `<div class="meta-row"><span class="meta-value">${mark}<strong>Pathao Account not selected</strong></span></div>`;
+          }
+          const marker = acct.isDefault && order.dispatched !== true ? ` <span class="default-tag">(default)</span>` : "";
+          const value = `${escapeHtml(acct.name)}${acct.pickupStoreName ? ` · ${escapeHtml(acct.pickupStoreName)}` : ""}${marker}`;
+          return `<div class="meta-row"><span class="meta-label">Pathao Account</span><span class="meta-value">${mark}<span>${value}</span></span></div>`;
+        })()
+      : "";
+    // "Where relevant": only shown when dispatch state is actually known.
+    const statusRow = tpl.show_dispatch_status !== false && order.dispatched !== undefined
+      ? `<div class="meta-row"><span class="meta-label">Status</span><span class="meta-value">${
+          order.dispatched
+            ? `Dispatched${order.consignmentId ? ` · ${escapeHtml(order.consignmentId)}` : ""}`
+            : "Not dispatched"
+        }</span></div>`
+      : "";
+    const dispatchInfo = (sourceRow || pathaoRow || statusRow)
+      ? `<div class="section dispatch-info">${sourceRow}${pathaoRow}${statusRow}</div>`
+      : "";
+
     const items = tpl.show_items && pageItems.length > 0 ? `<div class="section"><div class="section-title">Items${totalPages > 1 ? ` (cont.)` : ""}</div>
       <table><thead><tr><th>Product</th>${tpl.show_item_qty ? '<th class="qty">Qty</th>' : ""}</tr></thead><tbody>
-      ${pageItems.map((item) => `<tr><td>${item.name}</td>${tpl.show_item_qty ? `<td class="qty">${item.qty}</td>` : ""}</tr>`).join("")}
+      ${pageItems.map((item) => `<tr><td>${escapeHtml(item.name)}${item.pendingNote ? `<div style="color:#555;font-size:${Math.max(9, s.section_title_size - 1)}px;font-weight:600;margin-top:2px;">${escapeHtml(item.pendingNote)}</div>` : ""}</td>${tpl.show_item_qty ? `<td class="qty">${item.qty}</td>` : ""}</tr>`).join("")}
       </tbody></table></div>` : "";
 
     // The special instruction is what whoever packs or collects the order needs
@@ -136,17 +309,25 @@ export function buildSlipPagesHtml(order: SlipOrderData, tpl: PickupSlipTemplate
 ${tpl.show_total ? `<div class="total-row">Total: ${sym}${Number(order.total).toLocaleString()}</div>` : ""}
 ${tpl.show_due && dueAmount > 0 ? `<div class="due-row">Due: ${sym}${dueAmount.toLocaleString()}</div>` : ""}` : `<div class="continued-row">Continued on next slip →</div>`;
 
-    return `${header}${customer}${items}${footer}`;
+    return `${header}${customer}${dispatchInfo}${items}${footer}`;
   });
 }
 
 export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | "a4"): string {
   const s = tpl.sizing;
   const isA4 = format === "a4";
+  /*
+   * Issue #24: thermal output is strictly monochrome and renders every line
+   * bold unless the per-document "Bold thermal text" option is switched off.
+   * A4 keeps its current styling in every case — colors and weight included.
+   */
+  const mono = !isA4;
+  const allBold = isA4 || tpl.bold_thermal_text !== false;
+  const accentFallback = mono ? "#3f3f3f" : "#334155";
   return `
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; font-weight: 700; }
-    .slip, .slip * { font-weight: 700 !important; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; font-weight: ${allBold ? 700 : 400}; }
+    ${allBold ? `.slip, .slip * { font-weight: 700 !important; }` : ""}
     .slip {
       ${isA4
         ? `border: 1px dashed #aaa; padding: ${s.a4_slip_padding_mm}mm; page-break-inside: avoid; break-inside: avoid; display: flex; flex-direction: column; background: #fff;`
@@ -154,7 +335,13 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
     }
     .slip:last-child { page-break-after: auto; }
     .header { text-align: center; padding-bottom: ${isA4 ? 2 : 4}px; margin-bottom: ${isA4 ? 3 : 5}px; border-bottom: 1px solid #ddd; }
-    .header h2 { font-size: ${s.title_size}px; font-weight: 700; line-height: 1.1; }
+    .brand-identity { display: flex; align-items: center; justify-content: center; gap: 5px; margin-bottom: ${isA4 ? 2 : 4}px; color: var(--brand-accent, ${accentFallback}); }
+     .brand-logo, .brand-monogram { width: ${isA4 ? 18 : 22}px; height: ${isA4 ? 18 : 22}px; border-radius: 4px; object-fit: cover; border: 1px solid var(--brand-accent, ${accentFallback}); }
+     .brand-monogram { display: inline-flex; align-items: center; justify-content: center; color: #fff; background: var(--brand-accent, ${accentFallback}); font-size: ${isA4 ? 8 : 9}px; line-height: 1; }
+     .brand-copy { display: flex; flex-direction: column; min-width: 0; max-width: 85%; text-align: left; line-height: 1.05; }
+     .brand-copy strong { font-size: ${isA4 ? 10 : 11}px; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+     .brand-copy small { font-size: ${isA4 ? 8 : 9}px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+     .header h2 { font-size: ${s.title_size}px; font-weight: 700; line-height: 1.1; }
     .header .order-num { font-size: ${s.order_number_size}px; font-weight: 700; margin-top: ${isA4 ? 1 : 2}px; line-height: 1.1; }
     .page-badge { font-size: ${Math.max(9, Math.round(s.section_title_size * 0.85))}px; font-weight: 600; color: #555; margin-left: 4px; }
     .barcode { margin-top: ${isA4 ? 2 : 4}px; display: flex; justify-content: center; line-height: 0; }
@@ -174,10 +361,16 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
     th:first-child, td:first-child { padding-right: 6px; }
     .qty { text-align: center; width: 44px; }
     .custom-field { font-size: ${s.custom_field_size}px; margin-top: 2px; line-height: 1.2; }
+    .dispatch-info { margin-bottom: ${isA4 ? 3 : 5}px; }
+    .meta-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: ${s.custom_field_size}px; line-height: 1.4; }
+    .meta-label { flex: 0 0 auto; color: #666; text-transform: uppercase; letter-spacing: 0.4px; }
+    .meta-value { display: inline-flex; align-items: center; gap: 4px; min-width: 0; text-align: right; word-break: break-word; }
+    .pathao-mark { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 14px; height: 14px; border-radius: 3px; color: #fff; font-size: 9px; font-weight: 700; line-height: 1; }
+    .default-tag { color: #666; font-size: ${Math.max(9, s.custom_field_size - 2)}px; }
     .note-row { font-size: ${s.custom_field_size}px; margin-top: 2px; line-height: 1.25; word-break: break-word; }
     .note-label { text-transform: uppercase; letter-spacing: 0.4px; color: #666; }
     .total-row { ${isA4 ? "margin-top: 4px;" : "margin-top: 4px;"} text-align: right; font-weight: 700; font-size: ${s.total_size}px; border-top: 1px solid #333; padding-top: ${isA4 ? 2 : 3}px; line-height: 1.15; }
-    .due-row { text-align: right; font-weight: 700; font-size: ${s.due_size}px; color: #dc2626; margin-top: 2px; line-height: 1.15; }
+    .due-row { text-align: right; font-weight: 700; font-size: ${s.due_size}px; color: ${mono ? "#111" : "#dc2626"}; margin-top: 2px; line-height: 1.15; }
     .continued-row { ${isA4 ? "margin-top: 4px;" : "margin-top: 4px;"} text-align: right; font-style: italic; font-size: ${s.section_title_size}px; color: #666; border-top: 1px dashed #999; padding-top: ${isA4 ? 2 : 3}px; }
   `;
 }
@@ -185,6 +378,7 @@ export function buildSlipCss(tpl: PickupSlipTemplateConfig, format: "thermal" | 
 export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTemplateConfig, format: "thermal" | "a4", currency: string = getActiveCurrency()): string {
   const css = buildSlipCss(tpl, format);
   const s = tpl.sizing;
+  const renderOpts: SlipRenderOptions = { mono: format === "thermal" };
 
   if (format === "a4") {
     // 3 columns × auto rows = up to 6 slips per sheet (more if content is short).
@@ -210,11 +404,11 @@ export function buildPrintDocument(orders: SlipOrderData[], tpl: PickupSlipTempl
            remaining space on the sheet, the whole slip moves to the next page. */
       }
       @media print { body { margin: 0; } .slip { border: none; } }
-    </style></head><body><div class="grid">${orders.flatMap(o => buildSlipPagesHtml(o, tpl, currency).map(html => `<div class="slip">${html}</div>`)).join("")}</div>
+    </style></head><body><div class="grid">${orders.flatMap(o => buildSlipPagesHtml(o, tpl, currency, renderOpts).map(html => `<div class="slip">${html}</div>`)).join("")}</div>
     ${PRINT_BOOTSTRAP}</body></html>`;
   }
 
-  const allSlips = orders.flatMap(o => buildSlipPagesHtml(o, tpl, currency).map(html => `<div class="slip">${html}</div>`));
+  const allSlips = orders.flatMap(o => buildSlipPagesHtml(o, tpl, currency, renderOpts).map(html => `<div class="slip">${html}</div>`));
   return `<html><head><title>Pickup Slips</title><style>
     @page { size: ${s.thermal_width_mm}mm ${s.thermal_height_mm > 0 ? `${s.thermal_height_mm}mm` : "auto"}; margin: 0; }
     .slip { ${s.thermal_height_mm > 0 ? `height: ${s.thermal_height_mm}mm;` : ""} }

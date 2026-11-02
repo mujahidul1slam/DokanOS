@@ -1,20 +1,53 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { format } from "date-fns";
-import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw, Link2, Truck, Copy, AlertTriangle, Loader2 } from "lucide-react";
+import { X, Trash2, Plus, ExternalLink, CircleDot, Undo2, Ruler, Printer, CheckCircle2, RefreshCw, Link2, Truck, Copy, AlertTriangle, Loader2, Scissors } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
-import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset } from "@/lib/measurements";
+import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type MeasurementGroup, type SizePreset } from "@/lib/measurements";
+import { getGroupsWithoutRows } from "@/lib/measurementRules";
 import { postWooOrderNote } from "@/lib/wooNotes";
 import { kickSyncWorker } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
+import { evaluatePaymentGate, PAYMENT_NEEDS_CONFIRMATION_LABEL } from "@/lib/paymentGate";
 import { usePermissions } from "@/hooks/usePermissions";
+import {
+  hasStoreScope,
+  scopeStoreIds,
+  useActiveBusinessStoreIds,
+} from "@/hooks/useActiveBusinessStoreIds";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import { getGlobalStockEnabled } from "@/lib/stockSettings";
 import ExchangeDialog from "./ExchangeDialog";
+import SplitOrderDialog from "./SplitOrderDialog";
 import AttachParcelDialog from "./AttachParcelDialog";
+import ProductVariationPicker, { type PickableVariation, type VariationPick } from "./ProductVariationPicker";
+import { getProductVariations } from "@/lib/variations";
+import { fetchAllRows } from "@/lib/supabasePage";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { deriveBrandForStore } from "@/lib/brandIdentity";
+import {
+  consignmentAccountConflict,
+  describeIdentityChange,
+  identityChangeBlocked,
+  identityChanged,
+  legacyStoreIdFor,
+  resolveSellingPoint,
+  sellingPointsForBrand,
+  SELLING_POINT_CONFIGURE_HINT,
+  type IdentityBrand,
+  type IdentitySnapshot,
+  type IdentitySellingPoint,
+} from "@/lib/orderIdentity";
+import {
+  pathaoAccountKey,
+  resolveDefaultAccount,
+  type PathaoAccountOption,
+  type PathaoStoreLinkRow,
+} from "@/lib/dispatchAccounts";
+import { fetchPathaoAccountData } from "@/lib/dispatchAccountsData";
 
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -74,7 +107,31 @@ interface OrderDetail {
   fulfillment_type: string;
   woo_order_id: number | null;
   store_id: string | null;
+  selling_point_id: string | null;
+  pathao_integration_id: string | null;
+  pathao_store_id: number | null;
+  selling_points: {
+    id: string;
+    name: string | null;
+    brand_id: string | null;
+    woo_store_id: string | null;
+    is_default: boolean | null;
+    brands: { id: string; name: string | null; woo_store_id: string | null } | null;
+  } | null;
+  storefront_id?: string | null;
+  stock_restored_at?: string | null;
   stores: { url: string | null; name?: string | null } | null;
+  order_source?: { name: string; type: string } | null;
+}
+
+/** Stored identity of the order, snapshotted at load for change detection (issue #32). */
+interface InitialIdentity {
+  brandId: string | null;
+  brandName: string | null;
+  brandWooStoreId: string | null;
+  sellingPointId: string | null;
+  sellingPointName: string | null;
+  sellingPointWooStoreId: string | null;
 }
 
 interface LineItem {
@@ -158,12 +215,32 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const canRefund = can("orders.refund");
   const canLogPayment = can("orders.log_payment");
   const canAttachCourier = can("orders.attach_courier");
+  const { active, brands } = useBusinessContext();
+  // load() must not re-run when the brand list refreshes, but it needs the
+  // current list to derive a legacy brand — keep a ref alongside state.
+  const brandsRef = useRef(brands);
+  useEffect(() => { brandsRef.current = brands; }, [brands]);
+  // Hybrid tenancy (issue #16): the store ids of the ACTIVE business. The sheet
+  // reads the order THROUGH this scope and only then its child rows, so an order
+  // of another business can never be opened and its children never fetched.
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [order, setOrder] = useState<OrderDetail | null>(null);
+
+  // Issue #27: WooCommerce online-payment gate (docs/adr/0001-woo-online-payment-gate.md).
+  // While an order is gated it cannot be entered with a courier or moved between
+  // statuses; the permission-controlled confirm-payment flow below is the only
+  // sanctioned exit. Order creation and ordinary edits are never blocked.
+  const gate = order ? evaluatePaymentGate(order) : null;
+  const paymentGateLocked = !!gate?.gated;
+  const canEnterCourierNow = canAttachCourier && !paymentGateLocked;
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
   const [measurements, setMeasurements] = useState<EditableMeas[]>([]);
   const [deletedMeasIds, setDeletedMeasIds] = useState<string[]>([]);
+  // Measurement groups per product (lazy cache): drives the "Add measurements"
+  // affordance and the entry fields staged for newly added products.
+  const [groupsByProduct, setGroupsByProduct] = useState<Record<string, MeasurementGroup[]>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -182,14 +259,29 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [fulfillmentType, setFulfillmentType] = useState<string>("delivery");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [variationOptions, setVariationOptions] = useState<PickableVariation[]>([]);
+  const [variationPickerProductId, setVariationPickerProductId] = useState<string | null>(null);
   const [addProductId, setAddProductId] = useState<string>("");
-  // Multi-business Phase 3: fulfillment location (warehouse/showroom)
-  const [locationId, setLocationId] = useState<string>("");
-  const [locationOptions, setLocationOptions] = useState<Array<{ id: string; name: string; type: string }>>([]);
+
+  // Order identity (issue #32): editable Brand + Selling Point on Order Info,
+  // resolved with the same rules as Add Order (issue #21). The default Pathao
+  // Account derives from the selection (issue #22) and is never written back
+  // over an existing courier booking.
+  const [identityPoints, setIdentityPoints] = useState<IdentitySellingPoint[]>([]);
+  const [pathaoAccounts, setPathaoAccounts] = useState<PathaoAccountOption[]>([]);
+  const [pathaoLinks, setPathaoLinks] = useState<PathaoStoreLinkRow[]>([]);
+  const [brandId, setBrandId] = useState("");
+  const [sellingPointId, setSellingPointId] = useState("");
+  const [initialIdentity, setInitialIdentity] = useState<InitialIdentity | null>(null);
 
   // Exchange dialog
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [exchangeParent, setExchangeParent] = useState<any>(null);
+
+  // Split dialog (issue #31 — order split with payment transfer). A split is
+  // an ordinary edit: it moves items/money only and never touches the order's
+  // status or courier, so the #27 gate does not block it (and stays intact).
+  const [splitOpen, setSplitOpen] = useState(false);
 
   // Attach / Replace Parcel dialog
   const [attachParcelOpen, setAttachParcelOpen] = useState(false);
@@ -236,20 +328,29 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         throw error;
       }
 
-      if (data?.pathao_failed) {
+      // The edge function wraps its payload as { data: result }, so unwrap before
+      // reading flags — reading them off the top level silently always yields
+      // undefined (which is why the success toast never mentioned Pathao).
+      const payload = (data?.data ?? data) as any;
+
+      if (payload?.pathao_failed) {
         setDeleteConfirmOpen(false);
         setDeletePathaoFail({
           open: true,
-          reason: data.reason || data.error || "Cancellation rejected by Pathao",
+          reason: payload.reason || payload.error || "Cancellation rejected by Pathao",
           shipment,
         });
         return;
       }
 
-      if (data?.error) throw new Error(data.error);
+      if (payload?.error) throw new Error(payload.error);
 
+      const noop = payload?.pathao_cancel_noop;
+      const cancelledOnPathao = payload?.pathao_cancelled;
       toast.success(
-        `Courier entry ${shipment.consignment_id} deleted${data?.pathao_cancelled ? " and cancelled on Pathao" : ""}.`
+        noop
+          ? `Consignment ${shipment.consignment_id} deleted — it was already in a terminal state on Pathao (nothing left to cancel).`
+          : `Consignment ${shipment.consignment_id} deleted${cancelledOnPathao ? " and cancelled on Pathao" : " (cancelled locally only)"}.`,
       );
 
       setDeleteConfirmOpen(false);
@@ -258,7 +359,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       load();
       onSaved?.();
     } catch (err: any) {
-      toast.error(`Failed to delete courier entry: ${err.message}`);
+      toast.error(`Failed to delete consignment: ${err.message}`);
     } finally {
       setDeleteLoading(false);
     }
@@ -266,18 +367,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
   const openExchange = useCallback(async () => {
     if (!order) return;
-    const { data } = await supabase
-      .from("orders")
-      .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
-      .eq("id", order.id)
-      .maybeSingle();
+    if (!hasStoreScope(businessStoreIds)) return; // fail closed: nothing to open
+    const { data } = await scopeStoreIds(
+      supabase
+        .from("orders")
+        .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
+        .eq("id", order.id),
+      businessStoreIds,
+    ).maybeSingle();
     if (!data) {
       toast.error("Could not load order details for exchange");
       return;
     }
     setExchangeParent(data);
     setExchangeOpen(true);
-  }, [order]);
+  }, [order, businessStoreIds]);
 
   // Payment form
   const [payMethod, setPayMethod] = useState("bkash");
@@ -298,15 +402,51 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [confirmPayTrxId, setConfirmPayTrxId] = useState("");
   const [confirmingPayment, setConfirmingPayment] = useState(false);
 
+  /** Empties everything the sheet publishes; used by every fail-closed path. */
+  const clearLoadedOrder = useCallback(() => {
+    setOrder(null);
+    setItems([]);
+    setEditedItems([]);
+    setTimeline([]);
+    setPayments([]);
+    setMeasurements([]);
+    setDeletedMeasIds([]);
+    setCourierShipments([]);
+    setLoading(false);
+  }, []);
+
   const load = useCallback(async () => {
     if (!orderId) return;
+
+    // Fail closed: an empty scope means this business has no stores to read, so
+    // the sheet reads nothing at all — not even the order it was opened for.
+    if (!hasStoreScope(businessStoreIds)) {
+      clearLoadedOrder();
+      return;
+    }
+
     setLoading(true);
-    const [orderRes, itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
+
+    // Step 1 — the order itself, read through the tenant predicate.
+    const orderRes = await scopeStoreIds(
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, location_id, selling_point_id, stores(url, name)")
-        .eq("id", orderId)
-        .single(),
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, pathao_integration_id, pathao_store_id, selling_points(id, name, brand_id, woo_store_id, is_default, brands(id, name, woo_store_id)), stores(url, name), order_source:order_sources(name, type)")
+        .eq("id", orderId),
+      businessStoreIds,
+    ).single();
+
+    const o = orderRes.data as unknown as OrderDetail | null;
+    // Step 2 (the child reads below) runs ONLY for an order that is inside the
+    // active business's scope. Otherwise a foreign order id — a deep link, or
+    // state left over from another business — would fetch that business's
+    // order_items, payments, timeline and measurements.
+    if (!o || !o.store_id || !businessStoreIds.includes(o.store_id)) {
+      clearLoadedOrder();
+      return;
+    }
+
+    const [itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
       supabase
         .from("order_items")
         .select("id, product_name, quantity, unit_price, line_total, product_id, products(name)")
@@ -332,8 +472,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .order("created_at", { ascending: false }),
     ]);
 
-    const o = orderRes.data as unknown as OrderDetail | null;
-    if (o) {
+    {
       setOrder(o);
       setStatus(o.status);
       setPaymentStatus(o.payment_status);
@@ -346,7 +485,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setNotes(o.notes || "");
       setFulfillmentType(o.fulfillment_type || "delivery");
       setPaymentMethod(o.payment_method || "");
-      setLocationId((o as { location_id?: string | null }).location_id || "");
+
+      // Identity snapshot (issue #32): same derivation as the Orders page brand
+      // column — selling_points->brands first, legacy store binding as fallback.
+      const currentSp = o.selling_points ?? null;
+      const derivedBrand: IdentityBrand | null =
+        (currentSp?.brands as IdentityBrand | null) ??
+        (deriveBrandForStore(brandsRef.current, o.store_id) as IdentityBrand | undefined) ??
+        null;
+      const initial: InitialIdentity = {
+        brandId: derivedBrand?.id ?? null,
+        brandName: derivedBrand?.name ?? null,
+        brandWooStoreId: derivedBrand?.woo_store_id ?? null,
+        sellingPointId: currentSp?.id ?? null,
+        sellingPointName: currentSp?.name ?? null,
+        sellingPointWooStoreId: currentSp?.woo_store_id ?? null,
+      };
+      setInitialIdentity(initial);
+      setBrandId(initial.brandId ?? "");
+      setSellingPointId(initial.sellingPointId ?? "");
 
       const shipments = (shipmentsRes.data as CourierShipmentEntry[]) || [];
       if (o.consignment_id && !shipments.some(s => s.consignment_id === o.consignment_id)) {
@@ -366,27 +523,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setCourierShipments(shipments);
     }
 
-    // Phase 3: locations for the order's brand (via store linkage) for the
-    // fulfillment-location picker. Best-effort: empty list hides the picker.
-    try {
-      const { data: oRow } = await supabase
-        .from("orders")
-        .select("store_id")
-        .eq("id", orderId)
-        .single();
-      if (oRow?.store_id) {
-        const { data: locs } = await supabase
-          .from("locations")
-          .select("id, name, type, brand_id, brands!inner(woo_store_id)")
-          .eq("brands.woo_store_id", oRow.store_id)
-          .order("name");
-        setLocationOptions((locs as Array<{ id: string; name: string; type: string }>) || []);
-      } else {
-        setLocationOptions([]);
-      }
-    } catch {
-      setLocationOptions([]);
-    }
     const liRaw = (itemsRes.data || []) as any[];
     const li: LineItem[] = liRaw.map((r) => ({
       id: r.id,
@@ -419,25 +555,103 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     );
     setDeletedMeasIds([]);
     setLoading(false);
-  }, [orderId]);
+  }, [orderId, businessStoreIds, clearLoadedOrder]);
 
   useEffect(() => {
     if (open && orderId) load();
   }, [open, orderId, load]);
 
-  // Fetch product list for adding new items
+  // Fetch products + variations for adding new items. Both are paged because
+  // the hosted REST cap silently truncates at 1000 rows (variation tables in
+  // particular exceed it) — which used to hide variation selectors.
+  // Tenancy: only the active business's products are offered.
   useEffect(() => {
     if (!open) return;
+    if (!hasStoreScope(businessStoreIds)) {
+      setProductOptions([]);
+      return;
+    }
     (async () => {
-      const { data } = await supabase
-        .from("products")
-        .select("id, name, sku, price")
-        .eq("is_active", true)
-        .order("name")
-        .limit(1000);
-      setProductOptions((data || []) as ProductOption[]);
+      try {
+        const [products, variations] = await Promise.all([
+          fetchAllRows<ProductOption>(({ from, to }) =>
+            scopeStoreIds(
+              supabase
+                .from("products")
+                .select("id, name, sku, price")
+                .eq("is_active", true)
+                .order("name")
+                .range(from, to),
+              businessStoreIds,
+            ),
+          ),
+          fetchAllRows<PickableVariation>(({ from, to }) =>
+            supabase
+              .from("product_variations")
+              .select("id, product_id, name, sku, price, stock_quantity, manage_stock, attributes")
+              .range(from, to),
+          ),
+        ]);
+        setProductOptions(products);
+        setVariationOptions(variations);
+      } catch (e) {
+        console.warn("Failed to load product catalog for order edits:", e);
+      }
     })();
-  }, [open]);
+  }, [open, businessStoreIds]);
+
+  // Lazy-load measurement groups for every product on the order (issue:
+  // "add measurements later to product lines"): the Measurements section and
+  // its "Add measurements" affordance need to know which items can be
+  // measured before anything is clicked. Cached per product; an empty array
+  // is a real answer ("nothing to measure"), not a missing load.
+  useEffect(() => {
+    if (!open) return;
+    const productIds = Array.from(
+      new Set(editedItems.map((i) => i.product_id).filter((id): id is string => !!id)),
+    );
+    const missing = productIds.filter((id) => !(id in groupsByProduct));
+    if (missing.length === 0) return;
+    let mounted = true;
+    (async () => {
+      const entries = await Promise.all(
+        missing.map(async (pid) => [pid, await getGroupsForProduct(pid)] as const),
+      );
+      if (!mounted) return;
+      setGroupsByProduct((prev) => {
+        const next = { ...prev };
+        for (const [pid, grps] of entries) next[pid] = grps;
+        return next;
+      });
+    })();
+    return () => { mounted = false; };
+  }, [open, editedItems, groupsByProduct]);
+
+  // Identity options (issue #32): active Selling Points of the active business
+  // plus the selectable Pathao Accounts and per-brand default links (issue #22).
+  // Errors degrade to empty lists so the sheet still renders.
+  useEffect(() => {
+    if (!open) return;
+    let mounted = true;
+    (async () => {
+      const [pointsRes, accountData] = await Promise.all([
+        active?.id
+          ? supabase
+              .from("selling_points")
+              .select("id, name, brand_id, woo_store_id, is_default, is_active")
+              .eq("business_id", active.id)
+              .eq("is_active", true)
+              .order("name")
+          : Promise.resolve({ data: [] as IdentitySellingPoint[] }),
+        fetchPathaoAccountData(),
+      ]);
+      if (!mounted) return;
+      setIdentityPoints(((pointsRes.data || []) as IdentitySellingPoint[]) || []);
+      setPathaoAccounts(accountData.accounts);
+      setPathaoLinks(accountData.links);
+    })();
+    return () => { mounted = false; };
+  }, [open, active?.id]);
 
   // Resolve preset measurements (e.g. S/M/L size charts) for items that have no
   // measurement rows yet, so they show up — and stay editable — in the sheet.
@@ -458,28 +672,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           for (const g of groups) {
             const preset = await resolveSizePreset(g.id, item.product_id, sizeLabel);
             if (!preset || preset.values.length === 0) continue;
-            additions.push({
-              id: `new-${item.id}-${g.id}`,
-              order_item_id: item.id,
-              group_name: `${g.name} (Size ${sizeLabel})`,
-              display_format: g.display_format,
-              unit: g.unit,
-              values: preset.values.map((v) => ({ name: v.name, value: v.value })),
-              notes: null,
-              source: "preset",
-              _isNew: true,
-              _sizeLabel: sizeLabel,
-            });
+            additions.push(buildPresetMeasRow(item.id, g, preset, sizeLabel));
           }
         } catch { /* ignore */ }
       }
       if (cancelled || additions.length === 0) return;
-      setMeasurements((prev) => {
-        // Avoid duplicates if the effect reruns
-        const existingIds = new Set(prev.map((m) => m.id));
-        const fresh = additions.filter((a) => !existingIds.has(a.id));
-        return fresh.length ? [...prev, ...fresh] : prev;
-      });
+      appendMeasRows(additions);
     })();
     return () => { cancelled = true; };
     // We intentionally depend on items only; re-run when items reload.
@@ -512,11 +710,158 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     }
   };
 
+  /* ---------- measurement entry ("add measurements later") ----------
+   *
+   * Orders are never blocked on measurements: items save without them and
+   * measurements are captured afterwards. The helpers below stage rows in the
+   * same EditableMeas model the editors above mutate, so entries opened later
+   * ride the existing Save Changes persistence — including the entry for a
+   * product added from this sheet, mirroring how Add Order attaches the
+   * measurement entry to every cart item with measurement groups.
+   */
+
+  /** One staged size-preset row — the shared shape for auto-attached ("preselected") size charts. */
+  const buildPresetMeasRow = (
+    itemId: string,
+    group: MeasurementGroup,
+    preset: SizePreset,
+    sizeLabel: string,
+  ): EditableMeas => ({
+    id: `new-${itemId}-${group.id}`,
+    order_item_id: itemId,
+    group_name: `${group.name} (Size ${sizeLabel})`,
+    display_format: group.display_format,
+    unit: group.unit,
+    values: preset.values.map((v) => ({ name: v.name, value: v.value })),
+    notes: null,
+    source: "preset",
+    _isNew: true,
+    _sizeLabel: sizeLabel,
+  });
+
+  /** One staged empty entry row — the measurement-group entry fields (values + notes) for an item. */
+  const buildEmptyMeasRow = (itemId: string, group: MeasurementGroup): EditableMeas => ({
+    id: `new-${itemId}-${group.id}`,
+    order_item_id: itemId,
+    group_name: group.name,
+    display_format: group.display_format,
+    unit: group.unit,
+    values: group.fields.map((f) => ({ name: f.name, value: "" })),
+    notes: null,
+    source: "pos",
+    _isNew: true,
+  });
+
+  /**
+   * Append staged rows, skipping ids already present — the dedupe that makes
+   * the preset effect and the add-measurement actions safe to re-run.
+   */
+  const appendMeasRows = (fresh: EditableMeas[]) => {
+    setMeasurements((prev) => {
+      const existingIds = new Set(prev.map((m) => m.id));
+      const toAdd = fresh.filter((a) => !existingIds.has(a.id));
+      return toAdd.length ? [...prev, ...toAdd] : prev;
+    });
+  };
+
+  /** Cached measurement-group lookup shared by the lazy-load effect and the add-measurement actions. */
+  const loadGroupsForProduct = async (productId: string): Promise<MeasurementGroup[]> => {
+    const cached = groupsByProduct[productId];
+    if (cached) return cached;
+    const groups = await getGroupsForProduct(productId);
+    setGroupsByProduct((prev) => ({ ...prev, [productId]: groups }));
+    return groups;
+  };
+
+  /**
+   * Groups of this item's product that have no measurement row yet. An
+   * open-but-untouched entry row already covers its group, so the affordance
+   * never duplicates an entry that is on screen.
+   */
+  const unmeasuredGroupsFor = (item: LineItem): MeasurementGroup[] => {
+    const productId = item.product_id;
+    if (!productId) return [];
+    const groups = groupsByProduct[productId];
+    if (!groups || groups.length === 0) return [];
+    return getGroupsWithoutRows(
+      groups,
+      measurements
+        .filter((m) => m.order_item_id === item.id)
+        .map((m) => ({ groupName: m.group_name, values: m.values })),
+    );
+  };
+
+  /**
+   * "Add measurements": open the group entry (fields + notes) for every group
+   * of this item's product that has no row yet. The rows are staged empty and
+   * persisted by handleSave; an untouched entry is dropped on save instead of
+   * writing an empty row (matching Add Order, where an unfilled group
+   * captures nothing).
+   */
+  const addMeasurementsForItem = async (item: LineItem) => {
+    const productId = item.product_id;
+    if (!productId) return;
+    let groups: MeasurementGroup[];
+    try {
+      groups = await loadGroupsForProduct(productId);
+    } catch (e) {
+      console.warn("Failed to load measurement groups:", e);
+      toast.error("Failed to load measurement groups");
+      return;
+    }
+    const missing = getGroupsWithoutRows(
+      groups,
+      measurements
+        .filter((m) => m.order_item_id === item.id)
+        .map((m) => ({ groupName: m.group_name, values: m.values })),
+    );
+    if (missing.length === 0) return;
+    appendMeasRows(missing.map((g) => buildEmptyMeasRow(item.id, g)));
+  };
+
+  /**
+   * Stage the measurement entry for a freshly added order line (issue: add
+   * measurements from Order Info). Size presets the picked size qualifies for
+   * ("preselected" measurements) are attached right away — pre-filled and
+   * editable — and any remaining groups open empty entry rows, so the entry
+   * is included with the line and saved with that order item.
+   */
+  const attachNewLineMeasurements = async (lineId: string, pick: VariationPick) => {
+    try {
+      const groups = await loadGroupsForProduct(pick.product.id);
+      if (groups.length === 0) return;
+      const sizeLabel = detectSizeFromItem({ product_name: pick.lineName });
+      const fresh: EditableMeas[] = [];
+      for (const g of groups) {
+        const preset = sizeLabel
+          ? await resolveSizePreset(g.id, pick.product.id, sizeLabel)
+          : null;
+        if (sizeLabel && preset && preset.values.length > 0) {
+          fresh.push(buildPresetMeasRow(lineId, g, preset, sizeLabel));
+        } else {
+          fresh.push(buildEmptyMeasRow(lineId, g));
+        }
+      }
+      appendMeasRows(fresh);
+    } catch (e) {
+      // The line itself is still added; the "Add measurements" affordance can
+      // retry the entry later. Never fail the add on measurement lookup.
+      console.warn("Failed to stage measurements for the new order line:", e);
+    }
+  };
+
   /* ---------- helpers ---------- */
 
   const activeItems = editedItems.filter((i) => !deletedItemIds.includes(i.id));
   const computedSubtotal = activeItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
   const computedTotal = computedSubtotal - discount + shippingCost;
+
+  // The Measurements section shows whenever something can be edited — or added:
+  // an item whose product has measurement groups but no entry yet must expose
+  // the "Add measurements" affordance even when the order has no rows at all.
+  const showMeasurementsSection =
+    measurements.length > 0 ||
+    (canEdit && activeItems.some((it) => unmeasuredGroupsFor(it).length > 0));
 
   const updateItemQty = (id: string, qty: number) => {
     setEditedItems((prev) =>
@@ -534,45 +879,194 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     setDeletedItemIds((prev) => [...prev, id]);
   };
 
-  const addProductToOrder = (productId: string) => {
-    const p = productOptions.find((o) => o.id === productId);
-    if (!p) return;
-    // If same product (non-new) already exists, bump its qty instead
+  const addOrderLine = (pick: VariationPick) => {
     const existing = editedItems.find(
-      (i) => !i._isNew && i.product_id === productId && !deletedItemIds.includes(i.id)
+      (i) =>
+        !i._isNew &&
+        i.product_id === pick.product.id &&
+        i.product_name === pick.lineName &&
+        !deletedItemIds.includes(i.id),
     );
     if (existing) {
       updateItemQty(existing.id, existing.quantity + 1);
-    } else {
-      const tempId = `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      setEditedItems((prev) => [
-        ...prev,
-        {
-          id: tempId,
-          product_name: p.name,
-          quantity: 1,
-          unit_price: Number(p.price) || 0,
-          line_total: Number(p.price) || 0,
-          product_id: p.id,
-          base_product_name: p.name,
-          _isNew: true,
-        },
-      ]);
+      return;
     }
-    setAddProductId("");
+    const tempId = `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setEditedItems((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        product_name: pick.lineName,
+        quantity: 1,
+        unit_price: pick.price,
+        line_total: pick.price,
+        product_id: pick.product.id,
+        base_product_name: pick.product.name,
+        _isNew: true,
+      },
+    ]);
+    // The measurement entry travels with the new line: size presets the
+    // picked size qualifies for are auto-attached, the remaining groups open
+    // for entry — and everything persists with the item on Save Changes.
+    void attachNewLineMeasurements(tempId, pick);
   };
+
+  const addProductToOrder = (productId: string) => {
+    const p = productOptions.find((o) => o.id === productId);
+    if (!p) return;
+    setAddProductId("");
+    // Variable products go through the shared size picker instead of being
+    // added as a base product with no size (issue #20).
+    const hasVariations = getProductVariations(productId, variationOptions).length > 0;
+    if (hasVariations) {
+      setVariationPickerProductId(productId);
+      return;
+    }
+    addOrderLine({
+      product: p,
+      variation: null,
+      lineName: p.name,
+      attributes: [],
+      price: Number(p.price) || 0,
+    });
+  };
+
+  /* ---------- Order identity (issue #32) ---------- */
+
+  // The order's current Selling Point stays selectable even when it is no
+  // longer in the active list, so opening the sheet never silently swaps it.
+  const mergedPoints = useMemo<IdentitySellingPoint[]>(() => {
+    const current = order?.selling_points;
+    if (!current) return identityPoints;
+    if (identityPoints.some((point) => point.id === current.id)) return identityPoints;
+    return [
+      ...identityPoints,
+      {
+        id: current.id,
+        name: current.name ?? "",
+        brand_id: current.brand_id,
+        woo_store_id: current.woo_store_id,
+        is_default: current.is_default,
+        is_active: true,
+      },
+    ];
+  }, [identityPoints, order?.selling_points]);
+
+  // Brand choices: active brands plus the order's current brand (possibly
+  // inactive or absent from context) so it displays instead of vanishing.
+  const brandChoices = useMemo<IdentityBrand[]>(() => {
+    const list: IdentityBrand[] = brands
+      .filter((brand) => brand.is_active)
+      .map((brand) => ({ id: brand.id, name: brand.name, woo_store_id: brand.woo_store_id }));
+    const currentId = initialIdentity?.brandId;
+    if (currentId && !list.some((brand) => brand.id === currentId)) {
+      const known = brands.find((brand) => brand.id === currentId);
+      list.push(
+        known
+          ? { id: known.id, name: known.name, woo_store_id: known.woo_store_id }
+          : {
+              id: currentId,
+              name: initialIdentity?.brandName || "Unknown brand",
+              woo_store_id: initialIdentity?.brandWooStoreId ?? null,
+            },
+      );
+    }
+    return list;
+  }, [brands, initialIdentity]);
+
+  const brandSellingPoints = useMemo(
+    () => sellingPointsForBrand(mergedPoints, brandId),
+    [mergedPoints, brandId],
+  );
+
+  // Issue #21 resolution rules: the brand default is preselected-but-editable,
+  // a single option is auto-selected, and a brand change re-resolves from its
+  // own options (the previous Selling Point belongs to the old brand).
+  useEffect(() => {
+    if (!brandId) {
+      setSellingPointId("");
+      return;
+    }
+    setSellingPointId((previous) => resolveSellingPoint(brandSellingPoints, previous).sellingPointId ?? "");
+  }, [brandId, brandSellingPoints]);
+
+  const selectedBrand = brandChoices.find((brand) => brand.id === brandId) || null;
+  const selectedSellingPoint = brandSellingPoints.find((point) => point.id === sellingPointId) || null;
+
+  // Brand default Pathao Account (brand -> woo_store_id -> pathao_store_links),
+  // resolved through the Selling Point binding first when it has one (issue
+  // #22) — re-derived whenever the Brand or Selling Point changes.
+  const defaultAccount = useMemo(
+    () =>
+      resolveDefaultAccount(pathaoAccounts, pathaoLinks, [
+        selectedSellingPoint?.woo_store_id,
+        selectedBrand?.woo_store_id,
+      ]),
+    [pathaoAccounts, pathaoLinks, selectedSellingPoint, selectedBrand],
+  );
+
+  const identityDirty =
+    !!initialIdentity &&
+    identityChanged(initialIdentity, { brandId: brandId || null, sellingPointId: sellingPointId || null });
+  // Zero Selling Points (or multiple with no default and no pick) block the
+  // identity change with a configure hint — same rules as Add Order.
+  const identityResolution = resolveSellingPoint(brandSellingPoints, sellingPointId);
+  const identityBlocked =
+    identityDirty &&
+    brands.some((brand) => brand.is_active) &&
+    (!brandId || identityChangeBlocked(brandId, identityResolution));
+
+  // Warn before changing identity while an active consignment is booked
+  // through another Pathao Account — the courier record is never rewritten.
+  const bookedAccountKey =
+    order && order.pathao_store_id != null
+      ? pathaoAccountKey(order.pathao_integration_id ?? null, order.pathao_store_id)
+      : null;
+  const bookedAccount = bookedAccountKey
+    ? pathaoAccounts.find((account) => account.key === bookedAccountKey)
+    : undefined;
+  const consignmentConflict = consignmentAccountConflict(
+    courierShipments,
+    order?.consignment_id ?? null,
+    bookedAccountKey,
+    defaultAccount?.key ?? null,
+  );
 
   /* ---------- Save ---------- */
 
   const handleSave = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     setSaving(true);
     try {
-      await supabase
-        .from("orders")
+      // Issue #27: while the gate is on, ordinary saves must not move the order
+      // out of Payment Needs Confirmation. Status and payment status stay at
+      // their stored values; only recording a payment releases the gate.
+      const gateLockedNow = evaluatePaymentGate(order).gated;
+      const saveStatus = gateLockedNow ? order.status : status;
+      const savePaymentStatus = gateLockedNow ? order.payment_status : paymentStatus;
+
+      // Identity change (issue #32): written only when the operator actually
+      // changed Brand/Selling Point. store_id stays a legacy Woo store binding
+      // (the Selling Point's, else the Brand's) — NEVER a Selling Point UUID.
+      const identityIsChanging = identityChanged(
+        initialIdentity ?? { brandId: null, sellingPointId: null },
+        { brandId: brandId || null, sellingPointId: sellingPointId || null },
+      );
+      const identityPatch: Record<string, unknown> = {};
+      if (identityIsChanging) {
+        identityPatch.selling_point_id = selectedSellingPoint?.id || null;
+        identityPatch.store_id = legacyStoreIdFor(selectedSellingPoint, selectedBrand, {
+          previousStoreId: order.store_id,
+          brandChanged: (initialIdentity?.brandId ?? null) !== (brandId || null),
+        });
+      }
+
+      await scopeStoreIds(
+        supabase
+          .from("orders")
         .update({
-          status,
-          payment_status: paymentStatus,
+          status: saveStatus,
+          payment_status: savePaymentStatus,
           customer_name: customerName || null,
           customer_phone: customerPhone || null,
           customer_address: customerAddress || null,
@@ -584,14 +1078,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           notes,
           fulfillment_type: fulfillmentType,
           payment_method: paymentMethod || null,
-          location_id: locationId || null,
+
+          ...identityPatch,
         })
-        .eq("id", order.id);
+        .eq("id", order.id),
+        businessStoreIds,
+      );
 
       // Delete removed items (only existing DB rows)
       const dbDeletedIds = deletedItemIds.filter((id) => !id.startsWith("new-"));
       if (dbDeletedIds.length > 0) {
-        await supabase.from("order_items").delete().in("id", dbDeletedIds);
+        await supabase
+          .from("order_items")
+        .delete()
+        .in("id", dbDeletedIds)
+        .eq("order_id", order.id);
       }
 
       // Update existing items (qty or price)
@@ -606,44 +1107,81 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               unit_price: item.unit_price,
               line_total: item.quantity * item.unit_price,
             })
-            .eq("id", item.id);
+            .eq("id", item.id)
+            .eq("order_id", order.id);
         }
       }
 
-      // Insert new items
+      // Insert new items. Returning the inserted ids lets measurement rows
+      // staged against the temp line ids (`new-…`) attach to the real
+      // order_items rows — without them the rows would carry a temp id and
+      // fail the order_item_id foreign key.
       const newItems = activeItems.filter((i) => i._isNew);
+      const orderItemIdByTemp = new Map<string, string>();
       if (newItems.length > 0) {
-        await supabase.from("order_items").insert(
-          newItems.map((i) => ({
-            order_id: order.id,
-            product_id: i.product_id,
-            product_name: i.product_name,
-            quantity: i.quantity,
-            unit_price: i.unit_price,
-            line_total: i.quantity * i.unit_price,
-          }))
-        );
+        const { data: insertedItems } = await supabase
+          .from("order_items")
+          .insert(
+            newItems.map((i) => ({
+              order_id: order.id,
+              product_id: i.product_id,
+              product_name: i.product_name,
+              quantity: i.quantity,
+              unit_price: i.unit_price,
+              line_total: i.quantity * i.unit_price,
+            }))
+          )
+          .select("id, product_id, product_name");
+        // Match back the way Add Order attaches measurements at creation time
+        // (by product + line name, consuming each inserted row once) so the
+        // map does not depend on insertion order.
+        const used = new Set<string>();
+        for (const item of newItems) {
+          const match = (insertedItems || []).find(
+            (oi) => !used.has(oi.id) && oi.product_id === item.product_id && oi.product_name === item.product_name,
+          );
+          if (match) {
+            used.add(match.id);
+            orderItemIdByTemp.set(item.id, match.id);
+          }
+        }
       }
 
       // Add timeline entry for status change
-      if (status !== order.status) {
+      if (saveStatus !== order.status) {
         await addOrderTimeline({
           order_id: order.id,
           event: "status_changed",
-          description: `Status changed from "${order.status}" to "${status}"`,
-          metadata: { from: order.status, to: status },
+          description: `Status changed from "${order.status}" to "${saveStatus}"`,
+          metadata: { from: order.status, to: saveStatus },
         });
-        await logAction("update", "order_status", order.id, { order_number: order.order_number, changes: { status: { from: order.status, to: status } }, before: { status: order.status }, after: { status } });
+        await logAction("update", "order_status", order.id, { order_number: order.order_number, changes: { status: { from: order.status, to: saveStatus } }, before: { status: order.status }, after: { status: saveStatus } });
+
+        // Phase 6 (§9.3): Cancel storefront order -> invoke storefront-restore-stock edge function
+        if (saveStatus === "cancelled" && (order as any).storefront_id && !(order as any).stock_restored_at) {
+          try {
+            const { error: restErr } = await supabase.functions.invoke("storefront-restore-stock", {
+              body: { order_id: order.id },
+            });
+            if (restErr) {
+              toast.error(`Inventory restore failed: ${restErr.message}`);
+            } else {
+              toast.success("Inventory restored");
+            }
+          } catch (e: any) {
+            toast.error(`Inventory restore error: ${e.message}`);
+          }
+        }
       }
 
-      if (paymentStatus !== order.payment_status) {
+      if (savePaymentStatus !== order.payment_status) {
         await addOrderTimeline({
           order_id: order.id,
           event: "payment_status_changed",
-          description: `Payment status changed from "${order.payment_status}" to "${paymentStatus}"`,
-          metadata: { from: order.payment_status, to: paymentStatus },
+          description: `Payment status changed from "${order.payment_status}" to "${savePaymentStatus}"`,
+          metadata: { from: order.payment_status, to: savePaymentStatus },
         });
-        await logAction("update", "order_payment_status", order.id, { order_number: order.order_number, changes: { payment_status: { from: order.payment_status, to: paymentStatus } }, before: { payment_status: order.payment_status }, after: { payment_status: paymentStatus } });
+        await logAction("update", "order_payment_status", order.id, { order_number: order.order_number, changes: { payment_status: { from: order.payment_status, to: savePaymentStatus } }, before: { payment_status: order.payment_status }, after: { payment_status: savePaymentStatus } });
       }
 
       // Customer info changes
@@ -720,14 +1258,65 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         });
       }
 
-      // Status / customer / totals edits all enqueue via the DB trigger on
-      // orders.update; kick the worker so the push lands within seconds
-      // instead of waiting for the throttled scheduler.
+      // Identity change (issue #32): timeline + audit entry covering Brand,
+      // Selling Point, and the re-resolved default Pathao Account — including
+      // whether an active consignment stays booked on another account.
+      if (identityIsChanging) {
+        const beforeAccount = resolveDefaultAccount(pathaoAccounts, pathaoLinks, [
+          initialIdentity?.sellingPointWooStoreId,
+          initialIdentity?.brandWooStoreId,
+        ]);
+        const accountLabel = (account: PathaoAccountOption | undefined) =>
+          account ? `${account.accountName} · ${account.pickupStoreName}` : null;
+        const beforeSnap: IdentitySnapshot = {
+          brandId: initialIdentity?.brandId ?? null,
+          brandName: initialIdentity?.brandName ?? null,
+          sellingPointId: initialIdentity?.sellingPointId ?? null,
+          sellingPointName: initialIdentity?.sellingPointName ?? null,
+          accountKey: beforeAccount?.key ?? null,
+          accountLabel: accountLabel(beforeAccount),
+        };
+        const afterSnap: IdentitySnapshot = {
+          brandId: brandId || null,
+          brandName: selectedBrand?.name ?? null,
+          sellingPointId: selectedSellingPoint?.id ?? null,
+          sellingPointName: selectedSellingPoint?.name ?? null,
+          accountKey: defaultAccount?.key ?? null,
+          accountLabel: accountLabel(defaultAccount),
+        };
+        const { description, metadata } = describeIdentityChange(beforeSnap, afterSnap);
+        const conflictNote = consignmentConflict.conflicted
+          ? {
+              consignment_conflict: true,
+              consignment_ids: consignmentConflict.consignmentIds,
+              booked_account_key: consignmentConflict.bookedAccountKey,
+            }
+          : {};
+        await addOrderTimeline({
+          order_id: order.id,
+          event: "identity_changed",
+          description: consignmentConflict.conflicted
+            ? `${description} — active consignment ${consignmentConflict.consignmentIds.join(", ")} stays booked on its Pathao Account (courier record unchanged)`
+            : description,
+          metadata: { ...metadata, ...conflictNote },
+        });
+        await logAction("update", "order_identity", order.id, {
+          order_number: order.order_number,
+          before: beforeSnap,
+          after: afterSnap,
+          ...conflictNote,
+        });
+      }
+
+      // Status / customer / totals / identity edits all enqueue via the DB
+      // trigger on orders.update; kick the worker so the push lands within
+      // seconds instead of waiting for the throttled scheduler.
       if (
-        status !== order.status ||
-        paymentStatus !== order.payment_status ||
+        saveStatus !== order.status ||
+        savePaymentStatus !== order.payment_status ||
         custChanges.length > 0 ||
-        totalsChanges.length > 0
+        totalsChanges.length > 0 ||
+        identityIsChanging
       ) {
         void kickSyncWorker();
       }
@@ -766,15 +1355,31 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         if (deletedMeasIds.length > 0) {
           await supabase.from("order_item_measurements" as any).delete().in("id", deletedMeasIds);
         }
-        // Inserts (new resolved presets or new entries with any value filled)
+        // Inserts: staged entries with any value filled — or notes only,
+        // matching Add Order where a group with just a note still captures.
         const newMeas = measurements.filter(
-          (m) => m._isNew && m.values.some((v) => v.value && String(v.value).trim() !== "")
+          (m) =>
+            m._isNew &&
+            (m.values.some((v) => v.value && String(v.value).trim() !== "") ||
+              !!(m.notes && m.notes.trim()))
         );
-        if (newMeas.length > 0) {
+        // Rows staged against temp line ids resolve to the ids inserted above;
+        // rows for lines removed in this edit — or whose item insert produced
+        // no match — are skipped, since one bad order_item_id fails the
+        // foreign key and voids the whole batch.
+        const insertRows = newMeas.flatMap((m) => {
+          const rawItemId = m.order_item_id;
+          if (rawItemId == null) return [{ meas: m, orderItemId: null }];
+          if (deletedItemIds.includes(rawItemId)) return [];
+          if (!rawItemId.startsWith("new-")) return [{ meas: m, orderItemId: rawItemId }];
+          const dbId = orderItemIdByTemp.get(rawItemId);
+          return dbId ? [{ meas: m, orderItemId: dbId }] : [];
+        });
+        if (insertRows.length > 0) {
           await supabase.from("order_item_measurements" as any).insert(
-            newMeas.map((m) => ({
+            insertRows.map(({ meas: m, orderItemId }) => ({
               order_id: order.id,
-              order_item_id: m.order_item_id,
+              order_item_id: orderItemId,
               group_name: m.group_name,
               display_format: m.display_format,
               unit: m.unit,
@@ -795,12 +1400,12 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
             } as any)
             .eq("id", m.id);
         }
-        if (newMeas.length > 0 || dirtyMeas.length > 0 || deletedMeasIds.length > 0) {
+        if (insertRows.length > 0 || dirtyMeas.length > 0 || deletedMeasIds.length > 0) {
           await addOrderTimeline({
             order_id: order.id,
             event: "measurements_updated",
-            description: `Measurements updated — ${newMeas.length} added, ${dirtyMeas.length} edited, ${deletedMeasIds.length} removed`,
-            metadata: { added: newMeas.length, edited: dirtyMeas.length, removed: deletedMeasIds.length },
+            description: `Measurements updated — ${insertRows.length} added, ${dirtyMeas.length} edited, ${deletedMeasIds.length} removed`,
+            metadata: { added: insertRows.length, edited: dirtyMeas.length, removed: deletedMeasIds.length },
           });
         }
       } catch (e) {
@@ -822,7 +1427,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Payment recompute helper ---------- */
 
   const recomputePaymentStatus = async (orderRow: OrderDetail | null) => {
-    if (!orderRow) return;
+    if (!orderRow || !hasStoreScope(businessStoreIds) || !orderRow.store_id || !businessStoreIds.includes(orderRow.store_id)) return;
     const { data: rows } = await supabase
       .from("order_payments")
       .select("amount")
@@ -832,24 +1437,31 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const remaining = Math.max(orderTotal - totalPaid, 0);
     const newStatus =
       totalPaid <= 0.0001
-        ? "unpaid"
+        ? // Issue #27: keep the unconfirmed Woo online-payment marker — the gate
+          // is released by recording a payment, not by recomputation side effects.
+          orderRow.payment_status === "online"
+          ? "online"
+          : "unpaid"
         : remaining <= 0.0001
         ? "paid"
         : "partial";
-    await supabase
-      .from("orders")
-      .update({
-        payment_status: newStatus,
-        amount_to_collect: remaining,
-      })
-      .eq("id", orderRow.id);
+    await scopeStoreIds(
+      supabase
+        .from("orders")
+        .update({
+          payment_status: newStatus,
+          amount_to_collect: remaining,
+        })
+        .eq("id", orderRow.id),
+      businessStoreIds,
+    );
     return { totalPaid, remaining, newStatus };
   };
 
   /* ---------- Add payment ---------- */
 
   const addPayment = async () => {
-    if (!order || !payAmount) return;
+    if (!order || !payAmount || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(payAmount);
     await supabase.from("order_payments").insert({
       order_id: order.id,
@@ -894,7 +1506,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const saveEditedPayment = async (p: PaymentEntry) => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(editPayAmount);
     if (!Number.isFinite(amt) || amt < 0) {
       toast.error("Enter a valid amount");
@@ -928,7 +1540,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const deletePayment = async (p: PaymentEntry) => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     if (!confirm(`Delete this ${symbol}${Number(p.amount).toLocaleString()} ${p.method} payment?`)) return;
     await supabase.from("order_payments").delete().eq("id", p.id);
     const recomputed = await recomputePaymentStatus(order);
@@ -950,7 +1562,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Confirm pending payment ---------- */
 
   const confirmPendingPayment = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(confirmPayAmount);
     if (!amt || amt <= 0) {
       toast.error("Enter a valid amount");
@@ -1034,7 +1646,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const handleReturn = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     setSaving(true);
     try {
       // Update order status
@@ -1099,7 +1711,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 #{order?.order_number || "..."}
               </SheetTitle>
               {order && <FulfillmentBadge status={order.status} />}
-              {order && <SourceBadge source={order.source} storeName={order.stores?.name} />}
+              {order && <SourceBadge source={order.source} storeName={order.stores?.name} orderSource={order.order_source} />}
             </div>
             {order?.woo_order_id && order.stores?.url && (
               <Button
@@ -1138,7 +1750,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       ({courierShipments.filter(s => !s.cancelled_at).length} active, {courierShipments.length} total)
                     </span>
                   )}
-                  {canAttachCourier && (
+                  {canEnterCourierNow && (
                     <button
                       onClick={() => setAttachParcelOpen(true)}
                       className="ml-2 text-xs text-muted-foreground hover:text-primary underline"
@@ -1147,14 +1759,19 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     </button>
                   )}
                 </>
-              ) : canAttachCourier ? (
+              ) : canEnterCourierNow ? (
                 <button
                   onClick={() => setAttachParcelOpen(true)}
                   className="ml-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
                   <Link2 className="h-3 w-3" />
-                  Attach Pathao Parcel
+                  Attach Pathao Consignment
                 </button>
+              ) : paymentGateLocked && canAttachCourier ? (
+                <span className="ml-2 inline-flex items-center gap-1 text-xs text-amber-400">
+                  <Link2 className="h-3 w-3" />
+                  Consignment locked — {PAYMENT_NEEDS_CONFIRMATION_LABEL}
+                </span>
               ) : null}
             </p>
           )}
@@ -1191,7 +1808,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     ? "Online Payment Failed"
                     : isPartial
                       ? "Partial Payment Received"
-                      : "Payment Awaiting Confirmation";
+                      : PAYMENT_NEEDS_CONFIRMATION_LABEL;
                   const subtext = isFailed
                     ? `The online payment via ${order.payment_method || "the gateway"} did not complete. Log a new payment attempt or collect the full ${symbol}${orderTotal.toLocaleString()} on delivery.`
                     : isPartial
@@ -1274,13 +1891,112 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                   );
                 })()}
 
+                {/* Order Identity (issue #32) */}
+                <section>
+                  <h3 className="text-sm font-semibold text-foreground mb-3">Order Identity</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Brand</Label>
+                      <Select
+                        value={brandId || "none"}
+                        onValueChange={(value) => setBrandId(value === "none" ? "" : value)}
+                        disabled={!canEdit}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="No Brand" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {!initialIdentity?.brandId && <SelectItem value="none">No Brand</SelectItem>}
+                          {brandChoices.map((brand) => (
+                            <SelectItem key={brand.id} value={brand.id}>
+                              {brand.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Selling Point</Label>
+                      <Select
+                        value={sellingPointId}
+                        onValueChange={setSellingPointId}
+                        disabled={!canEdit || !brandId || brandSellingPoints.length === 0}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder={brandId ? "Choose Selling Point" : "—"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {brandSellingPoints.map((point) => (
+                            <SelectItem key={point.id} value={point.id}>
+                              {point.name}{point.is_default ? " · Default" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Pathao Account (default)</Label>
+                      <div className="h-9 flex items-center rounded-md border border-border bg-muted/30 px-3 text-sm text-foreground">
+                        {defaultAccount
+                          ? `${defaultAccount.accountName} · ${defaultAccount.pickupStoreName}`
+                          : "Not configured"}
+                      </div>
+                    </div>
+                  </div>
+                  {brandId && brandSellingPoints.length === 0 && (
+                    <p className="text-[11px] text-destructive mt-2">{SELLING_POINT_CONFIGURE_HINT}</p>
+                  )}
+                  {identityDirty && brandId && !identityResolution.sellingPointId && brandSellingPoints.length > 0 && (
+                    <p className="text-[11px] text-destructive mt-2">Choose a Selling Point to save this identity change.</p>
+                  )}
+                  {identityDirty && (
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      Saved with <span className="font-medium">Save Changes</span>. Changing the Brand re-resolves
+                      the Selling Point and the default Pathao Account above.
+                    </p>
+                  )}
+                  {identityDirty && consignmentConflict.conflicted && (
+                    <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-500 space-y-1">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        Active consignment on another Pathao Account
+                      </div>
+                      <p>
+                        Consignment <strong className="font-mono">{consignmentConflict.consignmentIds.join(", ")}</strong>{" "}
+                        was booked through{" "}
+                        <strong>
+                          {bookedAccount
+                            ? `${bookedAccount.accountName} · ${bookedAccount.pickupStoreName}`
+                            : "another Pathao Account"}
+                        </strong>
+                        {defaultAccount ? (
+                          <>
+                            {" "}while this identity defaults to{" "}
+                            <strong>{defaultAccount.accountName} · {defaultAccount.pickupStoreName}</strong>
+                          </>
+                        ) : null}
+                        . Saving will <strong>not</strong> rebook or rewrite the courier record — cancel the booking
+                        and attach the consignment again to dispatch through the new account.
+                      </p>
+                    </div>
+                  )}
+                  {identityDirty && !consignmentConflict.conflicted && consignmentConflict.consignmentIds.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      This order has an active consignment ({consignmentConflict.consignmentIds.join(", ")}); its
+                      courier record keeps the booked Pathao Account.
+                    </p>
+                  )}
+                </section>
+
+                <Separator />
+
                 {/* Payment & Source Info */}
                 <section>
                   <h3 className="text-sm font-semibold text-foreground mb-3">Payment & Source</h3>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Method</Label>
-                      <Select value={paymentMethod || "none"} onValueChange={(v) => setPaymentMethod(v === "none" ? "" : v)}>
+                      <Select value={paymentMethod || "none"} onValueChange={(v) => setPaymentMethod(v === "none" ? "" : v)} disabled={paymentGateLocked}>
                         <SelectTrigger className="h-9">
                           <SelectValue placeholder="N/A" />
                         </SelectTrigger>
@@ -1298,7 +2014,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Payment Status</Label>
-                      <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                      {/* Issue #27: while gated, only recording a payment (confirm
+                          flow / payment log) may change the payment state. */}
+                      <Select value={paymentStatus} onValueChange={setPaymentStatus} disabled={paymentGateLocked}>
                         <SelectTrigger className="h-9">
                           <SelectValue />
                         </SelectTrigger>
@@ -1325,24 +2043,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         </SelectContent>
                       </Select>
                     </div>
-                    {locationOptions.length > 0 && (
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Fulfill From</Label>
-                        <Select value={locationId || "none"} onValueChange={(v) => setLocationId(v === "none" ? "" : v)}>
-                          <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Default location" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Default location</SelectItem>
-                            {locationOptions.map((l) => (
-                              <SelectItem key={l.id} value={l.id}>
-                                {l.name} ({l.type})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
                   </div>
                 </section>
 
@@ -1359,7 +2059,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         {courierShipments.some((s) => s.cancelled_at) && ` · ${courierShipments.length} total`}
                       </Badge>
                     </div>
-                    {canAttachCourier && (
+                    {canEnterCourierNow ? (
                       <Button
                         type="button"
                         variant="outline"
@@ -1368,17 +2068,25 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         className="h-8 gap-1.5 text-xs"
                       >
                         <Plus className="h-3.5 w-3.5" />
-                        {courierShipments.length > 0 ? "Add Courier Entry" : "Attach Parcel"}
+                        {courierShipments.length > 0 ? "Add Consignment" : "Attach Consignment"}
                       </Button>
-                    )}
+                    ) : paymentGateLocked && canAttachCourier ? (
+                      <span className="text-xs text-amber-400">
+                        Locked — confirm the payment to enter with a courier
+                      </span>
+                    ) : null}
                   </div>
 
                   {courierShipments.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-border p-4 text-center space-y-2">
                       <p className="text-xs text-muted-foreground">
-                        No courier entries attached to this order yet.
+                        No consignments attached to this order yet.
                       </p>
-                      {canAttachCourier && (
+                      {paymentGateLocked && canAttachCourier ? (
+                        <p className="text-xs text-amber-400">
+                          {PAYMENT_NEEDS_CONFIRMATION_LABEL} — consignment stays locked until the payment is confirmed.
+                        </p>
+                      ) : canEnterCourierNow ? (
                         <Button
                           type="button"
                           variant="secondary"
@@ -1387,9 +2095,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                           className="h-7 text-xs gap-1.5"
                         >
                           <Link2 className="h-3.5 w-3.5" />
-                          Attach Pathao Parcel
+                          Attach Pathao Consignment
                         </Button>
-                      )}
+                      ) : null}
                     </div>
                   ) : (
                     <div className="space-y-2.5">
@@ -1507,7 +2215,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                     setDeleteConfirmOpen(true);
                                   }}
                                   className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                                  title="Delete or cancel this courier entry"
+                                  title="Delete or cancel this consignment"
                                 >
                                   <Trash2 className="h-3.5 w-3.5 mr-1" />
                                   <span className="text-xs">Delete</span>
@@ -1550,7 +2258,23 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
                 {/* Line Items */}
                 <section>
-                  <h3 className="text-sm font-semibold text-foreground mb-3">Line Items</h3>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="text-sm font-semibold text-foreground">Line Items</h3>
+                    {/* Issue #31: split moves chosen items/money into a new order —
+                        an ordinary edit, never a status/courier change, so the #27
+                        payment gate intentionally does not disable it. */}
+                    {order && canEdit && order.status !== "cancelled" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setSplitOpen(true)}
+                        disabled={saving}
+                      >
+                        <Scissors className="h-3.5 w-3.5" /> Split Order
+                      </Button>
+                    )}
+                  </div>
                   <div className="rounded-lg border border-border overflow-hidden">
                     <Table>
                       <TableHeader>
@@ -1652,6 +2376,17 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                     </div>
                   )}
 
+                  <ProductVariationPicker
+                    open={!!variationPickerProductId}
+                    onOpenChange={(next) => { if (!next) setVariationPickerProductId(null); }}
+                    products={productOptions}
+                    variations={variationOptions}
+                    lockProductId={variationPickerProductId}
+                    onPick={addOrderLine}
+                    title="Add product & size"
+                    description="Pick the variation for this order line — the size label is kept in the item name."
+                  />
+
                   {/* Summary */}
                   <div className="mt-4 space-y-2 text-sm">
                     <div className="flex justify-between">
@@ -1699,7 +2434,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 </section>
 
                 {/* Measurements (editable) */}
-                {measurements.length > 0 && (
+                {showMeasurementsSection && (
                   <section>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -1709,20 +2444,30 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         size="sm"
                         variant="outline"
                         className="gap-1.5"
-                        onClick={() => order && printMeasurementSlip(order.id)}
+                        onClick={() => order && printMeasurementSlip(order.id, businessStoreIds)}
                       >
                         <Printer className="h-3.5 w-3.5" /> Print Slip
                       </Button>
                     </div>
                     <p className="text-[11px] text-muted-foreground mb-2">
-                      Edits here are saved when you press <span className="font-medium">Save Changes</span>. Preset values from S/M/L size charts are pre-filled and editable.
+                      Edits here are saved when you press <span className="font-medium">Save Changes</span>. Preset values from S/M/L size charts are pre-filled and editable. Products with measurement groups that have no entry yet offer <span className="font-medium">Add measurements</span>.
                     </p>
                     <div className="space-y-3">
                       {[
-                        ...activeItems.map((it) => ({ key: it.id, label: it.product_name, items: measurements.filter((m) => m.order_item_id === it.id) })),
-                        { key: "__general__", label: "General", items: measurements.filter((m) => !m.order_item_id || !activeItems.some((it) => it.id === m.order_item_id)) },
+                        ...activeItems.map((it) => ({
+                          key: it.id,
+                          label: it.product_name,
+                          items: measurements.filter((m) => m.order_item_id === it.id),
+                          addable: unmeasuredGroupsFor(it),
+                        })),
+                        {
+                          key: "__general__",
+                          label: "General",
+                          items: measurements.filter((m) => !m.order_item_id || !activeItems.some((it) => it.id === m.order_item_id)),
+                          addable: [] as MeasurementGroup[],
+                        },
                       ]
-                        .filter((b) => b.items.length > 0)
+                        .filter((b) => b.items.length > 0 || (canEdit && b.addable.length > 0))
                         .map((bucket) => (
                           <div key={`m-${bucket.key}`} className="rounded-lg border border-border p-3 bg-secondary/30">
                             <div className="text-xs font-semibold text-foreground mb-2">{bucket.label}</div>
@@ -1779,13 +2524,28 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                                 />
                               </div>
                             ))}
+                            {canEdit && bucket.addable.length > 0 && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 gap-1 text-xs"
+                                title={`Open measurement entry for ${bucket.addable.map((g) => g.name).join(", ")}`}
+                                onClick={() => {
+                                  const target = activeItems.find((i) => i.id === bucket.key);
+                                  if (target) void addMeasurementsForItem(target);
+                                }}
+                              >
+                                <Plus className="h-3 w-3" /> Add measurements
+                              </Button>
+                            )}
                           </div>
                         ))}
                     </div>
                   </section>
                 )}
 
-                {measurements.length > 0 && <Separator />}
+                {showMeasurementsSection && <Separator />}
 
                 {/* Notes */}
                 <section>
@@ -1945,12 +2705,15 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         <SheetFooter className="px-6 py-4 border-t border-border shrink-0 flex-row items-center justify-between gap-3 sm:justify-between">
           <div className="flex items-center gap-2">
             <Label className="text-xs whitespace-nowrap">Status:</Label>
-            <Select value={status} onValueChange={setStatus}>
+            {/* Issue #27: gated orders may not be moved to another status —
+                the confirm-payment flow is the only sanctioned exit. */}
+            <Select value={status} onValueChange={setStatus} disabled={paymentGateLocked}>
               <SelectTrigger className="w-[140px] h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="payment_pending">{PAYMENT_NEEDS_CONFIRMATION_LABEL}</SelectItem>
                 <SelectItem value="processing">New Order</SelectItem>
                 <SelectItem value="pre_order_pending">Pre-Order</SelectItem>
                 <SelectItem value="pre_order_making">Making</SelectItem>
@@ -1962,6 +2725,11 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
+            {paymentGateLocked && (
+              <span className="text-xs text-amber-400 whitespace-nowrap">
+                Locked — {PAYMENT_NEEDS_CONFIRMATION_LABEL}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {order && order.status === "delivered" && canEdit && (
@@ -1974,7 +2742,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 <Undo2 className="h-4 w-4" /> Return
               </Button>
             )}
-            <Button onClick={handleSave} disabled={saving || (!canEdit && !canChangeStatus)}>
+            <Button onClick={handleSave} disabled={saving || (!canEdit && !canChangeStatus) || identityBlocked}>
               {saving ? "Saving…" : "Save Changes"}
             </Button>
           </div>
@@ -1989,6 +2757,15 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       />
 
       {order && (
+        <SplitOrderDialog
+          open={splitOpen}
+          onOpenChange={setSplitOpen}
+          orderId={order.id}
+          onSplitDone={() => { load(); onSaved?.(); }}
+        />
+      )}
+
+      {order && (
         <AttachParcelDialog
           open={attachParcelOpen}
           onOpenChange={setAttachParcelOpen}
@@ -2000,21 +2777,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         />
       )}
 
-      {/* Delete Courier Entry Confirmation Dialog */}
+      {/* Delete Consignment Confirmation Dialog */}
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <div className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-5 w-5" />
-              <AlertDialogTitle>Delete Courier Entry</AlertDialogTitle>
+              <AlertDialogTitle>Delete Consignment</AlertDialogTitle>
             </div>
             <AlertDialogDescription className="space-y-2 pt-2">
               <p className="text-sm text-muted-foreground">
-                Are you sure you want to delete courier entry{" "}
+                Are you sure you want to delete consignment{" "}
                 <strong className="font-mono text-foreground">{deletingShipment?.consignment_id}</strong>?
               </p>
               <p className="text-xs text-muted-foreground">
-                This will call the Pathao API to cancel the parcel and mark it as cancelled in DokanOS.
+                This will call the Pathao API to cancel the consignment and mark it as cancelled in DokanOS.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -2045,7 +2822,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
             </div>
             <AlertDialogDescription className="space-y-2 pt-2">
               <p className="text-sm text-muted-foreground">
-                Pathao refused to cancel parcel{" "}
+                Pathao refused to cancel consignment{" "}
                 <strong className="font-mono text-foreground">{deletePathaoFail?.shipment.consignment_id}</strong>:
               </p>
               <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2.5 text-xs text-destructive font-mono">
@@ -2081,6 +2858,9 @@ function FulfillmentBadge({ status }: { status: string }) {
   switch (status) {
     case "processing":
       return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">New Order</Badge>;
+    case "payment_pending":
+      // Display-only rename (issue #27): stored value stays "payment_pending".
+      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20">{PAYMENT_NEEDS_CONFIRMATION_LABEL}</Badge>;
     case "ready_to_ship":
       return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20">Ready to Ship</Badge>;
     case "pre_order_pending":

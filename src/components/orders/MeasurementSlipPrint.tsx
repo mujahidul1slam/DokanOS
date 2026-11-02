@@ -1,27 +1,63 @@
 import { supabase } from "@/integrations/supabase/client";
 import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type CapturedMeasurement } from "@/lib/measurements";
+import { formatMeasurementPendingMarker, getMeasurementEntryStatus, getMissingMeasurementGroups, type ExpectedGroupRef } from "@/lib/measurementRules";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
+import { thermalTextCss } from "@/lib/pickupSlipHtml";
 import { PRINT_BOOTSTRAP, openPrintWindow } from "@/lib/printWindow";
+import { parseVariationAttributes } from "@/lib/variations";
+import { fetchSlipOrderDetails, type SlipOrderDetail } from "./PickupSlipPrint";
+import { addMakingCandidate, type MakingCandidate } from "@/lib/makingPromotionStore";
+import { hasStoreScope, scopeStoreIds } from "@/hooks/useActiveBusinessStoreIds";
 
 /**
- * If the order is currently in pre_order_pending status, promote it to
- * pre_order_making (the "in production" stage) — printing the measurement
- * slip is the trigger that production has begun.
+ * If the order is a pre-order candidate, promote it to pre_order_making (the
+ * "in production" stage). Kept as the single source of truth for the status
+ * write; the UI now calls this explicitly from the "change to making" prompt
+ * rather than it firing automatically on slip print.
  */
-async function promotePreOrderOnSlipPrint(orderId: string) {
+export async function applyMakingPromotion(orderId: string, fromLabel: string, fromStatus: string) {
+  try {
+    const { error: orderError } = await supabase
+      .from("orders")
+      .update({ status: "pre_order_making" })
+      .eq("id", orderId);
+    if (orderError) throw orderError;
+
+    await addOrderTimeline({
+      order_id: orderId,
+      event: "status_changed",
+      description: `Status changed from "${fromLabel}" to "Making" — measurement slip printed`,
+      metadata: { from: fromStatus, to: "pre_order_making", trigger: "measurement_slip_print" },
+    });
+    return true;
+  } catch (e) {
+    console.warn("applyMakingPromotion failed:", e);
+    return false;
+  }
+}
+
+/**
+ * Read-only check: would printing this order's measurement slip qualify it for
+ * promotion to "making"? Returns the candidate (order number + source label/
+ * status) or null when the order is not a pre-order candidate or has already
+ * passed the making stage. Performs no writes. Tenancy is enforced by the
+ * caller: printMeasurementSlip verifies the order belongs to the active
+ * business's stores before it reaches this check.
+ */
+export async function checkMakingEligibility(orderId: string): Promise<MakingCandidate | null> {
   try {
     const { data: order } = await supabase
       .from("orders")
-      .select("id, status, consignment_id")
+      .select("id, order_number, status, consignment_id")
       .eq("id", orderId)
       .single();
-    if (!order) return;
+    if (!order) return null;
 
     // Already past the "making" stage — nothing to do.
     if (["pre_order_making", "pre_order_ready", "ready_to_ship", "shipped", "delivered", "cancelled", "returned"].includes(order.status)) {
-      return;
+      return null;
     }
 
     // Detect whether this order is treated as a pre-order: either it sits in
@@ -43,17 +79,17 @@ async function promotePreOrderOnSlipPrint(orderId: string) {
       }
     }
 
-    if (!isPreOrder) return;
+    if (!isPreOrder) return null;
 
-    await supabase.from("orders").update({ status: "pre_order_making" }).eq("id", orderId);
-    await addOrderTimeline({
-      order_id: orderId,
-      event: "status_changed",
-      description: `Status changed from "${fromLabel}" to "Making" — measurement slip printed`,
-      metadata: { from: fromStatus, to: "pre_order_making", trigger: "measurement_slip_print" },
-    });
+    return {
+      orderId,
+      orderNumber: (order as any).order_number ?? null,
+      fromLabel,
+      fromStatus,
+    };
   } catch (e) {
-    console.warn("promotePreOrderOnSlipPrint failed:", e);
+    console.warn("checkMakingEligibility failed:", e);
+    return null;
   }
 }
 
@@ -68,6 +104,15 @@ interface SlipTpl {
   show_product_name?: boolean;
   show_product_sku?: boolean;
   show_notes?: boolean;
+  /** Brand line (issue #24). Opt-out: undefined keeps the line visible. */
+  show_brand?: boolean;
+  /** Pathao Account line (issue #24). Opt-out: undefined keeps it visible. */
+  show_pathao_account?: boolean;
+  /**
+   * "Bold thermal text" (issue #24): render every thermal-format line bold.
+   * Opt-out; A4 keeps its current styling.
+   */
+  bold_thermal_text?: boolean;
   footer_text?: string;
 }
 
@@ -78,10 +123,11 @@ interface OrderInfo {
   customer_phone: string | null;
 }
 
-interface ProductLine {
+export interface ProductLine {
   product_name: string;
   sku?: string | null;
   measurements: CapturedMeasurement[];
+  pendingNote?: string;
 }
 
 function renderMeasurement(m: CapturedMeasurement, override: SlipTpl["default_format"]) {
@@ -99,15 +145,146 @@ function renderMeasurement(m: CapturedMeasurement, override: SlipTpl["default_fo
   </table>`;
 }
 
-export async function printMeasurementSlip(orderId: string) {
-  const [orderRes, itemsRes, measurementsRes, settingsRes] = await Promise.all([
-    supabase.from("orders").select("order_number, created_at, customer_name, customer_phone").eq("id", orderId).single(),
+export interface MeasurementSlipRenderData {
+  orderNumber: string;
+  /** created_at — rendered with toLocaleDateString/toLocaleTimeString. */
+  orderDate: string | Date;
+  customerName: string | null;
+  customerPhone: string | null;
+  businessName: string;
+  productLines: ProductLine[];
+  orphans: CapturedMeasurement[];
+  /** Brand + Pathao Account lookup result (issue #24). */
+  detail?: SlipOrderDetail | null;
+}
+
+/** Escape external metadata (brand/Pathao names) before it enters the document. */
+function esc(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * The measurement slip document — extracted so the layout is testable and so
+ * the print popup and any preview render the same thing.
+ *
+ * Issue #24 adds the brand and Pathao Account lines: the default account
+ * carries a "(default)" marker before dispatch, the actual account shows once
+ * dispatched, and nothing configured reads "Pathao Account not selected".
+ * Thermal output is strictly monochrome (every text color collapses to the
+ * neutral scale) and renders all-bold unless the per-document "Bold thermal
+ * text" option is off. A4 keeps its current styling.
+ */
+export function buildMeasurementSlipHtml(data: MeasurementSlipRenderData, tpl: SlipTpl): string {
+  const fmt = tpl.print_format || "thermal";
+  const isThermal = fmt === "thermal";
+  // Must fit the @page printable area (sheet minus margins), with border-box
+  // below so the padding counts against that width rather than adding to it.
+  // A4 210mm - 2x15mm = 180mm; thermal 80mm - 2x4mm = 72mm. The old hardcoded
+  // 210mm plus content-box padding overflowed onto extra pages.
+  const width = isThermal ? "72mm" : "100%";
+  const date = new Date(data.orderDate);
+
+  const headerInfo: string[] = [];
+  if (tpl.show_order_number !== false) headerInfo.push(`<div><strong>Order:</strong> #${esc(data.orderNumber)}</div>`);
+  if (tpl.show_order_date !== false) headerInfo.push(`<div style="color:#666;font-size:11px;">${date.toLocaleDateString()} · ${date.toLocaleTimeString()}</div>`);
+  if (tpl.show_customer_name !== false && data.customerName) headerInfo.push(`<div><strong>Customer:</strong> ${esc(data.customerName)}</div>`);
+  if (tpl.show_customer_phone !== false && data.customerPhone) headerInfo.push(`<div><strong>Phone:</strong> ${esc(data.customerPhone)}</div>`);
+
+  const productSections = data.productLines.map((line) => `
+    <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
+      ${tpl.show_product_name !== false ? `<div style="font-weight:700;font-size:13px;">${esc(line.product_name)}</div>` : ""}
+      ${line.pendingNote ? `<div style="font-size:12px;font-weight:700;color:#555;margin-top:4px;">${esc(line.pendingNote)}</div>` : ""}
+      ${tpl.show_product_sku && line.sku ? `<div style="font-family:monospace;font-size:10px;color:#666;">SKU: ${esc(line.sku)}</div>` : ""}
+      ${line.measurements.map((m) => `
+        <div style="margin-top:10px;">
+          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
+          ${renderMeasurement(m, tpl.default_format)}
+          ${tpl.show_notes !== false && m.notes ? `<div style="font-size:12px;color:#555;margin-top:4px;font-style:italic;">${m.notes}</div>` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `).join("");
+
+  const orphanSection = data.orphans.length > 0 ? `
+    <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
+      <div style="font-weight:700;font-size:13px;">General Measurements</div>
+      ${data.orphans.map((m) => `
+        <div style="margin-top:10px;">
+          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
+          ${renderMeasurement(m, tpl.default_format)}
+        </div>
+      `).join("")}
+    </div>
+  ` : "";
+
+  // Identity lines (issue #24). `undefined` Pathao data means the lookup did
+  // not resolve one — the line stays hidden instead of claiming none exists;
+  // `null` is known-none and reads "Pathao Account not selected".
+  const detail = data.detail ?? null;
+  const identityRows: string[] = [];
+  if (tpl.show_brand !== false && detail?.brand) {
+    identityRows.push(
+      `<div class="identity-row"><span class="identity-label">Brand</span><span>${esc(detail.brand.name)}</span></div>`,
+    );
+  }
+  if (tpl.show_pathao_account !== false && detail?.pathaoAccount !== undefined) {
+    const acct = detail?.pathaoAccount;
+    identityRows.push(
+      acct?.name
+        ? `<div class="identity-row"><span class="identity-label">Pathao Account</span><span>${esc(acct.name)}${acct.pickupStoreName ? ` · ${esc(acct.pickupStoreName)}` : ""}${acct.isDefault && detail?.dispatched !== true ? ' <span class="identity-note">(default)</span>' : ""}</span></div>`
+        : `<div class="identity-row"><span class="identity-label">Pathao Account</span><span>Pathao Account not selected</span></div>`,
+    );
+  }
+  const identitySection = identityRows.length > 0 ? `<div class="identity">${identityRows.join("")}</div>` : "";
+
+  return `<!DOCTYPE html><html><head><title>Measurement Slip - ${esc(data.orderNumber)}</title>
+    <style>
+      * { box-sizing: border-box; }
+      @page { size: ${isThermal ? "80mm auto" : "A4"}; margin: ${isThermal ? "4mm" : "15mm"}; }
+      body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; margin: 0; padding: 0; }
+      .slip { max-width: ${width}; margin: 0 auto; padding: ${isThermal ? "8px" : "20px"}; }
+      .title { text-align: center; font-size: ${isThermal ? "14px" : "20px"}; font-weight: 800; letter-spacing: 2px; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 10px; }
+      .biz { text-align: center; font-size: ${isThermal ? "11px" : "13px"}; color: #666; margin-bottom: 4px; }
+      .footer { text-align:center; margin-top: 16px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 10px; color:#888; }
+      .identity { margin-bottom: 8px; }
+      .identity-row { display: flex; justify-content: space-between; gap: 8px; font-size: ${isThermal ? "11px" : "12px"}; line-height: 1.5; }
+      .identity-label { color: #666; text-transform: uppercase; letter-spacing: 0.6px; font-size: ${isThermal ? "10px" : "11px"}; }
+      .identity-note { color: #666; font-size: 10px; }
+      ${isThermal ? thermalTextCss(".slip", { bold: tpl.bold_thermal_text !== false, grayClasses: [".biz", ".footer", ".identity-label", ".identity-note"] }) : ""}
+    </style></head><body><div class="slip">
+      <div class="biz">${esc(data.businessName)}</div>
+      <div class="title">${tpl.title || "MEASUREMENT SLIP"}</div>
+      ${identitySection}
+      <div style="font-size:12px;line-height:1.5;">${headerInfo.join("")}</div>
+      ${productSections}
+      ${orphanSection}
+      ${tpl.footer_text ? `<div class="footer">${tpl.footer_text}</div>` : ""}
+    </div>${PRINT_BOOTSTRAP}</body></html>`;
+}
+
+export async function printMeasurementSlip(orderId: string, businessStoreIds: string[] = []) {
+  if (!hasStoreScope(businessStoreIds)) return;
+  const { data: orderData } = await scopeStoreIds(
+    supabase
+      .from("orders")
+      .select("order_number, created_at, customer_name, customer_phone, store_id")
+      .eq("id", orderId),
+    businessStoreIds,
+  ).maybeSingle();
+  if (!orderData || !businessStoreIds.includes(orderData.store_id)) return;
+
+  const [itemsRes, measurementsRes, settingsRes] = await Promise.all([
     supabase.from("order_items").select("id, product_name, product_id").eq("order_id", orderId),
     supabase.from("order_item_measurements" as any).select("order_item_id, group_name, display_format, unit, values, notes").eq("order_id", orderId),
     supabase.from("invoice_settings" as any).select("measurement_slip_template, business_name").limit(1).single(),
   ]);
 
-  const order = orderRes.data as OrderInfo | null;
+  const order = orderData as OrderInfo | null;
   if (!order) {
     alert("Order not found");
     return;
@@ -122,7 +299,11 @@ export async function printMeasurementSlip(orderId: string) {
   const productIds = items.map((i) => i.product_id).filter(Boolean);
   const skuMap = new Map<string, string>();
   if (productIds.length > 0 && tpl.show_product_sku) {
-    const { data: prods } = await supabase.from("products").select("id, sku").in("id", productIds);
+    const { data: prods } = await supabase
+      .from("products")
+      .select("id, sku")
+      .in("id", productIds)
+      .in("store_id", businessStoreIds);
     (prods || []).forEach((p: any) => p.sku && skuMap.set(p.id, p.sku));
   }
 
@@ -149,6 +330,7 @@ export async function printMeasurementSlip(orderId: string) {
   const productLines: ProductLine[] = [];
   for (const i of items) {
     let measurements = measByItem.get(i.id) || [];
+    const expectedGroups = i.product_id ? await getGroupsForProduct(i.product_id) : [];
 
     // Custom measurements always win — only resolve presets when nothing was captured.
     if (measurements.length === 0 && i.product_id) {
@@ -194,12 +376,12 @@ export async function printMeasurementSlip(orderId: string) {
             // Score each variation by number of matched attrs; pick the best.
             let best: { row: any; score: number } | null = null;
             for (const v of vars as any[]) {
-              const attrs = Array.isArray(v.attributes) ? v.attributes : [];
+              const attrs = parseVariationAttributes(v.attributes);
               if (attrs.length === 0) continue;
               let score = 0;
               let allMatch = true;
               for (const a of attrs) {
-                const val = String(a?.value || a?.option || "");
+                const val = a.option;
                 if (valueMatchesName(val)) score++;
                 else { allMatch = false; break; }
               }
@@ -220,10 +402,9 @@ export async function printMeasurementSlip(orderId: string) {
 
       if (sizeLabel) {
         // 2. Look up assigned measurement groups for this product
-        const groups = await getGroupsForProduct(i.product_id);
         // 3. Resolve a preset for each group + size
         const resolved: CapturedMeasurement[] = [];
-        for (const g of groups) {
+        for (const g of expectedGroups) {
           const preset = await resolveSizePreset(g.id, i.product_id, sizeLabel);
           if (preset && preset.values.length > 0) {
             resolved.push({
@@ -239,11 +420,20 @@ export async function printMeasurementSlip(orderId: string) {
       }
     }
 
-    if (measurements.length > 0) {
+    const expected: ExpectedGroupRef[] = expectedGroups.map((g) => ({ id: g.id, name: g.name }));
+    const captured = measurements.map((m) => ({ groupId: m.groupId, groupName: m.groupName, values: m.values }));
+    const status = getMeasurementEntryStatus(expected, captured);
+    const missing = getMissingMeasurementGroups(expected, captured);
+    const pendingNote = formatMeasurementPendingMarker(status, missing.map((g) => g.name)) || undefined;
+
+    // Keep every item that has expected groups or captured values. An item with
+    // neither is the only case that should not make the slip printable.
+    if (expected.length > 0 || measurements.length > 0) {
       productLines.push({
         product_name: i.product_name,
         sku: skuMap.get(i.product_id),
         measurements,
+        pendingNote,
       });
     }
   }
@@ -253,72 +443,36 @@ export async function printMeasurementSlip(orderId: string) {
     return;
   }
 
+  // Brand + Pathao Account lines (issue #24) resolve per order, best-effort:
+  // a failed lookup leaves them off rather than claiming "not selected".
+  const detailMap = await fetchSlipOrderDetails([orderId]);
   const fmt = tpl.print_format || "thermal";
-  // Must fit the @page printable area (sheet minus margins), with border-box
-  // below so the padding counts against that width rather than adding to it.
-  // A4 210mm - 2x15mm = 180mm; thermal 80mm - 2x4mm = 72mm. The old hardcoded
-  // 210mm plus content-box padding overflowed onto extra pages.
-  const width = fmt === "thermal" ? "72mm" : "100%";
-  const date = new Date(order.created_at);
 
-  const headerInfo: string[] = [];
-  if (tpl.show_order_number !== false) headerInfo.push(`<div><strong>Order:</strong> #${order.order_number}</div>`);
-  if (tpl.show_order_date !== false) headerInfo.push(`<div style="color:#666;font-size:11px;">${date.toLocaleDateString()} · ${date.toLocaleTimeString()}</div>`);
-  if (tpl.show_customer_name !== false && order.customer_name) headerInfo.push(`<div><strong>Customer:</strong> ${order.customer_name}</div>`);
-  if (tpl.show_customer_phone !== false && order.customer_phone) headerInfo.push(`<div><strong>Phone:</strong> ${order.customer_phone}</div>`);
-
-  const productSections = productLines.map((line) => `
-    <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
-      ${tpl.show_product_name !== false ? `<div style="font-weight:700;font-size:13px;">${line.product_name}</div>` : ""}
-      ${tpl.show_product_sku && line.sku ? `<div style="font-family:monospace;font-size:10px;color:#666;">SKU: ${line.sku}</div>` : ""}
-      ${line.measurements.map((m) => `
-        <div style="margin-top:10px;">
-          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
-          ${renderMeasurement(m, tpl.default_format)}
-          ${tpl.show_notes !== false && m.notes ? `<div style="font-size:12px;color:#555;margin-top:4px;font-style:italic;">${m.notes}</div>` : ""}
-        </div>
-      `).join("")}
-    </div>
-  `).join("");
-
-  const orphanSection = orphans.length > 0 ? `
-    <div style="margin-top:14px;padding-top:10px;border-top:2px dashed #999;">
-      <div style="font-weight:700;font-size:13px;">General Measurements</div>
-      ${orphans.map((m) => `
-        <div style="margin-top:10px;">
-          <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#222;letter-spacing:0.8px;">${m.groupName}</div>
-          ${renderMeasurement(m, tpl.default_format)}
-        </div>
-      `).join("")}
-    </div>
-  ` : "";
-
-  const html = `<!DOCTYPE html><html><head><title>Measurement Slip - ${order.order_number}</title>
-    <style>
-      * { box-sizing: border-box; }
-      @page { size: ${fmt === "thermal" ? "80mm auto" : "A4"}; margin: ${fmt === "thermal" ? "4mm" : "15mm"}; }
-      body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; margin: 0; padding: 0; }
-      .slip { max-width: ${width}; margin: 0 auto; padding: ${fmt === "thermal" ? "8px" : "20px"}; }
-      .title { text-align: center; font-size: ${fmt === "thermal" ? "14px" : "20px"}; font-weight: 800; letter-spacing: 2px; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 10px; }
-      .biz { text-align: center; font-size: ${fmt === "thermal" ? "11px" : "13px"}; color: #666; margin-bottom: 4px; }
-      .footer { text-align:center; margin-top: 16px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 10px; color:#888; }
-    </style></head><body><div class="slip">
-      <div class="biz">${businessName}</div>
-      <div class="title">${tpl.title || "MEASUREMENT SLIP"}</div>
-      <div style="font-size:12px;line-height:1.5;">${headerInfo.join("")}</div>
-      ${productSections}
-      ${orphanSection}
-      ${tpl.footer_text ? `<div class="footer">${tpl.footer_text}</div>` : ""}
-    </div>${PRINT_BOOTSTRAP}</body></html>`;
+  const html = buildMeasurementSlipHtml(
+    {
+      orderNumber: order.order_number,
+      orderDate: order.created_at,
+      customerName: order.customer_name,
+      customerPhone: order.customer_phone,
+      businessName,
+      productLines,
+      orphans,
+      detail: detailMap.get(orderId) ?? null,
+    },
+    tpl,
+  );
 
   openPrintWindow(html);
 
   // Stamp printed-at so the Orders list can show an indicator + log it.
   try {
-    await supabase
-      .from("orders")
-      .update({ measurement_slip_printed_at: new Date().toISOString() } as any)
-      .eq("id", orderId);
+    await scopeStoreIds(
+      supabase
+        .from("orders")
+        .update({ measurement_slip_printed_at: new Date().toISOString() } as any)
+        .eq("id", orderId),
+      businessStoreIds,
+    );
 
     await addOrderTimeline({
       order_id: orderId,
@@ -336,20 +490,22 @@ export async function printMeasurementSlip(orderId: string) {
     console.warn("Failed to stamp/log measurement slip print:", e);
   }
 
-  // Auto-promote pre-order to "making" once the slip is printed.
-  await promotePreOrderOnSlipPrint(orderId);
+  // Do NOT auto-promote to "making" — queue the order in the persistent
+  // prompt so the status change is a deliberate, manual confirmation.
+  const candidate = await checkMakingEligibility(orderId);
+  if (candidate) addMakingCandidate(candidate);
 }
 
 /**
  * Print measurement slips for many orders at once. Each slip opens in its own
  * window. Orders with no measurements recorded are silently skipped.
  */
-export async function printMeasurementSlipsBulk(orderIds: string[]): Promise<{ printed: number; skipped: number }> {
+export async function printMeasurementSlipsBulk(orderIds: string[], businessStoreIds: string[] = []): Promise<{ printed: number; skipped: number }> {
   let printed = 0;
   let skipped = 0;
   for (const id of orderIds) {
     try {
-      await printMeasurementSlip(id);
+      await printMeasurementSlip(id, businessStoreIds);
       printed++;
       await new Promise((r) => setTimeout(r, 400));
     } catch {

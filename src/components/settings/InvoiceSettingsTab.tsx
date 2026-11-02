@@ -16,6 +16,8 @@ import InvoicePreview from "./InvoicePreview";
 import { defaultInvoiceSizing, defaultPickupSlipSizing, type InvoiceTemplateConfig, type PickupSlipTemplateConfig, type PickupSlipSizing, type InvoiceSizing } from "@/hooks/useInvoiceSettings";
 import { A4_MAX_SLIP_H_MM, A4_MAX_SLIP_W_MM, a4SlipsPerSheet } from "@/lib/pickupSlipHtml";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useRegisterDirty } from "@/hooks/useSettingsDirty";
+import { SettingsSaveHandler } from "./SettingsSection";
 
 interface InvoiceSettings {
   id: string;
@@ -73,6 +75,7 @@ const InvoiceSettingsTab = () => {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const setDirty = useRegisterDirty();
 
   useEffect(() => {
     supabase
@@ -88,11 +91,23 @@ const InvoiceSettingsTab = () => {
             invoice_template: {
               ...defaultInvoiceTemplate,
               ...(data.invoice_template || {}),
+              // Thermal bold defaults ON in the print generator; preserve an
+              // explicit false while repairing legacy null/missing values.
+              bold_thermal_text: data.invoice_template?.bold_thermal_text !== false,
               sizing: { ...defaultInvoiceSizing, ...((data.invoice_template || {}).sizing || {}) },
             },
             pickup_slip_template: {
               ...defaultPickupSlipTemplate,
               ...(data.pickup_slip_template || {}),
+              // Issue #24: these new slip elements and thermal bold are
+              // default-ON in pickupSlipHtml ("!== false"). Legacy JSONB
+              // rows may contain null, so normalize the effective state here.
+              show_brand: data.pickup_slip_template?.show_brand !== false,
+              show_selling_point: data.pickup_slip_template?.show_selling_point !== false,
+              show_source: data.pickup_slip_template?.show_source !== false,
+              show_pathao_account: data.pickup_slip_template?.show_pathao_account !== false,
+              show_dispatch_status: data.pickup_slip_template?.show_dispatch_status !== false,
+              bold_thermal_text: data.pickup_slip_template?.bold_thermal_text !== false,
               sizing: { ...defaultPickupSlipSizing, ...((data.pickup_slip_template || {}).sizing || {}) },
             },
             shipping_presets: data.shipping_presets || [80, 150],
@@ -108,16 +123,21 @@ const InvoiceSettingsTab = () => {
   const updateField = (field: keyof InvoiceSettings, value: any) => {
     if (!settings) return;
     setSettings({ ...settings, [field]: value });
+    setDirty(true);
   };
 
   const updateInvoiceTemplate = (field: keyof InvoiceTemplateConfig, value: any) => {
     if (!settings) return;
     setSettings({ ...settings, invoice_template: { ...settings.invoice_template, [field]: value } });
+    setDirty(true);
   };
 
   const updatePickupTemplate = (field: keyof PickupSlipTemplateConfig, value: any) => {
     if (!settings) return;
     setSettings({ ...settings, pickup_slip_template: { ...settings.pickup_slip_template, [field]: value } });
+    // Pickup-slip edits must mark the tab dirty too — the universal save bar
+    // only commits what is flagged, and unflagged edits are silently lost.
+    setDirty(true);
   };
 
   const updateInvoiceSizing = (field: keyof InvoiceSizing, value: number) => {
@@ -129,6 +149,7 @@ const InvoiceSettingsTab = () => {
         sizing: { ...settings.invoice_template.sizing, [field]: value },
       },
     });
+    setDirty(true);
   };
 
   const updatePickupSizing = (field: keyof PickupSlipSizing, value: number) => {
@@ -145,6 +166,7 @@ const InvoiceSettingsTab = () => {
         sizing: { ...settings.pickup_slip_template.sizing, [field]: next },
       },
     });
+    setDirty(true);
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -166,7 +188,7 @@ const InvoiceSettingsTab = () => {
   const handleSave = async () => {
     if (!settings) return;
     setSaving(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("invoice_settings" as any)
       .update({
         business_name: settings.business_name,
@@ -185,9 +207,21 @@ const InvoiceSettingsTab = () => {
         shipping_inside_dhaka: settings.shipping_inside_dhaka,
         shipping_outside_dhaka: settings.shipping_outside_dhaka,
       } as any)
-      .eq("id", settings.id);
+      .eq("id", settings.id)
+      .select("id");
     setSaving(false);
-    if (error) { toast.error("Failed to save"); return; }
+    if (error) {
+      // Surface the real failure (constraint, RLS, payload) instead of
+      // swallowing it behind a generic message.
+      toast.error(`Failed to save — ${error.message}`);
+      return;
+    }
+    // 0-row guard: a denied write (e.g. the admin-only invoice_settings RLS
+    // policy for a non-admin member) is a silent no-op with error: null.
+    if (!data || data.length === 0) {
+      toast.error("Invoice settings could not be saved — the row was not updated. You may not have permission to edit invoice settings.");
+      return;
+    }
     const trackedKeys: (keyof InvoiceSettings)[] = [
       "business_name", "tagline", "address", "phone", "email", "logo_url", "footer_text", "terms_text",
       "default_print_format", "pickup_slip_print_format", "invoice_template", "pickup_slip_template",
@@ -201,8 +235,11 @@ const InvoiceSettingsTab = () => {
     };
     await logChange("invoice_settings", settings.id, pick(original), pick(settings));
     setOriginal(settings);
+    setDirty(false);
     toast.success("Invoice settings saved");
   };
+
+  useEffect(() => () => setDirty(false), [setDirty]);
 
   if (!settings) {
     return (
@@ -339,10 +376,14 @@ const InvoiceSettingsTab = () => {
             ["show_footer", "Footer Text"],
             ["show_due", "Due Amount"],
             ["show_barcode", "Order Number Barcode"],
+             ["bold_thermal_text", "Bold thermal text (thermal)"],
           ] as [keyof InvoiceTemplateConfig, string][]).map(([key, label]) => (
             <div key={key} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
               <span className="text-sm">{label}</span>
-              <Switch checked={!!invoiceTpl[key]} onCheckedChange={(v) => updateInvoiceTemplate(key, v)} />
+              <Switch
+                 checked={key === "bold_thermal_text" ? invoiceTpl[key] !== false : !!invoiceTpl[key]}
+                 onCheckedChange={(v) => updateInvoiceTemplate(key, v)}
+               />
             </div>
           ))}
         </div>
@@ -502,10 +543,26 @@ const InvoiceSettingsTab = () => {
             ["show_total", "Order Total"],
             ["show_due", "Due Amount"],
             ["show_notes", "Special Instruction"],
+            ["show_brand", "Brand name & logo"],
+            ["show_selling_point", "Selling Point"],
+            ["show_source", "Order Source"],
+            ["show_pathao_account", "Pathao Account"],
+            ["show_dispatch_status", "Dispatch Status"],
+            ["bold_thermal_text", "Bold thermal text (thermal)"],
           ] as [keyof PickupSlipTemplateConfig, string][]).map(([key, label]) => (
             <div key={key} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
               <span className="text-sm">{label}</span>
-              <Switch checked={!!pickupTpl[key]} onCheckedChange={(v) => updatePickupTemplate(key, v)} />
+              <Switch
+                 checked={[
+                   "show_brand",
+                   "show_selling_point",
+                   "show_source",
+                   "show_pathao_account",
+                   "show_dispatch_status",
+                   "bold_thermal_text",
+                 ].includes(key as string) ? pickupTpl[key] !== false : !!pickupTpl[key]}
+                 onCheckedChange={(v) => updatePickupTemplate(key, v)}
+               />
             </div>
           ))}
         </div>
@@ -662,9 +719,9 @@ const InvoiceSettingsTab = () => {
         </div>
       </div>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save All Settings"}</Button>
-      </div>
+      {/* Universal save: the sticky save bar commits this tab's pending edits.
+          The former per-element "Save All Settings" button is gone. */}
+      <SettingsSaveHandler label="Save Invoice Settings" disabled={saving} run={handleSave} />
     </div>
   );
 };

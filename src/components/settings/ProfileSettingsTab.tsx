@@ -11,16 +11,31 @@ import { logChange } from "@/lib/auditLog";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useRegisterDirty } from "@/hooks/useSettingsDirty";
-import { SettingsSection, SaveButton } from "./SettingsSection";
+import { SettingsSection, SaveButton, SettingsSaveHandler } from "./SettingsSection";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { defaultToPersist, shownDefaultBusinessId } from "@/lib/accounts/landing";
+import { normalizeProfilePhone } from "@/lib/accounts/profileSetup";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface ProfileDraft {
   full_name: string;
   avatar_url: string;
+  /** Mobile number as entered; normalized and validated on save (Task 3). */
+  phone: string;
+  /** Personal default business (spec §5). Landing only; "" means no default. */
+  default_business_id: string;
 }
 
 export default function ProfileSettingsTab() {
   const { user, role, signOut, isAdmin } = useAuth();
   const { canAny } = usePermissions();
+  const { businesses } = useBusinessContext();
   const setDirty = useRegisterDirty();
   const userId = user?.id ?? null;
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -45,6 +60,21 @@ export default function ProfileSettingsTab() {
   const [mfaError, setMfaError] = useState<string | null>(null);
   const [mfaBusy, setMfaBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Password managers autofill credential fields on page load — saved passwords
+  // land in "New Password" / "Current Password" alike, firing input/change but
+  // never a user gesture. That is NOT an edit: counting it made every visit
+  // with a password manager report "unsaved changes", and the route-away guard
+  // then blocked the whole UI behind its modal. Only real gestures (typing via
+  // beforeinput/keydown, paste, drop) mark a field as user-edited.
+  const userEditedRef = useRef<Record<string, boolean>>({});
+  const markUserEdit = (key: string) => ({
+    onBeforeInput: () => { userEditedRef.current[key] = true; },
+    onKeyDown: () => { userEditedRef.current[key] = true; },
+    onPaste: () => { userEditedRef.current[key] = true; },
+    onDrop: () => { userEditedRef.current[key] = true; },
+  });
+  const userEdited = (key: string, value: unknown) =>
+    Boolean(value) && userEditedRef.current[key] === true;
 
   useEffect(() => {
     if (!userId) return;
@@ -52,13 +82,15 @@ export default function ProfileSettingsTab() {
     (async () => {
       const { data } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url")
+        .select("id, full_name, avatar_url, phone, default_business_id")
         .eq("user_id", userId)
         .maybeSingle();
       if (cancelled) return;
       const p: ProfileDraft = {
         full_name: data?.full_name || "",
         avatar_url: data?.avatar_url || "",
+        phone: data?.phone || "",
+        default_business_id: data?.default_business_id || "",
       };
       setProfileId(data?.id ?? null);
       setProfile(p);
@@ -69,12 +101,30 @@ export default function ProfileSettingsTab() {
     };
   }, [userId]);
 
+  // Show the business the next sign-in actually opens (spec §5): a removed
+  // default displays the first remaining business, exactly as landing does, so
+  // the form never disagrees with where the user lands.
+  const liveDefaultBusinessId = shownDefaultBusinessId(businesses, profile?.default_business_id || null) ?? "";
+
   const update = (key: keyof ProfileDraft, value: string) => {
     setProfile((p) => (p ? { ...p, [key]: value } : p));
   };
 
-  // W6: report unsaved edits to the settings tab-switch guard
-  const isDirty = !!profile && !!original && JSON.stringify(profile) !== JSON.stringify(original);
+  // W6: report unsaved edits to the settings tab-switch guard. The password
+  // and email forms hold pending edits too — the universal save commits them,
+  // so they must count towards the tab's dirty state. Autofilled values do not
+  // count: they are not user edits (see userEditedRef above). Avatar changes
+  // come from explicit button actions and always count.
+  const profileDirty =
+    (!!profile && !!original && profile.avatar_url !== original.avatar_url) ||
+    (!!profile && !!original &&
+      profile.full_name !== original.full_name &&
+      userEdited("full_name", profile.full_name));
+  const passwordPending =
+    userEdited("newPassword", newPassword) || userEdited("confirmPassword", confirmPassword);
+  const emailPending =
+    userEdited("newEmail", newEmail) || userEdited("emailPassword", emailPassword);
+  const isDirty = profileDirty || passwordPending || emailPending;
   useEffect(() => {
     setDirty(isDirty);
     return () => setDirty(false);
@@ -108,9 +158,25 @@ export default function ProfileSettingsTab() {
 
   const handleSave = async () => {
     if (!user || !profile) return;
+    // Only a deliberate change rewrites the default (see defaultToPersist): an
+    // unrelated save leaves a stored default untouched, even when it is now dead.
+    const persistedDefault = defaultToPersist({
+      current: profile.default_business_id,
+      original: original?.default_business_id,
+    });
+    // Same phone rule as the setup step: an invalid number blocks the save before any write.
+    let normalizedPhone: string | null;
+    try {
+      normalizedPhone = normalizeProfilePhone(profile.phone);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Enter a valid phone number");
+      return;
+    }
     const next = {
       full_name: profile.full_name.trim() || null,
       avatar_url: profile.avatar_url || null,
+      phone: normalizedPhone,
+      ...(persistedDefault !== undefined ? { default_business_id: persistedDefault } : {}),
     };
     setSaving(true);
     const { data, error } = profileId
@@ -121,12 +187,22 @@ export default function ProfileSettingsTab() {
       toast.error("Failed to save profile");
       return;
     }
+    // The draft mirrors what the database now holds: the new value when written,
+    // otherwise the stored value that was left untouched.
+    const savedDefault = persistedDefault !== undefined ? (persistedDefault ?? "") : profile.default_business_id;
     await logChange("profile", data.id, original, {
       full_name: next.full_name ?? "",
       avatar_url: next.avatar_url ?? "",
+      phone: next.phone ?? "",
+      default_business_id: savedDefault,
     });
     setProfileId(data.id);
-    const saved: ProfileDraft = { full_name: next.full_name || "", avatar_url: next.avatar_url || "" };
+    const saved: ProfileDraft = {
+      full_name: next.full_name || "",
+      avatar_url: next.avatar_url || "",
+      phone: next.phone || "",
+      default_business_id: savedDefault,
+    };
     setOriginal(saved);
     setProfile(saved);
     toast.success("Profile saved");
@@ -294,10 +370,27 @@ export default function ProfileSettingsTab() {
 
   return (
     <div className="space-y-4">
+      {/* Universal save: the sticky save bar commits the profile draft and the
+          password/email forms through their registered handlers. The former
+          per-section Save buttons are gone. */}
+      <SettingsSaveHandler
+        label="Save Profile"
+        disabled={saving || !profileDirty}
+        run={handleSave}
+      />
+      <SettingsSaveHandler
+        label="Save Password"
+        disabled={changingPassword || !newPassword || !confirmPassword}
+        run={handleChangePassword}
+      />
+      <SettingsSaveHandler
+        label="Save Email"
+        disabled={changingEmail || !newEmail || !emailPassword}
+        run={handleChangeEmail}
+      />
       <SettingsSection
         title="My Profile"
         description="How you appear inside DokanOS — on team pages and audit entries."
-        footer={<SaveButton saving={saving} onClick={handleSave} label="Save Profile" />}
       >
         {/* Photo */}
         <div className="space-y-2">
@@ -336,6 +429,7 @@ export default function ProfileSettingsTab() {
               value={profile?.full_name ?? ""}
               onChange={(e) => update("full_name", e.target.value)}
               placeholder="Your name"
+              {...markUserEdit("full_name")}
             />
           </div>
           <div className="space-y-1.5">
@@ -344,6 +438,45 @@ export default function ProfileSettingsTab() {
             <p className="text-xs text-muted-foreground">Change your sign-in email in the "Change Email" section below.</p>
           </div>
         </div>
+
+        <div className="space-y-1.5 max-w-sm">
+          <Label htmlFor="profile-phone">Phone</Label>
+          <Input
+            id="profile-phone"
+            type="tel"
+            inputMode="tel"
+            value={profile?.phone ?? ""}
+            onChange={(e) => update("phone", e.target.value)}
+            placeholder="01XXXXXXXXX"
+            autoComplete="tel"
+          />
+          <p className="text-xs text-muted-foreground">Optional. A Bangladeshi mobile number, for example 01711234567.</p>
+        </div>
+
+        {businesses.length > 1 && (
+          <div className="space-y-1.5">
+            <Label htmlFor="default-business">Default business account</Label>
+            <Select
+              value={liveDefaultBusinessId || "none"}
+              onValueChange={(value) => update("default_business_id", value === "none" ? "" : value)}
+            >
+              <SelectTrigger id="default-business" aria-label="Default business account" className="max-w-sm">
+                <SelectValue placeholder="Ask me which business to open" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Ask me which business to open</SelectItem>
+                {businesses.map((business) => (
+                  <SelectItem key={business.id} value={business.id}>
+                    {business.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Opens this business after you sign in. Quick-create and search always follow the business you are in.
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <span>Role:</span>
@@ -362,14 +495,6 @@ export default function ProfileSettingsTab() {
         title="Change Password"
         description="Minimum 8 characters. You stay signed in on this device after changing it."
         icon={KeyRound}
-        footer={
-          <SaveButton
-            saving={changingPassword}
-            disabled={!newPassword || !confirmPassword}
-            onClick={handleChangePassword}
-            label="Update Password"
-          />
-        }
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
@@ -380,6 +505,7 @@ export default function ProfileSettingsTab() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               autoComplete="new-password"
+              {...markUserEdit("newPassword")}
             />
           </div>
           <div className="space-y-1.5">
@@ -390,6 +516,7 @@ export default function ProfileSettingsTab() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               autoComplete="new-password"
+              {...markUserEdit("confirmPassword")}
             />
           </div>
         </div>
@@ -399,14 +526,6 @@ export default function ProfileSettingsTab() {
         title="Change Email"
         description="Confirm your current password, then enter the new address. Both inboxes receive a confirmation link."
         icon={Mail}
-        footer={
-          <SaveButton
-            saving={changingEmail}
-            disabled={!newEmail || !emailPassword}
-            onClick={handleChangeEmail}
-            label="Update Email"
-          />
-        }
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
@@ -422,6 +541,7 @@ export default function ProfileSettingsTab() {
               onChange={(e) => setNewEmail(e.target.value)}
               placeholder="new@example.com"
               autoComplete="email"
+              {...markUserEdit("newEmail")}
             />
           </div>
         </div>
@@ -433,6 +553,7 @@ export default function ProfileSettingsTab() {
             value={emailPassword}
             onChange={(e) => setEmailPassword(e.target.value)}
             autoComplete="current-password"
+            {...markUserEdit("emailPassword")}
           />
           {emailError && (
             <p role="alert" className="text-xs text-destructive">{emailError}</p>

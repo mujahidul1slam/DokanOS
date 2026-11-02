@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+﻿import { Link } from "react-router-dom";
 import { ArrowRight, AlertCircle, Clock, Truck, CreditCard, RefreshCw } from "lucide-react";
 
 interface QueueItem {
@@ -27,7 +27,7 @@ interface Props {
 const ActionQueue = ({ pendingOrders, processingOrders, shippedOrders, unpaidOrders, failedDispatch }: Props) => {
   const items: QueueItem[] = [
     { label: "Pending", count: pendingOrders, href: "/orders?status=pending", icon: Clock, tone: pendingOrders > 5 ? "warning" : "neutral" },
-    { label: "Ready to Dispatch", count: processingOrders, href: "/dispatch", icon: Truck, tone: processingOrders > 0 ? "info" : "neutral" },
+    { label: "Ready to Dispatch", count: processingOrders, href: "/orders", icon: Truck, tone: processingOrders > 0 ? "info" : "neutral" },
     { label: "In Transit", count: shippedOrders, href: "/orders?status=shipped", icon: RefreshCw, tone: "neutral" },
     { label: "Unpaid", count: unpaidOrders, href: "/orders?payment=unpaid", icon: CreditCard, tone: unpaidOrders > 0 ? "warning" : "neutral" },
     { label: "Dispatch Failed", count: failedDispatch, href: "/orders?status=failed", icon: AlertCircle, tone: failedDispatch > 0 ? "danger" : "neutral" },

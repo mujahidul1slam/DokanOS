@@ -108,3 +108,33 @@ export function buildVariationLabel(
   }
   return parts.join(" / ");
 }
+
+const WOO_LT = "&" + "lt;";
+const WOO_GT = "&" + "gt;";
+const WOO_QUOT = "&" + "quot;";
+const WOO_APOS = "&" + "apos;";
+const WOO_AMP = "&" + "amp;";
+const WOO_NBSP = "&" + "nbsp;";
+
+/**
+ * Strips HTML from WooCommerce descriptions so raw markup never reaches the
+ * products table or the storefront UI. Block-level closing tags become line
+ * breaks; entities are decoded; whitespace is collapsed. No DOM APIs (Deno-safe).
+ */
+export function stripWooHtml(html: string | null | undefined): string {
+  if (!html) return "";
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+    .replace(new RegExp(WOO_NBSP, "gi"), " ")
+    .replace(new RegExp(WOO_LT, "gi"), "<")
+    .replace(new RegExp(WOO_GT, "gi"), ">")
+    .replace(new RegExp(WOO_QUOT, "gi"), '"')
+    .replace(new RegExp(WOO_APOS + "|&#x27;", "gi"), "'")
+    .replace(new RegExp(WOO_AMP, "gi"), "&")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

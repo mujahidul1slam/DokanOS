@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react";
 import { useBrand } from "../BrandContext";
 import { Markdown } from "../lib/md";
+import { getDraftPage, getPublishedPage, type PublishedPage } from "../lib/pages";
+import PublishedPageView from "../sections/PublishedPageView";
+import { usePageMeta } from "../lib/seo";
 
 interface PolicyShape {
   shipping?: string;
@@ -8,7 +12,39 @@ interface PolicyShape {
 }
 
 export default function Policies() {
-  const { storefront } = useBrand();
+  const { storefront, draftPageSlug } = useBrand();
+  const [page, setPage] = useState<PublishedPage | null | undefined>(draftPageSlug ? null : undefined);
+
+  usePageMeta({
+    title: page?.seo?.title || `Policies — ${storefront.name}`,
+    description: page?.seo?.description || `Shipping, return, and privacy policies for ${storefront.name}`,
+    canonicalPath: "/policies",
+  });
+
+  useEffect(() => {
+    let alive = true;
+    if (draftPageSlug === "policies") {
+      getDraftPage(storefront.id, "policies").then((d) => alive && setPage(d));
+    } else if (!draftPageSlug) {
+      getPublishedPage(storefront.id, "policies").then((d) => alive && setPage(d));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [storefront.id, draftPageSlug]);
+
+  // Published/draft builder page wins; legacy policies jsonb fallback otherwise.
+  if (page && page.sections.length) {
+    return (
+      <div>
+        <div className="max-w-5xl mx-auto px-4 pt-16 text-center">
+          <h1 className="sf-display text-5xl">{page.page.title}</h1>
+        </div>
+        <PublishedPageView sections={page.sections} />
+      </div>
+    );
+  }
+
   const p = (storefront.policies || {}) as PolicyShape;
 
   const sections = [

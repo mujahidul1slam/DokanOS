@@ -8,8 +8,9 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
  * switch through a chokepoint that prompts before discarding, and holds a
  * beforeunload listener while any tab is dirty.
  *
- * Note: SPA route navigation away from /settings is NOT blocked — useBlocker
- * requires a data router and this app uses <BrowserRouter>. Documented gap.
+ * Note: SPA route navigation away from /settings is guarded at the history
+ * layer by src/lib/settingsNavGuard.ts (useBlocker requires a data router and
+ * this app uses <BrowserRouter>); this hook keeps the beforeunload guard.
  */
 export function useSettingsDirty() {
   const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());

@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { ShoppingBag, Package, Truck } from "lucide-react";
+import { evaluatePaymentGate, PAYMENT_NEEDS_CONFIRMATION_LABEL } from "@/lib/paymentGate";
 
 export function DeliveryBadge({ type }: { type: string }) {
   switch (type) {
@@ -12,7 +13,26 @@ export function DeliveryBadge({ type }: { type: string }) {
   }
 }
 
-export function SourceBadge({ source, storeName }: { source: string; storeName?: string | null }) {
+export function SourceBadge({
+  source,
+  storeName,
+  orderSource,
+}: {
+  source: string;
+  storeName?: string | null;
+  /** New-model attribution (orders.order_source_id) — preferred over the legacy text. */
+  orderSource?: { name: string; type: string } | null;
+}) {
+  if (orderSource) {
+    return (
+      <Badge
+        className="bg-blue-500/15 text-blue-400 border-blue-500/20 hover:bg-blue-500/25"
+        title={`Order source · ${orderSource.type}`}
+      >
+        {orderSource.name}
+      </Badge>
+    );
+  }
   if (source === "pos") {
     return <Badge className="bg-purple-500/15 text-purple-400 border-purple-500/20 hover:bg-purple-500/25">POS</Badge>;
   }
@@ -32,22 +52,33 @@ export function SourceBadge({ source, storeName }: { source: string; storeName?:
   );
 }
 
-export function PaymentBadge({ status }: { status: string }) {
+export function PaymentBadge({ status, source, paymentMethod }: { status: string; source?: string | null; paymentMethod?: string | null }) {
+  // Issue #27 (display-only): labels come from the payment gate decision so a
+  // WooCommerce order awaiting its online payment reads "Payment Needs
+  // Confirmation" (GLOSSARY.md). Stored values are never changed here.
+  const { gated, displayLabel } = evaluatePaymentGate({
+    source,
+    payment_method: paymentMethod,
+    payment_status: status,
+  });
+  if (gated) {
+    return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">{displayLabel}</Badge>;
+  }
   switch (status) {
     case "paid":
-      return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/25">Paid</Badge>;
+      return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/25">{displayLabel}</Badge>;
     case "cod":
-      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">COD</Badge>;
+      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">{displayLabel}</Badge>;
     case "online":
-      return <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/20 hover:bg-sky-500/25">Online</Badge>;
+      return <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/20 hover:bg-sky-500/25">{displayLabel}</Badge>;
     case "partial":
-      return <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/20 hover:bg-orange-500/25">Partial</Badge>;
-    case "pending_payment":
-      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">Pending Payment</Badge>;
+      return <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/20 hover:bg-orange-500/25">{displayLabel}</Badge>;
     case "refunded":
-      return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">Refunded</Badge>;
+      return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">{displayLabel}</Badge>;
     default:
-      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">Unpaid</Badge>;
+      // Covers "unpaid" and the retired "pending_payment" alias alike — one
+      // concept, one label, matching the edit dropdown (issue #27 cleanup).
+      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">{displayLabel}</Badge>;
   }
 }
 
@@ -56,7 +87,8 @@ export function FulfillmentBadge({ status }: { status: string }) {
     case "processing":
       return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500/25">New Order</Badge>;
     case "payment_pending":
-      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">Payment Pending</Badge>;
+      // Display-only rename (issue #27): stored value stays "payment_pending".
+      return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/25">{PAYMENT_NEEDS_CONFIRMATION_LABEL}</Badge>;
     case "ready_to_ship":
       return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/25">Ready to Ship</Badge>;
     case "pre_order_pending":
@@ -73,6 +105,9 @@ export function FulfillmentBadge({ status }: { status: string }) {
       return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">Returned</Badge>;
     case "cancelled":
       return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 hover:bg-red-500/25">Cancelled</Badge>;
+    case "merged":
+      // Source order rolled into a merged order (issue #30); visible under All only.
+      return <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/20 hover:bg-violet-500/25">Merged</Badge>;
     default:
       return <Badge className="bg-zinc-500/15 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/25">{status}</Badge>;
   }
@@ -84,13 +119,28 @@ export function TrackingBadge({ status }: { status: string | null }) {
   const colorMap: Record<string, string> = {
     "Pending": "bg-amber-500/15 text-amber-400 border-amber-500/20",
     "Pickup Pending": "bg-amber-500/15 text-amber-400 border-amber-500/20",
+    "Waiting for Pickup": "bg-amber-500/15 text-amber-400 border-amber-500/20",
+    "Pickup Requested": "bg-amber-500/15 text-amber-400 border-amber-500/20",
     "Assigned for Pickup": "bg-primary/15 text-primary border-primary/20",
+    "Assigned For Pickup": "bg-primary/15 text-primary border-primary/20",
     "Picked": "bg-primary/15 text-primary border-primary/20",
     "Picked Up": "bg-primary/15 text-primary border-primary/20",
+    "Pickup On Hold": "bg-amber-500/15 text-amber-400 border-amber-500/20",
     "At Sorting Hub": "bg-primary/15 text-primary border-primary/20",
+    "Received at Sorting Hub": "bg-primary/15 text-primary border-primary/20",
+    "Sent to Sub Sorting Hub": "bg-primary/15 text-primary border-primary/20",
+    "Received at Sub Sorting Hub": "bg-primary/15 text-primary border-primary/20",
+    "Sent to Last Mile Hub": "bg-primary/15 text-primary border-primary/20",
     "In Transit": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
+    "On the Way To Delivery Hub": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
+    "At Delivery Hub": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
+    "Assigned for Delivery": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
+    "Assigned For Delivery": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
+    "Sent for Delivery": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
     "Out for Delivery": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
+    "Delivery Confirmed": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
     "Delivered": "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+    "Partial Delivery": "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
     "Partial Delivered": "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
     "Payment Invoice": "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
     "Return": "bg-red-500/15 text-red-400 border-red-500/20",
@@ -103,11 +153,21 @@ export function TrackingBadge({ status }: { status: string | null }) {
     "Return Delivered": "bg-red-500/15 text-red-400 border-red-500/20",
     "Delivery Failed": "bg-red-500/15 text-red-400 border-red-500/20",
     "Customer Refused": "bg-red-500/15 text-red-400 border-red-500/20",
+    "DRT Requested": "bg-red-500/15 text-red-400 border-red-500/20",
+    "DRT Pick Requested": "bg-red-500/15 text-red-400 border-red-500/20",
+    "DRT Pick Failed": "bg-red-500/15 text-red-400 border-red-500/20",
+    "DRT Cancelled": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Lost": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Damaged": "bg-red-500/15 text-red-400 border-red-500/20",
     "Exchange": "bg-orange-500/15 text-orange-400 border-orange-500/20",
     "On Hold": "bg-amber-500/15 text-amber-400 border-amber-500/20",
+    "On Hold By Customer Request": "bg-amber-500/15 text-amber-400 border-amber-500/20",
+    "Hold": "bg-amber-500/15 text-amber-400 border-amber-500/20",
     "Pickup Cancel": "bg-red-500/15 text-red-400 border-red-500/20",
+    "Pickup Cancelled": "bg-red-500/15 text-red-400 border-red-500/20",
     "Pickup Failed": "bg-red-500/15 text-red-400 border-red-500/20",
     "Cancelled": "bg-zinc-500/15 text-zinc-400 border-zinc-500/20",
+    "Canceled": "bg-zinc-500/15 text-zinc-400 border-zinc-500/20",
   };
 
   return (

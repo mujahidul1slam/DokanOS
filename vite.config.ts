@@ -11,6 +11,28 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    watch: {
+      // Transient scratch/test artifacts churn beside the sources; on Windows
+      // chokidar dies with EBUSY when it tries to watch a path that is being
+      // created/removed, which took the dev server (and e.g. the Playwright
+      // webServer) down mid-run. Nothing here participates in the module graph.
+      ignored: [
+        "**/test-results/**",
+        "**/.tmp*",
+        "**/.tmp*/**",
+        // Atomic-write temp artifacts from file editors (e.g. tasks/wiki/):
+        // ".<name>.<uuid>.tmpdir/" dirs and "*.tmp" files beside the target.
+        "**/*.tmp",
+        "**/*.tmpdir",
+        "**/*.tmpdir/**",
+        "**/.OMS-WORKFLOW-HANDOVER.md*",
+        "**/.OMS-WORKFLOW-HANDOVER.md*/**",
+        "**/backups/**",
+        "**/dist/**",
+        "**/dsh-oms-workflow/**",
+        "**/xkiro-limits/**",
+      ],
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

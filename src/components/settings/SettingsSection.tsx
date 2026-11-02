@@ -1,9 +1,10 @@
-import { ReactNode } from "react";
+import { ReactNode, useId, useRef } from "react";
 import { Info } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useRegisterSettingsSave } from "@/lib/settingsSaveRegistry";
 
 /**
  * Card wrapper for a settings tab. Standardizes padding, header treatment,
@@ -84,6 +85,33 @@ export const LabelWithHint = ({
 };
 
 /**
+ * Invisible registration of a tab's save handler with the universal save bar
+ * (the sticky save bar / save popup). Replaces the visible per-element
+ * SaveButton: the tab keeps its pending edits and dirty tracking, and the
+ * sticky bar commits them generically through the save registry. Nothing is
+ * rendered — the save affordance lives in the bar alone.
+ */
+export const SettingsSaveHandler = ({
+  label,
+  disabled,
+  run,
+}: {
+  /** Registry key and label; "Save …" entries are the primary save actions. */
+  label: string;
+  /** True while the section should not be saved (saving, invalid or clean). */
+  disabled?: boolean;
+  run: () => void | Promise<void>;
+}) => {
+  const id = useId();
+  useRegisterSettingsSave(id, {
+    label,
+    disabled: Boolean(disabled),
+    run,
+  });
+  return null;
+};
+
+/**
  * Standard save button used inside SettingsSection footer. Matches phrasing
  * and disabled/saving state across every tab.
  */
@@ -95,10 +123,22 @@ export const SaveButton = ({
 }: {
   saving?: boolean;
   disabled?: boolean;
-  onClick: () => void;
+  onClick: () => void | Promise<void>;
   label?: string;
-}) => (
-  <Button onClick={onClick} disabled={saving || disabled} size="sm" className="min-w-[120px]">
-    {saving ? "Saving…" : label}
-  </Button>
-);
+}) => {
+  const id = useId();
+  const onClickRef = useRef(onClick);
+  onClickRef.current = onClick;
+  // Issue #25: register this save handler so the sticky save bar (and the
+  // route-away dialog) can save generically, without tabs knowing about them.
+  useRegisterSettingsSave(id, {
+    label,
+    disabled: Boolean(saving || disabled),
+    run: () => onClickRef.current(),
+  });
+  return (
+    <Button onClick={onClick} disabled={saving || disabled} size="sm" className="min-w-[120px]">
+      {saving ? "Saving…" : label}
+    </Button>
+  );
+};

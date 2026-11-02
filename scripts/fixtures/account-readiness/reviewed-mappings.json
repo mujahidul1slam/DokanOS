@@ -1,0 +1,8 @@
+[
+  {
+    "resource": "stores:woo", "rowHash": "store-1", "brandId": "brand",
+    "disposition": "store", "storeType": "online",
+    "reviewedBy": "fixture-operator",
+    "evidence": "Synthetic fixture review: confirmed online operation; keep the Woo connector ID. Not a deployed-data approval."
+  }
+]

@@ -6,13 +6,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { logChange } from "@/lib/auditLog";
-import { SettingsSection, SaveButton } from "./SettingsSection";
+import { useRegisterDirty } from "@/hooks/useSettingsDirty";
+import { SettingsSection, SettingsSaveHandler } from "./SettingsSection";
 
 const PosSettingsTab = () => {
   const [shippingPresets, setShippingPresets] = useState<number[]>([80, 150]);
   const [originalPresets, setOriginalPresets] = useState<number[]>([80, 150]);
   const [saving, setSaving] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
+  const setDirty = useRegisterDirty();
+
+  // Universal save: pending preset edits must mark the tab dirty so the
+  // sticky save bar appears and the route-away guard prompts.
+  const isDirty = JSON.stringify(shippingPresets) !== JSON.stringify(originalPresets);
+  useEffect(() => {
+    setDirty(isDirty);
+    return () => setDirty(false);
+  }, [isDirty, setDirty]);
 
   useEffect(() => {
     supabase
@@ -49,11 +59,17 @@ const PosSettingsTab = () => {
   };
 
   return (
-    <SettingsSection
-      title="POS Settings"
-      description="Configure Point of Sale specific options."
-      footer={<SaveButton saving={saving} onClick={handleSave} label="Save POS Settings" />}
-    >
+    <>
+      {/* Universal save: the sticky save bar commits the preset edits. */}
+      <SettingsSaveHandler
+        label="Save POS Settings"
+        disabled={saving || !isDirty}
+        run={handleSave}
+      />
+      <SettingsSection
+        title="POS Settings"
+        description="Configure Point of Sale specific options."
+      >
       <div className="space-y-1.5">
         <Label>Shipping Charge Presets</Label>
         <p className="text-xs text-muted-foreground mb-2">Quick-select buttons shown when Delivery is chosen in POS.</p>
@@ -87,7 +103,8 @@ const PosSettingsTab = () => {
       <p className="text-xs text-muted-foreground">
         POS &amp; Manual order number prefix/suffix have moved to the <span className="font-medium">Orders</span> tab.
       </p>
-    </SettingsSection>
+      </SettingsSection>
+    </>
   );
 };
 

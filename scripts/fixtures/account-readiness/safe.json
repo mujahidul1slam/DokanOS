@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "tables": {
+    "auth.users": [{ "id": "owner", "row_hash": "person-1" }, { "id": "member", "row_hash": "person-2" }],
+    "businesses": [{ "id": "account", "row_hash": "account-1" }],
+    "user_business_access": [
+      { "id": "owner-membership", "user_id": "owner", "business_id": "account", "role": "owner", "row_hash": "membership-1" },
+      { "id": "member-membership", "user_id": "member", "business_id": "account", "role": "member", "row_hash": "membership-2" }
+    ],
+    "brands": [{ "id": "brand", "business_id": "account", "woo_store_id": "woo", "row_hash": "brand-1" }],
+    "stores": [{ "id": "woo", "row_hash": "store-1" }],
+    "storefronts": [], "locations": [], "selling_points": [],
+    "user_roles": [], "user_permissions": [], "user_store_access": [],
+    "user_custom_roles": [], "custom_roles": [], "permission_settings": [], "invitations": [],
+    "orders": [{ "id": "order", "store_id": "woo", "row_hash": "history-1" }]
+  },
+  "references": [{ "table": "orders", "column": "store_id", "target": "stores" }]
+}

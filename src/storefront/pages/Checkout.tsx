@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,10 +7,20 @@ import { useBrand } from "../BrandContext";
 import { useCart } from "../lib/cart";
 import { brandBasePath } from "../lib/brand";
 import { useCurrency } from "../lib/useCurrency";
+import { mergeSettings, type StorefrontPaymentMethod } from "../lib/settings";
 
 interface City { city_id: number; city_name: string; }
 interface Zone { zone_id: number; zone_name: string; city_id: number; }
 interface Area { area_id: number; area_name: string; zone_id: number; }
+
+interface ShippingQuote {
+  inside_dhaka: number;
+  outside_dhaka: number;
+  rate: number;
+  is_inside_dhaka: boolean;
+  free_threshold: number;
+  currency: string;
+}
 
 export default function Checkout() {
   const navigate = useNavigate();
@@ -18,14 +28,35 @@ export default function Checkout() {
   const { items, subtotal, clear } = useCart(brand);
   const fmt = useCurrency();
 
+  const settings = useMemo(() => mergeSettings(storefront.settings), [storefront.settings]);
+  const enabledMethods = settings.checkout.methods;
+  const payConf = settings.payments;
+  const delivery = settings.delivery;
+
+  // Determine initial payment method from enabled methods
+  const initialPaymentMethod = enabledMethods.cod
+    ? "cod"
+    : enabledMethods.bkash
+    ? "bkash"
+    : enabledMethods.nagad
+    ? "nagad"
+    : enabledMethods.rocket
+    ? "rocket"
+    : enabledMethods.upay
+    ? "upay"
+    : enabledMethods.mcash
+    ? "mcash"
+    : "cod";
+
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
   const [special, setSpecial] = useState("");
-  const [payment, setPayment] = useState<"cod" | "bkash" | "nagad">("cod");
+  const [payment, setPayment] = useState<string>(initialPaymentMethod);
   const [trxId, setTrxId] = useState("");
   const [sender, setSender] = useState("");
+  const [agreedTerms, setAgreedTerms] = useState(false);
 
   const [cities, setCities] = useState<City[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
@@ -34,53 +65,215 @@ export default function Checkout() {
   const [zoneId, setZoneId] = useState<number | null>(null);
   const [areaId, setAreaId] = useState<number | null>(null);
 
-  const [shipping, setShipping] = useState(150);
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuote | null>(null);
+  const [loadingQuote, setLoadingQuote] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Idempotency key per cart session
+  const [idempotencyKey] = useState(() => {
+    const k = `sf_idem_${brand}`;
+    let existing = localStorage.getItem(k);
+    if (!existing) {
+      existing = crypto.randomUUID();
+      localStorage.setItem(k, existing);
+    }
+    return existing;
+  });
+
+  // Ensure selected payment method remains valid if settings change
   useEffect(() => {
-    supabase.from("pathao_cities").select("city_id, city_name").order("city_name").then(({ data }) => setCities(data || []));
+    if (!enabledMethods[payment]) {
+      setPayment(initialPaymentMethod);
+    }
+  }, [enabledMethods, payment, initialPaymentMethod]);
+
+  // Load pathao cities
+  useEffect(() => {
+    supabase
+      .from("pathao_cities")
+      .select("city_id, city_name")
+      .order("city_name")
+      .then(({ data }) => setCities(data || []));
   }, []);
+
+  // Fetch shipping quote dynamically via edge function (deletes client 80/150 hard-code)
   useEffect(() => {
-    if (!cityId) { setZones([]); setZoneId(null); return; }
-    supabase.from("pathao_zones").select("zone_id, zone_name, city_id").eq("city_id", cityId).order("zone_name").then(({ data }) => setZones(data || []));
-    const dhakaCity = cities.find((c) => /dhaka/i.test(c.city_name));
-    setShipping(dhakaCity && dhakaCity.city_id === cityId ? 80 : 150);
-  }, [cityId, cities]);
+    let alive = true;
+    setLoadingQuote(true);
+    supabase.functions
+      .invoke("storefront-shipping-quote", {
+        body: { storefront_slug: brand, city_id: cityId },
+      })
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error || !data) {
+          // Fallback quote if function unavailable
+          setShippingQuote({
+            inside_dhaka: 80,
+            outside_dhaka: 150,
+            rate: 150,
+            is_inside_dhaka: false,
+            free_threshold: settings.shipping.free_threshold,
+            currency: storefront.currency || "BDT",
+          });
+        } else {
+          setShippingQuote(data as ShippingQuote);
+        }
+      })
+      .finally(() => {
+        if (alive) setLoadingQuote(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [cityId, brand, settings.shipping.free_threshold, storefront.currency]);
+
+  // Update zones on city change
   useEffect(() => {
-    if (!zoneId) { setAreas([]); setAreaId(null); return; }
-    supabase.from("pathao_areas").select("area_id, area_name, zone_id").eq("zone_id", zoneId).order("area_name").then(({ data }) => setAreas(data || []));
+    if (!cityId) {
+      setZones([]);
+      setZoneId(null);
+      return;
+    }
+    supabase
+      .from("pathao_zones")
+      .select("zone_id, zone_name, city_id")
+      .eq("city_id", cityId)
+      .order("zone_name")
+      .then(({ data }) => setZones(data || []));
+  }, [cityId]);
+
+  // Update areas on zone change
+  useEffect(() => {
+    if (!zoneId) {
+      setAreas([]);
+      setAreaId(null);
+      return;
+    }
+    supabase
+      .from("pathao_areas")
+      .select("area_id, area_name, zone_id")
+      .eq("zone_id", zoneId)
+      .order("area_name")
+      .then(({ data }) => setAreas(data || []));
   }, [zoneId]);
 
-  const total = subtotal + shipping;
+  // Dynamic checkout fields (overhaul 5.1)
+  const fields = settings.checkout.fields;
+  const [company, setCompany] = useState("");
+  const [address2, setAddress2] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+
+  // Regional delivery preset: is the selected city Inside Dhaka?
+  const selectedCity = cities.find((c) => c.city_id === cityId);
+  const insideDhaka = !!selectedCity && /dhaka/i.test(selectedCity.city_name);
+  // Zone required when the applicable regional preset demands it
+  const zoneRequired = insideDhaka ? fields.inside_dhaka_required : fields.outside_dhaka_required;
+
+  const freeThreshold = shippingQuote?.free_threshold || settings.shipping.free_threshold || 0;
+  const isFreeShipping = freeThreshold > 0 && subtotal >= freeThreshold;
+  const effectiveShipping = isFreeShipping ? 0 : (shippingQuote?.rate ?? 150);
+  const total = subtotal + effectiveShipping;
+
+  // Advance payment (settings-driven): customer pays X% online, rest COD
+  const advanceEnabled = delivery.advance_payment_enabled && delivery.advance_percent > 0;
+  const advanceAmount = advanceEnabled ? Math.round((total * Math.min(delivery.advance_percent, 100)) / 100) : 0;
+  const amountDueOnDelivery = advanceEnabled ? total - advanceAmount : total;
+  const advanceAllowed = advanceEnabled && payment !== "cod" && (payment === "bkash" || payment === "nagad" || payment === "rocket" || payment === "upay" || payment === "mcash");
+
+  const minOrderAmount = settings.checkout.min_order_amount || 0;
+  const isBelowMinOrder = minOrderAmount > 0 && subtotal < minOrderAmount;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!items.length) return;
-    if (!name || !phone || !address || !cityId || !zoneId) {
-      toast({ title: "Missing info", description: "Please fill all required fields.", variant: "destructive" });
+    if (!name || !phone || !address || !cityId || (zoneRequired && !zoneId)) {
+      toast({ title: "Missing info", description: zoneRequired && !zoneId ? "Please select a zone." : "Please fill all required fields.", variant: "destructive" });
       return;
     }
+    if (isBelowMinOrder) {
+      toast({
+        title: "Minimum order amount not met",
+        description: `Minimum order is ${fmt(minOrderAmount)}. Your subtotal is ${fmt(subtotal)}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (settings.checkout.terms_checkbox_text && !agreedTerms) {
+      toast({
+        title: "Terms agreement required",
+        description: "Please agree to the terms to proceed.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (advanceEnabled && payment === "cod") {
+      toast({
+        title: "Advance payment required",
+        description: "This store requires an online advance. Please choose a wallet method (bKash / Nagad / Rocket / Upay / mCash).",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke("storefront-checkout", {
         body: {
           storefront_slug: brand,
-          customer: { name, phone, email, address, city_id: cityId, zone_id: zoneId, area_id: areaId,
+          idempotency_key: idempotencyKey,
+          customer: {
+            name,
+            phone,
+            email: email || null,
+            // Address 2 / company / postal ride along in the address string —
+            // no edge-fn signature change needed (overhaul 5.1).
+            address: [address, address2, postalCode && `Postal: ${postalCode}`, company && `Company: ${company}`].filter(Boolean).join(", "),
+            city_id: cityId,
+            zone_id: zoneId,
+            area_id: areaId,
             city_name: cities.find((c) => c.city_id === cityId)?.city_name,
             zone_name: zones.find((z) => z.zone_id === zoneId)?.zone_name,
             area_name: areas.find((a) => a.area_id === areaId)?.area_name,
           },
-          items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
-          payment: { method: payment, trx_id: trxId || null, sender: sender || null },
+          items: items.map((i) => ({
+            product_id: i.product_id,
+            variation_id: i.variation_id || null,
+            variation_label: i.variation_label || null,
+            quantity: i.quantity,
+          })),
+          payment: {
+            method: payment,
+            trx_id: trxId || null,
+            sender: sender || null,
+            advance_amount: advanceAmount > 0 ? advanceAmount : undefined,
+            advance_due_on_delivery: advanceAmount > 0 ? amountDueOnDelivery : undefined,
+          },
           special_instruction: special || null,
         },
       });
       if (error) throw error;
       if (!data?.order_number) throw new Error("No order number returned");
+
+      // Success: clear cart & idempotency key
+      localStorage.removeItem(`sf_idem_${brand}`);
       clear();
       navigate(`${brandBasePath(brand)}/checkout/success/${data.order_number}`);
     } catch (err: any) {
-      toast({ title: "Could not place order", description: err.message || "Try again.", variant: "destructive" });
+      // Surface the server's REAL error message (fix A): supabase-js wraps
+      // non-2xx responses in FunctionsInvokeError whose .message is generic;
+      // the actual body ({error: "..."}) lives on err.context — read it.
+      let realMessage = err?.message || "Try again.";
+      try {
+        const ctxBody = err?.context ? await err.context.json() : (typeof err?.data === "object" ? err.data : null);
+        if (ctxBody?.error) realMessage = ctxBody.error;
+      } catch { /* body not JSON — keep generic */ }
+      toast({
+        title: "Could not place order",
+        description: realMessage,
+        variant: "destructive",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -96,7 +289,25 @@ export default function Checkout() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 lg:px-8 py-12">
-      <h1 className="sf-display text-5xl mb-10">Checkout</h1>
+      <h1 className="sf-display text-5xl mb-6">Checkout</h1>
+
+      {/* Step indicator — user is on the Details step while filling the form */}
+      <CheckoutStepper current={1} />
+
+      {/* Order Instructions from Settings */}
+      {settings.checkout.order_instructions && (
+        <div className="sf-glass p-4 rounded-xl mb-8 text-sm text-foreground/85 border border-primary/20 bg-primary/5">
+          <p className="whitespace-pre-line">{settings.checkout.order_instructions}</p>
+        </div>
+      )}
+
+      {/* Minimum Order Warning */}
+      {isBelowMinOrder && (
+        <div className="p-4 rounded-xl mb-8 text-sm bg-destructive/10 border border-destructive/30 text-destructive font-medium">
+          Minimum order amount is {fmt(minOrderAmount)}. Please add more items to your bag.
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
           <section className="sf-glass p-6">
@@ -104,29 +315,115 @@ export default function Checkout() {
             <div className="grid sm:grid-cols-2 gap-4">
               <Input label="Full name *" value={name} onChange={setName} />
               <Input label="Phone *" value={phone} onChange={setPhone} placeholder="01XXXXXXXXX" />
-              <Input label="Email" type="email" value={email} onChange={setEmail} className="sm:col-span-2" />
-              <Select label="City *" value={cityId} onChange={setCityId} options={cities.map((c) => ({ value: c.city_id, label: c.city_name }))} />
-              <Select label="Zone *" value={zoneId} onChange={setZoneId} options={zones.map((z) => ({ value: z.zone_id, label: z.zone_name }))} disabled={!cityId} />
-              <Select label="Area" value={areaId} onChange={setAreaId} options={areas.map((a) => ({ value: a.area_id, label: a.area_name }))} disabled={!zoneId} className="sm:col-span-2" />
-              <Input label="Address (house, road, landmark) *" value={address} onChange={setAddress} className="sm:col-span-2" />
-              <Input label="Special instructions" value={special} onChange={setSpecial} className="sm:col-span-2" />
+              {fields.show_email && (
+                <Input label="Email" type="email" value={email} onChange={setEmail} className="sm:col-span-2" />
+              )}
+              {fields.show_company && (
+                <Input label="Company" value={company} onChange={setCompany} className="sm:col-span-2" />
+              )}
+              <Select
+                label="City *"
+                value={cityId}
+                onChange={setCityId}
+                options={cities.map((c) => ({ value: c.city_id, label: c.city_name }))}
+              />
+              <Select
+                label={insideDhaka ? "Zone" : "Zone *"}
+                value={zoneId}
+                onChange={setZoneId}
+                options={zones.map((z) => ({ value: z.zone_id, label: z.zone_name }))}
+                disabled={!cityId}
+              />
+              {delivery.show_upazila && (
+                <Select
+                  label="Area"
+                  value={areaId}
+                  onChange={setAreaId}
+                  options={areas.map((a) => ({ value: a.area_id, label: a.area_name }))}
+                  disabled={!zoneId}
+                  className="sm:col-span-2"
+                />
+              )}
+              <Input
+                label="Address (house, road, landmark) *"
+                value={address}
+                onChange={setAddress}
+                className="sm:col-span-2"
+              />
+              {fields.show_address2 && (
+                <Input
+                  label="Address line 2"
+                  value={address2}
+                  onChange={setAddress2}
+                  className="sm:col-span-2"
+                />
+              )}
+              {fields.show_postal_code && (
+                <Input label="Postal code" value={postalCode} onChange={setPostalCode} />
+              )}
+              <Input
+                label="Special instructions"
+                value={special}
+                onChange={setSpecial}
+                className="sm:col-span-2"
+              />
             </div>
           </section>
 
           <section className="sf-glass p-6">
             <h2 className="sf-display text-xl mb-4">Payment</h2>
             <div className="space-y-3">
-              <PayOption value="cod" current={payment} onChange={setPayment} title="Cash on Delivery" subtitle="Pay when your order arrives" />
-              <PayOption value="bkash" current={payment} onChange={setPayment} title="bKash (manual)" subtitle="Send to 01XXXXXXXXX (Personal) and enter TrxID below" />
-              <PayOption value="nagad" current={payment} onChange={setPayment} title="Nagad (manual)" subtitle="Send to 01XXXXXXXXX (Personal) and enter TrxID below" />
-              {(payment === "bkash" || payment === "nagad") && (
+              {enabledMethods.cod && (
+                <PayOption
+                  value="cod"
+                  current={payment}
+                  onChange={setPayment}
+                  title="Cash on Delivery"
+                  subtitle={payConf.cod.instructions || "Pay when your order arrives"}
+                />
+              )}
+              {enabledMethods.bkash && (
+                <WalletOption value={payConf.bkash} payKey="bkash" current={payment} onChange={setPayment} />
+              )}
+              {enabledMethods.nagad && (
+                <WalletOption value={payConf.nagad} payKey="nagad" current={payment} onChange={setPayment} />
+              )}
+              {enabledMethods.rocket && (
+                <WalletOption value={payConf.rocket} payKey="rocket" current={payment} onChange={setPayment} />
+              )}
+              {enabledMethods.upay && (
+                <WalletOption value={payConf.upay} payKey="upay" current={payment} onChange={setPayment} />
+              )}
+              {enabledMethods.mcash && (
+                <WalletOption value={payConf.mcash} payKey="mcash" current={payment} onChange={setPayment} />
+              )}
+              {(payment === "bkash" || payment === "nagad" || payment === "rocket" || payment === "upay" || payment === "mcash") && (
                 <div className="grid sm:grid-cols-2 gap-3 pt-2">
-                  <Input label="Transaction ID" value={trxId} onChange={setTrxId} />
-                  <Input label="Sender number" value={sender} onChange={setSender} />
+                  <Input label="Transaction ID *" value={trxId} onChange={setTrxId} />
+                  {(payConf as any)[payment]?.ask_for_phone && (
+                    <Input label="Sender number" value={sender} onChange={setSender} />
+                  )}
                 </div>
               )}
             </div>
           </section>
+
+          {/* Terms Checkbox */}
+          {settings.checkout.terms_checkbox_text && (
+            <section className="sf-glass p-4 rounded-xl">
+              <label className="flex items-start gap-3 cursor-pointer text-sm">
+                <input
+                  type="checkbox"
+                  checked={agreedTerms}
+                  onChange={(e) => setAgreedTerms(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                />
+                <span className="text-foreground/90 leading-normal">
+                  {settings.checkout.terms_checkbox_text}
+                </span>
+              </label>
+            </section>
+          )}
         </div>
 
         <aside className="sf-glass p-6 h-fit sticky top-24">
@@ -138,21 +435,53 @@ export default function Checkout() {
                   {it.image_url && <img src={it.image_url} alt="" className="h-full w-full object-cover" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="truncate">{it.name}</div>
+                  <div className="truncate font-medium">{it.name}</div>
+                  {it.variation_label && (
+                    <div className="text-xs text-primary font-medium">{it.variation_label}</div>
+                  )}
                   <div className="text-muted-foreground text-xs">Qty {it.quantity}</div>
                 </div>
-                <div>{fmt(it.price * it.quantity)}</div>
+                <div className="font-medium">{fmt(it.price * it.quantity)}</div>
               </div>
             ))}
           </div>
+
           <div className="space-y-2 text-sm border-t border-border pt-4">
             <Row label="Subtotal" value={fmt(subtotal)} />
-            <Row label="Shipping" value={fmt(shipping)} />
+            <Row
+              label="Shipping"
+              value={
+                loadingQuote
+                  ? "Calculating…"
+                  : isFreeShipping
+                  ? "Free"
+                  : fmt(effectiveShipping)
+              }
+            />
+            {freeThreshold > 0 && !isFreeShipping && (
+              <p className="text-[11px] text-muted-foreground">
+                Add {fmt(freeThreshold - subtotal)} more for free delivery!
+              </p>
+            )}
             <div className="border-t border-border pt-2 flex justify-between text-lg">
-              <span>Total</span><span className="font-medium">{fmt(total)}</span>
+              <span>Total</span>
+              <span className="font-medium">{fmt(total)}</span>
             </div>
           </div>
-          <button disabled={submitting} className="w-full mt-6 py-4 rounded-full bg-primary text-primary-foreground text-sm uppercase tracking-widest hover:opacity-90 transition disabled:opacity-60 inline-flex items-center justify-center gap-2">
+
+          {advanceAmount > 0 && (
+            <div className="mt-3 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs space-y-1">
+              <p className="font-medium text-primary">Advance payment required</p>
+              <div className="flex justify-between"><span className="text-muted-foreground">Pay now ({payment.toUpperCase()})</span><span>{fmt(advanceAmount)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">On delivery</span><span>{fmt(amountDueOnDelivery)}</span></div>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting || isBelowMinOrder || (Boolean(settings.checkout.terms_checkbox_text) && !agreedTerms)}
+            className="w-full mt-6 py-4 rounded-full bg-primary text-primary-foreground text-sm uppercase tracking-widest hover:opacity-90 transition disabled:opacity-60 inline-flex items-center justify-center gap-2"
+          >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting ? "Placing order…" : "Place order"}
           </button>
@@ -169,8 +498,13 @@ function Input({ label, value, onChange, type = "text", placeholder, className =
   return (
     <label className={`block ${className}`}>
       <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
-      <input type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-background border border-input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary"/>
+      <input
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-background border border-input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+      />
     </label>
   );
 }
@@ -179,22 +513,52 @@ function Select({ label, value, onChange, options, disabled, className = "" }: a
   return (
     <label className={`block ${className}`}>
       <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
-      <select disabled={disabled} value={value ?? ""} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-        className="w-full bg-background border border-input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary disabled:opacity-50">
+      <select
+        disabled={disabled}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+        className="w-full bg-background border border-input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary disabled:opacity-50"
+      >
         <option value="">— Select —</option>
-        {options.map((o: any) => (<option key={o.value} value={o.value}>{o.label}</option>))}
+        {options.map((o: any) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
       </select>
     </label>
+  );
+}
+
+function WalletOption({ value, payKey, current, onChange }: {
+  value: StorefrontPaymentMethod;
+  payKey: string;
+  current: string;
+  onChange: (v: string) => void;
+}) {
+  const pretty = { bkash: "bKash", nagad: "Nagad", rocket: "Rocket", upay: "Upay", mcash: "mCash" }[payKey] ?? payKey;
+  const sub = [value.account_number && `Send to ${value.account_number}`, value.instructions].filter(Boolean).join(" · ") || "Pay with mobile banking — enter TrxID below";
+  return (
+    <PayOption value={payKey} current={current} onChange={onChange} title={pretty} subtitle={sub} />
   );
 }
 
 function PayOption({ value, current, onChange, title, subtitle }: any) {
   const active = current === value;
   return (
-    <button type="button" onClick={() => onChange(value)}
-      className={`w-full text-left p-4 rounded-xl border transition ${active ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+    <button
+      type="button"
+      onClick={() => onChange(value)}
+      className={`w-full text-left p-4 rounded-xl border transition ${
+        active ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+      }`}
+    >
       <div className="flex items-center gap-3">
-        <span className={`h-4 w-4 rounded-full border-2 ${active ? "border-primary" : "border-muted-foreground"} flex items-center justify-center`}>
+        <span
+          className={`h-4 w-4 rounded-full border-2 ${
+            active ? "border-primary" : "border-muted-foreground"
+          } flex items-center justify-center`}
+        >
           {active && <span className="h-2 w-2 rounded-full bg-primary" />}
         </span>
         <div>
@@ -207,5 +571,36 @@ function PayOption({ value, current, onChange, title, subtitle }: any) {
 }
 
 function Row({ label, value }: { label: string; value: string }) {
-  return <div className="flex justify-between"><span className="text-muted-foreground">{label}</span><span>{value}</span></div>;
+  return (
+    <div className="flex justify-between">
+      <span className="text-muted-foreground">{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+/** Checkout stepper — Cart → Contact & payment → Done (Bonik parity B2). */
+function CheckoutStepper({ current }: { current: number }) {
+  const STEPS = ["Cart", "Details", "Done"];
+  return (
+    <div className="flex items-center gap-2 mb-10" aria-label="Checkout progress">
+      {STEPS.map((step, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <div key={step} className="flex items-center gap-2">
+            <span
+              className={`h-6 w-6 rounded-full text-[11px] font-semibold flex items-center justify-center transition-colors ${
+                done ? "bg-primary text-primary-foreground" : active ? "bg-primary/10 text-primary border border-primary" : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {i + 1}
+            </span>
+            <span className={`text-xs uppercase tracking-widest ${active ? "text-primary font-semibold" : "text-muted-foreground"}`}>{step}</span>
+            {i < STEPS.length - 1 && <span className="w-8 h-px bg-border" />}
+          </div>
+        );
+      })}
+    </div>
+  );
 }

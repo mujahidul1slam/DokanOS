@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler,
   Building2, Hash, Hourglass, Search, ChevronRight, ArrowLeft, X,
-  Palette, User, Printer,
+  Palette, User, Printer, Warehouse, Truck, CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -13,12 +14,15 @@ import { toast } from "sonner";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { logChange } from "@/lib/auditLog";
-import { SettingsSection, SaveButton } from "@/components/settings/SettingsSection";
+import { SettingsSection, SettingsSaveHandler } from "@/components/settings/SettingsSection";
 import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
 import OrdersSettingsTab from "@/components/settings/OrdersSettingsTab";
 import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
+import WarehousesTab from "@/components/settings/WarehousesTab";
+import CourierServicesTab from "@/components/settings/CourierServicesTab";
+import PaymentAccountsTab from "@/components/settings/PaymentAccountsTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
 import BusinessAccountTab from "@/components/settings/BusinessAccountTab";
@@ -28,16 +32,26 @@ import PreOrdersSettingsTab from "@/components/settings/PreOrdersSettingsTab";
 import InstallAppButton from "@/components/InstallAppButton";
 import { setGlobalStockEnabled, useGlobalStockEnabled } from "@/lib/stockSettings";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
-import { SettingsDirtyContext, useSettingsDirty } from "@/hooks/useSettingsDirty";
+import { SettingsDirtyContext, useSettingsDirty, useRegisterDirty } from "@/hooks/useSettingsDirty";
+import { runSettingsSaveHandlers } from "@/lib/settingsSaveRegistry";
+import { useSettingsNavGuard, type SettingsNavTarget } from "@/lib/settingsNavGuard";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 
 type TabId =
   | "profile" | "account" | "brands"
-  | "general" | "printheader" | "inventory" | "pos" | "orders"
+  | "general" | "couriers" | "payments" | "printheader" | "inventory" | "warehouses" | "pos" | "orders"
   | "preorders" | "measurements" | "invoice" | "sources" | "audit";
+
+/**
+ * Issue #25: one pending unsaved-changes decision at a time — either a tab
+ * switch inside /settings or a route-away from it (guarded SPA navigation).
+ */
+type PendingAction =
+  | { kind: "tab"; next: TabId | null }
+  | { kind: "leave"; target: SettingsNavTarget };
 
 type TabDef = {
   id: TabId;
@@ -69,6 +83,8 @@ const groups: GroupDef[] = [
     label: "Business",
     tabs: [
       { id: "general", label: "General", icon: Settings, description: "Theme and install preferences", keywords: "appearance dark light mode theme install pwa" },
+      { id: "couriers", label: "Courier services", icon: Truck, description: "Courier accounts for the whole business", keywords: "courier pathao steadfast redx ecourier dispatch shipping parcel" },
+      { id: "payments", label: "Payment accounts", icon: CreditCard, description: "Payment gateway accounts for the whole business", keywords: "payment bkash nagad stripe card gateway cod cash checkout" },
     ],
   },
   {
@@ -76,6 +92,7 @@ const groups: GroupDef[] = [
     label: "Operations",
     tabs: [
       { id: "inventory", label: "Inventory", icon: Package, description: "Global stock management", keywords: "stock quantity tracking" },
+      { id: "warehouses", label: "Warehouses", icon: Warehouse, description: "Stock holders, on-hand, transfers", keywords: "warehouse stock holder transfer showroom fulfillment" },
       { id: "pos", label: "POS Settings", icon: ShoppingCart, description: "Point of sale preferences", keywords: "checkout receipt sound" },
       { id: "orders", label: "Orders", icon: Hash, description: "Order numbering and rules" },
       { id: "preorders", label: "Pre-Orders", icon: Hourglass, description: "Pre-order categories and behavior", keywords: "preorder categories" },
@@ -107,27 +124,87 @@ const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState<TabId | null>(null);
   const [search, setSearch] = useState("");
 
-  // W6: dirty-state guard — chokepoint + discard dialog + beforeunload
+  // W6: dirty-state guard — chokepoint + beforeunload. Issue #25 adds the
+  // sticky save bar and the route-away guard on top of the same registry.
   const { registerDirty, isDirty } = useSettingsDirty();
   const activeTabRef = useRef<TabId | null>(null);
   activeTabRef.current = activeTab;
-  const [pendingTab, setPendingTab] = useState<TabId | null>(null);
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
   const setTabDirty = useCallback((dirty: boolean) => {
     if (activeTabRef.current) registerDirty(activeTabRef.current, dirty);
   }, [registerDirty]);
+
+  // One "unsaved changes" dialog for tab switches and route-aways alike.
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const pendingActionRef = useRef<PendingAction | null>(pendingAction);
+  pendingActionRef.current = pendingAction;
+  const [contentNonce, setContentNonce] = useState(0);
+  const [barSaving, setBarSaving] = useState(false);
+
+  // Route-away guard: warns before SPA navigation away from /settings while
+  // any tab is dirty (back/forward and anchor clicks included).
+  const navigate = useNavigate();
+  useSettingsNavGuard({
+    isBlocked: () => isDirtyRef.current,
+    onBlocked: (target) => setPendingAction({ kind: "leave", target }),
+    navigateTo: (path, opts) => navigate(path, { replace: opts.replace, state: opts.state }),
+  });
+
   const handleTabChange = useCallback((next: TabId | null) => {
-    if (isDirty) { setPendingTab(next); return; }
+    if (isDirty) { setPendingAction({ kind: "tab", next }); return; }
     setActiveTab(next);
   }, [isDirty]);
 
-  const persistedGlobalStock = useGlobalStockEnabled();
-  const [globalStock, setGlobalStock] = useState<boolean>(persistedGlobalStock);
-  const [saving, setSaving] = useState(false);
-  const { theme, toggleTheme } = useTheme();
+  /**
+   * Save from the sticky bar or the dialog, generically through the SaveButton
+   * registry. After the handlers resolve, the tabs' own dirty bookkeeping must
+   * have cleared — otherwise the save failed and we keep the user here instead
+   * of silently losing the edits.
+   */
+  const handleSaveChanges = useCallback(async () => {
+    setBarSaving(true);
+    let ok = false;
+    try {
+      ok = await runSettingsSaveHandlers();
+      // Let the tabs' dirty-state effects commit before re-checking.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      setBarSaving(false);
+    }
+    if (!ok || isDirtyRef.current) {
+      toast.error("Your changes could not be saved — review them and try again");
+      return;
+    }
+    const action = pendingActionRef.current;
+    if (!action) return;
+    setPendingAction(null);
+    if (action.kind === "tab") setActiveTab(action.next);
+    else action.target.proceed();
+  }, []);
 
-  useEffect(() => {
-    setGlobalStock(persistedGlobalStock);
-  }, [persistedGlobalStock]);
+  /**
+   * Discard the pending edits: drop the dirty flags and remount the active tab
+   * so its forms reset to the saved values. From the dialog, continue the
+   * blocked action afterwards.
+   */
+  const handleDiscardChanges = useCallback(() => {
+    if (activeTabRef.current) registerDirty(activeTabRef.current, false);
+    setContentNonce((n) => n + 1);
+    const action = pendingActionRef.current;
+    if (!action) return;
+    setPendingAction(null);
+    if (action.kind === "tab") setActiveTab(action.next);
+    else action.target.proceed();
+  }, [registerDirty]);
+
+  const handleStay = useCallback(() => {
+    const action = pendingActionRef.current;
+    setPendingAction(null);
+    if (action?.kind === "leave") action.target.cancel();
+  }, []);
+
+  const { theme, toggleTheme } = useTheme();
 
   // On desktop, default to first tab if none selected
   useEffect(() => {
@@ -181,53 +258,15 @@ const SettingsPage = () => {
           </div>
         );
       case "inventory":
-        return (
-          <SettingsSection
-            title="Inventory Settings"
-            description="Control how stock is tracked across all channels."
-            footer={
-              <SaveButton
-                saving={saving}
-                onClick={async () => {
-                  setSaving(true);
-                  try {
-                    await setGlobalStockEnabled(globalStock);
-                    await logChange("settings_inventory", undefined, { globalStock: persistedGlobalStock }, { globalStock });
-                    toast.success("Inventory settings saved");
-                  } catch {
-                    toast.error("Inventory settings could not be saved");
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-              />
-            }
-          >
-            <div className="rounded-lg border border-border p-4 space-y-3">
-              <div className="flex items-center justify-between gap-4">
-                <div className="space-y-0.5 min-w-0">
-                  <Label className="text-sm font-medium">Enable Global Stock Management</Label>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Track inventory quantities for all products across POS and WooCommerce.
-                  </p>
-                </div>
-                <Switch checked={globalStock} onCheckedChange={setGlobalStock} />
-              </div>
-              {!globalStock && (
-                <div className="rounded-md bg-warning/10 border border-warning/20 px-3 py-2">
-                  <p className="text-xs text-warning font-medium">
-                    ⚠ Stock management is disabled. Products will show unlimited availability.
-                  </p>
-                </div>
-              )}
-            </div>
-          </SettingsSection>
-        );
+        return <InventorySettings />;
       case "pos": return <PosSettingsTab />;
       case "orders": return <OrdersSettingsTab />;
       case "preorders": return <PreOrdersSettingsTab />;
       case "invoice": return <InvoiceSettingsTab />;
       case "sources": return <OrderSourcesTab />;
+      case "warehouses": return <WarehousesTab />;
+      case "couriers": return <CourierServicesTab />;
+      case "payments": return <PaymentAccountsTab />;
       case "measurements": return <MeasurementsTab />;
       case "audit": return <AuditLogTab />;
     }
@@ -254,18 +293,18 @@ const SettingsPage = () => {
               {currentTab.label}
             </h1>
           </div>
-          <div className={cn(currentTab.id !== "audit" && "max-w-2xl")}>
+          <div className={cn(currentTab.id !== "audit" && "max-w-2xl")} key={contentNonce}>
             {renderContent(currentTab.id)}
           </div>
-          <DiscardEditsDialog
-            open={pendingTab !== null}
-            onDiscard={() => {
-              registerDirty(activeTab, false);
-              const next = pendingTab;
-              setPendingTab(null);
-              setActiveTab(next);
-            }}
-            onStay={() => setPendingTab(null)}
+          {isDirty && (
+            <StickySaveBar saving={barSaving} onSave={handleSaveChanges} onDiscard={handleDiscardChanges} />
+          )}
+          <UnsavedChangesDialog
+            open={pendingAction !== null}
+            saving={barSaving}
+            onSave={handleSaveChanges}
+            onDiscard={handleDiscardChanges}
+            onStay={handleStay}
           />
         </div>
         </SettingsDirtyContext.Provider>
@@ -381,19 +420,22 @@ const SettingsPage = () => {
           ))}
         </nav>
 
-        <div className={cn("flex-1 space-y-4", activeTab === "audit" ? "max-w-none" : "max-w-2xl")}>
+        <div
+          className={cn("flex-1 space-y-4", activeTab === "audit" ? "max-w-none" : "max-w-2xl")}
+          key={contentNonce}
+        >
           {activeTab && renderContent(activeTab)}
         </div>
       </div>
-      <DiscardEditsDialog
-        open={pendingTab !== null}
-        onDiscard={() => {
-          if (activeTab) registerDirty(activeTab, false);
-          const next = pendingTab;
-          setPendingTab(null);
-          setActiveTab(next);
-        }}
-        onStay={() => setPendingTab(null)}
+      {isDirty && (
+        <StickySaveBar saving={barSaving} onSave={handleSaveChanges} onDiscard={handleDiscardChanges} />
+      )}
+      <UnsavedChangesDialog
+        open={pendingAction !== null}
+        saving={barSaving}
+        onSave={handleSaveChanges}
+        onDiscard={handleDiscardChanges}
+        onStay={handleStay}
       />
     </div>
     </SettingsDirtyContext.Provider>
@@ -401,24 +443,73 @@ const SettingsPage = () => {
 };
 
 /**
- * W6: prompts before discarding unsaved edits on tab switch. Discard drops the
- * dirty state and switches; Stay keeps the user on the current tab.
+ * Issue #25: the sticky save bar. Appears while any registered settings tab is
+ * dirty and saves generically through the SaveButton registry. Sticky inside
+ * the app's scrolling main area, above the mobile bottom nav.
  */
-const DiscardEditsDialog = ({ open, onDiscard, onStay }: { open: boolean; onDiscard: () => void; onStay: () => void }) => (
-  <AlertDialog open={open}>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>You have unsaved changes</AlertDialogTitle>
-        <AlertDialogDescription>
-          Leaving this tab now will discard your edits. Save first, or discard to continue.
-        </AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel onClick={onStay}>Stay</AlertDialogCancel>
-        <AlertDialogAction onClick={onDiscard}>Discard</AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
+const StickySaveBar = ({
+  saving,
+  onSave,
+  onDiscard,
+}: {
+  saving: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
+}) => (
+  <div className="sticky bottom-20 lg:bottom-6 z-30">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/95 px-4 py-3 shadow-lg backdrop-blur">
+      <p className="text-sm font-medium">You have unsaved changes</p>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" onClick={onDiscard} disabled={saving}>
+          Discard
+        </Button>
+        <Button size="sm" onClick={onSave} disabled={saving} className="min-w-[120px]">
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
+  </div>
+);
+
+/**
+ * W6 / issue #25: the discard/save dialog, shared by tab switches and
+ * route-aways. Save persists the edits and continues; Discard drops them and
+ * continues; Stay cancels the pending navigation.
+ */
+const UnsavedChangesDialog = ({
+  open,
+  saving,
+  onSave,
+  onDiscard,
+  onStay,
+}: {
+  open: boolean;
+  saving: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
+  onStay: () => void;
+}) => (
+  // Plain Dialog (not AlertDialog) on purpose: the alert variant swallows all
+  // outside interaction, which turned a spurious prompt into a full dead-end
+  // ("the screen went dark and nothing was selectable"). Here any outside
+  // click / Escape / X resolves to "Stay" — the safe, non-destructive choice.
+  <Dialog open={open} onOpenChange={(o) => { if (!o) onStay(); }}>
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>You have unsaved changes</DialogTitle>
+        <DialogDescription>
+          Leaving now will discard your edits. Save them first, or discard to continue.
+        </DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button variant="outline" onClick={onStay} disabled={saving}>Stay</Button>
+        <Button variant="outline" onClick={onDiscard} disabled={saving}>Discard</Button>
+        <Button onClick={onSave} disabled={saving} className="min-w-[120px]">
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 );
 
 /**
@@ -454,6 +545,75 @@ const GeneralRedirectCard = ({ onGoToAccount }: { onGoToAccount: () => void }) =
         </div>
       </div>
     </SettingsSection>
+  );
+};
+
+/**
+ * Inventory tab content (shell-owned). Registers its dirty state through the
+ * same context the standalone tabs use, so the sticky save bar and the
+ * route-away guard cover it without any per-tab wiring.
+ */
+const InventorySettings = () => {
+  const setDirty = useRegisterDirty();
+  const persistedGlobalStock = useGlobalStockEnabled();
+  const [globalStock, setGlobalStock] = useState<boolean>(persistedGlobalStock);
+  const [saving, setSaving] = useState(false);
+  const changed = globalStock !== persistedGlobalStock;
+
+  useEffect(() => {
+    setGlobalStock(persistedGlobalStock);
+  }, [persistedGlobalStock]);
+
+  useEffect(() => {
+    setDirty(changed);
+    return () => setDirty(false);
+  }, [changed, setDirty]);
+
+  const handleSaveInventory = async () => {
+    setSaving(true);
+    try {
+      await setGlobalStockEnabled(globalStock);
+      await logChange("settings_inventory", undefined, { globalStock: persistedGlobalStock }, { globalStock });
+      toast.success("Inventory settings saved");
+    } catch {
+      toast.error("Inventory settings could not be saved");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Universal save: the sticky save bar commits the stock toggle. */}
+      <SettingsSaveHandler
+        label="Save Inventory Settings"
+        disabled={saving || !changed}
+        run={handleSaveInventory}
+      />
+      <SettingsSection
+        title="Inventory Settings"
+        description="Control how stock is tracked across all channels."
+      >
+      <div className="rounded-lg border border-border p-4 space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5 min-w-0">
+            <Label className="text-sm font-medium">Enable Global Stock Management</Label>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Track inventory quantities for all products across POS and WooCommerce.
+            </p>
+          </div>
+          <Switch checked={globalStock} onCheckedChange={setGlobalStock} />
+        </div>
+        {!globalStock && (
+          <div className="rounded-md bg-warning/10 border border-warning/20 px-3 py-2">
+            <p className="text-xs text-warning font-medium">
+              ⚠ Stock management is disabled. Products will show unlimited availability.
+            </p>
+          </div>
+        )}
+      </div>
+      </SettingsSection>
+    </>
   );
 };
 

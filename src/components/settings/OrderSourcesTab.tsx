@@ -1,114 +1,34 @@
-import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
-import { Plus, Trash2, GripVertical, Star } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Store } from "lucide-react";
 
-interface Source {
-  id: string;
-  name: string;
-  is_default: boolean;
-  sort_order: number;
-}
-
+/**
+ * Task 6 (spec §2): the old global channel lookup (`legacy_order_channels`)
+ * died with the per-brand order source model — manual channels are now
+ * user-created order sources, one row per brand. This panel points at the new
+ * page instead of editing the dead lookup; the table itself is dropped in the
+ * contract phase (Task 16).
+ */
 const OrderSourcesTab = () => {
-  const [sources, setSources] = useState<Source[]>([]);
-  const [newName, setNewName] = useState("");
-  const [, setLoading] = useState(true);
-
-  const fetchSources = async () => {
-    const { data } = await supabase.from("order_sources").select("*").order("sort_order");
-    setSources((data || []) as Source[]);
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchSources(); }, []);
-
-  const handleAdd = async () => {
-    const name = newName.trim().toLowerCase();
-    if (!name) return;
-    if (sources.some(s => s.name === name)) { toast.error("Source already exists"); return; }
-    const { error } = await supabase.from("order_sources").insert({ name, sort_order: sources.length + 1 });
-    if (error) toast.error(error.message);
-    else { toast.success("Source added"); setNewName(""); fetchSources(); }
-  };
-
-  const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("order_sources").delete().eq("id", id);
-    if (error) toast.error(error.message);
-    else { toast.success("Source removed"); fetchSources(); }
-  };
-
-  const handleRename = async (id: string, name: string) => {
-    await supabase.from("order_sources").update({ name: name.toLowerCase() }).eq("id", id);
-    fetchSources();
-  };
-
-  const handleSetDefault = async (id: string) => {
-    // Clear all defaults, then set this one. Two updates needed.
-    const { error: clearErr } = await supabase
-      .from("order_sources")
-      .update({ is_default: false })
-      .neq("id", id);
-    if (clearErr) { toast.error(clearErr.message); return; }
-    const { error } = await supabase
-      .from("order_sources")
-      .update({ is_default: true })
-      .eq("id", id);
-    if (error) toast.error(error.message);
-    else { toast.success("Default source updated"); fetchSources(); }
-  };
-
   return (
-    <div className="rounded-lg border border-border bg-card p-6 space-y-6">
+    <div className="rounded-lg border border-border bg-card p-6 space-y-4">
       <div>
         <h2 className="font-heading text-lg font-semibold mb-1">Order Sources</h2>
         <p className="text-sm text-muted-foreground">
-          Manage where orders can come from. Click the star to mark a source as the default — it will be pre-selected in the Add Order dialog.
+          Order sources are now managed per brand — WooCommerce, storefront,
+          showroom, social channels, and your own manual channels like "Phone
+          Orders" or "Wholesale". Each source carries its own connection and
+          sync settings, and every order is attributed to one.
         </p>
       </div>
-
-      <div className="space-y-2">
-        {sources.map(s => (
-          <div key={s.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
-            <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-            <Input
-              defaultValue={s.name}
-              onBlur={(e) => { if (e.target.value !== s.name) handleRename(s.id, e.target.value); }}
-              className="h-8 flex-1 capitalize"
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0"
-              onClick={() => handleSetDefault(s.id)}
-              title={s.is_default ? "Default source" : "Set as default"}
-              aria-label={s.is_default ? "Default source" : "Set as default source"}
-            >
-              <Star className={`h-3.5 w-3.5 ${s.is_default ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
-            </Button>
-            {s.is_default && <Badge variant="secondary" className="text-xs shrink-0">Default</Badge>}
-            {!s.is_default && (
-              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleDelete(s.id)} aria-label="Delete source">
-                <Trash2 className="h-3.5 w-3.5 text-destructive" />
-              </Button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="New source name..."
-          className="flex-1"
-          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-        />
-        <Button onClick={handleAdd} size="sm" disabled={!newName.trim()}>
-          <Plus className="h-4 w-4 mr-1" /> Add Source
+      <div className="flex items-center gap-3 rounded-md border border-dashed border-border p-4">
+        <Store className="h-4 w-4 text-muted-foreground shrink-0" />
+        <p className="text-sm text-muted-foreground flex-1">
+          The old global channel list is retired and will be removed in the
+          contract phase. Manage sources on the Order Sources page.
+        </p>
+        <Button size="sm" asChild>
+          <Link to="/order-sources">Open Order Sources</Link>
         </Button>
       </div>
     </div>

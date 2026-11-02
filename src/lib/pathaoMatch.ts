@@ -21,10 +21,7 @@ const LOCATION_ALIAS_GROUPS: string[][] = [
   ["narshingdi", "narsingdi"],
   ["gopalgonj", "gopalganj"],
   ["bashundhara", "basundhara", "bashundhara r/a", "bashundhara residential area", "boshundhora", "boshundhara", "bosundhora"],
-  ["mirpur", "mirpur 1", "mirpur 2", "mirpur 10", "mirpur 11", "mirpur 12", "mirpur 13", "mirpur 14"],
-  ["uttara", "uttara sector 1", "uttara sector 3", "uttara sector 4", "uttara sector 7", "uttara sector 10", "uttara sector 11", "uttara sector 13", "uttara sector 14"],
   ["dhanmondi", "dhanmondi r/a"],
-  ["badda", "middle badda", "merul badda", "north badda", "south badda"],
   ["khilgaon", "khilgaon r/a"],
   ["cantonment", "dhaka cantonment"],
   ["farmgate", "farm gate"],
@@ -123,7 +120,10 @@ const expandAliases = (value: string): Set<string> => {
   if (!n) return out;
   out.add(n);
   for (const group of LOCATION_ALIAS_GROUPS) {
-    if (group.includes(n)) group.forEach((a) => out.add(a));
+    // Group entries are written naturally ("Bashundhara R/A"); compare and
+    // emit them normalized so multi-word aliases actually match.
+    const normalized = group.map(normalize);
+    if (normalized.includes(n)) normalized.forEach((a) => out.add(a));
   }
   return out;
 };
@@ -205,6 +205,8 @@ export function strictMatch<T>(
 
 // Looser fallback used after the strict matcher fails — used for in-scope
 // (city-narrowed zone, zone-narrowed area) matching where ambiguity is rarer.
+// Ambiguous results are rejected: if two items score equally best, the query
+// is treated as unmatched rather than guessing (same safety rule as strictMatch).
 export function fuzzyMatch<T>(
   items: T[],
   getText: (item: T) => string,
@@ -213,29 +215,26 @@ export function fuzzyMatch<T>(
   for (const raw of queries) {
     const q = normalize(raw);
     if (!q) continue;
-    let best = items.find((it) => normalize(getText(it)) === q);
-    if (best) return best;
-    best = items.find((it) => {
-      const v = normalize(getText(it));
-      return v.startsWith(q) || q.startsWith(v);
-    });
-    if (best) return best;
-    best = items.find((it) => {
-      const v = normalize(getText(it));
-      return v.includes(v) && (v.includes(q) || q.includes(v));
-    });
-    if (best) return best;
-    let minD = Infinity;
-    let closest: T | undefined;
-    for (const it of items) {
-      const d = editDistance(q, normalize(getText(it)));
-      const th = Math.max(2, Math.floor(q.length * 0.35));
-      if (d < minD && d <= th) {
-        minD = d;
-        closest = it;
+    const scored: Array<{ item: T; score: number; text: string }> = [];
+    for (const item of items) {
+      const v = normalize(getText(item));
+      if (!v) continue;
+      let score: number | null = null;
+      if (v === q) score = 0;
+      else if (q.length >= 3 && (v.startsWith(q) || q.startsWith(v))) score = 1;
+      else if (q.length >= 3 && (v.includes(q) || q.includes(v))) score = 2;
+      else if (q.length >= 4) {
+        const d = editDistance(q, v);
+        const th = Math.max(2, Math.floor(q.length * 0.35));
+        if (d <= th) score = 10 + d;
       }
+      if (score !== null) scored.push({ item, score, text: v });
     }
-    if (closest) return closest;
+    if (scored.length === 0) continue;
+    scored.sort((a, b) => a.score - b.score || a.text.localeCompare(b.text));
+    if (scored.length > 1 && scored[0].score === scored[1].score) continue;
+    return scored[0].item;
   }
   return undefined;
 }
+

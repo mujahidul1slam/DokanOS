@@ -5,7 +5,8 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logChange } from "@/lib/auditLog";
-import { SettingsSection, SaveButton } from "./SettingsSection";
+import { useRegisterDirty } from "@/hooks/useSettingsDirty";
+import { SettingsSection, SettingsSaveHandler } from "./SettingsSection";
 
 interface StoreRow {
   id: string;
@@ -35,6 +36,17 @@ const OrdersSettingsTab = () => {
   const [originalStores, setOriginalStores] = useState<StoreRow[]>([]);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const setDirty = useRegisterDirty();
+
+  // Universal save: pending prefix/suffix edits (defaults and per-store) must
+  // mark the tab dirty so the sticky save bar appears and the guard prompts.
+  const isDirty =
+    JSON.stringify(defaults) !== JSON.stringify(originalDefaults) ||
+    JSON.stringify(stores) !== JSON.stringify(originalStores);
+  useEffect(() => {
+    setDirty(isDirty);
+    return () => setDirty(false);
+  }, [isDirty, setDirty]);
 
   useEffect(() => {
     supabase
@@ -97,11 +109,17 @@ const OrdersSettingsTab = () => {
   };
 
   return (
-    <SettingsSection
-      title="Order Number Format"
-      description="Add prefix/suffix branding to order numbers. POS & Manual orders use a 4-digit sequence (from 3000); Woo orders keep their original number wrapped with your prefix/suffix."
-      footer={<SaveButton saving={saving} onClick={handleSave} label="Save Order Settings" />}
-    >
+    <>
+      {/* Universal save: the sticky save bar commits the order-number edits. */}
+      <SettingsSaveHandler
+        label="Save Order Settings"
+        disabled={saving || !isDirty}
+        run={handleSave}
+      />
+      <SettingsSection
+        title="Order Number Format"
+        description="Add prefix/suffix branding to order numbers. POS & Manual orders use a 4-digit sequence (from 3000); Woo orders keep their original number wrapped with your prefix/suffix."
+      >
       <div className="space-y-4">
         <h3 className="font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">Defaults</h3>
 
@@ -185,7 +203,8 @@ const OrdersSettingsTab = () => {
           </div>
         ))}
       </div>
-    </SettingsSection>
+      </SettingsSection>
+    </>
   );
 };
 

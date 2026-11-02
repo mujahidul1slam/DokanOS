@@ -12,6 +12,21 @@
 --   OWNER_A     00000000-0000-0000-0000-000000000001  (staff — used as an extra
 --                actor when a second "plain staff" is needed)
 
+-- Dirty-DB self-healing (runs as connection owner): the Shape-B blocks COMMIT
+-- their probe rows and clean up afterwards, so a run killed in between leaves
+-- probe keys behind and can leave battery_flag flipped to {"enabled":true}.
+-- Reset the fixture preconditions before asserting anything.
+-- The healing MUST be its own committed transaction: the runner executes this
+-- file as one implicit batch transaction (scripts/run-rls-tests.mjs:1011), so
+-- statements outside an explicit BEGIN/COMMIT share the fate of the first test
+-- block and its ROLLBACK would undo the healing (proven on the live DB).
+BEGIN;
+DELETE FROM public.app_settings
+ WHERE key IN ('battery_probe', 'battery_probe_mgmt', 'battery_probe_admin');
+UPDATE public.app_settings SET value = '{"enabled":false}'::jsonb
+ WHERE key = 'battery_flag';
+COMMIT;
+
 -- W4 AC-A: staff WITHOUT settings.manage INSERT → WITH CHECK → 42501 (Shape A)
 BEGIN;
 SET LOCAL ROLE authenticated;
@@ -73,8 +88,11 @@ BEGIN
     RAISE EXCEPTION 'FAIL: W4-B staff-with-manage insert did not persist' USING ERRCODE = 'P0001';
   END IF;
 END $$;
--- paired cleanup
+-- paired cleanup (own transaction: a later ROLLBACK in this file must not
+-- swallow it — see the healing block at the top)
+BEGIN;
 DELETE FROM public.app_settings WHERE key = 'battery_probe_mgmt';
+COMMIT;
 
 -- W4 AC-B2: staff WITH settings.manage override UPDATE → allowed (Shape B)
 BEGIN;
@@ -88,8 +106,10 @@ BEGIN
     RAISE EXCEPTION 'FAIL: W4-B2 staff-with-manage update did not persist' USING ERRCODE = 'P0001';
   END IF;
 END $$;
--- restore fixture
+-- restore fixture (own transaction — same rationale as the paired cleanup)
+BEGIN;
 UPDATE public.app_settings SET value = '{"enabled":false}'::jsonb WHERE key = 'battery_flag';
+COMMIT;
 
 -- W4 AC-B3: platform admin INSERT → allowed (Shape B)
 BEGIN;
@@ -103,7 +123,9 @@ BEGIN
     RAISE EXCEPTION 'FAIL: W4-B3 admin insert did not persist' USING ERRCODE = 'P0001';
   END IF;
 END $$;
+BEGIN;
 DELETE FROM public.app_settings WHERE key = 'battery_probe_admin';
+COMMIT;
 
 -- W4 AC-SELECT: any authenticated SELECT unchanged (regression)
 BEGIN;

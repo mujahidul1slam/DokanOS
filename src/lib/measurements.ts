@@ -1,4 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  emptyMeasurementRulesConfig,
+  parseMeasurementRulesConfig,
+  resolveGroupIdsForProduct,
+  type AssignmentRule,
+  type MeasurementRulesConfig,
+} from "@/lib/measurementRules";
 
 export interface MeasurementField {
   id: string;
@@ -50,28 +57,84 @@ export async function loadMeasurementGroups(): Promise<MeasurementGroup[]> {
   }));
 }
 
-/** Resolve which groups apply to a product (direct + via its categories). */
+/**
+ * Resolve which groups apply to a product: direct product assignments plus
+ * category assignments honoring their scope (direct / cascade_all /
+ * cascade_selected / cascade_except), minus per-product never-measure
+ * overrides (issue #28). The category tree is walked at match time, so
+ * subcategories created after an assignment are picked up dynamically.
+ */
 export async function getGroupsForProduct(productId: string): Promise<MeasurementGroup[]> {
   const allGroups = await loadMeasurementGroups();
   if (allGroups.length === 0) return [];
 
-  const { data: catLinks } = await supabase
-    .from("product_categories")
-    .select("category_id")
-    .eq("product_id", productId);
-  const categoryIds = (catLinks || []).map((c: any) => c.category_id);
+  const [catLinksRes, assignmentsRes, categoriesRes, rules] = await Promise.all([
+    supabase.from("product_categories").select("category_id").eq("product_id", productId),
+    supabase
+      .from("measurement_assignments" as any)
+      .select("id, group_id, product_id, category_id"),
+    supabase.from("categories").select("id, parent_id"),
+    loadMeasurementRulesConfig(),
+  ]);
 
-  const { data: assignments } = await supabase
-    .from("measurement_assignments" as any)
-    .select("group_id, product_id, category_id");
+  const productCategoryIds = ((catLinksRes.data as any[]) || []).map((c) => c.category_id);
 
-  const matchedGroupIds = new Set<string>();
-  ((assignments as any[]) || []).forEach((a) => {
-    if (a.product_id === productId) matchedGroupIds.add(a.group_id);
-    if (a.category_id && categoryIds.includes(a.category_id)) matchedGroupIds.add(a.group_id);
+  const assignmentRules: AssignmentRule[] = ((assignmentsRes.data as any[]) || []).map((a) => {
+    const scopeRule = rules.categoryScopes[a.id];
+    return {
+      groupId: a.group_id,
+      productId: a.product_id,
+      categoryId: a.category_id,
+      scope: scopeRule?.scope ?? "direct",
+      includedCategoryIds: scopeRule?.includedCategoryIds ?? [],
+      excludedCategoryIds: scopeRule?.excludedCategoryIds ?? [],
+    };
   });
 
+  const matchedGroupIds = new Set(
+    resolveGroupIdsForProduct({
+      productId,
+      productCategoryIds,
+      categories: ((categoriesRes.data as any[]) || []).map((c) => ({
+        id: c.id,
+        parent_id: c.parent_id,
+      })),
+      assignments: assignmentRules,
+      neverMeasureProductIds: Object.keys(rules.productOverrides),
+    })
+  );
+
   return allGroups.filter((g) => matchedGroupIds.has(g.id));
+}
+
+/* ---- Rules config persistence (app_settings KV, key "measurement_rules") ---- */
+
+const RULES_CONFIG_KEY = "measurement_rules";
+
+/** Load the scope modifiers + per-product overrides, tolerant of bad payloads. */
+export async function loadMeasurementRulesConfig(): Promise<MeasurementRulesConfig> {
+  try {
+    const { data, error } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", RULES_CONFIG_KEY)
+      .maybeSingle();
+    if (error) return emptyMeasurementRulesConfig();
+    return parseMeasurementRulesConfig((data as any)?.value);
+  } catch {
+    return emptyMeasurementRulesConfig();
+  }
+}
+
+/** Persist the whole rules config as one app_settings row (upsert by key). */
+export async function saveMeasurementRulesConfig(config: MeasurementRulesConfig): Promise<void> {
+  const { error } = await supabase
+    .from("app_settings")
+    .upsert(
+      { key: RULES_CONFIG_KEY, value: config as any },
+      { onConflict: "key" }
+    );
+  if (error) throw error;
 }
 
 export interface SizePreset {

@@ -32,7 +32,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { name, theme, accent_hex, brief, product_names } = await req.json();
+    const { name, theme, accent_hex, brief, product_names, mode } = await req.json();
     if (!name || typeof name !== "string") {
       return new Response(JSON.stringify({ error: "Storefront name is required" }), {
         status: 400,
@@ -64,6 +64,96 @@ Deno.serve(async (req: Request) => {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // ---- Overhaul 3.3: AI page generation (mode: "sections") ----
+    // Given a merchant prompt, produce page-builder sections matching the
+    // storefront section registry (hero / rich-text / image-banner / gallery
+    // / testimonials / faq / product-grid). Returns { sections: [...] }.
+    if (mode === "sections") {
+      const tone2 = THEME_TONES[String(theme || "editorial").toLowerCase()] || THEME_TONES.editorial;
+      const sys = `You are a senior e-commerce page designer generating a page layout for a Bangladeshi online store.
+
+VOICE: ${tone2}
+BRAND: "${name}"
+${typeof brief === "string" && brief.trim() ? `Merchant brief (follow it closely): ${brief.trim()}` : ""}
+
+Design a page as an ordered array of sections. Allowed section types and their props:
+- hero: { title (max 6 words), subtitle (one short sentence), image_url (unsplash-style URL or ""), cta_label ("Shop now" etc.) }
+- rich-text: { title, markdown (2-4 short paragraphs) }
+- image-banner: { title, subtitle, image_url, cta_label, cta_href }
+- gallery: { title, image_urls (array of 3-6 image URLs) }
+- testimonials: { title, items: array of { quote, name, location } (3 entries) }
+- faq: { title, items: array of { question, answer } (4-6 entries) }
+- product-grid: { title } (merchant picks products later)
+
+Rules: 3-6 sections total, hero first, product-grid or CTA last. Copy in the brand voice. Return ONLY a single tool call to "page_sections".`;
+
+      const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: sys },
+            { role: "user", content: `Generate a page layout for "${name}".` },
+          ],
+          tools: [{
+            type: "function",
+            function: {
+              name: "page_sections",
+              description: "Ordered page-builder sections for a storefront page.",
+              parameters: {
+                type: "object",
+                properties: {
+                  sections: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        type: { type: "string", enum: ["hero", "rich-text", "image-banner", "gallery", "testimonials", "faq", "product-grid"] },
+                        props: { type: "object" },
+                      },
+                      required: ["type", "props"],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                required: ["sections"],
+                additionalProperties: false,
+              },
+            },
+          }],
+          tool_choice: { type: "function", function: { name: "page_sections" } },
+        }),
+      });
+
+      if (!aiRes.ok) {
+        const errText = await aiRes.text();
+        console.error("AI gateway error (sections)", aiRes.status, errText);
+        const msg = aiRes.status === 429 ? "AI rate limit reached. Try again in a moment."
+          : aiRes.status === 402 ? "AI credits exhausted."
+          : "AI gateway error";
+        return new Response(JSON.stringify({ error: msg }), { status: aiRes.status === 429 ? 429 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const aiData = await aiRes.json();
+      const call = aiData?.choices?.[0]?.message?.tool_calls?.[0];
+      if (!call?.function?.arguments) {
+        return new Response(JSON.stringify({ error: "AI did not return structured data" }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      let parsed: { sections?: Array<{ type?: unknown; props?: unknown }> };
+      try { parsed = JSON.parse(call.function.arguments); } catch {
+        return new Response(JSON.stringify({ error: "AI returned malformed data" }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const ALLOWED = new Set(["hero", "rich-text", "image-banner", "gallery", "testimonials", "faq", "product-grid"]);
+      const sections = (parsed.sections || [])
+        .filter((s): s is { type: string; props: Record<string, any> } =>
+          !!s && typeof s.type === "string" && ALLOWED.has(s.type) && !!s.props && typeof s.props === "object")
+        .slice(0, 8);
+      if (!sections.length) {
+        return new Response(JSON.stringify({ error: "AI returned no usable sections" }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ sections }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const tone = THEME_TONES[String(theme || "editorial").toLowerCase()] || THEME_TONES.editorial;

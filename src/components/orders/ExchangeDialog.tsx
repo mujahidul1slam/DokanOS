@@ -11,9 +11,15 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
+import ProductVariationPicker, {
+  type PickableProduct,
+  type PickableVariation,
+} from "./ProductVariationPicker";
+import { fetchAllRows } from "@/lib/supabasePage";
 import { useToast } from "@/hooks/use-toast";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 /**
  * ExchangeDialog
@@ -80,6 +86,7 @@ export default function ExchangeDialog({
   open, onOpenChange, parentOrder: parentProp, pickerMode = false, onCreated,
 }: Props) {
   const { toast } = useToast();
+  const businessStoreIds = useActiveBusinessStoreIds();
 
   const [parent, setParent] = useState<ParentOrder | null>(parentProp ?? null);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -102,6 +109,9 @@ export default function ExchangeDialog({
 
   const [pickupDescription, setPickupDescription] = useState("");
   const [deliverDescription, setDeliverDescription] = useState("");
+  const [catalogProducts, setCatalogProducts] = useState<PickableProduct[]>([]);
+  const [catalogVariations, setCatalogVariations] = useState<PickableVariation[]>([]);
+  const [pickerTarget, setPickerTarget] = useState<"pickup" | "deliver" | null>(null);
   const [itemWeight, setItemWeight] = useState("0.5");
   const [amountToCollect, setAmountToCollect] = useState("0");
   const [extraInstruction, setExtraInstruction] = useState("");
@@ -111,6 +121,35 @@ export default function ExchangeDialog({
 
   const [submitting, setSubmitting] = useState(false);
 
+  /* ─── Load product catalog for the shared size picker ─── */
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      try {
+        const [products, variations] = await Promise.all([
+          fetchAllRows<PickableProduct>(({ from, to }) =>
+            supabase
+              .from("products")
+              .select("id, name, sku, price")
+              .eq("is_active", true)
+              .order("name")
+              .range(from, to),
+          ),
+          fetchAllRows<PickableVariation>(({ from, to }) =>
+            supabase
+              .from("product_variations")
+              .select("id, product_id, name, sku, price, stock_quantity, manage_stock, attributes")
+              .range(from, to),
+          ),
+        ]);
+        setCatalogProducts(products);
+        setCatalogVariations(variations);
+      } catch (e) {
+        console.warn("ExchangeDialog: failed to load product catalog", e);
+      }
+    })();
+  }, [open]);
+
   /* ─── Reset on close ─── */
   useEffect(() => {
     if (!open) {
@@ -119,6 +158,7 @@ export default function ExchangeDialog({
       setRecipientName(""); setRecipientPhone(""); setRecipientAddress("");
       setCityId(""); setZoneId(""); setAreaId("");
       setPickupDescription(""); setDeliverDescription("");
+      setPickerTarget(null);
       setItemWeight("0.5"); setAmountToCollect("0"); setExtraInstruction("");
     } else {
       setParent(parentProp ?? null);
@@ -195,24 +235,28 @@ export default function ExchangeDialog({
   /* ─── Picker search (standalone mode) ─── */
   useEffect(() => {
     if (!pickerMode || !open) return;
+    if (!hasStoreScope(businessStoreIds)) { setPickerResults([]); return; } // fail closed
     const q = pickerQuery.trim();
     if (q.length < 2) { setPickerResults([]); return; }
     const t = setTimeout(async () => {
       setPickerLoading(true);
-      const { data } = await supabase
-        .from("orders")
-        .select(
-          "id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status"
-        )
-        .or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%`)
-        .eq("status", "delivered")
+      const { data } = await scopeStoreIds(
+        supabase
+          .from("orders")
+          .select(
+            "id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status"
+          )
+          .or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%`)
+          .eq("status", "delivered"),
+        businessStoreIds,
+      )
         .order("created_at", { ascending: false })
         .limit(10);
       setPickerResults((data || []) as ParentOrder[]);
       setPickerLoading(false);
     }, 250);
     return () => clearTimeout(t);
-  }, [pickerQuery, pickerMode, open]);
+  }, [pickerQuery, pickerMode, open, businessStoreIds]);
 
   /* ─── Helpers ─── */
   const cityOptions = useMemo(
@@ -235,8 +279,16 @@ export default function ExchangeDialog({
     (pickupDescription.trim() || deliverDescription.trim());
 
   const handleSubmit = async () => {
+    if (!hasStoreScope(businessStoreIds)) {
+      toast({ title: "No active business scope", description: "Cannot create an exchange without an active business.", variant: "destructive" });
+      return;
+    }
     if (!parent) {
       toast({ title: "Pick a parent order first", variant: "destructive" });
+      return;
+    }
+    if (parent.store_id && !businessStoreIds.includes(parent.store_id)) {
+      toast({ title: "Order outside business scope", description: "The selected parent order does not belong to the active business.", variant: "destructive" });
       return;
     }
     if (!canSubmit) {
@@ -393,6 +445,7 @@ export default function ExchangeDialog({
   const showPicker = pickerMode && !parent;
 
   return (
+    <>
     <ResponsiveDialog
       open={open}
       onOpenChange={onOpenChange}
@@ -542,7 +595,15 @@ export default function ExchangeDialog({
 
             {/* Exchange items */}
             <div className="space-y-1.5">
-              <Label>Pickup from customer</Label>
+              <div className="flex items-center justify-between">
+                <Label>Pickup from customer</Label>
+                <Button
+                  type="button" variant="outline" size="sm" className="h-7 text-xs"
+                  onClick={() => setPickerTarget("pickup")}
+                >
+                  Pick product & size
+                </Button>
+              </div>
               <Textarea
                 value={pickupDescription}
                 onChange={(e) => setPickupDescription(e.target.value)}
@@ -551,7 +612,15 @@ export default function ExchangeDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Deliver to customer</Label>
+              <div className="flex items-center justify-between">
+                <Label>Deliver to customer</Label>
+                <Button
+                  type="button" variant="outline" size="sm" className="h-7 text-xs"
+                  onClick={() => setPickerTarget("deliver")}
+                >
+                  Pick product & size
+                </Button>
+              </div>
               <Textarea
                 value={deliverDescription}
                 onChange={(e) => setDeliverDescription(e.target.value)}
@@ -612,6 +681,22 @@ export default function ExchangeDialog({
         )}
       </div>
     </ResponsiveDialog>
+
+      <ProductVariationPicker
+        open={!!pickerTarget}
+        onOpenChange={(next) => { if (!next) setPickerTarget(null); }}
+        products={catalogProducts}
+        variations={catalogVariations}
+        onPick={(pick) => {
+          const append = (prev: string) => prev.trim() ? `${prev.trim()}, ${pick.lineName}` : pick.lineName;
+          if (pickerTarget === "pickup") setPickupDescription(append);
+          if (pickerTarget === "deliver") setDeliverDescription(append);
+          setPickerTarget(null);
+        }}
+        title={pickerTarget === "deliver" ? "Deliver item & size" : "Pickup item & size"}
+        description="Pick the exact product variation — it becomes the item description Pathao sees."
+      />
+    </>
   );
 }
 

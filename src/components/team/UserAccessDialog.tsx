@@ -38,7 +38,7 @@ const UserAccessDialog = ({ open, onOpenChange, userId, userName, currentRole, o
   // W7: per-business access (user_business_access.role), managed via RPC
   const [managedBiz, setManagedBiz] = useState<ManagedBiz[]>([]);
   const [bizId, setBizId] = useState<string>("");
-  const [bizRole, setBizRole] = useState<string>("member");
+  const [bizRole, setBizRole] = useState<string>("manager");
   const [bizLoading, setBizLoading] = useState(false);
   const [bizSaving, setBizSaving] = useState(false);
 
@@ -83,7 +83,7 @@ const UserAccessDialog = ({ open, onOpenChange, userId, userName, currentRole, o
       setBizLoading(true);
       const { data } = await supabase.rpc("get_member_access", { p_user: userId, p_business: bizId });
       const row = (data as { business_role: string | null }[] | null)?.[0];
-      setBizRole(row?.business_role || "member");
+      setBizRole(row?.business_role || "manager");
       setBizLoading(false);
     })();
   }, [open, bizId, userId]);
@@ -207,8 +207,8 @@ const UserAccessDialog = ({ open, onOpenChange, userId, userName, currentRole, o
                     <SelectContent>
                       <SelectItem value="owner">Owner</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="member">Member</SelectItem>
-                      <SelectItem value="viewer">Viewer</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button size="sm" onClick={applyBizRole} disabled={bizSaving || bizLoading}>

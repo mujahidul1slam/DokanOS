@@ -81,6 +81,15 @@ Businesses: `BIZ_A` 11111111-…-01 'Biz A Fixture', `B_other` 11111111-…-02 '
 `BIZ_THROWAWAY` is created in-file by `businesses_test.sql` (slug `harness-throwaway-a`), never restored.
 `BIZ_A` is never deleted by any battery statement.
 
+Active business context (issue #16 S3): operational RLS is bound to
+`current_business_context()`, so the seeder converges each member's context the
+way the app does at login — `…001`–`…005` → `BIZ_A`, `…006` → `B_other`
+(`set_active_business_context` via claimed JWT identity). Fixtures with no
+membership (`…00a`, `…00b`, `…00c`, `…007`) keep NO context and therefore fail
+closed on operational data. `active_business_context_test.sql` owns the A/B
+probes: its `…0041` dual member (member of both businesses) switches contexts
+explicitly inside each rolled-back block.
+
 ## Step 0.5 — denial-mode calibration (manual, once per stack)
 
 Run the §4.2 probe (OUTSIDER UPDATEs a business it cannot see) and record the outcome:
