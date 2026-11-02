@@ -767,6 +767,20 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     setCustomerMatches(rows.map((r) => ({ ...r, orderCount: new Map(counts).get(r.id) || 0 })));
   };
 
+  // Clearing the phone input must dismiss the existing-customer card(s)
+  // immediately — otherwise matches found for the previous number linger
+  // until the next blur or a manual Dismiss. Bumping the lookup sequence on
+  // every phone edit also invalidates any lookup still in flight, so a slow
+  // response can never resurrect matches for a phone the user has already
+  // changed away from (lookupCustomerByPhone drops out when the seq no
+  // longer matches).
+  useEffect(() => {
+    phoneLookupSeq.current += 1;
+    if (!customerPhone.trim()) {
+      setCustomerMatches((prev) => (prev.length > 0 ? [] : prev));
+    }
+  }, [customerPhone]);
+
   // Explicit Fill click: populates empty fields only — never silently replaces
   // something the user already typed.
   const fillFromCustomer = (c: CustomerMatch) => {
