@@ -40,6 +40,54 @@ export const ALL_TAB_KEYS: TabKey[] = [
   "trash",
 ];
 
+/* ─── Banner visibility scoping (issue #7) ───
+ *
+ * Product reasoning: both warnings (possible-duplicate orders, same-customer
+ * merge groups) are only ACTIONABLE while the order is still pre-dispatch —
+ * nothing has been handed to the courier yet, so a duplicate can still be
+ * caught/cancelled and same-customer orders can still be merged (merge is
+ * pre-entry only, ADR-0002). On the post-dispatch tabs (transit, delivered,
+ * on-hold, returned) and the archive tabs (all, cancelled, trash) the
+ * warnings are noise: the moment to act has passed. The user's decision
+ * (issue #7) is therefore:
+ *   - duplicate warning → New, Pre-Order, Ready, Pickup, Transit
+ *     (Transit is kept: a duplicate can still be recalled in transit),
+ *   - merge panel → New, Pre-Order, Ready, Pickup only. Transit is
+ *     excluded because every order there has a consignment already, so
+ *     every group would render "Merge blocked" — pure noise.
+ *
+ * These sets gate VISIBILITY only — the detection logic and per-tab counts
+ * are unchanged. The pre_order_pending / pre_order_making / pre_order_ready
+ * keys are chip filters inside the Pre-Order tab (the tab key stays
+ * "pre_order"), so the keys below cover every screen the user listed. */
+
+/** Tabs where the possible-duplicate-orders warning is shown (issue #7). */
+export const DUPLICATE_WARNING_TABS: readonly TabKey[] = [
+  "new",
+  "pre_order",
+  "ready",
+  "pickup_pending",
+  "in_transit",
+];
+
+/** Tabs where the same-customer merge-groups panel is shown (issue #7). */
+export const MERGE_PANEL_TABS: readonly TabKey[] = [
+  "new",
+  "pre_order",
+  "ready",
+  "pickup_pending",
+];
+
+/** True when the duplicate-orders warning belongs on `tab` (issue #7). */
+export function showDuplicateWarningOn(tab: TabKey): boolean {
+  return DUPLICATE_WARNING_TABS.includes(tab);
+}
+
+/** True when the merge-groups panel belongs on `tab` (issue #7). */
+export function showMergePanelOn(tab: TabKey): boolean {
+  return MERGE_PANEL_TABS.includes(tab);
+}
+
 /** Pathao tracking_status values that mean the parcel was cancelled at pickup. */
 const CANCELLED_TRACKING = ["Pickup Cancel", "Pickup Cancelled", "Pickup Failed"];
 
@@ -126,9 +174,16 @@ export function matchesTab(
     case "all":
       return true;
     case "new":
-      // New = processing or payment_pending orders not yet dispatched and not pre-order.
+      // New = fresh orders not yet dispatched and not pre-order. Covers
+      // "processing" and "payment_pending" — and "pending" (issue #9
+      // follow-up): a fresh unpaid Woo order lands in "pending" (mapWooStatus
+      // maps it 1:1 and falls back to "pending" for unknown statuses), and it
+      // is New-tab work until paid or cancelled. Without it such orders
+      // matched NO active tab ("all" only) — the reported "new orders don't
+      // load" symptom — and the dashboard's /orders?status=pending link had
+      // nothing to land on.
       return (
-        ["processing", "payment_pending"].includes(o.status) &&
+        ["pending", "processing", "payment_pending"].includes(o.status) &&
         !o.consignment_id &&
         !preOrderOrderIds.has(o.id)
       );

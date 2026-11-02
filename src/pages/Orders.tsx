@@ -1,9 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { useStoresList } from "@/hooks/useStoresList";
-import { useBusinessContext } from "@/hooks/useBusinessContext";
-import { brandAccent, deriveBrandForStore } from "@/lib/brandIdentity";
 import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
@@ -74,65 +71,16 @@ import { recordDuePayment } from "@/lib/dueCollection";
 import MergeOrdersDialog, { fetchMergeOrderDetails, MergeBlockList } from "@/components/orders/MergeOrdersDialog";
 import { groupOrdersForMerge, type MergeGroup, type MergeOrder } from "@/lib/orderMerge";
 import { getActiveCurrency, symbolFor } from "@/lib/currency";
-import { matchesTab as matchesTabExt, ALL_TAB_KEYS, type TabKey } from "./orders/tabFilters";
+import {
+  matchesTab as matchesTabExt, ALL_TAB_KEYS,
+  showDuplicateWarningOn, showMergePanelOn,
+  type TabKey,
+} from "./orders/tabFilters";
 import { useOrderBulkActions } from "./orders/useOrderBulkActions";
+// Issue #9: loading (business scoping, fetch race, pagination, error
+// handling) lives in the hook; the page renders its state.
+import { useOrdersData, type OrderRow } from "./orders/useOrdersData";
 import { findDuplicateOrders } from "@/lib/duplicateOrder";
-
-interface OrderBrand {
-  id: string;
-  name: string;
-  logo_url: string | null;
-  woo_store_id: string | null;
-  accent: string;
-}
-
-interface OrderSellingPoint {
-  id: string;
-  name: string;
-  brand_id: string;
-  brands: Omit<OrderBrand, "accent"> | null;
-}
-
-interface OrderRow {
-  id: string;
-  order_number: string;
-  total: number;
-  status: string;
-  source: string;
-  payment_method: string | null;
-  payment_status: string;
-  consignment_id: string | null;
-  tracking_status: string | null;
-  fulfillment_type: string;
-  created_at: string;
-  deleted_at: string | null;
-  amount_to_collect: number | null;
-  pathao_recipient_city: number | null;
-  pathao_recipient_zone: number | null;
-  pathao_recipient_area: number | null;
-  pathao_store_id: number | null;
-  item_weight: number | null;
-  special_instruction: string | null;
-  store_id: string | null;
-  selling_point_id: string | null;
-  selling_points: OrderSellingPoint | null;
-  brand: (OrderBrand & { accent: string }) | null;
-  woo_order_id: number | null;
-  /** Issue #30: on merged source orders this points at the merged order. */
-  parent_order_id: string | null;
-  customer_id: string | null;
-  customer_name: string | null;
-  customer_phone: string | null;
-  customer_address: string | null;
-  customer_city: string | null;
-  customer_email: string | null;
-  pickup_slip_printed_at: string | null;
-  measurement_slip_printed_at: string | null;
-  stores: { name: string } | null;
-  itemCount: number;
-  productItems: { name: string; qty: number }[];
-  isPreOrder: boolean;
-}
 
 interface StoreOption { id: string; name: string }
 
@@ -169,33 +117,18 @@ const PAGE_SIZE = 200;
 
 const Orders = () => {
   const { role } = useAuth();
-  const { brands, active } = useBusinessContext();
-  const businessStores = useStoresList();
-  const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
-  // Selling-point scoping companion: orders whose Selling Point has no
-  // Woo-store binding get store_id NULL, so store_id scoping alone would hide
-  // them. They stay visible through their selling_point_id instead.
-  const [businessSellingPointIds, setBusinessSellingPointIds] = useState<string[]>([]);
-  useEffect(() => {
-    if (!active?.id) { setBusinessSellingPointIds([]); return; }
-    let cancelled = false;
-    supabase
-      .from("selling_points")
-      .select("id")
-      .eq("business_id", active.id)
-      .then(({ data }) => {
-        if (!cancelled) setBusinessSellingPointIds((data || []).map((row: { id: string }) => row.id));
-      });
-    return () => { cancelled = true; };
-  }, [active?.id]);
+  // Issue #9: all order loading (business scoping, overlapping-fetch race
+  // guard, pagination, error surfacing) lives in useOrdersData — the page
+  // renders its state and the error/retry banner.
+  const {
+    orders, setOrders, orderCategoryMap, loading, loadError, sellingPointError,
+    loadOrders, retryLoad,
+  } = useOrdersData();
   const { can } = usePermissions();
   const canAttachCourier = can("orders.attach_courier");
   const { settings: invoiceSettings } = useInvoiceSettings();
   const canWrite = role === "admin" || role === "staff";
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [orderCategoryMap, setOrderCategoryMap] = useState<Map<string, Set<string>>>(new Map());
   const [allCategories, setAllCategories] = useState<{ id: string; name: string; parent_id: string | null; store_id: string | null }[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
@@ -214,6 +147,7 @@ const Orders = () => {
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [duplicateFilterActive, setDuplicateFilterActive] = useState(false);
   const preOrderCategoryIds = usePreOrderCategoryIds();
   const [preOrderSettingsOpen, setPreOrderSettingsOpen] = useState(false);
 
@@ -240,7 +174,7 @@ const Orders = () => {
   // Due payment dialog (bulk Mark Paid)
   const [duePayOpen, setDuePayOpen] = useState(false);
   const [duePayContext, setDuePayContext] = useState<{ ids: string[]; totalDue: number }>({ ids: [], totalDue: 0 });
-  const [duplicateNoticeDismissed, setDuplicateNoticeDismissed] = useState(false);
+
 
   const { toast } = useToast();
 
@@ -280,79 +214,6 @@ const Orders = () => {
     if (changed) setSearchParams(searchParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  const loadOrders = useCallback(async () => {
-    const hasStoreScope = businessStoreIds.length > 0;
-    const hasSellingPointScope = businessSellingPointIds.length > 0;
-    if (!hasStoreScope && !hasSellingPointScope) {
-      setOrders([]);
-      setOrderCategoryMap(new Map());
-      setLoading(false);
-      return;
-    }
-    const orderQuery = supabase
-        .from("orders")
-        .select("id, order_number, total, status, source, payment_method, payment_status, consignment_id, tracking_status, fulfillment_type, created_at, deleted_at, store_id, selling_point_id, woo_order_id, parent_order_id, customer_id, amount_to_collect, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, item_weight, special_instruction, customer_name, customer_phone, customer_address, customer_city, customer_email, pickup_slip_printed_at, measurement_slip_printed_at, stores(name), selling_points(id, name, brand_id, brands(id, name, logo_url, woo_store_id)), order_items(id, product_id, product_name, quantity, products(stock_status))");
-    // A business order is in scope through its legacy Woo store binding OR its
-    // canonical Selling Point — selling-point-only orders (store_id NULL) must
-    // not disappear from the list.
-    const scopedQuery = hasStoreScope && hasSellingPointScope
-      ? orderQuery.or(`store_id.in.(${businessStoreIds.join(",")}),selling_point_id.in.(${businessSellingPointIds.join(",")})`)
-      : hasStoreScope
-        ? orderQuery.in("store_id", businessStoreIds)
-        : orderQuery.in("selling_point_id", businessSellingPointIds);
-    const { data } = await scopedQuery.order("created_at", { ascending: false });
-
-    const mapped = (data || []).map((o: any) => {
-      const canonicalBrand = o.selling_points?.brands
-        ? { ...o.selling_points.brands, accent: brandAccent(o.selling_points.brands.id) }
-        : undefined;
-      const legacyBrand = canonicalBrand || (() => {
-        const fallback = deriveBrandForStore(brands, o.store_id);
-        return fallback ? { ...fallback, accent: brandAccent(fallback.id) } : undefined;
-      })();
-      return {
-        ...o,
-        brand: legacyBrand || null,
-        itemCount: o.order_items?.length || 0,
-        productItems: (o.order_items || [])
-          .filter((i: any) => i.product_name)
-          .map((i: any) => ({ name: i.product_name, qty: i.quantity || 1 })),
-        isPreOrder: false, // recomputed reactively from category settings
-      };
-    });
-    setOrders(mapped as OrderRow[]);
-
-    // Build order -> category-id set map for filtering
-    const productIds = Array.from(new Set(
-      (data || []).flatMap((o: any) => (o.order_items || []).map((i: any) => i.product_id).filter(Boolean))
-    ));
-    if (productIds.length > 0) {
-      const { data: pcData } = await supabase
-        .from("product_categories")
-        .select("product_id, category_id")
-        .in("product_id", productIds);
-      const productCatMap = new Map<string, Set<string>>();
-      (pcData || []).forEach((pc: any) => {
-        if (!productCatMap.has(pc.product_id)) productCatMap.set(pc.product_id, new Set());
-        productCatMap.get(pc.product_id)!.add(pc.category_id);
-      });
-      const orderCatMap = new Map<string, Set<string>>();
-      (data || []).forEach((o: any) => {
-        const set = new Set<string>();
-        (o.order_items || []).forEach((i: any) => {
-          const cats = productCatMap.get(i.product_id);
-          if (cats) cats.forEach((c) => set.add(c));
-        });
-        orderCatMap.set(o.id, set);
-      });
-      setOrderCategoryMap(orderCatMap);
-    } else {
-      setOrderCategoryMap(new Map());
-    }
-
-    setLoading(false);
-  }, [businessStoreIds, businessSellingPointIds, brands]);
-
   const loadStores = useCallback(async () => {
     const [{ data: storeData }, { data: catData }] = await Promise.all([
       supabase.from("stores").select("id, name").order("name"),
@@ -362,7 +223,9 @@ const Orders = () => {
     setAllCategories((catData || []) as any);
   }, []);
 
-  useEffect(() => { loadOrders(); loadStores(); }, [loadOrders, loadStores, businessStoreIds]);
+  // Dropdown reference data only — order loading is triggered inside
+  // useOrdersData (its own effect tracks the scoping inputs).
+  useEffect(() => { loadStores(); }, [loadStores]);
 
   /* ─── Pre-order detection: order has at least one item whose category is configured as Pre-Order ─── */
   const preOrderOrderIds = useMemo(() => {
@@ -455,6 +318,43 @@ const Orders = () => {
 
   const debouncedSearch = useDebounce(search, 200);
 
+  const duplicateGroups = useMemo(() => {
+    // Trashed orders are gone — never actionable — so they must not pair up as
+    // duplicates (deleted rows were inflating the count and the cards).
+    // Issue: scope duplicates to the CURRENT tab so each tab only shows pairs
+    // relevant to that stage (user request: New shows New duplicates only, etc.)
+    const tabOrders = getTabOrders(tab);
+    const liveOrders = tabOrders.filter((order) => !order.deleted_at);
+    const byNumber = new Map(liveOrders.map((order) => [order.order_number, order]));
+    const candidates = liveOrders.map((order) => ({
+      orderNumber: order.order_number,
+      createdAt: order.created_at,
+      customerPhone: order.customer_phone,
+      brandId: order.brand?.id,
+      items: order.productItems.map((item) => ({ productName: item.name })),
+    }));
+    const groups = new Map<string, { orders: [OrderRow, OrderRow]; reasons: string[] }>();
+    for (const candidate of candidates) {
+      for (const match of findDuplicateOrders(candidate, candidates).matches) {
+        const pair = [candidate.orderNumber, match.orderNumber].sort();
+        const key = `${pair[0]}\u0000${pair[1]}`;
+        if (groups.has(key)) continue;
+        const first = byNumber.get(pair[0]);
+        const second = byNumber.get(pair[1]);
+        if (!first || !second) continue;
+        groups.set(key, {
+          orders: [first, second],
+          reasons: match.sharedProducts.map((product) => `Same product: ${product.name}`),
+        });
+      }
+    }
+    return Array.from(groups.values());
+  }, [orders, tab]);
+  const duplicateOrderNumbers = useMemo(
+    () => new Set(duplicateGroups.flatMap((group) => group.orders.map((order) => order.order_number))),
+    [duplicateGroups],
+  );
+
   const filtered = useMemo(() => {
     const tabOrders = getTabOrders(tab);
     const q = debouncedSearch.trim().toLowerCase();
@@ -499,8 +399,11 @@ const Orders = () => {
     });
   }, [debouncedSearch, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, orderCategoryMap, dateRange, tab, getTabOrders]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const duplicateFiltered = duplicateFilterActive
+    ? filtered.filter((o) => duplicateOrderNumbers.has(o.order_number))
+    : filtered;
+  const totalPages = Math.max(1, Math.ceil(duplicateFiltered.length / PAGE_SIZE));
+  const paginated = duplicateFiltered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   /* ─── Same-customer merge groups (issue #30) ───
      2+ orders of one customer (normalized phone) in one state form a
@@ -515,7 +418,7 @@ const Orders = () => {
     return groupOrdersForMerge(groupable);
   }, [paginated]);
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, dateRange, tab]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, dateRange, tab, duplicateFilterActive]);
 
   // When store filter changes, drop category selections that no longer belong
   useEffect(() => {
@@ -602,17 +505,6 @@ const Orders = () => {
       toast({ title: "Merge failed", description: e?.message ? String(e.message) : String(e), variant: "destructive" });
     }
   };
-
-  const duplicateMatches = useMemo(() => {
-    const matches = new Set<string>();
-    const candidates = orders.map((order) => ({ orderNumber: order.order_number, createdAt: order.created_at, customerPhone: order.customer_phone, brandId: order.brand?.id, items: order.productItems.map((item) => ({ productName: item.name })) }));
-    for (const candidate of candidates) {
-      for (const match of findDuplicateOrders(candidate, candidates).matches) {
-        matches.add(`${candidate.orderNumber} and ${match.orderNumber}`);
-      }
-    }
-    return Array.from(matches);
-  }, [orders]);
 
   const dispatchOrders = useMemo(() =>
     orders.filter((o) => dispatchOrderIds.includes(o.id)),
@@ -722,11 +614,7 @@ const Orders = () => {
   );
 
   /* ─── Selected order data for slip printing ─── */
-  const selectedOrders = orders.filter((o) => selected.has(o.id)).map((o) => ({
-    ...o,
-    brand: o.brand ? { id: o.brand.id, name: o.brand.name, logo_url: o.brand.logo_url, accent: o.brand.accent } : null,
-    sellingPointName: o.selling_points?.name || o.stores?.name || null,
-  }));
+  const selectedOrders = orders.filter((o) => selected.has(o.id));
 
   /* ─── Determine which action buttons to show ─── */
   const hasSelection = selected.size > 0;
@@ -772,9 +660,9 @@ const Orders = () => {
     }
     if (canAttachCourier && !["trash", "cancelled"].includes(tab)) {
       if (!order.consignment_id) {
-        actions.push({ key: "attach_parcel", label: "Attach Pathao Parcel", icon: Link2, onClick: () => setAttachParcelOrder(order) });
+        actions.push({ key: "attach_parcel", label: "Attach Pathao Consignment", icon: Link2, onClick: () => setAttachParcelOrder(order) });
       } else {
-        actions.push({ key: "replace_parcel", label: "Replace Pathao Parcel", icon: Link2, onClick: () => setAttachParcelOrder(order) });
+        actions.push({ key: "replace_parcel", label: "Replace Pathao Consignment", icon: Link2, onClick: () => setAttachParcelOrder(order) });
       }
     }
     if (["delivered", "in_transit", "pickup_pending", "ready", "all"].includes(tab)) {
@@ -828,6 +716,17 @@ const Orders = () => {
               Update Tracking
             </Button>
           )}
+          {showDuplicateWarningOn(tab) && duplicateGroups.length > 0 && (
+            <Button
+              size="sm"
+              variant={duplicateFilterActive ? "destructive" : "outline"}
+              className="border-red-400 text-red-700 hover:bg-red-50"
+              onClick={() => setDuplicateFilterActive((active) => !active)}
+            >
+              <AlertTriangle className="mr-1 h-4 w-4" />
+              {duplicateOrderNumbers.size} duplicate orders
+            </Button>
+          )}
           {!preOrderMode && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -842,13 +741,30 @@ const Orders = () => {
         </div>
       </div>
 
-      {!duplicateNoticeDismissed && duplicateMatches.length > 0 && (
-        <div className="flex items-start justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-          <div><strong>Possible duplicate orders:</strong> {duplicateMatches.join(", ")}</div>
-          <button aria-label="Dismiss duplicate warning" onClick={() => setDuplicateNoticeDismissed(true)}><X className="h-4 w-4" /></button>
+      {/* Issue #9: load failures used to be silent (empty/stale list, no
+          feedback). Surface them with a Retry action — retry also re-runs
+          the selling-point scope fetch, since a failed scope fetch leaves
+          the query under-scoped rather than merely un-executed. */}
+      {(loadError || sellingPointError) && (
+        <div className="flex items-start justify-between gap-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-950">
+          <div>
+            <strong>Couldn&rsquo;t load all orders.</strong>{" "}
+            {loadError || sellingPointError}
+          </div>
+          <Button variant="outline" size="sm" className="shrink-0" onClick={retryLoad}>
+            <RotateCcw className="h-4 w-4 mr-1" /> Retry
+          </Button>
         </div>
       )}
 
+      {/* Issue #7: warn only on the pre-dispatch tabs where acting on a
+          duplicate is still possible (see DUPLICATE_WARNING_TABS). */}
+      {showDuplicateWarningOn(tab) && duplicateFilterActive && (
+        <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+          <span>Showing duplicates only</span>
+          <button type="button" className="font-medium underline" onClick={() => setDuplicateFilterActive(false)}>Clear</button>
+        </div>
+      )}
       {/* Action Bar — shown when any orders are selected */}
       <OrderBulkActionsBar
         selectedCount={selected.size}
@@ -865,8 +781,8 @@ const Orders = () => {
         onRestore={() => handleRestoreOrders(Array.from(selected))}
         onTrash={() => { setPendingTrashIds(Array.from(selected)); setTrashConfirmOpen(true); }}
         onClear={() => setSelected(new Set())}
-      />
-
+         onDeselect={(id) => setSelected((current) => { const next = new Set(current); next.delete(id); return next; })}
+      />`r`n
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
         <OrderTabs tab={tab} onChange={setTab} counts={counts} />
@@ -934,10 +850,36 @@ const Orders = () => {
           onCategoryFilterChange={setCategoryFilter}
         />
 
+        {/* ── Possible duplicates ──
+            Same layout as the merge groups below: collapsible, one compact row
+            per pair, expanded to the two orders. Shown only on the tabs where a
+            duplicate can still be acted on (see DUPLICATE_WARNING_TABS). */}
+        {showDuplicateWarningOn(tab) && duplicateGroups.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <h2 className="text-sm font-semibold">Possible duplicates</h2>
+              <span className="text-xs text-muted-foreground">
+                Same customer, same product, placed within 48h — review each pair
+              </span>
+            </div>
+            {duplicateGroups.map((group) => (
+              <DuplicateGroupPanel
+                key={group.orders.map((order) => order.id).join("-")}
+                group={group}
+                onOpenOrder={setDetailOrderId}
+              />
+            ))}
+          </div>
+        )}
+
         {/* ── Same-customer merge groups (issue #30) ──
             Collapsible; the Merge action lives inside each group and is gated
-            by checkMergeEligibility (block reasons render when ineligible). */}
-        {mergeGroups.length > 0 && (
+            by checkMergeEligibility (block reasons render when ineligible).
+            Issue #7: shown only on the pre-dispatch tabs where a merge is
+            still possible (see MERGE_PANEL_TABS) — the detection above is
+            unchanged, this gates visibility only. */}
+        {showMergePanelOn(tab) && mergeGroups.length > 0 && (
           <div className="mt-4 space-y-2">
             <div className="flex items-center gap-2">
               <Combine className="h-4 w-4 text-muted-foreground" />
@@ -966,6 +908,7 @@ const Orders = () => {
           {/* Mobile & Tablet cards */}
           <div className="xl:hidden mt-4 space-y-2">
             {paginated.map((order) => (
+              <div key={`${order.id}-prototype`} className={duplicateFilterActive && duplicateOrderNumbers.has(order.order_number) ? "border-l-4 border-red-500" : ""}>
               <OrderCard
                 key={order.id}
                 order={order}
@@ -974,6 +917,7 @@ const Orders = () => {
                 onOpen={() => setDetailOrderId(order.id)}
                 actions={renderActionButtons(order, 2)}
               />
+              </div>
             ))}
           </div>
 
@@ -1162,6 +1106,60 @@ function MergeGroupPanel({
             </Button>
           </div>
         )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/* ─── Possible duplicate pair ───
+   Mirrors MergeGroupPanel: a collapsible card with one compact header row
+   (customer + pair summary), expanded to a dense two-line order list and the
+   "Matched because" reasons. Clicking an order opens its detail sheet. */
+function DuplicateGroupPanel({ group, onOpenOrder }: { group: { orders: [OrderRow, OrderRow]; reasons: string[] }; onOpenOrder: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [first, second] = group.orders;
+  const money = (value: number) => `৳${Number(value || 0).toLocaleString()}`;
+  const combined = Number(first.total || 0) + Number(second.total || 0);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="rounded-lg border border-border bg-card">
+      <CollapsibleTrigger className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-accent/50 rounded-lg">
+        <div className="flex items-center gap-2 min-w-0">
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+          <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
+          <div className="min-w-0">
+            <div className="text-sm font-medium truncate">
+              {first.customer_name || "Unknown customer"}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              #{first.order_number} &amp; #{second.order_number} · combined {money(combined)}
+            </div>
+          </div>
+        </div>
+        <Badge variant="destructive" className="shrink-0">Possible duplicate</Badge>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="px-4 pb-4 space-y-3">
+        <div className="rounded-md border divide-y">
+          {[first, second].map((order) => (
+            <button
+              key={order.id}
+              type="button"
+              onClick={() => onOpenOrder(order.id)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-sm hover:bg-accent/50"
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="font-medium">#{order.order_number}</span>
+                <span className="text-xs text-muted-foreground">
+                  {format(new Date(order.created_at), "MMM d, yyyy")}
+                </span>
+                <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">{order.status}</Badge>
+              </span>
+              <span className="font-medium whitespace-nowrap">{money(order.total)}</span>
+            </button>
+          ))}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Matched because:</span> {group.reasons.join("; ")}
+        </div>
       </CollapsibleContent>
     </Collapsible>
   );
