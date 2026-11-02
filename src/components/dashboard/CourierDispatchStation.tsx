@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+﻿import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Truck, Send, Zap, ArrowRight } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -46,7 +46,7 @@ export default function CourierDispatchStation({ orders }: Props) {
           </div>
         </div>
         <button
-          onClick={() => navigate("/dispatch")}
+          onClick={() => navigate("/orders")}
           className="inline-flex items-center gap-1.5 rounded-md bg-violet-500 hover:bg-violet-600 text-white text-xs font-medium px-3 py-1.5 transition-colors"
         >
           <Zap className="h-3.5 w-3.5" />
@@ -82,7 +82,7 @@ export default function CourierDispatchStation({ orders }: Props) {
               Next up to dispatch ({ready.length})
             </span>
             <button
-              onClick={() => navigate("/dispatch")}
+              onClick={() => navigate("/orders")}
               className="text-[11px] text-violet-400 hover:text-violet-300 inline-flex items-center gap-1"
             >
               Dispatch all <ArrowRight className="h-3 w-3" />
@@ -100,7 +100,7 @@ export default function CourierDispatchStation({ orders }: Props) {
                   <div className="min-w-0">
                     <p className="text-xs text-foreground truncate">{o.order_number}</p>
                     <p className="text-[10px] text-muted-foreground truncate">
-                      {o.customer_name || "Walk-in"} · {formatDistanceToNow(new Date(o.created_at), { addSuffix: true })}
+                      {o.customer_name || "Walk-in"} Â· {formatDistanceToNow(new Date(o.created_at), { addSuffix: true })}
                     </p>
                   </div>
                 </div>

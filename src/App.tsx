@@ -33,7 +33,6 @@ const Products = lazy(() => import("./pages/Products"));
 const POS = lazy(() => import("./pages/POS"));
 const PosReports = lazy(() => import("./pages/PosReports"));
 const Analytics = lazy(() => import("./pages/Analytics"));
-const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
@@ -54,13 +53,17 @@ const StorefrontPreview = lazy(() =>
     }),
   ),
 );
-const StoresHub = lazy(() => import("./pages/StoresHub"));
+const OrderSources = lazy(() => import("./pages/OrderSources"));
+const Brands = lazy(() => import("./pages/Brands"));
+const BusinessMembers = lazy(() => import("./pages/BusinessMembers"));
+const LegacyPool = lazy(() => import("./pages/LegacyPool"));
 const VisualPageBuilder = lazy(() => import("@/components/storefront-admin/VisualPageBuilder"));
 const Signup = lazy(() => import("./pages/Signup"));
 const CheckEmail = lazy(() => import("./pages/CheckEmail"));
 const AuthConfirm = lazy(() => import("./pages/AuthConfirm"));
 const AccountSelection = lazy(() => import("./pages/AccountSelection"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
+const ProfileSetup = lazy(() => import("./pages/ProfileSetup"));
+const OnboardingWizard = lazy(() => import("./features/onboarding/OnboardingWizard"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Tuned QueryClient: avoid noisy refetches that hammer Supabase egress on free plan.
@@ -114,10 +117,7 @@ const AppRoutes = () => {
         <Route path="/signup" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Signup /></Suspense>} />
         <Route path="/check-email" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><CheckEmail /></Suspense>} />
         <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
-      {/* Onboarding wizard (D-10): full-page, outside DashboardLayout. The
-          welcome-family routes were retired in plan 01-05, atomic with the
-          AuthConfirm retarget. */}
-      <Route path="/onboarding" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Onboarding /></Suspense>} />
+      <Route path="/onboarding" element={<Navigate to="/login" replace />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
@@ -128,14 +128,16 @@ const AppRoutes = () => {
     <Routes>
       <Route path="/auth/confirm" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AuthConfirm /></Suspense>} />
       <Route path="/accounts" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><AccountSelection /></Suspense>} />
+      {/* Task 3: the one-time personal profile setup. Sits outside BusinessGuards so
+          a person with no business yet can still complete or skip it. */}
+      <Route path="/profile/setup" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><ProfileSetup /></Suspense>} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/signup" element={<Navigate to={invitationPath("/accounts")} replace />} />
       <Route path="/check-email" element={<Navigate to={invitationPath("/accounts")} replace />} />
-      {/* Onboarding wizard (D-10): full-page, outside DashboardLayout AND
-          outside BusinessGuards — the guard's wizard redirect targets this
-          route, so wrapping it would loop (the shell renders the
-          create-business surface itself for zero memberships). */}
-      <Route path="/onboarding" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><Onboarding /></Suspense>} />
+      {/* Task 13: the skippable/resumable business-creation onboarding (spec
+          §6a). Full-screen like ProfileSetup, outside BusinessGuards; the
+          wizard itself redirects non-creating (invited) members away (§6b). */}
+      <Route path="/onboarding" element={<Suspense fallback={<FullScreenLoader label="Loading…" />}><OnboardingWizard /></Suspense>} />
       {/* Preview routes — FULL-BLEED, chrome-free (fix B): the preview iframe
           renders the storefront page alone, NOT the admin app. Must sit
           outside DashboardLayout so no sidebar/palette wraps the preview. */}
@@ -158,10 +160,14 @@ const AppRoutes = () => {
               <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />
               <Route path="/pos/reports" element={<PermissionGuard permission="analytics.view"><PosReports /></PermissionGuard>} />
               <Route path="/analytics" element={<PermissionGuard permission="analytics.view"><Analytics /></PermissionGuard>} />
-              <Route path="/integrations" element={<PermissionGuard permission="integrations.view"><Integrations /></PermissionGuard>} />
+              <Route path="/integrations" element={<Navigate to="/settings" replace />} />
               <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
               <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
-              <Route path="/stores" element={<PermissionGuard permission="dashboard.view"><StoresHub /></PermissionGuard>} />
+              <Route path="/brands" element={<Brands />} />
+              <Route path="/members" element={<BusinessMembers />} />
+              <Route path="/stores" element={<Navigate to="/order-sources" replace />} />
+              <Route path="/order-sources" element={<PermissionGuard permission="dashboard.view"><OrderSources /></PermissionGuard>} />
+              <Route path="/legacy-pool" element={<PermissionGuard permission="dashboard.view"><LegacyPool /></PermissionGuard>} />
               {/* Wildcard: deep admin URLs (/storefronts/:slug/admin/:surface)
                   mount StorefrontsPage, which parses the URL itself (fix C). */}
               <Route path="/storefronts/*" element={<PermissionGuard permission="storefronts.view"><StorefrontsPage /></PermissionGuard>} />
@@ -216,13 +222,13 @@ const Root = () => {
   }
   return (
     <AuthProvider>
-      <PermissionsProvider>
-        <BusinessContextProvider>
+      <BusinessContextProvider>
+        <PermissionsProvider>
           <BusinessProfileProvider>
             <AppRoutes />
           </BusinessProfileProvider>
-        </BusinessContextProvider>
-      </PermissionsProvider>
+        </PermissionsProvider>
+      </BusinessContextProvider>
     </AuthProvider>
   );
 };

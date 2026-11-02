@@ -21,10 +21,12 @@ import CustomerInsights from "@/components/analytics/CustomerInsights";
 import InventoryHealth from "@/components/analytics/InventoryHealth";
 import GeoBreakdown from "@/components/analytics/GeoBreakdown";
 import OperationalMetrics from "@/components/analytics/OperationalMetrics";
+import LegacyPoolBanner from "@/components/legacy-pool/LegacyPoolBanner";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 import { useCurrency } from "@/hooks/useCurrency";
-import { useStoresList } from "@/hooks/useStoresList";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { useStoresList } from "@/hooks/useStoresList";
+import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 interface OrderRow {
   id: string;
@@ -79,7 +81,6 @@ const Analytics = () => {
   const { symbol } = useCurrency();
   const { active } = useBusinessContext();
   const businessStores = useStoresList();
-  const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
   const [businessSellingPointIds, setBusinessSellingPointIds] = useState<string[]>([]);
   useEffect(() => {
     if (!active?.id) { setBusinessSellingPointIds([]); return; }
@@ -99,12 +100,14 @@ const Analytics = () => {
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const globalStockEnabled = useGlobalStockEnabled();
+  const businessStoreIds = useActiveBusinessStoreIds();
+  const businessStoreIdSet = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
 
   useEffect(() => {
     // Fail closed: no brand-store links (or no business context) means the
     // business has no Selling Points to report on — never fall back to all
     // readable stores.
-    if (businessStoreIds.length === 0 && businessSellingPointIds.length === 0) {
+    if (businessStoreIdSet.length === 0 && businessSellingPointIds.length === 0) {
       setOrders([]);
       setPrevOrders([]);
       setOrderItems([]);
@@ -116,6 +119,16 @@ const Analytics = () => {
     }
 
     const load = async () => {
+      if (!hasStoreScope(businessStoreIds)) {
+        setOrders([]);
+        setPrevOrders([]);
+        setOrderItems([]);
+        setProducts([]);
+        setReturns([]);
+        setAllCustomerOrders([]);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       const { from: dateFrom, to: dateTo, days } = resolveRange(datePreset, customRange);
       const prevFrom = dateFrom && days ? subDays(dateFrom, days) : null;
@@ -127,10 +140,9 @@ const Analytics = () => {
           ? `store_id.in.(${businessStoreIds.join(",")})`
           : `selling_point_id.in.(${businessSellingPointIds.join(",")})`;
 
-      let ordersQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null).or(scope)
-       .order("created_at", { ascending: false });
-      let prevQuery = supabase.from("orders").select(baseSelect).is("deleted_at", null).or(scope);
-      let returnsQuery = supabase.from("pos_returns").select("refund_amount, created_at").in("store_id", businessStoreIds);
+      let ordersQuery = scopeStoreIds(supabase.from("orders").select(baseSelect).is("deleted_at", null).order("created_at", { ascending: false }), businessStoreIds);
+      let prevQuery = scopeStoreIds(supabase.from("orders").select(baseSelect).is("deleted_at", null), businessStoreIds);
+      let returnsQuery = scopeStoreIds(supabase.from("pos_returns").select("refund_amount, created_at"), businessStoreIds);
 
       if (dateFrom) {
         ordersQuery = ordersQuery.gte("created_at", dateFrom.toISOString());
@@ -150,9 +162,9 @@ const Analytics = () => {
       const [ordersRes, prevRes, productsRes, returnsRes, allCustRes] = await Promise.all([
         ordersQuery,
         prevQuery,
-        supabase.from("products").select("id, name, price, cost_price, stock_quantity, stock_status, manage_stock, sales_count, updated_at").in("store_id", businessStoreIds),
+        scopeStoreIds(supabase.from("products").select("id, name, price, cost_price, stock_quantity, stock_status, manage_stock, sales_count, updated_at"), businessStoreIds),
         returnsQuery,
-        supabase.from("orders").select("customer_id, customer_name, total, created_at").is("deleted_at", null).or(scope),
+        scopeStoreIds(supabase.from("orders").select("customer_id, customer_name, total, created_at").is("deleted_at", null), businessStoreIds),
       ]);
 
       const ordersData = (ordersRes.data || []) as OrderRow[];
@@ -405,6 +417,9 @@ const Analytics = () => {
           </Button>
         </div>
       </div>
+
+      {/* Legacy pool heads-up: unattributed rows are outside brand-level figures */}
+      <LegacyPoolBanner storeIds={businessStoreIds} />
 
       {/* Top KPI cards with deltas */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">

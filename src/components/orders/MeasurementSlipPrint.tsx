@@ -9,6 +9,7 @@ import { PRINT_BOOTSTRAP, openPrintWindow } from "@/lib/printWindow";
 import { parseVariationAttributes } from "@/lib/variations";
 import { fetchSlipOrderDetails, type SlipOrderDetail } from "./PickupSlipPrint";
 import { addMakingCandidate, type MakingCandidate } from "@/lib/makingPromotionStore";
+import { hasStoreScope, scopeStoreIds } from "@/hooks/useActiveBusinessStoreIds";
 
 /**
  * If the order is a pre-order candidate, promote it to pre_order_making (the
@@ -41,7 +42,9 @@ export async function applyMakingPromotion(orderId: string, fromLabel: string, f
  * Read-only check: would printing this order's measurement slip qualify it for
  * promotion to "making"? Returns the candidate (order number + source label/
  * status) or null when the order is not a pre-order candidate or has already
- * passed the making stage. Performs no writes.
+ * passed the making stage. Performs no writes. Tenancy is enforced by the
+ * caller: printMeasurementSlip verifies the order belongs to the active
+ * business's stores before it reaches this check.
  */
 export async function checkMakingEligibility(orderId: string): Promise<MakingCandidate | null> {
   try {
@@ -264,15 +267,24 @@ export function buildMeasurementSlipHtml(data: MeasurementSlipRenderData, tpl: S
     </div>${PRINT_BOOTSTRAP}</body></html>`;
 }
 
-export async function printMeasurementSlip(orderId: string) {
-  const [orderRes, itemsRes, measurementsRes, settingsRes] = await Promise.all([
-    supabase.from("orders").select("order_number, created_at, customer_name, customer_phone").eq("id", orderId).single(),
+export async function printMeasurementSlip(orderId: string, businessStoreIds: string[] = []) {
+  if (!hasStoreScope(businessStoreIds)) return;
+  const { data: orderData } = await scopeStoreIds(
+    supabase
+      .from("orders")
+      .select("order_number, created_at, customer_name, customer_phone, store_id")
+      .eq("id", orderId),
+    businessStoreIds,
+  ).maybeSingle();
+  if (!orderData || !businessStoreIds.includes(orderData.store_id)) return;
+
+  const [itemsRes, measurementsRes, settingsRes] = await Promise.all([
     supabase.from("order_items").select("id, product_name, product_id").eq("order_id", orderId),
     supabase.from("order_item_measurements" as any).select("order_item_id, group_name, display_format, unit, values, notes").eq("order_id", orderId),
     supabase.from("invoice_settings" as any).select("measurement_slip_template, business_name").limit(1).single(),
   ]);
 
-  const order = orderRes.data as OrderInfo | null;
+  const order = orderData as OrderInfo | null;
   if (!order) {
     alert("Order not found");
     return;
@@ -287,7 +299,11 @@ export async function printMeasurementSlip(orderId: string) {
   const productIds = items.map((i) => i.product_id).filter(Boolean);
   const skuMap = new Map<string, string>();
   if (productIds.length > 0 && tpl.show_product_sku) {
-    const { data: prods } = await supabase.from("products").select("id, sku").in("id", productIds);
+    const { data: prods } = await supabase
+      .from("products")
+      .select("id, sku")
+      .in("id", productIds)
+      .in("store_id", businessStoreIds);
     (prods || []).forEach((p: any) => p.sku && skuMap.set(p.id, p.sku));
   }
 
@@ -450,10 +466,13 @@ export async function printMeasurementSlip(orderId: string) {
 
   // Stamp printed-at so the Orders list can show an indicator + log it.
   try {
-    await supabase
-      .from("orders")
-      .update({ measurement_slip_printed_at: new Date().toISOString() } as any)
-      .eq("id", orderId);
+    await scopeStoreIds(
+      supabase
+        .from("orders")
+        .update({ measurement_slip_printed_at: new Date().toISOString() } as any)
+        .eq("id", orderId),
+      businessStoreIds,
+    );
 
     await addOrderTimeline({
       order_id: orderId,
@@ -481,12 +500,12 @@ export async function printMeasurementSlip(orderId: string) {
  * Print measurement slips for many orders at once. Each slip opens in its own
  * window. Orders with no measurements recorded are silently skipped.
  */
-export async function printMeasurementSlipsBulk(orderIds: string[]): Promise<{ printed: number; skipped: number }> {
+export async function printMeasurementSlipsBulk(orderIds: string[], businessStoreIds: string[] = []): Promise<{ printed: number; skipped: number }> {
   let printed = 0;
   let skipped = 0;
   for (const id of orderIds) {
     try {
-      await printMeasurementSlip(id);
+      await printMeasurementSlip(id, businessStoreIds);
       printed++;
       await new Promise((r) => setTimeout(r, 400));
     } catch {

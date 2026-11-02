@@ -13,6 +13,11 @@ import { kickSyncWorker } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
 import { evaluatePaymentGate, PAYMENT_NEEDS_CONFIRMATION_LABEL } from "@/lib/paymentGate";
 import { usePermissions } from "@/hooks/usePermissions";
+import {
+  hasStoreScope,
+  scopeStoreIds,
+  useActiveBusinessStoreIds,
+} from "@/hooks/useActiveBusinessStoreIds";
 import { isOrderPreOrderByProducts } from "@/lib/preOrderSettings";
 import { getGlobalStockEnabled } from "@/lib/stockSettings";
 import ExchangeDialog from "./ExchangeDialog";
@@ -116,6 +121,7 @@ interface OrderDetail {
   storefront_id?: string | null;
   stock_restored_at?: string | null;
   stores: { url: string | null; name?: string | null } | null;
+  order_source?: { name: string; type: string } | null;
 }
 
 /** Stored identity of the order, snapshotted at load for change detection (issue #32). */
@@ -214,6 +220,10 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   // current list to derive a legacy brand — keep a ref alongside state.
   const brandsRef = useRef(brands);
   useEffect(() => { brandsRef.current = brands; }, [brands]);
+  // Hybrid tenancy (issue #16): the store ids of the ACTIVE business. The sheet
+  // reads the order THROUGH this scope and only then its child rows, so an order
+  // of another business can never be opened and its children never fetched.
+  const businessStoreIds = useActiveBusinessStoreIds();
   const [order, setOrder] = useState<OrderDetail | null>(null);
 
   // Issue #27: WooCommerce online-payment gate (docs/adr/0001-woo-online-payment-gate.md).
@@ -252,9 +262,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [variationOptions, setVariationOptions] = useState<PickableVariation[]>([]);
   const [variationPickerProductId, setVariationPickerProductId] = useState<string | null>(null);
   const [addProductId, setAddProductId] = useState<string>("");
-  // Multi-business Phase 3: fulfillment location (warehouse/showroom)
-  const [locationId, setLocationId] = useState<string>("");
-  const [locationOptions, setLocationOptions] = useState<Array<{ id: string; name: string; type: string }>>([]);
 
   // Order identity (issue #32): editable Brand + Selling Point on Order Info,
   // resolved with the same rules as Add Order (issue #21). The default Pathao
@@ -360,18 +367,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 
   const openExchange = useCallback(async () => {
     if (!order) return;
-    const { data } = await supabase
-      .from("orders")
-      .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
-      .eq("id", order.id)
-      .maybeSingle();
+    if (!hasStoreScope(businessStoreIds)) return; // fail closed: nothing to open
+    const { data } = await scopeStoreIds(
+      supabase
+        .from("orders")
+        .select("id, order_number, store_id, customer_id, customer_name, customer_phone, customer_address, customer_city, customer_email, pathao_recipient_city, pathao_recipient_zone, pathao_recipient_area, pathao_store_id, pathao_integration_id, status")
+        .eq("id", order.id),
+      businessStoreIds,
+    ).maybeSingle();
     if (!data) {
       toast.error("Could not load order details for exchange");
       return;
     }
     setExchangeParent(data);
     setExchangeOpen(true);
-  }, [order]);
+  }, [order, businessStoreIds]);
 
   // Payment form
   const [payMethod, setPayMethod] = useState("bkash");
@@ -392,15 +402,51 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const [confirmPayTrxId, setConfirmPayTrxId] = useState("");
   const [confirmingPayment, setConfirmingPayment] = useState(false);
 
+  /** Empties everything the sheet publishes; used by every fail-closed path. */
+  const clearLoadedOrder = useCallback(() => {
+    setOrder(null);
+    setItems([]);
+    setEditedItems([]);
+    setTimeline([]);
+    setPayments([]);
+    setMeasurements([]);
+    setDeletedMeasIds([]);
+    setCourierShipments([]);
+    setLoading(false);
+  }, []);
+
   const load = useCallback(async () => {
     if (!orderId) return;
+
+    // Fail closed: an empty scope means this business has no stores to read, so
+    // the sheet reads nothing at all — not even the order it was opened for.
+    if (!hasStoreScope(businessStoreIds)) {
+      clearLoadedOrder();
+      return;
+    }
+
     setLoading(true);
-    const [orderRes, itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
+
+    // Step 1 — the order itself, read through the tenant predicate.
+    const orderRes = await scopeStoreIds(
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, pathao_integration_id, pathao_store_id, selling_points(id, name, brand_id, woo_store_id, is_default, brands(id, name, woo_store_id)), stores(url, name)")
-        .eq("id", orderId)
-        .single(),
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, location_id, selling_point_id, pathao_integration_id, pathao_store_id, selling_points(id, name, brand_id, woo_store_id, is_default, brands(id, name, woo_store_id)), stores(url, name), order_source:order_sources(name, type)")
+        .eq("id", orderId),
+      businessStoreIds,
+    ).single();
+
+    const o = orderRes.data as unknown as OrderDetail | null;
+    // Step 2 (the child reads below) runs ONLY for an order that is inside the
+    // active business's scope. Otherwise a foreign order id — a deep link, or
+    // state left over from another business — would fetch that business's
+    // order_items, payments, timeline and measurements.
+    if (!o || !o.store_id || !businessStoreIds.includes(o.store_id)) {
+      clearLoadedOrder();
+      return;
+    }
+
+    const [itemsRes, timelineRes, paymentsRes, measRes, shipmentsRes] = await Promise.all([
       supabase
         .from("order_items")
         .select("id, product_name, quantity, unit_price, line_total, product_id, products(name)")
@@ -426,8 +472,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         .order("created_at", { ascending: false }),
     ]);
 
-    const o = orderRes.data as unknown as OrderDetail | null;
-    if (o) {
+    {
       setOrder(o);
       setStatus(o.status);
       setPaymentStatus(o.payment_status);
@@ -440,7 +485,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setNotes(o.notes || "");
       setFulfillmentType(o.fulfillment_type || "delivery");
       setPaymentMethod(o.payment_method || "");
-      setLocationId((o as { location_id?: string | null }).location_id || "");
 
       // Identity snapshot (issue #32): same derivation as the Orders page brand
       // column — selling_points->brands first, legacy store binding as fallback.
@@ -479,27 +523,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
       setCourierShipments(shipments);
     }
 
-    // Phase 3: locations for the order's brand (via store linkage) for the
-    // fulfillment-location picker. Best-effort: empty list hides the picker.
-    try {
-      const { data: oRow } = await supabase
-        .from("orders")
-        .select("store_id")
-        .eq("id", orderId)
-        .single();
-      if (oRow?.store_id) {
-        const { data: locs } = await supabase
-          .from("locations")
-          .select("id, name, type, brand_id, brands!inner(woo_store_id)")
-          .eq("brands.woo_store_id", oRow.store_id)
-          .order("name");
-        setLocationOptions((locs as Array<{ id: string; name: string; type: string }>) || []);
-      } else {
-        setLocationOptions([]);
-      }
-    } catch {
-      setLocationOptions([]);
-    }
     const liRaw = (itemsRes.data || []) as any[];
     const li: LineItem[] = liRaw.map((r) => ({
       id: r.id,
@@ -532,7 +555,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     );
     setDeletedMeasIds([]);
     setLoading(false);
-  }, [orderId]);
+  }, [orderId, businessStoreIds, clearLoadedOrder]);
 
   useEffect(() => {
     if (open && orderId) load();
@@ -541,18 +564,26 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   // Fetch products + variations for adding new items. Both are paged because
   // the hosted REST cap silently truncates at 1000 rows (variation tables in
   // particular exceed it) — which used to hide variation selectors.
+  // Tenancy: only the active business's products are offered.
   useEffect(() => {
     if (!open) return;
+    if (!hasStoreScope(businessStoreIds)) {
+      setProductOptions([]);
+      return;
+    }
     (async () => {
       try {
         const [products, variations] = await Promise.all([
           fetchAllRows<ProductOption>(({ from, to }) =>
-            supabase
-              .from("products")
-              .select("id, name, sku, price")
-              .eq("is_active", true)
-              .order("name")
-              .range(from, to),
+            scopeStoreIds(
+              supabase
+                .from("products")
+                .select("id, name, sku, price")
+                .eq("is_active", true)
+                .order("name")
+                .range(from, to),
+              businessStoreIds,
+            ),
           ),
           fetchAllRows<PickableVariation>(({ from, to }) =>
             supabase
@@ -567,7 +598,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         console.warn("Failed to load product catalog for order edits:", e);
       }
     })();
-  }, [open]);
+  }, [open, businessStoreIds]);
 
   // Lazy-load measurement groups for every product on the order (issue:
   // "add measurements later to product lines"): the Measurements section and
@@ -1004,7 +1035,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Save ---------- */
 
   const handleSave = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     setSaving(true);
     try {
       // Issue #27: while the gate is on, ordinary saves must not move the order
@@ -1030,8 +1061,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         });
       }
 
-      await supabase
-        .from("orders")
+      await scopeStoreIds(
+        supabase
+          .from("orders")
         .update({
           status: saveStatus,
           payment_status: savePaymentStatus,
@@ -1046,15 +1078,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           notes,
           fulfillment_type: fulfillmentType,
           payment_method: paymentMethod || null,
-          location_id: locationId || null,
+
           ...identityPatch,
         })
-        .eq("id", order.id);
+        .eq("id", order.id),
+        businessStoreIds,
+      );
 
       // Delete removed items (only existing DB rows)
       const dbDeletedIds = deletedItemIds.filter((id) => !id.startsWith("new-"));
       if (dbDeletedIds.length > 0) {
-        await supabase.from("order_items").delete().in("id", dbDeletedIds);
+        await supabase
+          .from("order_items")
+        .delete()
+        .in("id", dbDeletedIds)
+        .eq("order_id", order.id);
       }
 
       // Update existing items (qty or price)
@@ -1069,7 +1107,8 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               unit_price: item.unit_price,
               line_total: item.quantity * item.unit_price,
             })
-            .eq("id", item.id);
+            .eq("id", item.id)
+            .eq("order_id", order.id);
         }
       }
 
@@ -1388,7 +1427,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Payment recompute helper ---------- */
 
   const recomputePaymentStatus = async (orderRow: OrderDetail | null) => {
-    if (!orderRow) return;
+    if (!orderRow || !hasStoreScope(businessStoreIds) || !orderRow.store_id || !businessStoreIds.includes(orderRow.store_id)) return;
     const { data: rows } = await supabase
       .from("order_payments")
       .select("amount")
@@ -1406,20 +1445,23 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         : remaining <= 0.0001
         ? "paid"
         : "partial";
-    await supabase
-      .from("orders")
-      .update({
-        payment_status: newStatus,
-        amount_to_collect: remaining,
-      })
-      .eq("id", orderRow.id);
+    await scopeStoreIds(
+      supabase
+        .from("orders")
+        .update({
+          payment_status: newStatus,
+          amount_to_collect: remaining,
+        })
+        .eq("id", orderRow.id),
+      businessStoreIds,
+    );
     return { totalPaid, remaining, newStatus };
   };
 
   /* ---------- Add payment ---------- */
 
   const addPayment = async () => {
-    if (!order || !payAmount) return;
+    if (!order || !payAmount || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(payAmount);
     await supabase.from("order_payments").insert({
       order_id: order.id,
@@ -1464,7 +1506,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const saveEditedPayment = async (p: PaymentEntry) => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(editPayAmount);
     if (!Number.isFinite(amt) || amt < 0) {
       toast.error("Enter a valid amount");
@@ -1498,7 +1540,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const deletePayment = async (p: PaymentEntry) => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     if (!confirm(`Delete this ${symbol}${Number(p.amount).toLocaleString()} ${p.method} payment?`)) return;
     await supabase.from("order_payments").delete().eq("id", p.id);
     const recomputed = await recomputePaymentStatus(order);
@@ -1520,7 +1562,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- Confirm pending payment ---------- */
 
   const confirmPendingPayment = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     const amt = parseFloat(confirmPayAmount);
     if (!amt || amt <= 0) {
       toast.error("Enter a valid amount");
@@ -1604,7 +1646,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   };
 
   const handleReturn = async () => {
-    if (!order) return;
+    if (!order || !hasStoreScope(businessStoreIds) || !order.store_id || !businessStoreIds.includes(order.store_id)) return;
     setSaving(true);
     try {
       // Update order status
@@ -1669,7 +1711,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 #{order?.order_number || "..."}
               </SheetTitle>
               {order && <FulfillmentBadge status={order.status} />}
-              {order && <SourceBadge source={order.source} storeName={order.stores?.name} />}
+              {order && <SourceBadge source={order.source} storeName={order.stores?.name} orderSource={order.order_source} />}
             </div>
             {order?.woo_order_id && order.stores?.url && (
               <Button
@@ -2001,24 +2043,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         </SelectContent>
                       </Select>
                     </div>
-                    {locationOptions.length > 0 && (
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Fulfill From</Label>
-                        <Select value={locationId || "none"} onValueChange={(v) => setLocationId(v === "none" ? "" : v)}>
-                          <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Default location" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Default location</SelectItem>
-                            {locationOptions.map((l) => (
-                              <SelectItem key={l.id} value={l.id}>
-                                {l.name} ({l.type})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
                   </div>
                 </section>
 
@@ -2420,7 +2444,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                         size="sm"
                         variant="outline"
                         className="gap-1.5"
-                        onClick={() => order && printMeasurementSlip(order.id)}
+                        onClick={() => order && printMeasurementSlip(order.id, businessStoreIds)}
                       >
                         <Printer className="h-3.5 w-3.5" /> Print Slip
                       </Button>

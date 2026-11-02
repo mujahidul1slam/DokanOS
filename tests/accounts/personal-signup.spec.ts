@@ -25,8 +25,26 @@ async function api(page: Page, memberships: unknown[] = []) {
     const body = request.postDataJSON();
     requests.push({ path: url.pathname, url: url.href, method: request.method(), body });
     let data: unknown = [];
+    // 2435c1b moved the signup kill switch from an app_config row read to the
+    // is_signup_open() RPC (fail-closed UI) and the suite died silently with
+    // the call. Mock the CURRENT contract; keep the retired app_config shape
+    // green while both lines coexist.
+    if (url.pathname.endsWith("/rpc/is_signup_open")) data = true;
     if (url.pathname.endsWith("/app_config")) data = { value: true };
-    if (url.pathname.endsWith("/user_business_access")) data = memberships;
+    if (url.pathname.endsWith("/user_business_access")) {
+      if (url.searchParams.get("select") === "joined_via") {
+        const bid = url.searchParams.get("business_id")?.replace("eq.", "") ?? "";
+        const row = (memberships as Array<Record<string, unknown>>).find((m) => m.business_id === bid);
+        data = row ? { joined_via: row.joined_via ?? null } : null;
+      } else {
+        data = memberships;
+      }
+    }
+    // Task 3: an established account has already completed or skipped the one-time
+    // profile setup. Without this row the gate would treat the account as new.
+    if (url.pathname.endsWith("/profiles")) {
+      data = { id: "33333333-0000-0000-0000-000000000001", user_id: user.id, full_name: "Sarah Jenkins", avatar_url: null, phone: null, profile_setup_completed_at: "2026-10-19T00:00:00Z" };
+    }
     if (url.pathname.endsWith("/signup")) data = { user, session: null };
     if (url.pathname.endsWith("/user")) data = user;
     if (url.pathname.includes("/functions/")) data = { status: "ok" };
@@ -55,6 +73,7 @@ test("a person signs up with no business details or business-provisioning state"
   await expect(page.getByLabel("Business Name")).toHaveCount(0);
   await page.getByLabel("Email", { exact: true }).fill("person@example.com");
   await page.getByLabel("Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("PersonalPass123!");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create personal account" }).click();
   await expect(page).toHaveURL(/\/check-email\?email=/);
@@ -63,6 +82,43 @@ test("a person signs up with no business details or business-provisioning state"
   const event = requests.find((r) => r.path.endsWith("/signup-event"));
   expect(event?.body?.meta).toEqual({ signup_intent: "personal", consent: true });
   expect(requests.some((r) => r.path.endsWith("/signup-provision"))).toBe(false);
+});
+
+test("mismatched confirm password blocks personal signup before any auth or signup request", async ({ page }) => {
+  const requests = await api(page);
+  await page.goto("/signup");
+  await page.getByLabel("Your Name").fill("Sarah Jenkins");
+  await page.getByLabel("Email", { exact: true }).fill("person@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("PersonalPass124!");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Create personal account" }).click();
+  await expect(page.getByText("Passwords do not match").first()).toBeVisible();
+  await expect(page).toHaveURL(/\/signup$/);
+  expect(requests.some((r) => r.path === "/auth/v1/signup" || r.path.endsWith("/signup-event"))).toBe(false);
+});
+
+test("an existing-account signup is masked: the same check-email screen, no error toast", async ({ page }) => {
+  const requests = await api(page);
+  await page.route("http://127.0.0.1:54321/auth/v1/signup", (route) =>
+    route.fulfill({
+      status: 422,
+      json: { code: 422, error_code: "user_already_exists", msg: "User already registered" },
+    }),
+  );
+  await page.goto("/signup");
+  await page.getByLabel("Your Name").fill("Sarah Jenkins");
+  await page.getByLabel("Email", { exact: true }).fill("person@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Create personal account" }).click();
+  // Enumeration hygiene: the destination is byte-identical to the fresh-signup
+  // test above, and nothing on screen reveals the account already exists.
+  await expect(page).toHaveURL(/\/check-email\?email=person%40example\.com/);
+  await expect(page.getByText(/already registered/i)).toHaveCount(0);
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0);
+  expect(requests.some((r) => r.path === "/auth/v1/signup")).toBe(true);
 });
 
 for (const type of ["signup", "recovery"]) test(`a ${type} URL establishes a fresh session without provisioning`, async ({ page }) => {
@@ -94,7 +150,7 @@ test("a recovery callback lets a person without memberships reset their password
   expect(requests.some((r) => /signup-provision|create-business|accept.*invit/.test(r.path))).toBe(false);
 });
 
-test("existing members select only their authorized business account and resume its setup", async ({ page }) => {
+test("existing members select their authorized account and the retired wizard redirects", async ({ page }) => {
   const business = {
     id: "11111111-0000-0000-0000-000000000001",
     name: "Existing Account",
@@ -111,12 +167,17 @@ test("existing members select only their authorized business account and resume 
     localStorage.setItem("dokanos_signup_business_name", "Do Not Create");
   });
   await page.goto("/auth/confirm");
-  await page.getByRole("button", { name: "Existing Account", exact: true }).click();
-  await expect(page).toHaveURL(/\/onboarding$/);
-  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("Existing Account");
-  await page.reload();
-  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("Existing Account");
-  await expect(page.getByRole("list", { name: "Onboarding steps" })).toBeVisible();
+  // Task 2 (spec §5): a single business is auto-selected after confirmation, so
+  // the picker never renders and the app opens directly on that account.
+  // Selecting an account must not force onboarding: an account with no store
+  // is a valid app destination. Setup stays available on explicit navigation.
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Choose a business account" })).toHaveCount(0);
+  // The sidebar account switcher names itself with the account name (plus its logo alt text).
+  await expect(page.getByRole("button", { name: /^Existing Account/ }).first()).toBeVisible();
+  await page.goto("/onboarding");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 });
 
 test("explicitly creating another business switches setup to that business, not the old one", async ({ page }) => {
@@ -126,7 +187,7 @@ test("explicitly creating another business switches setup to that business, not 
   await api(page, memberships);
   await signedIn(page);
   await page.route("**/functions/v1/create-business", async (route) => {
-    memberships.push({ role: "owner", business_id: created.id, businesses: created });
+    memberships.push({ role: "owner", business_id: created.id, businesses: created, joined_via: "created" });
     await route.fulfill({ json: { business_id: created.id } });
   });
   await page.goto("/accounts");
@@ -134,9 +195,109 @@ test("explicitly creating another business switches setup to that business, not 
   await page.getByLabel("Business Name", { exact: true }).fill("New Account");
   await page.getByRole("button", { name: "Create Business", exact: true }).click();
   await expect(page).toHaveURL(/\/onboarding$/);
-  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("New Account");
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Store name", { exact: true })).toHaveValue("New Account");
+  await expect(page.getByRole("button", { name: /New Account/ })).toBeVisible();
+});
+
+test("a verified person creates their first empty business and becomes its owner", async ({ page }) => {
+  const created = { id: "11111111-0000-0000-0000-000000000003", name: "First Account", slug: "first", is_active: true };
+  const memberships: unknown[] = [];
+  const requests = await api(page, memberships);
+  await signedIn(page);
+  await page.route("**/functions/v1/create-business", async (route) => {
+    memberships.push({ role: "owner", business_id: created.id, businesses: created, joined_via: "created" });
+    await route.fulfill({ json: { business_id: created.id } });
+  });
+
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: "Create a business account", exact: true }).click();
+  await page.getByLabel("Business Name", { exact: true }).fill("First Account");
+  await page.getByRole("button", { name: "Create Business", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dokanos-active-business-id"))).toBe(created.id);
+  expect(requests.some((request) =>
+    ["POST", "PATCH", "PUT", "DELETE"].includes(request.method)
+    && /\/rest\/v1\/(brands|selling_points|stores)$/.test(request.path)
+  )).toBe(false);
+  expect(requests.some((request) =>
+    ["POST", "PATCH", "PUT", "DELETE"].includes(request.method)
+      && /\/rest\/v1\/(brands|brand_stores|stores|storefronts|selling_points)$/.test(request.path)
+  )).toBe(false);
+});
+
+test("the onboarding wizard appears after creating a business and a step can be skipped", async ({ page }) => {
+  const created = { id: "11111111-0000-0000-0000-000000000004", name: "Wizard Account", slug: "wizard", is_active: true };
+  const memberships: unknown[] = [];
+  await api(page, memberships);
+  await signedIn(page);
+  await page.route("**/functions/v1/create-business", async (route) => {
+    memberships.push({ role: "owner", business_id: created.id, businesses: created, joined_via: "created" });
+    await route.fulfill({ json: { business_id: created.id } });
+  });
+
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: "Create a business account", exact: true }).click();
+  await page.getByLabel("Business Name", { exact: true }).fill("Wizard Account");
+  await page.getByRole("button", { name: "Create Business", exact: true }).click();
+
+  // Task 13: the wizard is the post-create landing for the creator.
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByRole("heading", { name: "Set up your business" })).toBeVisible();
+  await expect(page.getByLabel("Business name")).toBeVisible();
+
+  // Skip the first step — the wizard advances to the next unmarked step.
+  await page.getByRole("button", { name: "Skip for now" }).click();
+  await expect(page.getByLabel("Brand name")).toBeVisible();
+
+  // Exit setup leaves the wizard at any point.
+  await page.getByRole("button", { name: "Exit setup" }).click();
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("switching revalidates a stale account membership before changing context", async ({ page }) => {
+  const retained = { id: "11111111-0000-0000-0000-000000000001", name: "Retained Account", slug: "retained", is_active: true };
+  const revoked = { id: "11111111-0000-0000-0000-000000000002", name: "Revoked Account", slug: "revoked", is_active: true };
+  const memberships = [
+    { role: "owner", business_id: retained.id, businesses: retained },
+    { role: "manager", business_id: revoked.id, businesses: revoked },
+  ];
+  await api(page, memberships);
+  await signedIn(page);
+  await page.addInitScript((id) => localStorage.setItem("dokanos-active-business-id", id), retained.id);
+  await page.goto("/accounts");
+  await expect(page.getByRole("button", { name: "Revoked Account", exact: true })).toBeVisible();
+
+  memberships.splice(1, 1);
+  await page.getByRole("button", { name: "Revoked Account", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/accounts$/);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dokanos-active-business-id"))).toBe(retained.id);
+  await expect(page.getByRole("button", { name: "Revoked Account", exact: true })).toHaveCount(0);
+});
+
+test("switching accounts refreshes account-scoped permissions and resources", async ({ page }) => {
+  const first = { id: "11111111-0000-0000-0000-000000000001", name: "First Context", slug: "first-context", is_active: true };
+  const second = { id: "11111111-0000-0000-0000-000000000002", name: "Second Context", slug: "second-context", is_active: true };
+  const requests = await api(page, [
+    { role: "owner", business_id: first.id, businesses: first },
+    { role: "manager", business_id: second.id, businesses: second },
+  ]);
+  await signedIn(page);
+  await page.addInitScript((id) => localStorage.setItem("dokanos-active-business-id", id), first.id);
+  await page.goto("/accounts");
+  const permissionLoadsBefore = requests.filter((request) => request.path.endsWith("/rpc/get_user_permissions")).length;
+
+  await page.getByRole("button", { name: "Second Context", exact: true }).click();
+
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dokanos-active-business-id"))).toBe(second.id);
+  await expect.poll(() => requests.filter((request) => request.path.endsWith("/rpc/get_user_permissions")).length)
+    .toBeGreaterThan(permissionLoadsBefore);
+  await expect.poll(() => requests.some((request) =>
+    request.path.endsWith("/brands") && new URL(request.url).searchParams.get("business_id")?.includes(second.id)
+  )).toBe(true);
 });
 
 test("an invalid confirmation preserves invitation intent without offering business setup", async ({ page }) => {
@@ -183,6 +344,7 @@ test("invitation intent survives signup, a fresh-device confirmation, and reload
   await page.getByLabel("Your Name").fill("Sarah Jenkins");
   await page.getByLabel("Email", { exact: true }).fill("person@example.com");
   await page.getByLabel("Password", { exact: true }).fill("PersonalPass123!");
+  await page.getByLabel("Confirm Password", { exact: true }).fill("PersonalPass123!");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create personal account" }).click();
   await expect(page).toHaveURL(/\/check-email\?.*invite=pending-invitation-token/);

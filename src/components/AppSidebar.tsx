@@ -1,15 +1,16 @@
 import { useState, useMemo } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  LayoutDashboard, ShoppingCart, Package, Users, Monitor, Plug,
+  LayoutDashboard, ShoppingCart, Package, Users, Monitor,
   Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3, Hourglass, Receipt, ChevronsUpDown, Check, Store,
-  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags, Plus
+  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags, Plus, UserPlus, Inbox
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
-import { useStoresList } from "@/hooks/useStoresList";
+import { useActiveBusinessStoreIds } from "@/hooks/useActiveBusinessStoreIds";
+import { navigationRoleForBusinessRole } from "@/lib/accounts/rolePresentation";
 import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -49,7 +50,7 @@ const BASE_NAV_GROUPS: NavGroup[] = [
         { icon: Trash2, label: "Trash", path: "/orders?tab=trash", roles: ["admin", "staff", "viewer"] },
       ] },
       { icon: Monitor, label: "POS", path: "/pos", roles: ["admin", "staff"], children: [
-        { icon: Receipt, label: "POS Reports", path: "/pos/reports", roles: ["admin"] },
+        { icon: Receipt, label: "POS Reports", path: "/pos/reports", roles: ["admin", "staff"] },
       ] },
     ]
   },
@@ -63,10 +64,12 @@ const BASE_NAV_GROUPS: NavGroup[] = [
   {
     title: "System",
     items: [
-      { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin"] },
-      { icon: Store, label: "Stores", path: "/stores", roles: ["admin", "staff"] },
-      { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin"] },
-      { icon: Plug, label: "Integrations", path: "/integrations", roles: ["admin"] },
+      { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin", "staff"] },
+      { icon: Tags, label: "Brands", path: "/brands", roles: ["admin", "staff", "viewer"] },
+      { icon: UserPlus, label: "Members", path: "/members", roles: ["admin"] },
+      { icon: Store, label: "Order Sources", path: "/order-sources", roles: ["admin", "staff"] },
+      { icon: Inbox, label: "Legacy Pool", path: "/legacy-pool", roles: ["admin", "staff"] },
+      { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin", "staff"] },
       { icon: UsersRound, label: "Team", path: "/team", roles: ["admin"] },
       { icon: Settings, label: "Settings", path: "/settings", roles: ["admin"] },
     ]
@@ -95,6 +98,11 @@ const AppSidebar = ({
   // Multi-business Phase 1: prefer real businesses over the invoice_settings
   // profile rows. Same UI shape either way (name + logo + switcher).
   const { active: activeBusiness, businesses, setActive: setActiveBusiness, brands, rolesByBusiness } = useBusinessContext();
+  // First-release owners/members may have no legacy user_roles row. Their
+  // account membership is the authority for this release, so derive the nav
+  // role from it instead of leaving the sidebar empty for an empty account.
+  const businessRole = activeBusiness ? rolesByBusiness[activeBusiness.id] ?? null : null;
+  const navRole = activeBusiness ? navigationRoleForBusinessRole(businessRole) : role;
   const [createBizOpen, setCreateBizOpen] = useState(false);
   const active = activeBusiness
     ? { id: activeBusiness.id, business_name: activeBusiness.name, logo_url: activeBusiness.logo_url }
@@ -113,24 +121,27 @@ const AppSidebar = ({
     }
   };
   
-  // Fetch product categories for the active business's stores. The previous
-  // query compared categories.store_id to the business id, which can never
-  // match in the current tenant model and left the sidebar category tree empty.
-  const businessStores = useStoresList();
-  const storeIds = businessStores.map((store) => store.id);
+  // Product categories of the ACTIVE business.
+  //
+  // Hybrid tenancy (issue #16): a category's tenant link is categories.store_id
+  // → a store of the active business. The old predicate compared store_id to
+  // the BUSINESS id, which is a different column entirely, so new-model
+  // businesses (business id ≠ any store id) saw no categories at all. Scope by
+  // the active business's store ids instead, and fail closed on an empty scope.
+  const categoryStoreIds = useActiveBusinessStoreIds();
   const { data: productCategories } = useQuery({
-    queryKey: ['product_categories', active?.id, storeIds],
+    queryKey: ['product_categories', active?.id, categoryStoreIds],
     queryFn: async () => {
-      if (storeIds.length === 0) return [];
+      if (categoryStoreIds.length === 0) return [];
       const { data, error } = await supabase
         .from('categories')
         .select('id, name')
-        .in('store_id', storeIds)
+        .in('store_id', categoryStoreIds)
         .order('name');
       if (error) throw error;
       return data || [];
     },
-    enabled: !!active?.id && storeIds.length > 0,
+    enabled: !!active?.id && categoryStoreIds.length > 0,
   });
 
   const navGroups = useMemo(() => {
@@ -296,7 +307,7 @@ const AppSidebar = ({
         <TooltipProvider delayDuration={0}>
           <nav className="flex-1 space-y-4 px-3 pb-4">
             {navGroups.map((group) => {
-              const groupItems = group.items.filter(item => role && item.roles.includes(role));
+              const groupItems = group.items.filter(item => navRole && item.roles.includes(navRole));
               if (groupItems.length === 0) return null;
 
               return (
@@ -307,7 +318,7 @@ const AppSidebar = ({
                     </h4>
                   )}
                   {groupItems.map((item) => {
-                    const children = item.children?.filter((c) => role && c.roles.includes(role)) || [];
+                    const children = item.children?.filter((c) => navRole && c.roles.includes(navRole)) || [];
                     
                     const isItemPathActive = (path: string) => {
                       const [basePath, query] = path.split('?');

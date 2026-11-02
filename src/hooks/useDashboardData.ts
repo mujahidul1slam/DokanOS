@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format, subDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import type { DateRange } from "react-day-picker";
 import { type DatePreset, resolveRange } from "@/components/DatePresetPicker";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
-import { useStoresList } from "@/hooks/useStoresList";
+import { NO_STORE_IDS, scopeStoreIds, selectedStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 
 export interface OrderRow {
   id: string;
@@ -78,13 +78,19 @@ const uniqueCustomersOf = (rows: OrderRow[]) => {
   return set.size;
 };
 
+/**
+ * Hybrid tenancy (issue #16): every read below is scoped to
+ * `businessStoreIds` — the store ids of the ACTIVE business, supplied by
+ * `useActiveBusinessStoreIds()`. An empty scope FAILS CLOSED: no query is issued
+ * and no rows are returned, rather than reading the whole table (the old
+ * cross-business leak). "all" therefore means all stores of the active business.
+ */
 export const useDashboardData = (
   datePreset: DatePreset,
   customRange: DateRange | undefined,
   storeId: string = "all",
+  businessStoreIds: string[] = NO_STORE_IDS,
 ) => {
-  const businessStores = useStoresList();
-  const businessStoreIds = useMemo(() => businessStores.map((s) => s.id), [businessStores]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [prevOrders, setPrevOrders] = useState<OrderRow[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemLite[]>([]);
@@ -94,11 +100,55 @@ export const useDashboardData = (
   const [lowStockCount, setLowStockCount] = useState(0);
   const [outOfStockCount, setOutOfStockCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  /**
+   * Loads started minus loads finished. `loading` only flips after the last
+   * query of a scope sweep, so a caller that must observe a COMPLETE sweep (a
+   * switch, or a test asserting that no further query follows) waits for
+   * `pendingLoads === 0` instead of racing the multi-round-trip load.
+   *
+   * The accounting is symmetric by construction: a sweep takes exactly one count
+   * at the point its queries start, every exit path that follows takes releases
+   * that one count, and the fail-closed path (no store scope) starts no load and
+   * therefore touches no count. Zero means every sweep that ever started has
+   * stopped — including the ones whose responses were discarded after a switch.
+   */
+  const [pendingLoads, setPendingLoads] = useState(0);
   const globalStockEnabled = useGlobalStockEnabled();
+  /** Latest-request token: stale responses from a previous scope never commit. */
+  const loadToken = useRef(0);
 
   useEffect(() => {
+    // A business/store switch re-runs this effect while the previous load may
+    // still be in flight. Token-gate every commit so a late response from the
+    // PREVIOUS business can never repaint the new business's KPIs.
+    const token = ++loadToken.current;
     const load = async () => {
+      const scope = selectedStoreScope(storeId, businessStoreIds);
+      const source = scope.source;
+      if (token !== loadToken.current) return; // superseded by a newer scope/switch
+
+      // Fail closed BEFORE any query: with no store scope there is nothing this
+      // business may read, so clear the KPI state instead of fetching everything.
+      // This path starts no load, so it takes no count and releases none: a
+      // decrement here would hand back a count that belongs to an earlier,
+      // still-in-flight sweep and make `pendingLoads` read zero while that sweep
+      // is running.
+      if (scope.storeIds.length === 0) {
+        if (token !== loadToken.current) return;
+        setOrders([]);
+        setPrevOrders([]);
+        setOrderItems([]);
+        setProducts([]);
+        setAllOrdersCount(0);
+        setProductsCount(0);
+        setLowStockCount(0);
+        setOutOfStockCount(0);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
+      setPendingLoads((n) => n + 1);
       const { from, to, days } = resolveRange(datePreset, customRange);
 
       // Fair prior-period window:
@@ -125,10 +175,8 @@ export const useDashboardData = (
       if (from) curQ = curQ.gte("created_at", from.toISOString());
       if (to && (datePreset === "custom" || datePreset === "today" || datePreset === "yesterday"))
         curQ = curQ.lte("created_at", to.toISOString());
-      if (businessStoreIds.length > 0) curQ = curQ.in("store_id", businessStoreIds);
-      else curQ = curQ.eq("store_id", "00000000-0000-0000-0000-000000000000");
-      if (storeId === "pos") curQ = curQ.eq("source", "pos");
-      else if (storeId !== "all") curQ = curQ.eq("store_id", storeId);
+      if (source) curQ = curQ.eq("source", source);
+      curQ = scopeStoreIds(curQ, scope.storeIds);
 
       let prevQ = supabase.from("orders").select(BASE_SEL).is("deleted_at", null);
       if (prevFrom && prevTo) {
@@ -136,36 +184,31 @@ export const useDashboardData = (
       } else {
         prevQ = prevQ.eq("id", "00000000-0000-0000-0000-000000000000");
       }
-      if (businessStoreIds.length > 0) prevQ = prevQ.in("store_id", businessStoreIds);
-      else prevQ = prevQ.eq("store_id", "00000000-0000-0000-0000-000000000000");
-      if (storeId === "pos") prevQ = prevQ.eq("source", "pos");
-      else if (storeId !== "all") prevQ = prevQ.eq("store_id", storeId);
+      if (source) prevQ = prevQ.eq("source", source);
+      prevQ = scopeStoreIds(prevQ, scope.storeIds);
 
       let allCountQ = supabase
         .from("orders")
         .select("id", { count: "exact", head: true })
         .is("deleted_at", null);
-      if (businessStoreIds.length > 0) allCountQ = allCountQ.in("store_id", businessStoreIds);
-      else allCountQ = allCountQ.eq("store_id", "00000000-0000-0000-0000-000000000000");
-      if (storeId === "pos") allCountQ = allCountQ.eq("source", "pos");
-      else if (storeId !== "all") allCountQ = allCountQ.eq("store_id", storeId);
+      if (source) allCountQ = allCountQ.eq("source", source);
+      allCountQ = scopeStoreIds(allCountQ, scope.storeIds);
 
       // Accurate product totals (head-only counts so the 1000-row default never truncates)
-      let productsCountQ = supabase
-        .from("products")
-        .select("id", { count: "exact", head: true });
-      if (businessStoreIds.length > 0) productsCountQ = productsCountQ.in("store_id", businessStoreIds);
-      else productsCountQ = productsCountQ.eq("store_id", "00000000-0000-0000-0000-000000000000");
+      const productsCountQ = scopeStoreIds(
+        supabase.from("products").select("id", { count: "exact", head: true }),
+        scope.storeIds,
+      );
 
       const [curRes, prevRes, productsRes, allCountRes, productsCountRes] = await Promise.all([
         curQ,
         prevQ,
-        (() => {
-          let q = supabase
+        scopeStoreIds(
+          supabase
             .from("products")
-            .select("id, name, sku, stock_quantity, stock_status, manage_stock, price, cost_price");
-          return businessStoreIds.length > 0 ? q.in("store_id", businessStoreIds) : q.eq("store_id", "00000000-0000-0000-0000-000000000000");
-        })(),
+            .select("id, name, sku, stock_quantity, stock_status, manage_stock, price, cost_price"),
+          scope.storeIds,
+        ),
         allCountQ,
         productsCountQ,
       ]);
@@ -177,6 +220,8 @@ export const useDashboardData = (
       let items: OrderItemLite[] = [];
       if (curOrders.length > 0) {
         const ids = curOrders.map((o) => o.id);
+        // order_items has no store_id in the legacy schema; it is already
+        // bounded by the tenant-scoped order ids above.
         const { data: itemsData } = await supabase
           .from("order_items")
           .select("product_id, product_name, quantity, line_total, unit_price, order_id")
@@ -184,35 +229,46 @@ export const useDashboardData = (
         items = (itemsData || []) as OrderItemLite[];
       }
 
-      // Accurate stock counts via head queries (avoid 1000-row truncation)
+      // Accurate stock counts via head queries (avoid 1000-row truncation).
+      // Stock visibility depends on the business's products only. The tenant
+      // predicate goes immediately after the filter builder exists, before the
+      // remaining `eq` predicate, so no `_and` forwarding is needed.
       const [lowRes, oosRes] = await Promise.all([
         supabase
           .from("products")
           .select("id", { count: "exact", head: true })
-          .eq("manage_stock", true)
-          .in("store_id", businessStoreIds.length ? businessStoreIds : ["00000000-0000-0000-0000-000000000000"])
           .gt("stock_quantity", 0)
-          .lte("stock_quantity", 10),
+          .lte("stock_quantity", 10)
+          .in("store_id", scope.storeIds)
+          .eq("manage_stock", true),
         supabase
           .from("products")
           .select("id", { count: "exact", head: true })
-          .in("store_id", businessStoreIds.length ? businessStoreIds : ["00000000-0000-0000-0000-000000000000"])
-          .or("stock_status.eq.outofstock,and(manage_stock.eq.true,stock_quantity.lte.0)"),
+          .or("stock_status.eq.outofstock,and(manage_stock.eq.true,stock_quantity.lte.0)")
+          .in("store_id", scope.storeIds),
       ]);
-
-      setOrders(curOrders);
-      setPrevOrders(prevOrdersData);
-      setOrderItems(items);
-      setProducts(allProducts);
-      setAllOrdersCount(allCountRes.count || 0);
-      setProductsCount(productsCountRes.count || 0);
-      setLowStockCount(globalStockEnabled ? lowRes.count || 0 : 0);
-      setOutOfStockCount(globalStockEnabled ? oosRes.count || 0 : 0);
-      setLoading(false);
+      // A superseded sweep STILL stops running here, so it must not return before
+      // the single release below: the count it took is a count it owes back.
+      // Otherwise a switch leaves `pendingLoads` stuck above zero forever and a
+      // caller waiting for a settled scope waits indefinitely.
+      const superseded = token !== loadToken.current;
+      if (!superseded) {
+        setOrders(curOrders);
+        setPrevOrders(prevOrdersData);
+        setOrderItems(items);
+        setProducts(allProducts);
+        setAllOrdersCount(allCountRes.count || 0);
+        setProductsCount(productsCountRes.count || 0);
+        setLowStockCount(globalStockEnabled ? lowRes.count || 0 : 0);
+        setOutOfStockCount(globalStockEnabled ? oosRes.count || 0 : 0);
+        setLoading(false);
+      }
+      // The one and only release for the one and only count taken above, reached
+      // by every path that took it (commit or superseded).
+      setPendingLoads((n) => (n > 0 ? n - 1 : n));
     };
     load();
   }, [datePreset, customRange, globalStockEnabled, storeId, businessStoreIds]);
-
   const productCostMap = useMemo(() => {
     const m = new Map<string, number>();
     products.forEach((p) => {
@@ -371,6 +427,11 @@ export const useDashboardData = (
 
   return {
     loading,
+    /**
+     * Number of scope sweeps still in flight. Zero means every query for the
+     * current scope has settled, so `orders`/`products` are final for that scope.
+     */
+    pendingLoads,
     orders,
     products,
     productsCount,

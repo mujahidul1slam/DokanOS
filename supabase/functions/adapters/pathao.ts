@@ -71,6 +71,8 @@ const RAW_STATUS_MAP: Record<string, { canonical: CanonicalStatus; legacy: strin
   "damaged": { canonical: "lost", legacy: "returned" },
   // Cancel / hold
   "cancelled": { canonical: "cancelled", legacy: "cancelled" },
+  // Single-L spelling observed in the wild (see migration 20260418233014).
+  "canceled": { canonical: "cancelled", legacy: "cancelled" },
   // Pickup never happened, so no shipment exists to track.
   "pickup cancel": { canonical: "cancelled", legacy: "cancelled" },
   "pickup cancelled": { canonical: "cancelled", legacy: "cancelled" },

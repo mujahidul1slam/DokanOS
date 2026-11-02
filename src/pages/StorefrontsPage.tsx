@@ -1,26 +1,24 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { toast } from "@/hooks/use-toast";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { invalidateSlugCache } from "@/storefront/lib/brand";
 import type { Storefront } from "@/storefront/lib/brand";
-import { useBusinessContext } from "@/hooks/useBusinessContext";
-import { THEME_PRESETS } from "@/components/storefront-admin/shared";
+import { useActiveBusinessStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 import StorefrontAdminShell from "@/components/storefront-admin/StorefrontAdminShell";
 import { StorefrontOverview } from "@/components/storefront-admin/AdminPages";
 import StorefrontAdminEditor from "@/components/storefront-admin/StorefrontAdminEditor";
+import { CreateStorefrontDialog } from "@/components/storefront/StorefrontSubOnboarding";
 
 /**
  * Storefronts (overhaul 2.1 / fix C + D): clicking "Storefronts" in the main
  * sidebar renders the admin panel DIRECTLY — no secondary page, no button.
  * The legacy tabbed editor is removed. Storefront switching happens in the
  * panel header; each storefront shows its brand (2.2).
+ *
+ * Storefront creation is the shared sub-onboarding (Task 14, spec §6a step 6):
+ * `CreateStorefrontDialog` from src/components/storefront runs the same
+ * name/slug → theme → payments → publish flow the onboarding wizard uses.
  *
  * URL forms handled:
  *   /storefronts                          → last-used (or first) storefront, Overview
@@ -47,9 +45,21 @@ export default function StorefrontsPage() {
   const [list, setList] = useState<Storefront[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const businessStoreIds = useActiveBusinessStoreIds();
 
   async function reload() {
-    const { data } = await supabase.from("storefronts").select("*").order("name");
+    // Fail closed (issue #16): without the active business's store scope, no
+    // storefronts are readable — an empty scope is "no stores", not "all stores".
+    if (!hasStoreScope(businessStoreIds)) {
+      setList([]);
+      invalidateSlugCache();
+      return [];
+    }
+    const { data } = await supabase
+      .from("storefronts")
+      .select("*")
+      .in("store_id", businessStoreIds)
+      .order("name");
     setList((data as any) || []);
     invalidateSlugCache();
     return data;
@@ -57,7 +67,9 @@ export default function StorefrontsPage() {
 
   useEffect(() => {
     reload().then(() => setLoading(false));
-  }, []);
+    // businessStoreIds has stable identity per store set (see seam docs), so
+    // the list reloads exactly when the active business's scope changes.
+  }, [businessStoreIds]);
 
   // Resolve the active storefront: URL slug → last-used → first
   const active =
@@ -117,192 +129,5 @@ export default function StorefrontsPage() {
         onCreate={async (newSf) => { await reload(); navigate(`/storefronts/${newSf.slug}/admin/dashboard`); }}
       />
     </StorefrontAdminShell>
-  );
-}
-
-/* ---------------- Create storefront (fix D: brand picker + auto-create) ---------------- */
-
-function CreateStorefrontDialog({ open, onOpenChange, onCreate, autoOpen }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onCreate: (sf: any) => void;
-  /** Empty-state mode: the trigger button is hidden (page auto-opens the dialog). */
-  autoOpen?: boolean;
-}) {
-  const { active: activeBusiness } = useBusinessContext();
-  const businessId = activeBusiness?.id ?? null;
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [theme, setTheme] = useState("editorial");
-  const [brandChoice, setBrandChoice] = useState<string>("__new");
-  const [brands, setBrands] = useState<{ id: string; name: string; woo_store_id?: string | null }[]>([]);
-  const [saving, setSaving] = useState(false);
-
-  // Brands of the active business (fix D: pick existing instead of always creating)
-  useEffect(() => {
-    if (!businessId) { setBrands([]); return; }
-    supabase.from("brands").select("id, name, woo_store_id").eq("business_id", businessId).order("name")
-      .then(({ data }) => setBrands((data as any) || []));
-  }, [businessId, open]);
-
-  useEffect(() => {
-    if (!open) {
-      setName("");
-      setSlug("");
-      setTheme("editorial");
-      setBrandChoice("__new");
-    }
-  }, [open]);
-
-  function handleNameChange(val: string) {
-    setName(val);
-    if (!slug || slug === name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")) {
-      setSlug(val.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
-    }
-  }
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name || !slug) return;
-    setSaving(true);
-
-    const defaultAccents: Record<string, string> = {
-      editorial: "#814037",
-      cinematic: "#ffffff",
-      minimal: "#000000",
-      warm: "#b56149",
-      nimbus: "#2563EB",
-      saffron: "#C2410C",
-    };
-
-    // Overhaul 2.2 + fix D: brand is the root container. Use the picked
-    // existing brand; "__new" auto-creates one matching the storefront name.
-    let brandId: string | null = null;
-    if (businessId) {
-      if (brandChoice !== "__new" && brands.some((b) => b.id === brandChoice)) {
-        brandId = brandChoice;
-      } else {
-        const { data: brandRow, error: brandErr } = await supabase
-          .from("brands")
-          .insert({ name: name.trim(), slug: slug.trim(), business_id: businessId })
-          .select()
-          .single();
-        if (brandErr) {
-          toast({ title: "Brand creation failed", description: brandErr.message, variant: "destructive" });
-        }
-        brandId = (brandRow as any)?.id ?? null;
-      }
-    }
-
-    // Scoped store resolution: pick store linked to brand/business
-    let storeId: string | null = brands.find((b) => b.id === brandId)?.woo_store_id || null;
-    if (!storeId) {
-      const activeStoreIds = brands.map((b) => b.woo_store_id).filter(Boolean) as string[];
-      let storeQuery = supabase.from("stores").select("id");
-      if (activeStoreIds.length > 0) {
-        storeQuery = storeQuery.in("id", activeStoreIds);
-      }
-      const { data: storeData } = await storeQuery.limit(1).maybeSingle();
-      storeId = storeData?.id || null;
-    }
-
-    const { data, error } = await supabase.from("storefronts").insert({
-      name,
-      slug,
-      theme,
-      accent_hex: defaultAccents[theme] || "#000000",
-      store_id: storeId,
-      brand_id: brandId,
-      currency: "BDT",
-    }).select().single();
-
-    setSaving(false);
-    if (error) {
-      toast({ title: "Failed to create", description: error.message, variant: "destructive" });
-    } else if (data) {
-      // Overhaul 3.3: scaffold essential pages (Home + themed starter sections + Contact)
-      try {
-        const { scaffoldStorefront } = await import("@/storefront/lib/pages");
-        await scaffoldStorefront((data as any).id, name, theme);
-      } catch {
-        /* scaffolding is best-effort; page creation can continue manually */
-      }
-      toast({ title: "Storefront created", description: "Starter pages (Home, Contact) were scaffolded." });
-      onCreate(data);
-      onOpenChange(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      {!autoOpen && (
-        <DialogTrigger asChild>
-          <Button variant="default" size="sm" className="gap-2">
-            <Plus className="h-4 w-4" /> New Storefront
-          </Button>
-        </DialogTrigger>
-      )}
-      <DialogContent className="sm:max-w-[500px]">
-        <form onSubmit={handleCreate}>
-          <DialogHeader>
-            <DialogTitle>Create new storefront</DialogTitle>
-            <DialogDescription>
-              Launch a new native storefront under a brand. Starter pages are created automatically.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-6">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Storefront Name</Label>
-              <Input id="name" value={name} onChange={(e) => handleNameChange(e.target.value)} required placeholder="e.g. My Brand" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="slug">URL Slug</Label>
-              <Input id="slug" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} required placeholder="e.g. my-brand" />
-              <p className="text-xs text-muted-foreground">Will be accessible at /storefront/{slug || "..."}</p>
-            </div>
-            <div className="grid gap-2">
-              <Label>Brand</Label>
-              <Select value={brandChoice} onValueChange={setBrandChoice}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pick a brand…" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__new">Create new brand (“{name || "name"}”)</SelectItem>
-                  {brands.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">Every storefront belongs to a brand — pick an existing one or create a new one.</p>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="theme">Initial Theme</Label>
-              <Select value={theme} onValueChange={setTheme}>
-                <SelectTrigger id="theme">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {THEME_PRESETS.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      <div>
-                        <div>{t.label}</div>
-                        <div className="text-xs text-muted-foreground">{t.description}</div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={saving || !name || !slug}>
-              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -18,7 +18,7 @@ SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000005","
 DO $$
 BEGIN
   BEGIN
-    PERFORM public.set_member_business_role('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'member');
+    PERFORM public.set_member_business_role('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'manager');
     RAISE EXCEPTION 'FAIL: W7-AC3 non-manager changed a member role' USING ERRCODE = 'P0001';
   EXCEPTION
     WHEN SQLSTATE '42501' THEN NULL;
@@ -48,7 +48,7 @@ SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000006","
 DO $$
 BEGIN
   BEGIN
-    PERFORM public.set_member_business_role('00000000-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000002', 'member');
+    PERFORM public.set_member_business_role('00000000-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000002', 'manager');
     RAISE EXCEPTION 'FAIL: W7-AC4 sole owner self-demoted via RPC' USING ERRCODE = 'P0001';
   EXCEPTION
     WHEN SQLSTATE '23514' THEN NULL;  -- last-owner protection raise
@@ -69,25 +69,27 @@ END $$;
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims TO '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}';
-PERFORM public.set_member_business_role('00000000-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001', 'member');
+SELECT public.set_member_business_role('00000000-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001', 'manager');
 COMMIT;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.user_business_access
                   WHERE business_id='11111111-0000-0000-0000-000000000001'
-                    AND user_id='00000000-0000-0000-0000-000000000005' AND role='member') THEN
+                    AND user_id='00000000-0000-0000-0000-000000000005' AND role='manager') THEN
     RAISE EXCEPTION 'FAIL: W7-AC1 role change did not persist' USING ERRCODE = 'P0001';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.audit_log
                   WHERE entity_type='user_business_access'
                     AND details->>'business_id'='11111111-0000-0000-0000-000000000001'
-                    AND details->>'new_role'='member') THEN
+                    AND details->>'new_role'='manager') THEN
     RAISE EXCEPTION 'FAIL: W7-AC1 audit row missing' USING ERRCODE = 'P0001';
   END IF;
 END $$;
--- paired cleanup: restore fixture
-UPDATE public.user_business_access SET role='viewer'
+-- paired cleanup: restore fixture. Commit explicitly: when the whole file is
+-- sent as one multi-statement batch, a later ROLLBACK would otherwise undo it.
+UPDATE public.user_business_access SET role='staff'
  WHERE business_id='11111111-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000005';
+COMMIT;
 
 -- AC-1b (Shape A): uba-admin (not owner) elevates MEMBER_A to owner → RPC raises (elevation rule)
 BEGIN;
@@ -112,8 +114,13 @@ DO $$
 DECLARE r record;
 BEGIN
   SELECT * INTO r FROM public.get_member_access('00000000-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001');
-  IF r.business_role IS DISTINCT FROM 'member' THEN
+  IF r.business_role IS DISTINCT FROM 'manager' THEN
     RAISE EXCEPTION 'FAIL: W7-AC5 get_member_access returned wrong role (%)', r.business_role USING ERRCODE = 'P0001';
+  END IF;
+  IF r.effective_perms IS NULL
+     OR NOT ('dashboard.view' = ANY(r.effective_perms))
+     OR 'settings.manage' = ANY(r.effective_perms) THEN
+    RAISE EXCEPTION 'FAIL: W7-AC5 expected staff permissions without settings.manage' USING ERRCODE = 'P0001';
   END IF;
 END $$;
 ROLLBACK;

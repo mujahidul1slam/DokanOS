@@ -10,6 +10,7 @@ import { Loader2, ArrowLeft } from "lucide-react";
 import { mapAuthError } from "@/lib/authErrors";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 import { invitationPath } from "@/lib/invitationPath";
+import { POST_LOGIN_STATE } from "@/lib/accounts/landing";
 
 const ResetPassword = () => {
   const [password, setPassword] = useState("");
@@ -51,7 +52,7 @@ const ResetPassword = () => {
       toast.error(mapAuthError(error));
     } else {
       toast.success("Password updated successfully");
-      navigate(invitationPath("/accounts"), { replace: true });
+      navigate(invitationPath("/accounts"), { replace: true, state: POST_LOGIN_STATE });
     }
   };
 

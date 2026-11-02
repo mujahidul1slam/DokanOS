@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +8,33 @@ import { Loader2 } from "lucide-react";
 import dokanosLogo from "@/assets/dokanos-logo-stacked.png";
 import { invitationPath } from "@/lib/invitationPath";
 import { initialAuthCallbackType } from "@/lib/authCallbackIntent";
+import { POST_LOGIN_STATE } from "@/lib/accounts/landing";
+import { isProfileSetupOwed } from "@/lib/accounts/profileSetup";
+import {
+  resolveAuthConfirm,
+  type AuthConfirmDeps,
+} from "@/lib/accounts/authConfirmFlow";
+
+/** Adapts the supabase client to the flow's deps (unit-tested with fakes). */
+const authConfirmDeps: AuthConfirmDeps = {
+  verifyOtp: async ({ type, token_hash }) => {
+    const { data, error } = await supabase.auth.verifyOtp({
+      type: type as EmailOtpType,
+      token_hash,
+    });
+    return { user: data?.user ?? null, error };
+  },
+  getSession: async () => {
+    const { data, error } = await supabase.auth.getSession();
+    return { user: data?.session?.user ?? null, error };
+  },
+  getUser: async () => {
+    const { data, error } = await supabase.auth.getUser();
+    return { user: data?.user ?? null, error };
+  },
+  isProfileSetupOwed: (userId) => isProfileSetupOwed(supabase, userId),
+  settle: () => new Promise((resolve) => setTimeout(resolve, 1200)),
+};
 
 /** Authentication callbacks never create business resources or accept invitations. */
 export default function AuthConfirm() {
@@ -16,34 +44,29 @@ export default function AuthConfirm() {
 
   useEffect(() => {
     let active = true;
-    async function confirm() {
-      try {
-        const hash = new URLSearchParams(window.location.hash.slice(1));
-        if (params.has("error") || hash.has("error")) {
-          throw new Error("This confirmation link is invalid or expired. Sign in or request a new link.");
-        }
-        let { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (!session) {
-          // Allow the auth client to finish exchanging a callback URL.
-          await new Promise((resolve) => setTimeout(resolve, 1200));
-          const result = await supabase.auth.getSession();
-          session = result.data.session;
-          error = result.error;
-          if (error) throw error;
-        }
-        if (!active) return;
-        if (!session?.user.email_confirmed_at) {
-          setMessage("Sign in with your verified email to continue. No business setup is required.");
-          return;
-        }
-        const recovery = params.get("type") === "recovery" || hash.get("type") === "recovery" || initialAuthCallbackType === "recovery";
-        navigate(invitationPath(recovery ? "/reset-password" : "/accounts", params), { replace: true });
-      } catch (error) {
-        if (active) setMessage(error instanceof Error ? error.message : "Could not verify your confirmation link.");
+    (async () => {
+      const outcome = await resolveAuthConfirm(authConfirmDeps, {
+        search: params,
+        hash: new URLSearchParams(window.location.hash.slice(1)),
+        initialType: initialAuthCallbackType,
+      });
+      if (!active) return;
+      if (outcome.kind === "message") {
+        setMessage(outcome.message);
+        return;
       }
-    }
-    confirm();
+      if (outcome.kind === "reset-password") {
+        navigate(invitationPath("/reset-password", params), { replace: true });
+        return;
+      }
+      // Task 3: the one-time profile setup comes after verification and before
+      // the business flow (the flow is fail-soft on the profiles read).
+      if (outcome.kind === "profile-setup") {
+        navigate(invitationPath("/profile/setup", params), { replace: true });
+        return;
+      }
+      navigate(invitationPath("/accounts", params), { replace: true, state: POST_LOGIN_STATE });
+    })();
     return () => { active = false; };
   }, [navigate, params]);
 

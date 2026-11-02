@@ -1,12 +1,22 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Send, Loader2, AlertTriangle, Check, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
+import {
+  courierProviderInfo,
+  courierServiceIntegrationId,
+  courierProviderLabel,
+  type CourierServiceRow,
+} from "@/lib/courierServices";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -23,7 +33,6 @@ import {
 import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/useCurrency";
-import { useBusinessContext } from "@/hooks/useBusinessContext";
 import {
   isAccountOverride,
   groupOrdersForDispatch,
@@ -114,12 +123,16 @@ interface DispatchDialogProps {
 
 export default function DispatchDialog({ open, onOpenChange, orders, onDispatched, onRemoveOrder }: DispatchDialogProps) {
   const { symbol } = useCurrency();
-  const { brands } = useBusinessContext();
+  const { active, brands } = useBusinessContext();
   const [dispatching, setDispatching] = useState(false);
 
   // "This order already has a courier entry" confirm-replace dialog.
   const [existingOrders, setExistingOrders] = useState<DispatchOrder[]>([]);
   const [replaceOrderIds, setReplaceOrderIds] = useState<Set<string>>(new Set());
+  // Business-level courier service (spec §4): the picker gates the dispatch
+  // button; each brand/account group's Pathao Account still owns the booking.
+  const [courierServices, setCourierServices] = useState<CourierServiceRow[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState("");
   const [cities, setCities] = useState<City[]>([]);
   const [allZones, setAllZones] = useState<Zone[]>([]);
   const [zonesMap, setZonesMap] = useState<Record<number, Zone[]>>({});
@@ -207,19 +220,30 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     if (!open) return;
     let mounted = true;
     (async () => {
-      const [accountData, { data: citiesData }, { data: zonesData }] = await Promise.all([
+      const [accountData, { data: citiesData }, { data: zonesData }, { data: services }] = await Promise.all([
         fetchPathaoAccountData(),
         supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
         supabase.from("pathao_zones").select("zone_id, zone_name, city_id").order("zone_name"),
+        active
+          ? supabase.from("courier_services").select("*").eq("business_id", active.id).eq("is_active", true).order("name")
+          : Promise.resolve({ data: [] }),
       ]);
       if (!mounted) return;
       setAccountOptions(accountData.accounts);
       setStoreLinks(accountData.links);
       setCities(citiesData || []);
       setAllZones(zonesData || []);
+      const serviceRows = (services || []) as CourierServiceRow[];
+      setCourierServices(serviceRows);
+      // Dispatch defaults to the business's first Pathao-capable service.
+      if (serviceRows.length > 0) {
+        const preferred = serviceRows.find((s) => courierServiceIntegrationId(s) !== null || s.provider === "pathao");
+        const defaultServiceId = (preferred ?? serviceRows[0]).id;
+        setSelectedServiceId((prev) => prev || defaultServiceId);
+      }
     })();
     return () => { mounted = false; };
-  }, [open]);
+  }, [open, active]);
 
   // Per-order Brand/Selling Point identity for the auto-grouped dispatch.
   useEffect(() => {
@@ -677,6 +701,11 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
     }
   };
 
+  const selectedService = courierServices.find((s) => s.id === selectedServiceId) ?? null;
+  const serviceSupportsDispatch = selectedService
+    ? (courierProviderInfo(selectedService.provider)?.dispatchSupported ?? false)
+    : false;
+
   return (
     <>
     <ResponsiveDialog
@@ -799,7 +828,7 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
           })}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={handleDispatch} disabled={dispatching || visibleOrders.length === 0} className="gap-2">
+            <Button onClick={handleDispatch} disabled={dispatching || visibleOrders.length === 0 || !serviceSupportsDispatch} className="gap-2">
               {dispatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Dispatch {visibleOrders.length} Order(s)
             </Button>
@@ -807,6 +836,34 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         </div>
       }
     >
+        {/* Business-level courier service (spec §4) */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 pb-2">
+          <Label className="text-sm font-medium whitespace-nowrap">Courier service:</Label>
+          <Select value={selectedServiceId} onValueChange={setSelectedServiceId}>
+            <SelectTrigger className="w-full sm:w-[320px]">
+              <SelectValue placeholder={courierServices.length > 0 ? "Select courier service" : "No courier services yet"} />
+            </SelectTrigger>
+            <SelectContent>
+              {courierServices.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name} · {courierProviderLabel(s.provider)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedService && !serviceSupportsDispatch && (
+            <p className="text-xs text-muted-foreground">
+              {courierProviderLabel(selectedService.provider)} dispatch arrives with its adapter —
+              pick a Pathao service to dispatch now.
+            </p>
+          )}
+          {courierServices.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Add the business's courier account under Settings → Courier services.
+            </p>
+          )}
+        </div>
+
         <div className="space-y-6">
           {visibleOrders.length === 0 && (
             <p className="text-sm text-muted-foreground">No orders in this batch.</p>

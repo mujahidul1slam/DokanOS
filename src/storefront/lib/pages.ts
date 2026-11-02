@@ -114,7 +114,10 @@ export async function getDraftPage(storefrontId: string, slug: string): Promise<
  * Storefront initialization scaffolding (overhaul 3.3): create the essential
  * pages for a new storefront based on its theme — a Home page with themed
  * starter sections and a Contact page. Non-essential boilerplate is skipped.
- * Idempotent: skips pages that already exist.
+ * Idempotent: skips pages that already exist. Throws on a failed page or
+ * section insert so the caller can report the outcome honestly — the create
+ * pipeline treats scaffolding as best-effort and must not claim pages exist
+ * when their insert was rejected (e.g. by RLS).
  */
 export async function scaffoldStorefront(storefrontId: string, name: string, theme: string): Promise<void> {
   const { data: existing } = await supabase
@@ -133,23 +136,26 @@ export async function scaffoldStorefront(storefrontId: string, name: string, the
   const bp = heroCopy[themeToBlueprint(theme)] || { title: `Welcome to ${name}`, sub: `Explore the collection.` };
 
   if (!have.has("home")) {
-    const { data: home } = await supabase
+    const { data: home, error: homeErr } = await supabase
       .from("storefront_pages")
       .insert({ storefront_id: storefrontId, slug: "home", title: "Home", type: "home", status: "draft", is_active: true, seo: {} })
       .select()
       .single();
+    if (homeErr) throw homeErr;
     if (home) {
-      await supabase.from("storefront_page_sections").insert([
+      const { error: sectionErr } = await supabase.from("storefront_page_sections").insert([
         { page_id: (home as any).id, type: "hero", position: 0, is_visible: true, props: { title: bp.title, subtitle: bp.sub } },
         { page_id: (home as any).id, type: "featured-products", position: 1, is_visible: true, props: {} },
       ]);
+      if (sectionErr) throw sectionErr;
     }
   }
 
   if (!have.has("contact")) {
-    await supabase
+    const { error: contactErr } = await supabase
       .from("storefront_pages")
       .insert({ storefront_id: storefrontId, slug: "contact", title: "Contact", type: "custom", status: "draft", is_active: true, seo: {} });
+    if (contactErr) throw contactErr;
   }
 }
 

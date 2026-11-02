@@ -20,6 +20,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRegisterDirty } from "@/hooks/useSettingsDirty";
 import { SettingsSection, SaveButton, SettingsSaveHandler, LabelWithHint } from "./SettingsSection";
 import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
+import { OnboardingChecklistCard } from "@/features/onboarding/OnboardingChecklistCard";
 
 const CURRENCIES = ["BDT", "USD", "EUR", "GBP", "INR", "MYR", "SAR", "AED"];
 const TIMEZONES = [
@@ -240,6 +241,10 @@ export default function BusinessAccountTab() {
           <span>Create new business</span>
         </Button>
       </div>
+
+      {/* Task 13 (spec §6a): the setup checklist — resume or re-run the
+          skippable onboarding wizard. Renders only for the creating member. */}
+      <OnboardingChecklistCard />
 
       {/* Universal save: the sticky save bar commits the business draft. */}
       <SettingsSaveHandler

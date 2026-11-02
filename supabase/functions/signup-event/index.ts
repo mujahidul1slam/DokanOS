@@ -8,6 +8,7 @@ import {
   checkRateLimit,
   verifyTurnstile,
 } from "../_shared/signup-utils.ts";
+import { signupGateResponse } from "../_shared/signup-gate.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -30,16 +31,8 @@ Deno.serve(async (req: Request) => {
     const userAgent = getUserAgent(req);
 
     // Runtime kill-switch check
-    const open = await isSignupOpen(sb);
-    if (!open) {
-      return new Response(
-        JSON.stringify({
-          error: "SIGNUP_CLOSED",
-          message: "Sign up is currently closed.",
-        }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const gateResponse = await signupGateResponse(() => isSignupOpen(sb), corsHeaders);
+    if (gateResponse) return gateResponse;
 
     // IP rate limit: <= 10/h/IP
     const ipLimit = await checkRateLimit(sb, `signup_event_ip:${clientIp}`, 10, "hour");

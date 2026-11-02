@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Checkbox } from "@/components/ui/checkbox";
 import { TurnstileWidget, TurnstileWidgetRef } from "@/components/TurnstileWidget";
 import { isDisposableEmail } from "@/lib/disposableDomains";
-import { mapAuthError } from "@/lib/authErrors";
+import { isExistingAccountError, mapAuthError } from "@/lib/authErrors";
 import { readEdgeFnError } from "@/lib/edgeFnError";
 import { invitationPath } from "@/lib/invitationPath";
 import { toast } from "sonner";
@@ -20,12 +20,13 @@ export default function Signup() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreedConsent, setAgreedConsent] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [checkingOpen, setCheckingOpen] = useState(true);
-  const [signupOpen, setSignupOpen] = useState(true);
+  const [signupConfig, setSignupConfig] = useState<"loading" | "open" | "closed" | "error">("loading");
 
   const turnstileRef = useRef<TurnstileWidgetRef>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -34,19 +35,10 @@ export default function Signup() {
   useEffect(() => {
     async function checkSignupStatus() {
       try {
-        const { data, error } = await supabase
-          .from("app_config")
-          .select("value")
-          .eq("key", "signup_open")
-          .maybeSingle();
-
-        setCheckingOpen(false);
-        if (!error && data) {
-          const isOpen = data.value === true || data.value === "true";
-          setSignupOpen(isOpen);
-        }
+        const { data, error } = await supabase.rpc("is_signup_open");
+        setSignupConfig(error || typeof data !== "boolean" ? "error" : data ? "open" : "closed");
       } catch {
-        setCheckingOpen(false);
+        setSignupConfig("error");
       }
     }
     checkSignupStatus();
@@ -87,6 +79,11 @@ export default function Signup() {
 
     if (password.length < 10) {
       toast.error("Password must be at least 10 characters");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match");
       return;
     }
 
@@ -145,13 +142,17 @@ export default function Signup() {
         },
       });
 
-      if (signUpErr) {
+      if (signUpErr && !isExistingAccountError(signUpErr)) {
         toast.error(mapAuthError(signUpErr));
         turnstileRef.current?.reset();
         setLoading(false);
         return;
       }
 
+      // Enumeration hygiene (SIGNUP-PLAN §6.4): an already-registered signup
+      // falls through to the exact same confirmation-waiting screen as a fresh
+      // one — no toast, no turnstile reset, no distinguishing parameter — so
+      // the form cannot be used to probe which emails have accounts.
       setLoading(false);
       // Proceed to confirmation waiting screen
       navigate(invitationPath(`/check-email?email=${encodeURIComponent(email.trim())}`));
@@ -162,7 +163,7 @@ export default function Signup() {
     }
   };
 
-  if (checkingOpen) {
+  if (signupConfig === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -170,7 +171,20 @@ export default function Signup() {
     );
   }
 
-  if (!signupOpen) {
+  if (signupConfig === "error") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md text-center p-6 space-y-4">
+          <ShieldAlert className="h-12 w-12 text-destructive mx-auto" />
+          <CardTitle className="text-xl">Unable to check sign-up availability</CardTitle>
+          <CardDescription>Please try again later or sign in to your existing account.</CardDescription>
+          <Button asChild className="w-full"><Link to="/login">Go to Login</Link></Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (signupConfig === "closed") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md text-center p-6 space-y-4">
@@ -276,6 +290,36 @@ export default function Signup() {
                     <span className="font-medium text-foreground">{strength.text}</span>
                   </p>
                 </div>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="confirmPassword" className="flex items-center gap-1.5">
+                <Lock className="h-3.5 w-3.5 text-muted-foreground" /> Confirm Password
+              </Label>
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="Re-enter your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={10}
+                  className="pr-10"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {confirmPassword.length > 0 && confirmPassword !== password && (
+                <p className="text-xs text-destructive font-medium mt-1">Passwords do not match</p>
               )}
             </div>
 

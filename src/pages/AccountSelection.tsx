@@ -1,19 +1,58 @@
-import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
+import { supabase } from "@/integrations/supabase/client";
 import { CreateBusinessDialog } from "@/components/CreateBusinessDialog";
+import { AcceptInvitationCard } from "@/components/accounts/AcceptInvitationCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { isPostLoginState, resolveLanding } from "@/lib/accounts/landing";
 
 export default function AccountSelection() {
   const { user, signOut } = useAuth();
   const { businesses, loading, setActive, refresh, error } = useBusinessContext();
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const [params] = useSearchParams();
+  const inviteToken = params.get("invite");
+  // Auto-landing is a one-shot for the post-login arrival; a deliberate visit
+  // to /accounts (switching business, or returning from settings) always shows
+  // the picker.
+  const landingAttempted = useRef(false);
+  const [defaultBusinessId, setDefaultBusinessId] = useState<string | null | undefined>(undefined);
 
-  if (loading) return <p role="status" className="p-8 text-center">Loading your business accounts...</p>;
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("default_business_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!cancelled) setDefaultBusinessId(data?.default_business_id ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (landingAttempted.current || loading || error || defaultBusinessId === undefined) return;
+    if (!isPostLoginState(location.state)) return;
+    landingAttempted.current = true;
+    const decision = resolveLanding({
+      businesses,
+      defaultBusinessId,
+      hasInvitation: !!inviteToken,
+    });
+    if (decision.kind !== "land") return;
+    void (async () => {
+      if (await setActive(decision.businessId)) navigate("/", { replace: true });
+    })();
+  }, [businesses, defaultBusinessId, error, inviteToken, loading, location.state, navigate, setActive]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -23,10 +62,13 @@ export default function AccountSelection() {
           <CardDescription>Signed in as {user?.email}. Your personal account is ready.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {params.get("invite") && (
+          {inviteToken && (
             <p role="status">Your invitation is saved. Verification does not accept it or grant access.</p>
           )}
-          {error ? (
+          {inviteToken && <AcceptInvitationCard token={inviteToken} />}
+          {loading ? (
+            <p role="status">Loading your business accounts...</p>
+          ) : error ? (
             <div role="alert" className="space-y-3">
               <p>We couldn't load your business accounts. Please try again.</p>
               <Button variant="outline" onClick={() => void refresh()}>Retry</Button>
@@ -40,9 +82,8 @@ export default function AccountSelection() {
             <ul className="space-y-2">
               {businesses.map((business) => (
                 <li key={business.id}>
-                  <Button variant="outline" className="w-full justify-start" onClick={() => {
-                    setActive(business.id);
-                    navigate("/", { replace: true });
+                  <Button variant="outline" className="w-full justify-start" onClick={async () => {
+                    if (await setActive(business.id)) navigate("/", { replace: true });
                   }}>{business.name}</Button>
                 </li>
               ))}

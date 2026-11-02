@@ -99,7 +99,11 @@ export function auditLegacyAccounts(inventory: LegacyInventory, mappings: Review
     if (owners.length !== 1) block(owners.length ? "multiple-owners" : "missing-owner", `businesses:${business.id}`, "Keep all memberships; reviewed ownership decision required.");
   }
   for (const member of rows("user_business_access")) {
-    if (!["owner", "member"].includes(String(member.role))) block("membership-authority", `user_business_access:${member.id}`, "Legacy admin/viewer authority cannot silently become owner/member.");
+    // Accept both the pre-rename (member/viewer) and the Task 12 canonical
+    // (manager/staff) spellings: this audits raw legacy extracts. Owner and
+    // the ordinary operator rung pass through; admin/staff-grade authority
+    // blocks for review.
+    if (!["owner", "manager", "member"].includes(String(member.role))) block("membership-authority", `user_business_access:${member.id}`, "Legacy admin/viewer authority cannot silently become owner/manager.");
   }
   for (const table of ["user_roles", "user_permissions", "user_custom_roles", "user_store_access", "invitations"]) {
     for (const row of rows(table)) block("global-authority", `${table}:${row.id}`, "Review global authority, restrictions and invitation intent; never infer account membership.");

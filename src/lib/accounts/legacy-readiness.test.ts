@@ -5,11 +5,11 @@ function safeInventory(): LegacyInventory {
   return {
     version: 1,
     tables: {
-      "auth.users": [{ id: "owner", row_hash: "person-1" }, { id: "member", row_hash: "person-2" }],
+      "auth.users": [{ id: "owner", row_hash: "person-1" }, { id: "manager", row_hash: "person-2" }],
       businesses: [{ id: "account", row_hash: "account-1" }],
       user_business_access: [
         { id: "owner-membership", user_id: "owner", business_id: "account", role: "owner", row_hash: "membership-1" },
-        { id: "member-membership", user_id: "member", business_id: "account", role: "member", row_hash: "membership-2" },
+        { id: "member-membership", user_id: "manager", business_id: "account", role: "manager", row_hash: "membership-2" },
       ],
       brands: [{ id: "brand", business_id: "account", woo_store_id: "woo", row_hash: "brand-1" }],
       stores: [{ id: "woo", row_hash: "store-1" }],
@@ -50,9 +50,9 @@ describe("legacy account readiness report", () => {
     inventory.tables.brands.push({ id: "other-brand", business_id: "other-account", woo_store_id: "woo", row_hash: "brand-2" });
     inventory.tables.stores.push({ id: "unlinked", row_hash: "store-2" });
     inventory.tables.locations.push({ id: "warehouse", business_id: "account", brand_id: "brand", type: "warehouse", row_hash: "location-1" });
-    inventory.tables.user_business_access.push({ id: "extra-owner", business_id: "account", user_id: "member", role: "owner", row_hash: "membership-3" });
+    inventory.tables.user_business_access.push({ id: "extra-owner", business_id: "account", user_id: "manager", role: "owner", row_hash: "membership-3" });
     inventory.tables.user_roles.push({ id: "global-admin", user_id: "owner", role: "admin", row_hash: "role-1" });
-    inventory.tables.user_permissions.push({ id: "global-revoke", user_id: "member", permission: "orders.view", granted: false, row_hash: "permission-1" });
+    inventory.tables.user_permissions.push({ id: "global-revoke", user_id: "manager", permission: "orders.view", granted: false, row_hash: "permission-1" });
     const original = structuredClone(inventory);
 
     const report = auditLegacyAccounts(inventory, reviewedStore);
@@ -115,7 +115,7 @@ describe("legacy account readiness report", () => {
   it("fails closed on incomplete evidence, stale decisions, unknown roles and opaque references", () => {
     const inventory = safeInventory();
     delete inventory.tables.invitations;
-    inventory.tables.user_business_access[1].role = "viewer";
+    inventory.tables.user_business_access[1].role = "staff";
     inventory.tables.orders[0].opaque_columns = ["items"];
     const report = auditLegacyAccounts(inventory, [{ ...reviewedStore[0], rowHash: "stale" }]);
     expect(report.ready).toBe(false);

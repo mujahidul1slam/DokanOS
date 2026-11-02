@@ -1,6 +1,5 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import {
   Search, ExternalLink, MoreHorizontal, Send, CalendarIcon,
@@ -73,6 +72,7 @@ import { groupOrdersForMerge, type MergeGroup, type MergeOrder } from "@/lib/ord
 import { getActiveCurrency, symbolFor } from "@/lib/currency";
 import {
   matchesTab as matchesTabExt, ALL_TAB_KEYS,
+  normalizeTrackingStatus,
   showDuplicateWarningOn, showMergePanelOn,
   type TabKey,
 } from "./orders/tabFilters";
@@ -81,6 +81,13 @@ import { useOrderBulkActions } from "./orders/useOrderBulkActions";
 // handling) lives in the hook; the page renders its state.
 import { useOrdersData, type OrderRow } from "./orders/useOrdersData";
 import { findDuplicateOrders } from "@/lib/duplicateOrder";
+import { useStoresList } from "@/hooks/useStoresList";
+import {
+  hasStoreScope,
+  scopeStoreIds,
+  selectedStoreScope,
+  useActiveBusinessStoreIds,
+} from "@/hooks/useActiveBusinessStoreIds";
 
 interface StoreOption { id: string; name: string }
 
@@ -112,11 +119,9 @@ const toMergeGroupOrder = (o: OrderRow): GroupableOrder => ({
 });
 
 const PAGE_SIZE = 200;
-
 // TabKey moved to ./orders/tabFilters
 
 const Orders = () => {
-  const { role } = useAuth();
   // Issue #9: all order loading (business scoping, overlapping-fetch race
   // guard, pagination, error surfacing) lives in useOrdersData — the page
   // renders its state and the error/retry banner.
@@ -127,7 +132,16 @@ const Orders = () => {
   const { can } = usePermissions();
   const canAttachCourier = can("orders.attach_courier");
   const { settings: invoiceSettings } = useInvoiceSettings();
-  const canWrite = role === "admin" || role === "staff";
+  // Hybrid tenancy (issue #16): the store ids of the ACTIVE business. Every
+  // operational read below is bounded by them, and an empty scope fails closed.
+  // The store selector's options come from the same seam (useStoresList), so
+  // "All stores" can only ever mean this business's stores.
+  const businessStoreIds = useActiveBusinessStoreIds();
+  const stores = useStoresList();
+  // Operational write affordances follow the resolved permission baseline, so
+  // a first-release account member (no legacy user_roles row) can create/edit
+  // orders like staff while a viewer stays read-only.
+  const canWrite = can("orders.create") || can("orders.edit");
   const [allCategories, setAllCategories] = useState<{ id: string; name: string; parent_id: string | null; store_id: string | null }[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -144,7 +158,6 @@ const Orders = () => {
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("new");
   const preOrderMode = tab === "pre_order";
-  const [stores, setStores] = useState<StoreOption[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [duplicateFilterActive, setDuplicateFilterActive] = useState(false);
@@ -214,14 +227,21 @@ const Orders = () => {
     if (changed) setSearchParams(searchParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
+
   const loadStores = useCallback(async () => {
-    const [{ data: storeData }, { data: catData }] = await Promise.all([
-      supabase.from("stores").select("id, name").order("name"),
+    // The store selector's options come from useStoresList(), which is already
+    // scoped to the active business and fails closed on its own. The category
+    // selector is read with the same tenant predicate.
+    if (!hasStoreScope(businessStoreIds)) {
+      setAllCategories([]);
+      return;
+    }
+    const { data: catData } = await scopeStoreIds(
       supabase.from("categories").select("id, name, parent_id, store_id").order("name"),
-    ]);
-    setStores(storeData || []);
+      businessStoreIds,
+    );
     setAllCategories((catData || []) as any);
-  }, []);
+  }, [businessStoreIds]);
 
   // Dropdown reference data only — order loading is triggered inside
   // useOrdersData (its own effect tracks the scoping inputs).
@@ -261,7 +281,8 @@ const Orders = () => {
       const { error } = await supabase
         .from("orders")
         .update({ status: "pre_order_pending" })
-        .in("id", ids);
+        .in("id", ids)
+        .in("store_id", businessStoreIds);
       if (error) {
         console.warn("Pre-order auto-promotion failed:", error.message);
         return;
@@ -381,7 +402,7 @@ const Orders = () => {
       if (deliveryFilter !== "all" && o.fulfillment_type !== deliveryFilter) return false;
       if (courierFilter === "has" && !o.consignment_id) return false;
       else if (courierFilter === "none" && o.consignment_id) return false;
-      else if (courierFilter !== "all" && courierFilter !== "has" && courierFilter !== "none" && (o.tracking_status || "") !== courierFilter) return false;
+      else if (courierFilter !== "all" && courierFilter !== "has" && courierFilter !== "none" && normalizeTrackingStatus(o.tracking_status || "") !== normalizeTrackingStatus(courierFilter)) return false;
       if (catArr) {
         const orderCats = orderCategoryMap.get(o.id);
         if (!orderCats) return false;
@@ -533,6 +554,7 @@ const Orders = () => {
     duePayContext,
     setDuePayContext,
     setDuePayOpen,
+    businessStoreIds,
   });
 
   /* ─── Pathao sync ─── */
@@ -579,13 +601,21 @@ const Orders = () => {
 
   /* ─── Reprint invoice for any order ─── */
   const handleReprintOrder = async (orderId: string) => {
-    const [orderRes, itemsRes, paymentsRes] = await Promise.all([
-      supabase.from("orders").select("id, order_number, total, subtotal, discount, shipping_cost, notes, customer_name, customer_phone, customer_address, customer_city").eq("id", orderId).single(),
+    // Fail closed: without a store scope there is no order this business may read.
+    if (!hasStoreScope(businessStoreIds)) return;
+    // The order is read THROUGH the tenant predicate first; its child rows are
+    // only fetched once it is known to belong to the active business, so a
+    // foreign order id can never pull in that business's items or payments.
+    const orderRes = await scopeStoreIds(
+      supabase.from("orders").select("id, order_number, total, subtotal, discount, shipping_cost, notes, customer_name, customer_phone, customer_address, customer_city").eq("id", orderId),
+      businessStoreIds,
+    ).single();
+    const o = orderRes.data as any;
+    if (!o) return; // outside the active business's stores: nothing to print
+    const [itemsRes, paymentsRes] = await Promise.all([
       supabase.from("order_items").select("*").eq("order_id", orderId),
       supabase.from("order_payments").select("*").eq("order_id", orderId),
     ]);
-    const o = orderRes.data as any;
-    if (!o) return;
     const customer = {
       name: o.customer_name || "",
       phone: o.customer_phone || "",
@@ -644,7 +674,10 @@ const Orders = () => {
       actions.push({
         key: "ready", label: "Mark Ready to Ship", icon: PackageCheck,
         onClick: () => {
-          supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id).then(() => {
+          scopeStoreIds(
+            supabase.from("orders").update({ status: "ready_to_ship" }).eq("id", order.id),
+            businessStoreIds,
+          ).then(() => {
             addOrderTimeline({ order_id: order.id, event: "status_changed", description: "Marked as Ready to Ship" });
             toast({ title: "Marked Ready to Ship" });
             loadOrders();

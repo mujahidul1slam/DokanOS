@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler,
   Building2, Hash, Hourglass, Search, ChevronRight, ArrowLeft, X,
-  Palette, User, Printer,
+  Palette, User, Printer, Warehouse, Truck, CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -20,6 +20,9 @@ import PosSettingsTab from "@/components/settings/PosSettingsTab";
 import OrdersSettingsTab from "@/components/settings/OrdersSettingsTab";
 import AuditLogTab from "@/components/settings/AuditLogTab";
 import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
+import WarehousesTab from "@/components/settings/WarehousesTab";
+import CourierServicesTab from "@/components/settings/CourierServicesTab";
+import PaymentAccountsTab from "@/components/settings/PaymentAccountsTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
 import BusinessAccountTab from "@/components/settings/BusinessAccountTab";
@@ -39,7 +42,7 @@ import {
 
 type TabId =
   | "profile" | "account" | "brands"
-  | "general" | "printheader" | "inventory" | "pos" | "orders"
+  | "general" | "couriers" | "payments" | "printheader" | "inventory" | "warehouses" | "pos" | "orders"
   | "preorders" | "measurements" | "invoice" | "sources" | "audit";
 
 /**
@@ -80,6 +83,8 @@ const groups: GroupDef[] = [
     label: "Business",
     tabs: [
       { id: "general", label: "General", icon: Settings, description: "Theme and install preferences", keywords: "appearance dark light mode theme install pwa" },
+      { id: "couriers", label: "Courier services", icon: Truck, description: "Courier accounts for the whole business", keywords: "courier pathao steadfast redx ecourier dispatch shipping parcel" },
+      { id: "payments", label: "Payment accounts", icon: CreditCard, description: "Payment gateway accounts for the whole business", keywords: "payment bkash nagad stripe card gateway cod cash checkout" },
     ],
   },
   {
@@ -87,6 +92,7 @@ const groups: GroupDef[] = [
     label: "Operations",
     tabs: [
       { id: "inventory", label: "Inventory", icon: Package, description: "Global stock management", keywords: "stock quantity tracking" },
+      { id: "warehouses", label: "Warehouses", icon: Warehouse, description: "Stock holders, on-hand, transfers", keywords: "warehouse stock holder transfer showroom fulfillment" },
       { id: "pos", label: "POS Settings", icon: ShoppingCart, description: "Point of sale preferences", keywords: "checkout receipt sound" },
       { id: "orders", label: "Orders", icon: Hash, description: "Order numbering and rules" },
       { id: "preorders", label: "Pre-Orders", icon: Hourglass, description: "Pre-order categories and behavior", keywords: "preorder categories" },
@@ -258,6 +264,9 @@ const SettingsPage = () => {
       case "preorders": return <PreOrdersSettingsTab />;
       case "invoice": return <InvoiceSettingsTab />;
       case "sources": return <OrderSourcesTab />;
+      case "warehouses": return <WarehousesTab />;
+      case "couriers": return <CourierServicesTab />;
+      case "payments": return <PaymentAccountsTab />;
       case "measurements": return <MeasurementsTab />;
       case "audit": return <AuditLogTab />;
     }

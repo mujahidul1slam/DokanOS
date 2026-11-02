@@ -9,6 +9,7 @@ import {
   buildVariationLabel,
   stripWooHtml
 } from "../_shared/woo-mapping.ts";
+import { isSyncableStoreUrl, NON_HTTP_STORE_URL_ERROR } from "../_shared/store-url-guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -285,6 +286,8 @@ async function handleProductWebhook(supabase: any, store: any, p: any) {
 }
 
 async function syncProductVariations(supabase: any, store: any, wooProductId: number, productId: string) {
+  // Store-url guard: never call out to a non-http(s) store space.
+  if (!isSyncableStoreUrl(store.url)) throw new Error(NON_HTTP_STORE_URL_ERROR);
   const baseUrl = String(store.url).replace(/\/+$/, "");
   const auth = "Basic " + btoa(`${store.consumer_key}:${store.consumer_secret}`);
   const wooVars: any[] = [];
