@@ -138,8 +138,8 @@ Column provenance for everything the data script writes is covered by the pendin
 `stock_holder_order_source_id`/`warehouse_id` ← #21, `legacy_woo_store_id` ← #28. `business_id` on the
 pool was **not** added by any migration in this chain — the Task 16 checklist item ("pool rows stamped
 with `business_id`") had no column to write to at rehearsal time. **RESOLVED 2026-11-02:** Task 16's
-migration `20261103120000_task16_contract_drop.sql` §2 adds `business_id uuid REFERENCES businesses(id)
-ON DELETE SET NULL` to orders + customers, and §1 stamps pool rows from the legacy `order_sources`
+migration `20261103120000_task16_contract_drop.sql` §1 adds `business_id uuid REFERENCES businesses(id)
+ON DELETE SET NULL` to orders + customers, and §2 stamps pool rows from the legacy `order_sources`
 mapping (production apply user-gated; see [../wiki/cutover-status.md](../wiki/cutover-status.md)).
 
 ---

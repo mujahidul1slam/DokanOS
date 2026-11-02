@@ -13,7 +13,7 @@ performed. The migration is `supabase/migrations/20261103120000_task16_contract_
 | 5 dead columns present | all | ✅ orders.selling_point_id, orders.location_id, product_locations.location_id, purchase_orders.location_id, pos_shifts.selling_point_id |
 | `business_id` on orders/customers | absent | ✅ absent on both |
 | Pool rows | 48 orders / 51 customers | ✅ 48 / 51 |
-| Legacy mapping ambiguity | exactly 1 business | ✅ 1 business (8 mapped sources) = Enveil Vincent `de31fd60-a520-4d42-aef2-c72ededc4c09` → §1 stamps all 99 pool rows |
+| Legacy mapping ambiguity | exactly 1 business | ✅ 1 business (8 mapped sources) = Enveil Vincent `de31fd60-a520-4d42-aef2-c72ededc4c09` → §2 stamps all 99 pool rows |
 | `publish_my_storefront` pre-state | references selling_points | ✅ |
 | Dead RPCs present | both | ✅ create_brand_store, brand_store_legacy_links_valid |
 | `product_locations_one_holder` | references location_id | ✅ |
@@ -40,15 +40,26 @@ apply leaves production untouched; re-run after fixing the cause. If the apply S
 is found later, rollback = restore the two dumps above into the project (destructive, last resort —
 loses any data written after the dump; coordinate a freeze first).
 
-## 3. Apply (USER-GATED)
+## 3. Apply (USER-GATED — **approved 2026-11-02**)
 
 ```powershell
 npx supabase db push --linked --yes     # pushes exactly the one pending migration
 ```
 
 Expected output: `20261103120000_task16_contract_drop.sql` applied; NOTICE lines
-`task16: legacy mapping spans 1 business — stamping pool rows` and
-`task16: pool customers 51 (51 stamped), pool orders 48 (48 stamped)`; ledger 191 → **192**.
+`task16: stamped 51 pool customers with legacy business de31fd60-…` and
+`task16: stamped 48 pool orders with legacy business de31fd60-…`; ledger 191 → **192**.
+
+**Attempt log:**
+1. **First push FAILED cleanly** (2026-11-02, pre-fix file): `ERROR: column "business_id" of relation
+   "customers" does not exist (SQLSTATE 42703)` — the stamping § ran before the column-add §; the
+   hosted apply executes the batch in file order and production's unambiguous mapping exercises the
+   branch the local battery never reaches. Single transaction → rolled back; ledger verified still
+   191 / `20261103100000`; zero production changes.
+2. **Fix**: the two `ALTER TABLE … ADD COLUMN business_id` statements moved above the stamping block
+   (now §1 columns → §2 stamping); lesson recorded in [../wiki/environment-quirks.md](../wiki/environment-quirks.md);
+   full `db reset` battery re-run proves the fixed file applies on a clean database.
+3. **Second push**: {{SECOND_PUSH}}
 
 ## 4. Post-verify (read-only)
 

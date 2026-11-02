@@ -26,7 +26,21 @@
 -- destructive by design; there is no in-place DOWN path.
 
 -- ---------------------------------------------------------------------------
--- §1 Pool account stamping (runs BEFORE the drops: it reads order_sources'
+-- §1 New account columns for orders/customers.
+--     MUST precede §2: the hosted `db push` applies this file as ONE batch, and
+--     §2's stamping UPDATEs reference these columns — on production the legacy
+--     mapping IS unambiguous, so the stamping branch executes (the local
+--     battery missed this because the local mapping is empty and the branch
+--     was skipped). Statement order, not section intent, is what executes.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE public.orders
+  ADD COLUMN IF NOT EXISTS business_id uuid REFERENCES public.businesses (id) ON DELETE SET NULL;
+ALTER TABLE public.customers
+  ADD COLUMN IF NOT EXISTS business_id uuid REFERENCES public.businesses (id) ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------------
+-- §2 Pool account stamping (runs BEFORE the drops: it reads order_sources'
 --     legacy_* mapping columns and the full pool predicates).
 --     The pool is the residue of the legacy account: rows that no brand evidence
 --     could attribute. Their ACCOUNT, though, is derivable — every legacy store
@@ -74,15 +88,6 @@ BEGIN
     RAISE NOTICE 'task16: legacy mapping spans % businesses — pool rows left unassigned', v_biz_count;
   END IF;
 END $$;
-
--- ---------------------------------------------------------------------------
--- §2 New account columns for orders/customers.
--- ---------------------------------------------------------------------------
-
-ALTER TABLE public.orders
-  ADD COLUMN IF NOT EXISTS business_id uuid REFERENCES public.businesses (id) ON DELETE SET NULL;
-ALTER TABLE public.customers
-  ADD COLUMN IF NOT EXISTS business_id uuid REFERENCES public.businesses (id) ON DELETE SET NULL;
 
 -- ---------------------------------------------------------------------------
 -- §3 publish_my_storefront: re-home discovery + ownership on the brand leg.
