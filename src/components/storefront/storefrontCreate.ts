@@ -5,8 +5,8 @@
  * Storefronts area's "create storefront" both run `createStorefrontFromForm`.
  */
 
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
 import type { Json } from "@/integrations/supabase/types";
 import type { Brand, Business } from "@/hooks/useBusinessContext";
 import { hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
@@ -88,7 +88,7 @@ export async function createStorefrontFromForm(
   const { values, brandChoice, businessId, business, brands, businessStoreIds } = input;
   const invalid = validateStorefrontSetup(values);
   if (invalid) {
-    toast({ title: invalid, variant: "destructive" });
+    toast.error(invalid);
     return null;
   }
   const name = values.name.trim();
@@ -106,7 +106,7 @@ export async function createStorefrontFromForm(
         .select()
         .single();
       if (brandErr) {
-        toast({ title: "Brand creation failed", description: brandErr.message, variant: "destructive" });
+        toast.error(`Brand creation failed — ${brandErr.message}`);
         return null;
       }
       brandId = (brandRow as { id: string } | null)?.id ?? null;
@@ -148,11 +148,7 @@ export async function createStorefrontFromForm(
     .select()
     .single();
   if (error || !data) {
-    toast({
-      title: "Failed to create",
-      description: error?.message ?? "Unknown error",
-      variant: "destructive",
-    });
+    toast.error(`Failed to create — ${error?.message ?? "Unknown error"}`);
     return null;
   }
 
@@ -169,20 +165,17 @@ export async function createStorefrontFromForm(
     pagesOk = false;
   }
   if (!pagesOk || (values.publishNow && !published)) {
-    toast({
-      title: "Storefront created — starter pages pending",
-      description: pagesOk
-        ? "The storefront exists, but Home is not published yet — publish it in the storefront admin."
-        : "The storefront exists, but the starter pages could not be created — add them in the storefront admin.",
-      variant: "destructive",
-    });
+    toast.error(
+      pagesOk
+        ? "Storefront created — Home is not published yet. Publish it in the storefront admin."
+        : "Storefront created — the starter pages could not be created. Add them in the storefront admin.",
+    );
   } else {
-    toast({
-      title: "Storefront created",
-      description: values.publishNow
-        ? `Live at /storefront/${slug} — starter pages were published.`
-        : "Starter pages (Home, Contact) were created in draft.",
-    });
+    toast.success(
+      values.publishNow
+        ? `Storefront created — live at /storefront/${slug}, starter pages published.`
+        : "Storefront created — starter pages (Home, Contact) were created in draft.",
+    );
   }
   return created;
 }

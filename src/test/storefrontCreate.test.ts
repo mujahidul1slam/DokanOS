@@ -13,11 +13,13 @@ import type { CreateStorefrontInput } from "@/components/storefront/storefrontCr
 // through a queue-based chainable builder mock.
 
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: vi.fn() } }));
-vi.mock("@/hooks/use-toast", () => ({ toast: vi.fn() }));
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
 vi.mock("@/storefront/lib/pages", () => ({ scaffoldStorefront: vi.fn() }));
 
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { scaffoldStorefront } from "@/storefront/lib/pages";
 import { createStorefrontFromForm } from "@/components/storefront/storefrontCreate";
 
@@ -86,15 +88,11 @@ describe("createStorefrontFromForm — honest scaffold/publish toasts", () => {
     const created = await createStorefrontFromForm(input());
 
     expect(created).toEqual({ id: "sf-1", name: "My Brand", slug: "my-brand" });
-    expect(toast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Storefront created — starter pages pending",
-        variant: "destructive",
-        description: expect.stringContaining("could not be created"),
-      }),
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("starter pages could not be created"),
     );
-    expect(toast).not.toHaveBeenCalledWith(
-      expect.objectContaining({ description: expect.stringContaining("were published") }),
+    expect(toast.success).not.toHaveBeenCalledWith(
+      expect.stringContaining("were published"),
     );
   });
 
@@ -106,11 +104,8 @@ describe("createStorefrontFromForm — honest scaffold/publish toasts", () => {
 
     await createStorefrontFromForm(input());
 
-    expect(toast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Storefront created",
-        description: expect.stringContaining("starter pages were published"),
-      }),
+    expect(toast.success).toHaveBeenCalledWith(
+      expect.stringContaining("starter pages published"),
     );
   });
 
@@ -136,15 +131,11 @@ describe("createStorefrontFromForm — honest scaffold/publish toasts", () => {
 
     await createStorefrontFromForm(input());
 
-    expect(toast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Storefront created — starter pages pending",
-        variant: "destructive",
-        description: expect.stringContaining("Home is not published yet"),
-      }),
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("Home is not published yet"),
     );
-    expect(toast).not.toHaveBeenCalledWith(
-      expect.objectContaining({ description: expect.stringContaining("were published") }),
+    expect(toast.success).not.toHaveBeenCalledWith(
+      expect.stringContaining("were published"),
     );
   });
 
@@ -155,11 +146,8 @@ describe("createStorefrontFromForm — honest scaffold/publish toasts", () => {
 
     await createStorefrontFromForm(input());
 
-    expect(toast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Storefront created — starter pages pending",
-        variant: "destructive",
-      }),
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("Home is not published yet"),
     );
   });
 
@@ -169,11 +157,8 @@ describe("createStorefrontFromForm — honest scaffold/publish toasts", () => {
 
     await createStorefrontFromForm(input({ publishNow: false }));
 
-    expect(toast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Storefront created",
-        description: "Starter pages (Home, Contact) were created in draft.",
-      }),
+    expect(toast.success).toHaveBeenCalledWith(
+      "Storefront created — starter pages (Home, Contact) were created in draft.",
     );
   });
 });

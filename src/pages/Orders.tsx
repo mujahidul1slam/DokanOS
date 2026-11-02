@@ -66,7 +66,7 @@ import { Settings as SettingsIcon } from "lucide-react";
 import PreOrderCategoriesDialog from "@/components/settings/PreOrderCategoriesDialog";
 import DuePaymentDialog, { type DuePaymentResult } from "@/components/orders/DuePaymentDialog";
 import { recordDuePayment } from "@/lib/dueCollection";
-import { matchesTab as matchesTabExt, ALL_TAB_KEYS, type TabKey } from "./orders/tabFilters";
+import { matchesTab as matchesTabExt, ALL_TAB_KEYS, normalizeTrackingStatus, type TabKey } from "./orders/tabFilters";
 import { useOrderBulkActions } from "./orders/useOrderBulkActions";
 import { useStoresList } from "@/hooks/useStoresList";
 import {
@@ -429,7 +429,7 @@ const Orders = () => {
       if (deliveryFilter !== "all" && o.fulfillment_type !== deliveryFilter) return false;
       if (courierFilter === "has" && !o.consignment_id) return false;
       else if (courierFilter === "none" && o.consignment_id) return false;
-      else if (courierFilter !== "all" && courierFilter !== "has" && courierFilter !== "none" && (o.tracking_status || "") !== courierFilter) return false;
+      else if (courierFilter !== "all" && courierFilter !== "has" && courierFilter !== "none" && normalizeTrackingStatus(o.tracking_status || "") !== normalizeTrackingStatus(courierFilter)) return false;
       if (catArr) {
         const orderCats = orderCategoryMap.get(o.id);
         if (!orderCats) return false;

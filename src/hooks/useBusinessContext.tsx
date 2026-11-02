@@ -107,6 +107,14 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
    * effective id (not once per realtime-triggered refresh).
    */
   const serverContextIdRef = useRef<string | null>(null);
+  /** Whether the current server context write has completed successfully. */
+  const serverContextReadyRef = useRef(false);
+  /**
+   * Last authenticated identity observed by refresh(). Keep this through a
+   * transient auth gap so the same user does not lose a valid server context;
+   * a genuinely different user still gets a fresh convergence.
+   */
+  const previousUserIdRef = useRef<string | null>(null);
 
   // Brands for a business. Called from BOTH the activeId effect and refresh()
   // — the wizard creates the brand mid-session (create_my_brand_store), so
@@ -149,12 +157,22 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
       setActiveId(null);
       setActiveBrandId(null);
       setBrands([]);
-      // The signed-in user (and therefore the active context) is gone: the next
-      // authenticated refresh must converge the server context again.
-      serverContextIdRef.current = null;
+      // Keep serverContextIdRef and its completion marker intact: a transient
+      // auth gap does not prove that the server-side context is invalid. The
+      // authenticated refresh below can therefore reopen the existing
+      // converged scope without an
+      // unnecessary RPC (or a contextReady flap caused by reconvergence).
       setContextReady(false);
       return;
     }
+    if (previousUserIdRef.current !== null && previousUserIdRef.current !== userId) {
+      // A different authenticated identity must never inherit the prior user's
+      // server-side tenant context.
+      serverContextIdRef.current = null;
+      serverContextReadyRef.current = false;
+      setContextReady(false);
+    }
+    previousUserIdRef.current = userId;
     // user_business_access RLS: users see their own rows. Join to businesses.
     const { data: memberships, error: membershipError } = await supabase
       .from("user_business_access")
@@ -202,6 +220,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
       // and retries on the next refresh.
       if (serverContextIdRef.current !== effective) {
         serverContextIdRef.current = effective;
+        serverContextReadyRef.current = false;
         setContextReady(false);
         const { error: convergeError } = await supabase.rpc(
           "set_active_business_context",
@@ -209,11 +228,17 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
         );
         if (convergeError) {
           serverContextIdRef.current = null; // retry on the next refresh
+          serverContextReadyRef.current = false;
           setContextReady(false);
           console.error("Failed to persist active business context:", convergeError);
         } else {
+          serverContextReadyRef.current = true;
           setContextReady(true);
         }
+      } else if (serverContextReadyRef.current) {
+        // Auth may have briefly cleared the UI state, but the server context
+        // is still valid for the same authenticated user.
+        setContextReady(true);
       }
       // When the ref already reads `effective`, either the convergence write is
       // in flight (the gate was shut when it started) or it already succeeded
@@ -231,6 +256,7 @@ export const BusinessContextProvider = ({ children }: { children: ReactNode }) =
       setActiveId(null);
       setActiveBrandId(null);
       serverContextIdRef.current = null;
+      serverContextReadyRef.current = false;
       setContextReady(false);
     }
   }, [clearMemberships, loadScoped, userId]);

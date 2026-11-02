@@ -298,6 +298,26 @@ describe("login-path convergence persists the resolved active business server-si
 
     expect(rpcMock).toHaveBeenCalledTimes(1);
   });
+
+  it("does not reconverge after a transient auth gap for the same user", async () => {
+    localStorage.setItem(STORAGE_KEY, BIZ_ONE);
+    const { result, rerender } = renderContext();
+    await waitFor(() => expect(result.current.businesses).toHaveLength(2));
+    await waitFor(() => expect(result.current.contextReady).toBe(true));
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+
+    // Supabase can briefly expose no user while refreshing the session. The UI
+    // state is cleared, but the server context remains valid for this user.
+    authMock.mockReturnValue({ user: null });
+    rerender();
+    await waitFor(() => expect(result.current.contextReady).toBe(false));
+
+    authMock.mockReturnValue({ user: { id: USER_ID } });
+    rerender();
+    await waitFor(() => expect(result.current.contextReady).toBe(true));
+
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("tenant-scoped reads stay gated until the server context converges", () => {

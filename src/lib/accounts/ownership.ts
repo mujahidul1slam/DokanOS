@@ -8,6 +8,8 @@
  * refused transition never looks like a successful one.
  */
 
+import { errorCode, errorMessage, isRecord, text } from "./recordParsing";
+
 export type OwnershipErrorOutcome =
   | "auth_required"
   | "owner_required"
@@ -127,4 +129,3 @@ export function canLeaveWithoutTransfer(role: string | null | undefined): boolea
 export function isTransferTarget(callerId: string | null, memberUserId: string, role: string): boolean {
   return callerId !== null && memberUserId !== callerId && role !== "owner";
 }
-import { errorCode, errorMessage, isRecord, text } from "./recordParsing";

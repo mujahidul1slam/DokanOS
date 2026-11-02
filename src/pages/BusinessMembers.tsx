@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +50,6 @@ import { Loader2, Mail, ShieldCheck, UserMinus, UserPlus, UsersRound } from "luc
 export default function BusinessMembers() {
   const { active, myRole, refresh } = useBusinessContext();
   const { user } = useAuth();
-  const { toast } = useToast();
   const isOwner = myRole === "owner";
   const myUserId = user?.id ?? null;
 
@@ -205,10 +204,9 @@ export default function BusinessMembers() {
 
     setPendingTransfer(null);
     // Toast survives the context refresh that remounts this route.
-    toast({
-      title: "Ownership transferred",
-      description: `${label} is now the owner of ${active.name}. You are now a manager and can leave the account.`,
-    });
+    toast.success(
+      `Ownership transferred — ${label} is now the owner of ${active.name}. You are now a manager and can leave the account.`,
+    );
     // Re-read authoritative membership before rendering departure controls.
     await refresh();
     reload();
@@ -234,7 +232,7 @@ export default function BusinessMembers() {
     }
 
     setConfirmingLeave(false);
-    toast({ title: "You left the account", description: `You no longer have access to ${active.name}.` });
+    toast.success(`You left the account — you no longer have access to ${active.name}.`);
     // The refreshed context drops this account and the route guard moves the
     // person to their remaining account (or the account chooser).
     await refresh();

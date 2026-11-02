@@ -43,6 +43,27 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
+  -- Spec §3: digital/manual sources may never become stock-holding, not even
+  -- by explicit UPDATE (constraint order_sources_stock_holding_physical_only).
+  INSERT INTO public.order_sources (brand_id, name, type)
+  VALUES ('11111111-0000-0000-0000-0000000000f1', 'Woo Channel', 'woocommerce');
+
+  BEGIN
+    UPDATE public.order_sources SET is_stock_holding = true
+    WHERE name = 'Woo Channel';
+    RAISE EXCEPTION 'FAIL: digital source flipped to stock-holding' USING ERRCODE = 'P0001';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  -- Physical sources keep the toggle: the showroom may be turned off and on.
+  UPDATE public.order_sources SET is_stock_holding = false WHERE name = 'Main Showroom';
+  UPDATE public.order_sources SET is_stock_holding = true WHERE name = 'Main Showroom';
+  IF NOT EXISTS (SELECT 1 FROM public.order_sources
+                 WHERE name = 'Main Showroom' AND is_stock_holding IS TRUE) THEN
+    RAISE EXCEPTION 'FAIL: physical source lost its stock-holding toggle'
+      USING ERRCODE = 'P0001';
+  END IF;
+
   BEGIN
     INSERT INTO public.order_sources (brand_id, name, type)
     VALUES ('11111111-0000-0000-0000-0000000000f1', 'Phone Orders', 'manual');

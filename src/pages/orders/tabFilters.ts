@@ -40,45 +40,94 @@ export const ALL_TAB_KEYS: TabKey[] = [
   "trash",
 ];
 
-/** Pathao tracking_status values that mean the parcel was cancelled at pickup. */
-const CANCELLED_TRACKING = ["Pickup Cancel", "Pickup Cancelled", "Pickup Failed"];
+/**
+ * Normalize a raw Pathao tracking_status exactly like the backend adapter
+ * does (normalizeStatus in supabase/functions/adapters/pathao.ts):
+ * lowercase, underscores/hyphens -> single spaces. All tab matching runs on
+ * the normalized form, so casing/spacing variants ("Pickup On Hold" vs
+ * "pickup_on_hold" vs "PICKUP-ON-HOLD") can never fall through the cracks.
+ */
+export function normalizeTrackingStatus(s: string): string {
+  return s.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Raw Pathao tracking_status values (normalized form) per tab bucket.
+ * MUST stay a superset of RAW_STATUS_MAP in supabase/functions/adapters/pathao.ts
+ * — that map has ~48 raw statuses and any raw status missing here makes the
+ * order invisible in every specific tab (it only shows in "all"), because the
+ * pickup/transit/hold tabs match ONLY on tracking_status (their legacy
+ * orders.status buckets "shipped"/"processing" would otherwise catch them).
+ */
+
+/** Pathao tracking_status values that mean the parcel was cancelled. */
+const CANCELLED_TRACKING = [
+  "pickup cancel",
+  "pickup cancelled",
+  "pickup failed",
+  "cancelled",
+  "canceled",
+];
 
 const PICKUP_PENDING_TRACKING = [
-  "Pending",
-  "Pickup Pending",
-  "Waiting for Pickup",
-  "Pickup Requested",
-  "Assigned for Pickup",
-  "Assigned For Pickup",
-  "Picked",
-  "Picked Up",
+  "pending",
+  "pickup pending",
+  "waiting for pickup",
+  "pickup requested",
+  "assigned for pickup",
+  "picked",
+  "picked up",
+  // Pickup never completed because it was put on hold — still a pickup-phase
+  // parcel, so it belongs in the Pickup tab (not lost between tabs).
+  "pickup on hold",
 ];
 
 const IN_TRANSIT_TRACKING = [
-  "At Sorting Hub",
-  "In Transit",
-  "On the Way To Delivery Hub",
-  "At Delivery Hub",
-  "Out for Delivery",
-  "Assigned for Delivery",
-  "Assigned For Delivery",
+  "at sorting hub",
+  "received at sorting hub",
+  "sent to sub sorting hub",
+  "received at sub sorting hub",
+  "sent to last mile hub",
+  "in transit",
+  "on the way to delivery hub",
+  "at delivery hub",
+  "assigned for delivery",
+  "sent for delivery",
+  "out for delivery",
+  "delivery confirmed",
 ];
 
-const DELIVERED_TRACKING = ["Delivered", "Partial Delivered", "Payment Invoice"];
+const DELIVERED_TRACKING = [
+  "delivered",
+  "partial delivery",
+  "partial delivered",
+  "payment invoice",
+];
 
-const ON_HOLD_TRACKING = ["On Hold", "Hold", "Exchange"];
+const ON_HOLD_TRACKING = [
+  "on hold",
+  "on hold by customer request",
+  "hold",
+  "exchange",
+];
 
 const RETURNED_TRACKING = [
-  "Return",
-  "Returned",
-  "Paid Return",
-  "Return Requested",
-  "Return In Transit",
-  "Returned to Merchant",
-  "Merchant Return",
-  "Return Delivered",
-  "Delivery Failed",
-  "Customer Refused",
+  "return",
+  "returned",
+  "paid return",
+  "return requested",
+  "return in transit",
+  "returned to merchant",
+  "merchant return",
+  "return delivered",
+  "delivery failed",
+  "customer refused",
+  "drt requested",
+  "drt pick requested",
+  "drt pick failed",
+  "drt cancelled",
+  "lost",
+  "damaged",
 ];
 
 /** Minimal shape needed by the tab predicate — keeps this module decoupled
@@ -94,7 +143,7 @@ export interface TabOrder {
 export function isOrderCancelled(o: TabOrder): boolean {
   return (
     o.status === "cancelled" ||
-    (!!o.consignment_id && CANCELLED_TRACKING.includes(o.tracking_status || ""))
+    (!!o.consignment_id && CANCELLED_TRACKING.includes(normalizeTrackingStatus(o.tracking_status || "")))
   );
 }
 
@@ -110,6 +159,8 @@ export function matchesTab(
 ): boolean {
   if (tabKey === "trash") return !!o.deleted_at;
   if (o.deleted_at) return false;
+
+  const tracking = normalizeTrackingStatus(o.tracking_status || "");
 
   // Cancelled orders are surfaced ONLY in the cancelled tab (and "all").
   const cancelled = isOrderCancelled(o);
@@ -145,22 +196,22 @@ export function matchesTab(
     case "pre_order_ready":
       return o.status === "pre_order_ready";
     case "pickup_pending":
-      return !!o.consignment_id && PICKUP_PENDING_TRACKING.includes(o.tracking_status || "");
+      return !!o.consignment_id && PICKUP_PENDING_TRACKING.includes(tracking);
     case "in_transit":
-      return !!o.consignment_id && IN_TRANSIT_TRACKING.includes(o.tracking_status || "");
+      return !!o.consignment_id && IN_TRANSIT_TRACKING.includes(tracking);
     case "delivered":
       // Delivered: any order whose internal status is delivered,
       // OR a dispatched parcel whose Pathao tracking reports a delivered state.
       return (
         o.status === "delivered" ||
-        (!!o.consignment_id && DELIVERED_TRACKING.includes(o.tracking_status || ""))
+        (!!o.consignment_id && DELIVERED_TRACKING.includes(tracking))
       );
     case "on_hold":
-      return !!o.consignment_id && ON_HOLD_TRACKING.includes(o.tracking_status || "");
+      return !!o.consignment_id && ON_HOLD_TRACKING.includes(tracking);
     case "returned":
       return (
         o.status === "returned" ||
-        (!!o.consignment_id && RETURNED_TRACKING.includes(o.tracking_status || ""))
+        (!!o.consignment_id && RETURNED_TRACKING.includes(tracking))
       );
     case "cancelled":
       return cancelled;
