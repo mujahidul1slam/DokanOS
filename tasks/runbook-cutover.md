@@ -208,6 +208,14 @@ psql "$PRODUCTION_DB_URL" -v ON_ERROR_STOP=1 -f scripts/migrate-enveil-vincent.s
 file self-wraps in `BEGIN`/`COMMIT` (`scripts/migrate-enveil-vincent.sql:28`, `:442`) — **the
 apply is all-or-nothing**; a mid-script error rolls everything back and mutates nothing.
 
+> **EXECUTED 2026-11-02 06:02 +06 (Gate 2, user-approved "Run it now").** Applied via the Supabase
+> Management API `POST /v1/projects/{ref}/database/query` with the whole 27,359-byte file as one
+> request (the script's own `BEGIN`/`COMMIT` governed; a safety `ROLLBACK;` fires on any error) —
+> **HTTP 201, zero errors**. Pre-flight: fresh extract 2026-11-01T22:56Z (3,249 customers / 4,095
+> orders / 5,329 order_items), rehearsal re-run **12/12 PASS** on it, fresh pre-data rollback dumps
+> captured (`C:\Users\mujah\dokan-prod-backups\20261102-pre-data\`, sha256-verified). Live audit:
+> §5 record below — **all 23 checks match the rehearsal**.
+
 What the script does, step by step (exact behavior — the runbook matches the file):
 
 | Step | What happens | Where |
@@ -246,6 +254,16 @@ What the script does, step by step (exact behavior — the runbook matches the f
 - If the script aborts at any point, nothing is wiped (one transaction) — that is the safe state.
 
 ## 5. Phase 3 — Post-migration audit (Gate 3 input)
+
+> **EXECUTED 2026-11-02 06:03 +06 (read-only, `.tmp-task8/gate3-audit.mjs` →
+> `.tmp-task8/preflight/gate3-audit.json`).** All 23 checks match the fresh rehearsal exactly:
+> 8 order sources (4 Vincent + 4 Enveil, all legacy-mapped) · 1 warehouse · 2 courier services
+> (both mapped) · 225 products all attributed · customers 3,247 = 3,196 attributed + 51 pool ·
+> orders 4,095 = 4,047 attributed (3,238 bound + 809 inferred) + 48 pool + 0 unattributed +
+> 0 inferable · evidence cohort 0 · 205 stock rows repointed / 0 legacy rows · 0 wiped rows
+> remaining. Orders per source: Vincent Woo 1,772 / Enveil Woo 660 / Facebook-Instagram 798
+> (243+555) / Showrooms 817 (179+638) / Storefronts 0. Live-traffic drift in the window: 0 new
+> customers / 0 new orders. **Gate 3 sign-off pending with the user.**
 
 Produce `tasks/audit/task17-live-audit-report.md` from **read-only** queries against production —
 the exact queries `scripts/task8-audit.mjs` runs (`collectAudit` `:52-123`, `ordersPerSource`
