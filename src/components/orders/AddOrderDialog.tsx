@@ -24,6 +24,7 @@ import {
 import MiniProductCatalog from "./MiniProductCatalog";
 import { readEdgeFnError } from "@/lib/edgeFnError";
 import { buildAddressCandidates, fuzzyMatch, strictMatch } from "@/lib/pathaoMatch";
+import { normalizeBdPhone, validateOrderCustomerInfo } from "@/lib/orderValidation";
 
 
 import { ResponsiveDialog } from "@/components/ui/responsive-dialog";
@@ -79,15 +80,6 @@ import {
   type MixedBrandChip,
 } from "@/lib/identityStrip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-
-const normalizeBdPhone = (raw?: string | null) => {
-  if (!raw) return null;
-  let p = String(raw).replace(/\D/g, "");
-  if (!p) return null;
-  if (p.startsWith("880") && p.length >= 13) p = p.slice(3);
-  if (p.length === 10 && p.startsWith("1")) p = `0${p}`;
-  return p;
-};
 
 // Issue #29 (warn-only duplicate detection): one recent order row as the
 // detector needs it. The brand identity comes from the Order Source binding
@@ -1173,6 +1165,15 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   const validateOrderForm = (): boolean => {
     if (!hasStoreScope(businessStoreIds)) { toast.error("No active business scope — cannot create order"); return false; }
     if (items.length === 0) { toast.error("Add at least one product"); return false; }
+    const customerError = validateOrderCustomerInfo({
+      name: customerName,
+      phone: customerPhone,
+      address: customerAddress,
+      fulfillment,
+      cityId: selectedCity,
+      zoneId: selectedZone,
+    });
+    if (customerError) { toast.error(customerError); return false; }
     if (activeBrands.length > 0 && !selectedBrandId) {
       toast.error("Choose a Brand before creating the order");
       return false;
@@ -1543,6 +1544,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
   // from the current form state so the courier gets the corrected address.
   const handleRetryDispatch = async () => {
     if (dispatchPhase.kind !== "failed") return;
+    if (!validateDispatchRequirements()) return;
     setSaving(true);
     try {
       const pending = dispatchPhase.pending;
@@ -2053,17 +2055,19 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
           <div className="space-y-3 bg-muted/20 p-3 rounded-md border border-border/50">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Name</Label>
-                <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Name" className="h-9" />
+                <Label className="text-xs">Name <span className="text-destructive">*</span></Label>
+                <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Name" className="h-9" aria-required="true" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Phone</Label>
+                <Label className="text-xs">Phone <span className="text-destructive">*</span></Label>
                 <Input
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   onBlur={lookupCustomerByPhone}
                   placeholder="01XXXXXXXXX"
                   className="h-9"
+                  inputMode="tel"
+                  aria-required="true"
                 />
               </div>
             </div>
@@ -2130,14 +2134,14 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             )}
 
             <div className="space-y-1">
-              <Label className="text-xs">Address</Label>
-              <Input value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Full delivery address" className="h-9" />
+              <Label className="text-xs">Address {fulfillment === "delivery" && <span className="text-destructive">*</span>}</Label>
+              <Input value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Full delivery address" className="h-9" aria-required={fulfillment === "delivery"} />
             </div>
 
             {/* Pathao Location Dropdowns (More Compact) */}
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
-                <Label className="text-[10px]">City</Label>
+                <Label className="text-[10px]">City {fulfillment === "delivery" && <span className="text-destructive">*</span>}</Label>
                 <SearchableSelect
                   options={cityOptions}
                   value={selectedCity?.toString() || (locationHints.city ? `${LOCATION_HINT_PREFIX}${locationHints.city}` : "")}
@@ -2157,7 +2161,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-[10px]">Zone</Label>
+                <Label className="text-[10px]">Zone {fulfillment === "delivery" && <span className="text-destructive">*</span>}</Label>
                 <SearchableSelect
                   options={zoneOptions}
                   value={selectedZone?.toString() || (locationHints.zone ? `${LOCATION_HINT_PREFIX}${locationHints.zone}` : "")}

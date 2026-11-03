@@ -34,15 +34,7 @@ import {
 import { useStoresListState } from "@/hooks/useStoresList";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { pickWalkInSource } from "@/lib/orderSources";
-
-const normalizeBdPhone = (raw?: string | null) => {
-  if (!raw) return null;
-  let p = String(raw).replace(/\D/g, "");
-  if (!p) return null;
-  if (p.startsWith("880") && p.length >= 13) p = p.slice(3);
-  if (p.length === 10 && p.startsWith("1")) p = `0${p}`;
-  return p;
-};
+import { normalizeBdPhone, validateOrderCustomerInfo } from "@/lib/orderValidation";
 
 const createEmptyCart = (label: string): Cart => ({
   id: crypto.randomUUID(),
@@ -459,6 +451,19 @@ const POS = () => {
       return "";
     }
 
+    const customerError = validateOrderCustomerInfo({
+      name: cart.customer?.name,
+      phone: cart.customer?.phone,
+      address: cart.customer?.address,
+      fulfillment: cart.fulfillment,
+      cityId: cart.pathaoCityId,
+      zoneId: cart.pathaoZoneId,
+    });
+    if (customerError) {
+      toast({ title: "Cannot complete order", description: customerError, variant: "destructive" });
+      return "";
+    }
+
     // The order's store must belong to the active business
     const orderStoreId = resolveCartStoreId(cart);
     if (!orderStoreId || !businessStoreIds.includes(orderStoreId)) {
@@ -552,7 +557,7 @@ const POS = () => {
         customer_name: cart.customer?.name || null,
         customer_phone: normalizedCustomerPhone,
         customer_address: cart.customer?.address || null,
-        customer_city: null,
+        customer_city: cart.customer?.city || null,
         notes: cart.notes || null,
         store_id: orderStoreId,
         salesperson_id: cart.salespersonId || user?.id || null,

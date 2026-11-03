@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Plus, Printer, FileText, Trash2, Minus, CreditCard, Banknote, Smartphone, Building2, Truck, Store, Search, ShoppingBag, Ruler, X, Check, User, Percent, Edit3, MapPin } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,17 @@ import type { Cart, CartItem, Payment, CustomerData } from "./types";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrency } from "@/hooks/useCurrency";
+import { normalizeBdPhone, validateOrderCustomerInfo } from "@/lib/orderValidation";
 
 interface PathaoZone {
   zone_id: number;
   zone_name: string;
   city_id: number;
+}
+
+interface PathaoCity {
+  city_id: number;
+  city_name: string;
 }
 
 interface PathaoArea {
@@ -72,29 +78,55 @@ const CartPanel = ({
   const [newCustAddress, setNewCustAddress] = useState("");
   const [editingItemPrice, setEditingItemPrice] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState("");
+  const [customerError, setCustomerError] = useState("");
 
   // Pathao zones & areas
+  const [pathaoCities, setPathaoCities] = useState<PathaoCity[]>([]);
   const [pathaoZones, setPathaoZones] = useState<PathaoZone[]>([]);
   const [pathaoAreas, setPathaoAreas] = useState<PathaoArea[]>([]);
+  const [citySearch, setCitySearch] = useState("");
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
   const [zoneSearch, setZoneSearch] = useState("");
   const [showZoneDropdown, setShowZoneDropdown] = useState(false);
   const [detected, setDetected] = useState<DetectedLocation | null>(null);
+  const cartsRef = useRef(carts);
+  cartsRef.current = carts;
 
   useEffect(() => {
     Promise.all([
+      supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id").order("zone_name"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id").order("area_name"),
-    ]).then(([zonesRes, areasRes]) => {
+    ]).then(([citiesRes, zonesRes, areasRes]) => {
+      setPathaoCities((citiesRes.data || []) as PathaoCity[]);
       setPathaoZones((zonesRes.data || []) as PathaoZone[]);
       setPathaoAreas((areasRes.data || []) as PathaoArea[]);
     });
   }, []);
 
+  useEffect(() => {
+    const activeCart = cartsRef.current.find((c) => c.id === activeCartId);
+    if (!activeCart) return;
+    setNewCustName(activeCart.customer?.name || "");
+    setNewCustPhone(activeCart.customer?.phone || "");
+    setNewCustAddress(activeCart.customer?.address || "");
+    setCustomerError("");
+    setPhoneError("");
+    setCitySearch("");
+    setZoneSearch("");
+  }, [activeCartId]);
+
+  const cart = carts.find((c) => c.id === activeCartId) || carts[0];
+  const filteredCities = useMemo(() => {
+    const q = citySearch.toLowerCase();
+    return pathaoCities.filter((c) => !q || c.city_name.toLowerCase().includes(q)).slice(0, 20);
+  }, [pathaoCities, citySearch]);
   const filteredZones = useMemo(() => {
-    if (!zoneSearch) return pathaoZones.slice(0, 20);
+    const zones = cart?.pathaoCityId ? pathaoZones.filter((z) => z.city_id === cart.pathaoCityId) : pathaoZones;
+    if (!zoneSearch) return zones.slice(0, 20);
     const q = zoneSearch.toLowerCase();
-    return pathaoZones.filter((z) => z.zone_name.toLowerCase().includes(q)).slice(0, 20);
-  }, [pathaoZones, zoneSearch]);
+    return zones.filter((z) => z.zone_name.toLowerCase().includes(q)).slice(0, 20);
+  }, [pathaoZones, zoneSearch, cart?.pathaoCityId]);
 
   // --- Pathao location matching (same logic as DispatchDialog) ---
   const LOCATION_WORD_BLACKLIST = useMemo(() => new Set([
@@ -253,7 +285,6 @@ const CartPanel = ({
     setDetected(null);
   }, [pathaoZones, pathaoAreas, buildLocationCandidates, getStrictLocationMatch, fuzzyMatch]);
 
-  const cart = carts.find((c) => c.id === activeCartId) || carts[0];
   if (!cart) return null;
 
   const QUICK_CASH = [500, 1000, 2000, 5000];
@@ -279,15 +310,9 @@ const CartPanel = ({
   const balance = total - totalPaid;
 
   const validatePhone = (value: string) => {
-    const digits = value.replace(/\D/g, "");
-    if (digits.length > 0 && digits.length !== 11) {
-      setPhoneError("Phone must be 11 digits");
-    } else if (digits.length > 0 && !/^\d{11}$/.test(digits)) {
-      setPhoneError("Only numbers allowed");
-    } else {
-      setPhoneError("");
-    }
-    return digits;
+    if (value.trim() && !normalizeBdPhone(value)) setPhoneError("Enter a valid Bangladesh mobile number");
+    else setPhoneError("");
+    return value;
   };
 
   const addPayment = () => {
@@ -314,23 +339,33 @@ const CartPanel = ({
   };
 
   const handleComplete = async () => {
-    if (newCustPhone && !/^\d{11}$/.test(newCustPhone.replace(/\D/g, ""))) {
-      setPhoneError("Phone must be exactly 11 digits");
+    const customer: CustomerData = {
+      ...(cart.customer || {}),
+      name: newCustName.trim(),
+      phone: newCustPhone.trim(),
+      address: newCustAddress.trim() || undefined,
+    };
+    const customerValidationError = validateOrderCustomerInfo({
+      name: customer.name,
+      phone: customer.phone,
+      address: customer.address,
+      fulfillment: cart.fulfillment,
+      cityId: cart.pathaoCityId,
+      zoneId: cart.pathaoZoneId,
+    });
+    if (customerValidationError) {
+      setCustomerError(customerValidationError);
+      if (customerValidationError.includes("mobile")) setPhoneError(customerValidationError);
       return;
     }
+    setCustomerError("");
+    setPhoneError("");
+    onUpdateCart(cart.id, { customer });
 
-    if (!cart.customer && newCustName) {
-      const custData: CustomerData = {
-        name: newCustName,
-        phone: newCustPhone,
-        address: newCustAddress || undefined,
-      };
-      onUpdateCart(cart.id, { customer: custData });
-    }
-
-    const snapshot = { ...cart, customer: cart.customer || (newCustName ? { name: newCustName, phone: newCustPhone, address: newCustAddress || undefined } : null) };
+    const snapshot = { ...cart, customer };
     setCompletedCartSnapshot(snapshot);
     const orderNum = await onCompleteOrder(snapshot);
+    if (!orderNum) return;
     setCompletedOrderNumber(orderNum);
 
     const fmt = invoiceSettings?.default_print_format || "thermal";
@@ -343,6 +378,7 @@ const CartPanel = ({
     setNewCustAddress("");
     setCustomerSearch("");
     setPhoneError("");
+    setCustomerError("");
     setDetected(null);
   };
 
@@ -351,6 +387,7 @@ const CartPanel = ({
     setNewCustName(c.name);
     setNewCustPhone(c.phone);
     setNewCustAddress(c.address || "");
+    setCustomerError("");
     setCustomerSearch("");
     setShowCustomerDropdown(false);
     if (c.address) autoDetectZone(c.address);
@@ -363,6 +400,7 @@ const CartPanel = ({
     setNewCustAddress("");
     setCustomerSearch("");
     setPhoneError("");
+    setCustomerError("");
     setDetected(null);
   };
 
@@ -432,6 +470,7 @@ const CartPanel = ({
                 onChange={(e) => {
                   const val = e.target.value;
                   setNewCustName(val);
+                  setCustomerError("");
                   setCustomerSearch(val);
                   onSearchCustomers(val);
                   setShowCustomerDropdown(true);
@@ -463,15 +502,18 @@ const CartPanel = ({
                 onChange={(e) => {
                   const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
                   setNewCustPhone(raw);
+                  setCustomerError("");
                   validatePhone(raw);
                   if (raw.length >= 3) {
                     onSearchCustomers(raw);
                     setShowCustomerDropdown(true);
                   }
                 }}
-                placeholder="Phone number (11 digits) *"
+                placeholder="BD phone number *"
                 className={`h-9 text-sm bg-secondary ${phoneError ? "border-destructive" : ""}`}
                 maxLength={11}
+                inputMode="tel"
+                aria-invalid={!!phoneError}
               />
               {phoneError && <p className="text-[10px] text-destructive mt-0.5">{phoneError}</p>}
             </div>
@@ -507,6 +549,7 @@ const CartPanel = ({
               </button>
             ))}
           </div>
+          {customerError && cart.fulfillment !== "delivery" && <p className="text-[10px] text-destructive">{customerError}</p>}
 
           {cart.fulfillment === "delivery" && (
             <div className="space-y-2">
@@ -518,6 +561,7 @@ const CartPanel = ({
                 }}
                 placeholder="Shipping address *"
                 className="h-9 text-sm bg-secondary"
+                aria-required="true"
               />
               {/* Auto-detected zone/area hint */}
               {detected && !cart.pathaoZone && (
@@ -537,8 +581,44 @@ const CartPanel = ({
                   {detected.area && <> · <strong>{detected.area.area_name}</strong></>} — click to apply
                 </button>
               )}
-              {/* Pathao Zone Searchable */}
-              <div className="relative">
+              {/* Pathao city and zone selectors. Selecting a zone also keeps its city id. */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="relative">
+                  <Input
+                    value={citySearch || pathaoCities.find((c) => c.city_id === cart.pathaoCityId)?.city_name || ""}
+                    onChange={(e) => {
+                      setCitySearch(e.target.value);
+                      setShowCityDropdown(true);
+                      if (!e.target.value) onUpdateCart(cart.id, { pathaoCityId: undefined, pathaoZone: "", pathaoZoneId: undefined });
+                    }}
+                    onFocus={() => setShowCityDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowCityDropdown(false), 200)}
+                    placeholder="City *"
+                    className="h-9 text-sm bg-secondary"
+                    aria-required="true"
+                  />
+                  {showCityDropdown && filteredCities.length > 0 && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-border bg-popover shadow-lg max-h-40 overflow-y-auto">
+                      {filteredCities.map((city) => (
+                        <button
+                          key={city.city_id}
+                          onClick={() => {
+                            onUpdateCart(cart.id, { pathaoCityId: city.city_id, pathaoZone: "", pathaoZoneId: undefined, pathaoAreaId: undefined });
+                            setCitySearch("");
+                            setZoneSearch("");
+                            setShowCityDropdown(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                        >
+                          {city.city_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Pathao Zone Searchable */}
+                <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   value={zoneSearch || cart.pathaoZone}
@@ -551,6 +631,7 @@ const CartPanel = ({
                   onBlur={() => setTimeout(() => setShowZoneDropdown(false), 200)}
                   placeholder="Search Pathao zone..."
                   className="h-9 text-sm bg-secondary pl-9"
+                  aria-required="true"
                 />
                 {showZoneDropdown && filteredZones.length > 0 && (
                   <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border border-border bg-popover shadow-lg max-h-40 overflow-y-auto">
@@ -558,7 +639,7 @@ const CartPanel = ({
                       <button
                         key={z.zone_id}
                         onClick={() => {
-                          onUpdateCart(cart.id, { 
+                          onUpdateCart(cart.id, {
                             pathaoZone: z.zone_name,
                             pathaoZoneId: z.zone_id,
                             pathaoCityId: z.city_id,
@@ -571,9 +652,11 @@ const CartPanel = ({
                         {z.zone_name}
                       </button>
                     ))}
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
+              {customerError && <p className="text-[10px] text-destructive">{customerError}</p>}
             </div>
           )}
         </div>

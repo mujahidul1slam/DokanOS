@@ -34,6 +34,11 @@ supabase/.temp/
 .playwright-cli/
 # local artifacts and agent tooling (kept untracked — issue #16)
 .audit-ux/
+.review-spec/
+.dsh-worker-notes-*.md
+.tmp-build.txt
+issue[0-9]*.json
+issue[0-9]*.txt
 .scratch/
 test-results/
 .planning/
