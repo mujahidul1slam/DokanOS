@@ -100,6 +100,21 @@ beforeEach(() => {
 });
 
 describe("useOrdersData (issue #9)", () => {
+  it("keeps the empty source-only view in a loading state until its scope resolves", async () => {
+    storesMock.mockReturnValue([]);
+    const { result } = renderHook(() => useOrdersData());
+
+    await waitFor(() => expect(queriesFor("order_sources")).toHaveLength(1));
+    expect(result.current.loading).toBe(true);
+    expect(result.current.orders).toEqual([]);
+
+    await resolveQuery(queriesFor("order_sources")[0], { data: [{ id: "src-only" }], error: null });
+    await waitFor(() => expect(queriesFor("orders")).toHaveLength(1));
+    await resolveQuery(queriesFor("orders")[0], { data: [row("o1")], error: null });
+
+    await waitFor(() => expect(result.current.orders.map((o) => o.id)).toEqual(["o1"]));
+  });
+
   it("a stale scope-partial response never overwrites the newer full list (race regression)", async () => {
     const { result, rerender } = renderHook(() => useOrdersData());
 

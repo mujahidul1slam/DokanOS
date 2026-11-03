@@ -660,6 +660,9 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
   // Retry bumps this so the effect below re-runs the scope fetch — a failed
   // scope fetch otherwise leaves the query under-scoped forever.
   const [scopeReloadKey, setScopeReloadKey] = useState(0);
+  // An order-source-only business has no store ids to keep the empty state from
+  // rendering while its source scope is still being resolved.
+  const [orderSourceScopeSettled, setOrderSourceScopeSettled] = useState(false);
 
   // Request token for the load pipeline. Each loadOrders() call takes a token;
   // after every await a run checks whether a newer run has started and abandons
@@ -697,9 +700,11 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
   );
 
   useEffect(() => {
+    setOrderSourceScopeSettled(false);
     if (!active?.id || brandIds.length === 0) {
       setOrderSourceIds([]);
       setOrderSourceError(null);
+      setOrderSourceScopeSettled(true);
       return;
     }
     let cancelled = false;
@@ -715,12 +720,17 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
           // store-scope-only query and silently lost source-only orders.
           // Surface it; retryLoad() re-runs this fetch.
           setOrderSourceError(error.message || "Could not load order sources");
+          setOrderSourceScopeSettled(true);
           return;
         }
         setOrderSourceError(null);
         setOrderSourceIds((data || []).map((row: { id: string }) => row.id));
+        setOrderSourceScopeSettled(true);
       } catch (err) {
-        if (!cancelled) setOrderSourceError(readErrorMessage(err) ?? "Could not load order sources");
+        if (!cancelled) {
+          setOrderSourceError(readErrorMessage(err) ?? "Could not load order sources");
+          setOrderSourceScopeSettled(true);
+        }
       }
     })();
     return () => {
@@ -747,6 +757,13 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
 
     const hasStoreScope = storeIds.length > 0;
     const hasOrderSourceScope = orderSourceIds.length > 0;
+    const waitingForOrderSourceScope =
+      !hasStoreScope && Boolean(active?.id) && brandIds.length > 0 && !orderSourceScopeSettled;
+
+    if (waitingForOrderSourceScope) {
+      setLoading(true);
+      return;
+    }
 
     // A store filter carried over from somewhere else (previous business, stale
     // session, hand-edited URL) would otherwise read the whole business and then
@@ -881,11 +898,13 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
     storeIds,
     orderSourceIds,
     brands,
+    brandIds,
     scopeKey,
     cachedSnapshot,
     hasConfiguredStores,
     active?.id,
     sessionScope,
+    orderSourceScopeSettled,
     requestedStore,
     cancelLoad,
   ]);

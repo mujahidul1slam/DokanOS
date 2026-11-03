@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef, useTransition } from "react";
 import { useSearchParams } from "react-router-dom";
 import { format } from "date-fns";
 import {
@@ -80,7 +80,7 @@ import { useOrderBulkActions } from "./orders/useOrderBulkActions";
 // handling) lives in the hook; the page renders its state.
 import { useOrdersData, type OrderRow } from "./orders/useOrdersData";
 import { findDuplicateOrderPairs } from "@/lib/duplicateOrder";
-import { useStoresList } from "@/hooks/useStoresList";
+import { useStoresListState } from "@/hooks/useStoresList";
 import {
   hasStoreScope,
   scopeStoreIds,
@@ -140,7 +140,7 @@ const Orders = () => {
   // The store selector's options come from the same seam (useStoresList), so
   // "All stores" can only ever mean this business's stores.
   const businessStoreIds = useActiveBusinessStoreIds();
-  const stores = useStoresList();
+  const { stores, settled: storeScopeSettled } = useStoresListState();
   // Operational write affordances follow the resolved permission baseline, so
   // a first-release account member (no legacy user_roles row) can create/edit
   // orders like staff while a viewer stays read-only.
@@ -160,6 +160,7 @@ const Orders = () => {
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("new");
   const preOrderMode = tab === "pre_order";
+  const [isTabPending, startTabTransition] = useTransition();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [duplicateFilterActive, setDuplicateFilterActive] = useState(false);
@@ -192,6 +193,14 @@ const Orders = () => {
 
 
   const { toast } = useToast();
+
+  const handleTabChange = useCallback((nextTab: TabKey) => {
+    startTabTransition(() => setTab(nextTab));
+  }, []);
+
+  const handlePreOrderStatusChange = useCallback((nextStatus: "all" | "pre_order_pending" | "pre_order_making" | "pre_order_ready") => {
+    startTabTransition(() => setPreOrderStatusFilter(nextStatus));
+  }, []);
 
   // Open detail sheet from ?order=ID URL param (e.g., from Customer profile)
   useEffect(() => {
@@ -649,7 +658,7 @@ const Orders = () => {
     printInvoice({ orderNumber: o.order_number, cart, subtotal: Number(o.subtotal), total: Number(o.total), invoiceSettings }, fmt);
   };
 
-  if (loading) return (
+  if (loading || (!hasStoreScope(businessStoreIds) && !storeScopeSettled)) return (
     <div className="space-y-4">
       <div><h1 className="font-heading text-2xl font-semibold">Orders</h1></div>
       <TableSkeleton rows={10} cols={7} />
@@ -831,8 +840,8 @@ const Orders = () => {
          onDeselect={(id) => setSelected((current) => { const next = new Set(current); next.delete(id); return next; })}
       />
       {/* Tabs */}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-        <OrderTabs tab={tab} onChange={setTab} counts={counts} />
+      <Tabs value={tab} onValueChange={(v) => handleTabChange(v as TabKey)}>
+        <OrderTabs tab={tab} onChange={handleTabChange} counts={counts} />
 
         {preOrderMode && (
           <div className="flex flex-wrap gap-2 pt-2 pb-2 pl-1">
@@ -847,7 +856,7 @@ const Orders = () => {
               return (
                 <button
                   key={t.key}
-                  onClick={() => setPreOrderStatusFilter(t.key as any)}
+                  onClick={() => handlePreOrderStatusChange(t.key as "all" | "pre_order_pending" | "pre_order_making" | "pre_order_ready")}
                   className={cn(
                     "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                     active
@@ -897,6 +906,12 @@ const Orders = () => {
           onCategoryFilterChange={setCategoryFilter}
         />
 
+        {isTabPending ? (
+          <div className="mt-4">
+            <TableSkeleton rows={10} cols={10} />
+          </div>
+        ) : (
+          <>
         {/* ── Possible duplicates ──
             Same layout as the merge groups below: collapsible, one compact row
             per pair, expanded to the two orders. Shown only on the tabs where a
@@ -982,6 +997,8 @@ const Orders = () => {
         )}
 
         <Pagination page={page} totalPages={totalPages} filtered={filtered} setPage={setPage} />
+          </>
+        )}
       </Tabs>
 
       {/* Mobile FAB — Add Order */}
