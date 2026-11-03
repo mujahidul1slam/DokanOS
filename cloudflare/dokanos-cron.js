@@ -9,21 +9,25 @@
 //      (same value as the Supabase vault secret `sync_worker_cron_token` and
 //      the GitHub repo secret SYNC_WORKER_CRON_TOKEN)
 //   4. Settings -> Trigger Events -> Cron Triggers -> Add:
-//        */5 * * * *
-//      and a second one:
 //        */15 * * * *
+//      (the old */5 drain trigger is obsolete — nothing runs on it now)
 //   5. Optional: watch logs via the worker's "Live logs" tail.
 //
 // WHAT IT DOES
-//   - every 5 min  : drain the sync_queue (sync-worker full-drain)
-//   - every 15 min: import Woo changes (woo-sync-all) + refresh Pathao
-//                   tracking (track_all)
+//   - every 15 min: refresh Pathao tracking (pathao-courier track_all)
+//
+// HISTORY
+//   This worker used to also drain the sync_queue (sync-worker, every 5 min)
+//   and import Woo changes (woo-sync-all, every 15 min). Both were retired with
+//   the WooCommerce integration: the sync_queue table, its RPCs and the two
+//   functions are gone, so calling them now 404s. Only the Pathao poll remains,
+//   and it is the sole reason this worker still exists.
 //
 // AFTERCARE (when this becomes the primary scheduler)
-//   - Demote the three GitHub workflows (.github/workflows/*.yml) to once-a-day
-//     dead-man's-switch runs: each alerts if the queue's newest updated_at is
-//     stale — headers documenting the switch are already in those files.
-//   - The demoted workflows can keep using the same SYNC_WORKER_CRON_TOKEN.
+//   - The GitHub workflow .github/workflows/pathao-tracking.yml runs the same
+//     poll every 15 min. Once this worker is confirmed live, demote that
+//     workflow to a once-a-day dead-man's-switch (its header describes the
+//     switch). It can keep using the same SYNC_WORKER_CRON_TOKEN.
 //
 // NOTES
 //   - Supabase edge functions need ~30s per drain batch sometimes; CF cron
@@ -51,37 +55,8 @@ export default {
       }
     };
 
-    // Every 5 minutes (and also on the */15 tick — harmless duplicate: the
-    // claim RPC's SKIP LOCKED makes concurrent drains safe).
-    await run("sync-worker", () =>
-      fetch(`${SB}/functions/v1/sync-worker`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${ANON_KEY}`,
-          "x-cron-secret": env.SYNC_WORKER_CRON_TOKEN,
-        },
-        body: "{}",
-      })
-    );
-
     // Every 15 minutes only.
     if (event.cron === "*/15 * * * *") {
-      await run("woo-sync-all", () =>
-        fetch(`${SB}/functions/v1/woo-sync-all`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${ANON_KEY}`,
-            // woo-sync-all checks the woo_sync_cron_token vault secret — same
-            // GitHub secret WOO_SYNC_CRON_TOKEN. Reuse it here; if you'd
-            // rather keep distinct tokens, set env.WOO_SYNC_CRON_TOKEN too.
-            "x-cron-secret": env.WOO_SYNC_CRON_TOKEN || env.SYNC_WORKER_CRON_TOKEN,
-          },
-          body: "{}",
-        })
-      );
-
       await run("pathao-track", () =>
         fetch(`${SB}/functions/v1/pathao-courier`, {
           method: "POST",

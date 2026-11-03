@@ -13,18 +13,101 @@ const LOCATION_ALIAS_GROUPS: string[][] = [
   ["bbaria", "brahmanbaria"],
   ["barisal", "barishal"],
   ["bogra", "bogura"],
-  ["chittagong", "chattogram"],
+  ["chittagong", "chattogram", "chottogram", "chatgaon"],
   ["cumilla", "comilla"],
-  ["jashore", "jessore"],
+  ["jashore", "jessore", "joshore"],
   ["lakshmipur", "laxmipur", "lokkhipur"],
-  ["munsiganj", "munshiganj"],
+  ["munsiganj", "munshiganj", "munshigonj"],
   ["narshingdi", "narsingdi"],
   ["gopalgonj", "gopalganj"],
+  ["sylhet", "silet", "sylhet sadar"],
+  ["rangpore", "rangpur"],
+  ["coxsbazar", "coxbazar", "cox bazar", "cox's bazar", "cox’s bazar"],
+  ["mymensing", "mymensingh", "momensing"],
+  ["narayangonj", "narayanganj"],
+  ["keranigonj", "keraniganj"],
+  ["shabhar", "savar", "sabhar"],
+  ["shatkhira", "satkhira"],
+  ["jhenidah", "jhenaidah"],
+  ["kustia", "kushtia"],
+  ["chudanga", "chuadanga"],
+  ["hobiganj", "habiganj"],
+  ["maulvibazar", "moulvibazar", "moulavibazar"],
+  ["sunamgonj", "sunamganj"],
+  ["netrakona", "netrokona"],
+  ["kishorganj", "kishoreganj"],
+  ["manikgonj", "manikganj"],
+  ["bandarbon", "bandarban"],
+  ["khagrachari", "khagrachhari"],
   ["bashundhara", "basundhara", "bashundhara r/a", "bashundhara residential area", "boshundhora", "boshundhara", "bosundhora"],
-  ["dhanmondi", "dhanmondi r/a"],
+  ["dhanmondi", "dhanmondi r/a", "dhanmondi ra"],
   ["khilgaon", "khilgaon r/a"],
-  ["cantonment", "dhaka cantonment"],
+  ["cantonment", "dhaka cantonment", "cantt"],
   ["farmgate", "farm gate"],
+  ["mohammadpur", "mohammadpur", "mohammodpur", "mohammedpur"],
+  ["motijheel", "motijhil"],
+  ["gulshan", "gulshan 1", "gulshan 2"],
+  ["banani", "bananni"],
+  ["uttara", "uttora"],
+  ["mirpur", "mirpur 1", "mirpur 10", "mirpur 11", "mirpur 12", "mirpur 13", "mirpur 14"],
+  ["badda", "badda r/a"],
+  ["rampura", "rampura r/a"],
+  ["jatrabari", "jattrabari"],
+  ["shyamoli", "shamoli"],
+  ["tejgaon", "tejgaon r/a"],
+  ["malibagh", "malibag"],
+  ["mugda", "mogbazar", "mouchak"],
+  ["new market", "newmarket"],
+];
+
+// --- Bangla place-name dictionary -------------------------------------------
+// The character-level transliteration below is phonetic, not orthographic:
+// "চট্টগ্রাম" becomes "chttgram", which is too far from Pathao's "Chattogram"
+// for the edit-distance window. Known place names are therefore replaced with
+// their canonical English spelling BEFORE character mapping (longest first, so
+// "কক্সবাজার" wins over "বাজার"). This is the fix for Bangla addresses that
+// previously matched nothing.
+const BANGLA_PLACE_NAMES: Array<[string, string]> = [
+  ["কক্সবাজার", "coxsbazar"],
+  ["ময়মনসিংহ", "mymensingh"],
+  ["নারায়ণগঞ্জ", "narayanganj"],
+  ["ব্রাহ্মণবাড়িয়া", "brahmanbaria"],
+  ["খাগড়াছড়ি", "khagrachhari"],
+  ["নেত্রকোণা", "netrokona"],
+  ["কিশোরগঞ্জ", "kishoreganj"],
+  ["মৌলভীবাজার", "moulvibazar"],
+  ["ঝিনাইদহ", "jhenaidah"],
+  ["চট্টগ্রাম", "chattogram"],
+  ["ঢাকা", "dhaka"],
+  ["সিলেট", "sylhet"],
+  ["খুলনা", "khulna"],
+  ["রাজশাহী", "rajshahi"],
+  ["বরিশাল", "barishal"],
+  ["রংপুর", "rangpur"],
+  ["কুমিল্লা", "cumilla"],
+  ["গাজীপুর", "gazipur"],
+  ["বগুড়া", "bogura"],
+  ["যশোর", "jashore"],
+  ["সাভার", "savar"],
+  ["টঙ্গী", "tongi"],
+  ["কেরানীগঞ্জ", "keraniganj"],
+  ["মিরপুর", "mirpur"],
+  ["উত্তরা", "uttara"],
+  ["ধানমন্ডি", "dhanmondi"],
+  ["মতিঝিল", "motijheel"],
+  ["গুলশান", "gulshan"],
+  ["বনানী", "banani"],
+  ["মোহাম্মদপুর", "mohammadpur"],
+  ["রামপুরা", "rampura"],
+  ["বাড্ডা", "badda"],
+  ["তেজগাঁও", "tejgaon"],
+  ["মালিবাগ", "malibagh"],
+  ["শ্যামলী", "shyamoli"],
+  ["খিলগাঁও", "khilgaon"],
+  ["যাত্রাবাড়ী", "jatrabari"],
+  ["বসুন্ধরা", "bashundhara"],
+  ["পাহাড়তলী", "pahartali"],
+  ["সদর", "sadar"],
 ];
 
 // --- Bangla → Latin transliteration -----------------------------------------
@@ -68,24 +151,41 @@ const BANGLA_MAP: Array<[string, string]> = [
 
 const hasBangla = (v: string) => /[\u0980-\u09FF]/.test(v);
 
+// Longest-first so "কক্সবাজার" is consumed before "বাজার", etc.
+const BANGLA_PLACE_NAMES_SORTED = [...BANGLA_PLACE_NAMES].sort(
+  (a, b) => b[0].length - a[0].length,
+);
+
+const replaceBanglaPlaceNames = (input: string): string => {
+  let out = input;
+  for (const [bn, en] of BANGLA_PLACE_NAMES_SORTED) {
+    if (out.includes(bn)) out = out.split(bn).join(` ${en} `);
+  }
+  return out;
+};
+
 const transliterateBangla = (input: string): string => {
   if (!hasBangla(input)) return input;
+  // Replace known place names BEFORE character mapping; the loop below must
+  // then index the replaced string (using `input` offsets shifted the cursor
+  // and silently produced garbage once a place name changed length).
+  const pre = replaceBanglaPlaceNames(input);
   let out = "";
   let i = 0;
-  while (i < input.length) {
+  while (i < pre.length) {
     // Bangla digit?
-    const digit = BANGLA_DIGITS[input[i]];
+    const digit = BANGLA_DIGITS[pre[i]];
     if (digit) { out += digit; i += 1; continue; }
     // Try multi-char clusters first
     let matched = false;
     for (const [src, tgt] of BANGLA_MAP) {
-      if (src.length > 1 && input.startsWith(src, i)) {
+      if (src.length > 1 && pre.startsWith(src, i)) {
         out += tgt; i += src.length; matched = true; break;
       }
     }
     if (matched) continue;
     // Single char map
-    const ch = input[i];
+    const ch = pre[i];
     const single = BANGLA_MAP.find(([s]) => s === ch);
     if (single) { out += single[1]; i += 1; continue; }
     out += ch; i += 1;

@@ -8,8 +8,6 @@ import { addOrderTimeline } from "@/lib/orderTimeline";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type MeasurementGroup, type SizePreset } from "@/lib/measurements";
 import { getGroupsWithoutRows } from "@/lib/measurementRules";
-import { postWooOrderNote } from "@/lib/wooNotes";
-import { kickSyncWorker } from "@/lib/wooNotes";
 import { SourceBadge } from "./OrderBadges";
 import { evaluatePaymentGate, PAYMENT_NEEDS_CONFIRMATION_LABEL } from "@/lib/paymentGate";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -105,7 +103,6 @@ interface OrderDetail {
   customer_email: string | null;
   customer_city: string | null;
   fulfillment_type: string;
-  woo_order_id: number | null;
   store_id: string | null;
   order_source_id: string | null;
   pathao_integration_id: string | null;
@@ -120,6 +117,12 @@ interface OrderDetail {
     brand_id: string | null;
     brands: { id: string; name: string | null; woo_store_id: string | null } | null;
   } | null;
+  /** Product-derived brand attribution; POS orders may contain several. */
+  order_brands?: Array<{
+    brand_id: string;
+    is_primary: boolean;
+    brands: { id: string; name: string | null; logo_url?: string | null } | null;
+  }> | null;
 }
 
 /** Stored identity of the order, snapshotted at load for change detection (issue #32). */
@@ -428,7 +431,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const orderRes = await scopeStoreIds(
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, woo_order_id, store_id, storefront_id, stock_restored_at, order_source_id, pathao_integration_id, pathao_store_id, stores(url, name), order_source:order_sources(id, name, type, brand_id, brands(id, name, woo_store_id))")
+        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, store_id, storefront_id, stock_restored_at, order_source_id, pathao_integration_id, pathao_store_id, stores(url, name), order_source:order_sources(id, name, type, brand_id, brands(id, name, woo_store_id)), order_brands(brand_id, is_primary, brands(id, name, logo_url))")
         .eq("id", orderId),
       businessStoreIds,
     ).single();
@@ -1213,19 +1216,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           description: `Items updated — ${itemChangeNotes.join("; ")}`,
           metadata: { changes: itemChangeNotes, new_total: computedTotal },
         });
-
-        // Item edits must reach Woo as a full line_items overwrite
-        // (approved decision). enqueue_order_push(reason='items_updated')
-        // sets include_items=true on the queue row; the worker drains it and
-        // woo-push rebuilds Woo's line items from DokanOS order_items.
-        // Silent no-op for non-Woo orders (RPC checks woo_order_id).
-        await supabase.rpc("enqueue_order_push", {
-          p_order_id: order.id,
-          p_reason: "items_updated",
-        });
-        // Drain immediately: the user just edited this order; don't let the
-        // push sit behind the throttled cron.
-        void kickSyncWorker();
       }
 
       // Recompute payment_status & amount_to_collect against the new total
@@ -1293,19 +1283,6 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           after: afterSnap,
           ...conflictNote,
         });
-      }
-
-      // Status / customer / totals / identity edits all enqueue via the DB
-      // trigger on orders.update; kick the worker so the push lands within
-      // seconds instead of waiting for the throttled scheduler.
-      if (
-        saveStatus !== order.status ||
-        savePaymentStatus !== order.payment_status ||
-        custChanges.length > 0 ||
-        totalsChanges.length > 0 ||
-        identityIsChanging
-      ) {
-        void kickSyncWorker();
       }
 
       {
@@ -1588,7 +1565,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         amount_to_collect: remaining,
       }).eq("id", order.id);
 
-      // Timeline (auto-syncs to Woo notes via addOrderTimeline)
+      // Timeline entry (DokanOS-only history)
       await addOrderTimeline({
         order_id: order.id,
         event: "payment_confirmed",
@@ -1648,20 +1625,13 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
         if (!item.product_id) continue;
         const { data: prod } = await supabase
           .from("products")
-          .select("stock_quantity, woo_product_id, manage_stock")
+          .select("stock_quantity, manage_stock")
           .eq("id", item.product_id)
           .single();
         if (prod && (globalStockEnabled || prod.manage_stock === true)) {
           await supabase.from("products").update({
             stock_quantity: (prod.stock_quantity || 0) + item.quantity,
           }).eq("id", item.product_id);
-
-          // Push stock to WooCommerce if linked
-          if (prod.woo_product_id) {
-            supabase.functions.invoke("woo-push", {
-              body: { action: "push_stock", product_id: item.product_id },
-            }).catch(() => {});
-          }
         }
       }
 
@@ -1700,27 +1670,10 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
               {order && <FulfillmentBadge status={order.status} />}
               {order && <SourceBadge source={order.source} storeName={order.stores?.name} orderSource={order.order_source} />}
             </div>
-            {order?.woo_order_id && order.stores?.url && (
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
-                className="gap-1.5 mr-8"
-              >
-                <a
-                  href={`${order.stores.url.replace(/\/+$/, "")}/wp-admin/post.php?post=${order.woo_order_id}&action=edit`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  View on WooCommerce
-                </a>
-              </Button>
-            )}
           </div>
           {order && (
             <p className="text-xs text-muted-foreground mt-1">
-              {format(new Date(order.created_at), "MMM d, yyyy · h:mm a")} · {order.source === "pos" ? "POS" : "WooCommerce"}
+              {format(new Date(order.created_at), "MMM d, yyyy · h:mm a")} · {order.source === "pos" ? "POS" : "Store"}
               {order.consignment_id ? (
                 <>
                   <a
@@ -1761,6 +1714,20 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 </span>
               ) : null}
             </p>
+          )}
+          {order?.order_brands && order.order_brands.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground">Brands:</span>
+              {order.order_brands.map((attribution) => (
+                <Badge
+                  key={attribution.brand_id}
+                  variant={attribution.is_primary ? "default" : "outline"}
+                  className="text-[10px]"
+                >
+                  {attribution.brands?.name || "Unknown brand"}
+                </Badge>
+              ))}
+            </div>
           )}
         </SheetHeader>
 

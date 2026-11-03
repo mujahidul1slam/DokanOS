@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Loader2, Plus, Store } from "lucide-react";
+import { AlertTriangle, Loader2, Package, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { canCreateBusinessResources } from "@/lib/accounts/rolePresentation";
 import type { OrderSourceRow } from "@/lib/orderSources";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   BrandSourceSection,
@@ -14,19 +13,21 @@ import {
 } from "@/components/order-sources/BrandSourceSection";
 import { type LegacyRows, type LegacyStoreRow } from "@/components/order-sources/LegacySourceRows";
 import { OrderSourceDialog } from "@/components/order-sources/OrderSourceDialog";
+import { ConnectorSection } from "@/components/integrations/ConnectorSection";
 
 const EMPTY_LEGACY_ROWS: LegacyRows = {
   stores: [],
 };
 
 /**
- * Order Sources page (Task 6, spec §2/§8) — one section per brand listing its
- * order sources with type badges and connection/sync status, plus the
- * read-only legacy Woo-store rows that remain mapped through
- * order_sources.legacy_* columns after the Task 16 contract drop.
+ * Order Sources management, living on the Integrations page (Task 6, spec
+ * §2/§8): one section per brand listing its order sources with type badges and
+ * connection/sync status, the read-only legacy Woo-store rows that remain
+ * mapped through order_sources.legacy_* columns after the Task 16 contract
+ * drop, and the default-source picker the Add Order form follows.
  */
-export default function OrderSources() {
-  const { active, brands, loading: ctxLoading, myRole } = useBusinessContext();
+export function OrderSourcesPanel() {
+  const { brands, myRole } = useBusinessContext();
   const canCreate = canCreateBusinessResources(myRole);
   const [sources, setSources] = useState<OrderSourceRow[]>([]);
   const [orderStats, setOrderStats] = useState<Record<string, SourceOrderStat>>({});
@@ -115,37 +116,46 @@ export default function OrderSources() {
     load();
   }, [load]);
 
-  if (ctxLoading) {
-    return (
-      <div className="flex justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin" aria-label="Loading" />
-      </div>
-    );
-  }
+  /**
+   * Mark a source as the brand's default for the Add Order form. The current
+   * default is cleared first — the partial unique index (one default per
+   * brand) rejects a second default while one exists.
+   */
+  const setDefault = useCallback(async (source: OrderSourceRow) => {
+    if (source.is_default) return;
+    try {
+      const clear = await supabase
+        .from("order_sources")
+        .update({ is_default: false })
+        .eq("brand_id", source.brand_id)
+        .eq("is_default", true);
+      if (clear.error) throw clear.error;
+      const set = await supabase.from("order_sources").update({ is_default: true }).eq("id", source.id);
+      if (set.error) throw set.error;
+      setSources((prev) =>
+        prev.map((s) => (s.brand_id === source.brand_id ? { ...s, is_default: s.id === source.id } : s)),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to set the default order source");
+    }
+  }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-          <Store className="h-5 w-5 text-muted-foreground" />
-        </div>
-        <div>
-          <h1 className="font-heading text-xl font-semibold">Order Sources</h1>
-          <p className="text-sm text-muted-foreground">
-            Every order comes from one place or channel — a showroom, a WooCommerce
-            store, Facebook, or a manual channel. Manage them per brand.
-          </p>
-        </div>
-        <Badge variant="secondary" className="ml-auto">
-          {sources.length} source{sources.length === 1 ? "" : "s"}
-        </Badge>
-        {canCreate && brands.length > 0 && (
+    <ConnectorSection
+      id="order-sources-heading"
+      title="Order Sources"
+      description="Every channel that creates orders — synced connectors and staff-entered ones. Click the star to choose the default source the Add Order form starts with."
+      icon={<Package className="h-5 w-5 text-muted-foreground" aria-hidden="true" />}
+      count={sources.length}
+      layout="stack"
+      actions={
+        canCreate && brands.length > 0 ? (
           <Button size="sm" onClick={() => setDialog({ open: true, brandId: brands[0].id, source: null })}>
             <Plus className="h-3.5 w-3.5 mr-1" /> New source
           </Button>
-        )}
-      </div>
-
+        ) : undefined
+      }
+    >
       {error && (
         <div role="alert" className="flex items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
           <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
@@ -177,11 +187,12 @@ export default function OrderSources() {
               sources={sources.filter((s) => s.brand_id === brand.id)}
               stats={orderStats}
               legacy={{
-                stores: legacy.stores.filter((s) => brands.find((b) => b.id === brand.id)?.woo_store_id === s.id),
+                stores: legacy.stores.filter((s) => brand.woo_store_id === s.id),
               }}
               canCreate={canCreate}
               onAdd={(brandId) => setDialog({ open: true, brandId, source: null })}
               onEdit={(source) => setDialog({ open: true, brandId: source.brand_id, source })}
+              onSetDefault={setDefault}
             />
           ))}
         </div>
@@ -195,6 +206,6 @@ export default function OrderSources() {
         source={dialog.source}
         onSaved={load}
       />
-    </div>
+    </ConnectorSection>
   );
 }

@@ -8,8 +8,9 @@ import {
 } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
+  PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
+import { sourceFallbackLabel } from "@/lib/orderSources";
 import { cn } from "@/lib/utils";
 import type { TabKey } from "@/pages/orders/tabFilters";
 import { useCurrency } from "@/hooks/useCurrency";
@@ -22,47 +23,69 @@ export interface OrderBrandPresentation {
   accent: string;
 }
 
-export function BrandPresentation({
+/**
+ * One merged "Brand / Source" cell: every brand attributed to the order is
+ * rendered (POS orders can span brands — none may hide behind a "+N" badge),
+ * with the order source shown as a muted line below the brand stack. When the
+ * order has no order_sources row, the legacy text attribution (POS /
+ * WooCommerce [store] / Legacy migration…) takes its place.
+ */
+export function BrandSourcePresentation({
   brand,
-  sellingPointName,
-  storeName,
+  brands,
+  orderSource,
+  sourceFallback,
   compact = false,
 }: {
   brand: OrderBrandPresentation | null | undefined;
-  sellingPointName?: string | null;
-  storeName?: string | null;
+  /** Every brand attributed to the order's items (order_brands). POS orders can span brands. */
+  brands?: OrderBrandPresentation[] | null;
+  orderSource?: { name: string; type: string } | null;
+  /** Label used when the order has no order_sources row. */
+  sourceFallback?: string | null;
   compact?: boolean;
 }) {
-  const fallbackName = sellingPointName || storeName || "—";
-  if (!brand) {
-    return <span className="text-sm text-foreground">{fallbackName}</span>;
+  // `brand` is the primary; `brands` (order_brands) already leads with it, so
+  // dedupe by id and render all of them.
+  const seen = new Set<string>();
+  const all: OrderBrandPresentation[] = [];
+  for (const b of brands ?? (brand ? [brand] : [])) {
+    if (b && !seen.has(b.id)) {
+      seen.add(b.id);
+      all.push(b);
+    }
   }
-  const monogram = brandMonogram(brand.name);
+  const sourceLine = orderSource ? orderSource.name : sourceFallback || "";
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-2", compact && "gap-1.5")}>
-      {brand.logo_url ? (
-        <img
-          src={brand.logo_url}
-          alt=""
-          referrerPolicy="no-referrer"
-          className={cn("shrink-0 rounded object-cover", compact ? "h-5 w-5" : "h-7 w-7")}
-          style={{ border: `2px solid ${brand.accent}` }}
-          onError={(event) => { event.currentTarget.style.display = "none"; }}
-        />
-      ) : (
-        <span
-          aria-hidden="true"
-          className={cn("inline-flex shrink-0 items-center justify-center rounded font-bold text-white", compact ? "h-5 w-5 text-[9px]" : "h-7 w-7 text-[10px]")}
-          style={{ backgroundColor: brand.accent }}
-        >
-          {monogram}
+    <span className={cn("inline-flex min-w-0 flex-col items-start gap-1", compact && "gap-0.5")}>
+      {all.map((b) => (
+        <span key={b.id} className={cn("inline-flex max-w-full min-w-0 items-center gap-2", compact && "gap-1.5")}>
+          {b.logo_url ? (
+            <img
+              src={b.logo_url}
+              alt=""
+              referrerPolicy="no-referrer"
+              className={cn("shrink-0 rounded object-cover", compact ? "h-5 w-5" : "h-6 w-6")}
+              style={{ border: `2px solid ${b.accent}` }}
+              onError={(event) => { event.currentTarget.style.display = "none"; }}
+            />
+          ) : (
+            <span
+              aria-hidden="true"
+              className={cn("inline-flex shrink-0 items-center justify-center rounded font-bold text-white", compact ? "h-5 w-5 text-[9px]" : "h-6 w-6 text-[10px]")}
+              style={{ backgroundColor: b.accent }}
+            >
+              {brandMonogram(b.name)}
+            </span>
+          )}
+          <span className="min-w-0 truncate text-sm font-medium text-foreground">{b.name}</span>
         </span>
-      )}
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-medium text-foreground">{brand.name}</span>
-        {(sellingPointName || storeName) && (
-          <span className="block truncate text-[11px] text-muted-foreground">{sellingPointName || storeName}</span>
-        )}
+      ))}
+      <span
+        className="max-w-full truncate text-[11px] text-muted-foreground"
+        title={orderSource ? `Order source · ${orderSource.type}` : undefined}
+      >
+        {sourceLine || "—"}
       </span>
     </span>
   );
@@ -88,6 +111,8 @@ interface OrderRowLike {
   measurement_slip_printed_at?: string | null;
   stores: { name: string } | null;
   brand?: OrderBrandPresentation | null;
+  /** All brands attributed to the order's items — POS orders can span brands. */
+  brands?: OrderBrandPresentation[] | null;
   order_source?: { name: string; type: string } | null;
   productItems: { name: string; qty: number }[];
 }
@@ -99,6 +124,7 @@ interface Props<T extends OrderRowLike> {
   onToggleSelect: (id: string) => void;
   onToggleAll: () => void;
   renderActions: (order: T) => ReactNode;
+  duplicateOrderIds?: ReadonlySet<string>;
 }
 
 function ProductsList({ items }: { items: { name: string; qty: number }[] }) {
@@ -132,7 +158,7 @@ function ProductsList({ items }: { items: { name: string; qty: number }[] }) {
 }
 
 function OrderTable<T extends OrderRowLike>({
-  orders, selected, tab, onToggleSelect, onToggleAll, renderActions,
+  orders, selected, tab, onToggleSelect, onToggleAll, renderActions, duplicateOrderIds,
 }: Props<T>) {
   const { symbol } = useCurrency();
   const allChecked = orders.length > 0 && orders.every((o) => selected.has(o.id));
@@ -146,9 +172,8 @@ function OrderTable<T extends OrderRowLike>({
             </TableHead>
             <TableHead>Order Info</TableHead>
             <TableHead>Customer</TableHead>
-            <TableHead>Brand / Selling Point</TableHead>
+            <TableHead>Brand / Source</TableHead>
             <TableHead className="w-[240px]">Products</TableHead>
-            <TableHead>Source</TableHead>
             <TableHead className="text-right">Total</TableHead>
             <TableHead>Delivery</TableHead>
             <TableHead>Status</TableHead>
@@ -169,7 +194,12 @@ function OrderTable<T extends OrderRowLike>({
                 />
               </TableCell>
               <TableCell>
-                <div className="font-medium text-foreground">#{order.order_number}</div>
+                <div className="flex items-center gap-1.5">
+                  <div className="font-medium text-foreground">#{order.order_number}</div>
+                  {duplicateOrderIds?.has(order.id) && (
+                    <Badge variant="destructive" className="px-1.5 py-0 text-[9px]">Duplicate</Badge>
+                  )}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   {format(new Date(order.created_at), "MMM d, yyyy · h:mm a")}
                 </div>
@@ -184,16 +214,16 @@ function OrderTable<T extends OrderRowLike>({
                 )}
               </TableCell>
               <TableCell>
-                <BrandPresentation
+                <BrandSourcePresentation
                   brand={order.brand}
-                  sellingPointName={order.order_source?.name}
-                  storeName={order.stores?.name || (order.source === "pos" ? "POS" : null)}
+                  brands={order.brands}
+                  orderSource={order.order_source}
+                  sourceFallback={sourceFallbackLabel(order.source, order.stores?.name)}
                 />
               </TableCell>
               <TableCell>
                 <ProductsList items={order.productItems} />
               </TableCell>
-              <TableCell><SourceBadge source={order.source} storeName={order.stores?.name} orderSource={order.order_source} /></TableCell>
               <TableCell className="text-right">
                 <div className="font-medium text-foreground">{symbol}{Number(order.total).toLocaleString()}</div>
                 {order.payment_status !== "paid" && (order.amount_to_collect ?? 0) > 0 && (

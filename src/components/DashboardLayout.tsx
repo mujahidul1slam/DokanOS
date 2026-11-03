@@ -2,7 +2,6 @@ import { ReactNode, useState, useEffect } from "react";
 import AppSidebar from "./AppSidebar";
 import BottomNav from "./BottomNav";
 import QuickShortcuts from "./QuickShortcuts";
-import GlobalSyncIndicator from "./integrations/GlobalSyncIndicator";
 import InstallBanner from "./InstallBanner";
 
 const DashboardLayout = ({ children }: { children: ReactNode }) => {
@@ -38,7 +37,6 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
       </main>
       <BottomNav onMenuClick={() => setMobileMenuOpen(true)} />
       <InstallBanner />
-      <GlobalSyncIndicator />
     </div>
   );
 };

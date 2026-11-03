@@ -96,7 +96,6 @@ const POS = () => {
   const [activeCartId, setActiveCartId] = useState(carts[0].id);
   const [cartCounter, setCartCounter] = useState(2);
 
-  const [selectedStoreId, setSelectedStoreId] = useState("default");
   const [currentShift, setCurrentShift] = useState<any>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -381,6 +380,31 @@ const POS = () => {
     });
   }, [activeCartId]);
 
+  /**
+   * POS has no order-level store selector. Product lines decide attribution;
+   * this deterministic primary is retained only for legacy single-store
+   * columns and numbering. The database order_brands trigger records every
+   * contributing brand after the line items are inserted.
+   */
+  const resolveCartStoreId = useCallback((cart: Cart): string | null => {
+    const contribution = new Map<string, number>();
+    for (const item of cart.items) {
+      if (item.isCustomItem || !item.productId) continue;
+      const product = products.find((candidate) => candidate.id === item.productId);
+      const storeId = product?.store_id;
+      if (!storeId || !businessStoreIds.includes(storeId)) continue;
+      const lineTotal = item.price * item.qty;
+      const itemDiscount = item.discountType === "percent"
+        ? lineTotal * (item.discountValue || 0) / 100
+        : (item.discountValue || 0);
+      contribution.set(storeId, (contribution.get(storeId) || 0) + Math.max(0, lineTotal - itemDiscount));
+    }
+    return Array.from(contribution.entries())
+      .sort(([storeA, amountA], [storeB, amountB]) => amountB - amountA || storeA.localeCompare(storeB))[0]?.[0]
+      || businessStoreIds[0]
+      || null;
+  }, [products, businessStoreIds]);
+
   const holdCurrentCart = useCallback(async () => {
     const cart = carts.find((c) => c.id === activeCartId);
     if (!cart || cart.items.length === 0) {
@@ -389,9 +413,9 @@ const POS = () => {
     }
 
     // Fail closed: the held cart's store must belong to the active business
-    const cartStoreId = cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null);
+    const cartStoreId = resolveCartStoreId(cart);
     if (!cartStoreId || !businessStoreIds.includes(cartStoreId)) {
-      toast({ title: "Cannot hold cart", description: "No active business store selected", variant: "destructive" });
+      toast({ title: "Cannot hold cart", description: "No active business store is available", variant: "destructive" });
       return;
     }
 
@@ -408,7 +432,7 @@ const POS = () => {
     // Reset current cart
     removeCart(cart.id);
     toast({ title: `${cart.label} held` });
-  }, [carts, activeCartId, selectedStoreId, user, businessStoreIds, toast, removeCart]);
+  }, [carts, activeCartId, user, businessStoreIds, toast, removeCart, resolveCartStoreId]);
 
   const recallCart = useCallback((cart: Cart) => {
     setCarts((prev) => [...prev, cart]);
@@ -436,9 +460,9 @@ const POS = () => {
     }
 
     // The order's store must belong to the active business
-    const orderStoreId = cart.storeId || (selectedStoreId !== "default" ? selectedStoreId : null);
+    const orderStoreId = resolveCartStoreId(cart);
     if (!orderStoreId || !businessStoreIds.includes(orderStoreId)) {
-      toast({ title: "Cannot complete order", description: "Select a store belonging to the active business", variant: "destructive" });
+      toast({ title: "Cannot complete order", description: "No active business store is available", variant: "destructive" });
       return "";
     }
 
@@ -511,7 +535,7 @@ const POS = () => {
     const needsFulfillment = cart.fulfillment === "delivery" || cart.fulfillment === "pickup";
     const orderStatus = needsFulfillment ? "processing" : "delivered";
 
-    const { data: order } = await supabase
+    const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert({
         order_number: orderNumber,
@@ -541,7 +565,12 @@ const POS = () => {
       .select("id")
       .single();
 
-    if (order) {
+    if (orderError || !order) {
+      toast({ title: "Could not complete order", description: orderError?.message || "The order was not created", variant: "destructive" });
+      return "";
+    }
+
+    {
       // Order placed timeline event
       await addOrderTimeline({
         order_id: order.id,
@@ -554,18 +583,23 @@ const POS = () => {
         item_count: cart.items.length,
       });
 
-      const items = cart.items.map((i) => ({
-        order_id: order.id,
-        product_id: i.isCustomItem ? null : i.productId,
-        product_name: i.name + (i.variationLabel ? ` - ${i.variationLabel}` : ""),
-        quantity: i.qty,
-        unit_price: i.price,
-        line_total: i.price * i.qty,
-        discount: i.discountType === "percent"
-          ? (i.price * i.qty * (i.discountValue || 0) / 100)
-          : (i.discountValue || 0),
-      }));
-      const { data: insertedItems } = await supabase.from("order_items").insert(items).select("id");
+      const items = cart.items.map((i) => {
+        const grossLineTotal = i.price * i.qty;
+        const itemDiscount = i.discountType === "percent"
+          ? grossLineTotal * (i.discountValue || 0) / 100
+          : (i.discountValue || 0);
+        return {
+          order_id: order.id,
+          product_id: i.isCustomItem ? null : i.productId,
+          product_name: i.name + (i.variationLabel ? ` - ${i.variationLabel}` : ""),
+          quantity: i.qty,
+          unit_price: i.price,
+          line_total: Math.max(0, grossLineTotal - itemDiscount),
+          discount: itemDiscount,
+        };
+      });
+      const { data: insertedItems, error: itemsError } = await supabase.from("order_items").insert(items).select("id");
+      if (itemsError) throw itemsError;
 
       // Persist measurements per inserted item
       let hasMeasurements = false;
@@ -609,7 +643,16 @@ const POS = () => {
           method: p.method,
           amount: p.amount,
         }));
-        await supabase.from("order_payments").insert(payments);
+        const { error: paymentError } = await supabase.from("order_payments").insert(payments);
+        if (paymentError) {
+          // Do not leave a paid order with no persisted payment rows. Reports
+          // intentionally calculate paid/due from the payment ledger.
+          await supabase.from("orders").update({
+            payment_status: "unpaid",
+            amount_to_collect: total,
+          }).eq("id", order.id);
+          toast({ title: "Payment was not saved", description: paymentError.message, variant: "destructive" });
+        }
         await addOrderTimeline(
           cart.payments.map((p) => ({
             order_id: order.id,
@@ -662,27 +705,16 @@ const POS = () => {
       for (const item of cart.items) {
         if (item.isCustomItem || !item.productId) continue;
         // Parent product must belong to the active business before any stock write
-        const { data: prod } = await supabase.from("products").select("stock_quantity, woo_product_id, store_id, manage_stock").eq("id", item.productId).single();
+        const { data: prod } = await supabase.from("products").select("stock_quantity, store_id, manage_stock").eq("id", item.productId).single();
         if (!prod || !prod.store_id || !businessStoreIds.includes(prod.store_id)) continue;
         if (item.variationId) {
           const { data: v } = await supabase.from("product_variations").select("stock_quantity, manage_stock").eq("id", item.variationId).eq("product_id", item.productId).single();
           if (v && (globalStockEnabled || v.manage_stock === true)) {
             await supabase.from("product_variations").update({ stock_quantity: Math.max(0, v.stock_quantity - item.qty) }).eq("id", item.variationId).eq("product_id", item.productId);
           }
-          // Still push parent product stock to Woo so the linked store reflects the change
-          if (prod.woo_product_id) {
-            supabase.functions.invoke("woo-push", {
-              body: { action: "push_stock", product_id: item.productId },
-            }).catch(() => {});
-          }
         } else {
           if (globalStockEnabled || prod.manage_stock === true) {
             await supabase.from("products").update({ stock_quantity: Math.max(0, prod.stock_quantity - item.qty) }).eq("id", item.productId).in("store_id", businessStoreIds);
-            if (prod.woo_product_id) {
-              supabase.functions.invoke("woo-push", {
-                body: { action: "push_stock", product_id: item.productId },
-              }).catch(() => {});
-            }
           }
         }
       }
@@ -698,7 +730,7 @@ const POS = () => {
     });
 
     return orderNumber;
-  }, [selectedStoreId, user, currentShift, successChime, globalStockEnabled, businessStoreIds, brands, hasScope, toast, symbol]);
+  }, [user, currentShift, successChime, globalStockEnabled, businessStoreIds, brands, hasScope, toast, symbol, resolveCartStoreId]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -757,9 +789,6 @@ const POS = () => {
   return (
     <div className="flex flex-col h-[calc(100dvh-3rem)] md:h-[calc(100vh-3rem)] -m-4 lg:-m-6 pb-16 lg:pb-0">
       <POSToolbar
-        stores={stores}
-        selectedStoreId={selectedStoreId}
-        onStoreChange={setSelectedStoreId}
         salespersonName={user?.email || ""}
         onOpenHeld={() => setShowHeld(true)}
         onHoldCurrent={holdCurrentCart}

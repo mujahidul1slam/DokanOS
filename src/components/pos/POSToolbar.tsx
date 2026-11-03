@@ -1,15 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   PauseCircle, Play, RotateCcw, Clock, Maximize, Minimize,
   Keyboard, Volume2, VolumeX, Settings2
 } from "lucide-react";
 
 interface Props {
-  stores: { id: string; name: string }[];
-  selectedStoreId: string;
-  onStoreChange: (id: string) => void;
   salespersonName: string;
   onOpenHeld: () => void;
   onHoldCurrent: () => void;
@@ -25,28 +21,12 @@ interface Props {
 }
 
 const POSToolbar = ({
-  stores, selectedStoreId, onStoreChange,
   salespersonName, onOpenHeld, onHoldCurrent, onOpenReturn, onOpenRecent,
   onOpenShift, onToggleFullscreen, isFullscreen,
   soundEnabled, onToggleSound, shiftOpen, heldCount,
 }: Props) => {
   return (
     <div className="flex items-center gap-1.5 px-2 md:px-4 py-2 border-b border-border bg-card overflow-x-auto scrollbar-none">
-      {/* Store selector */}
-      {stores.length > 0 && (
-        <Select value={selectedStoreId} onValueChange={onStoreChange}>
-          <SelectTrigger className="h-8 w-32 md:w-40 bg-secondary text-xs shrink-0">
-            <SelectValue placeholder="Store" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="default">Default Store</SelectItem>
-            {stores.map((s) => (
-              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-
       {/* Salesperson — hide on mobile */}
       {salespersonName && (
         <Badge variant="outline" className="text-xs gap-1 shrink-0 hidden md:inline-flex">

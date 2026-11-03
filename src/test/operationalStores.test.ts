@@ -20,7 +20,6 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: vi.fn() } }
 
 import { supabase } from "@/integrations/supabase/client";
 import {
-  bridgeWooSourceToStore,
   isLocalStoreUrl,
   isSyncableStoreUrl,
   localStoreUrl,
@@ -192,74 +191,5 @@ describe("provisionOperationalStore", () => {
       provisionOperationalStore({ brandId: "ghost", name: "x", url: "y", status: "disconnected" }),
     ).rejects.toThrow("Brand not found or not accessible.");
     expect(methodsOf("stores", "insert")).toHaveLength(0);
-  });
-});
-
-describe("bridgeWooSourceToStore", () => {
-  it("provisions a connected store and stamps the source's provenance", async () => {
-    push("brands", { data: { id: "brand-1", woo_store_id: null }, error: null });
-    push("stores", { data: null, error: null }); // bare insert — no RETURNING
-    push("brands", { data: [{ id: "brand-1" }], error: null });
-    push("order_sources", { data: null, error: null });
-
-    const result = await bridgeWooSourceToStore({
-      sourceId: "src-1",
-      brandId: "brand-1",
-      sourceName: "Woo Main",
-      config: {
-        url: "https://shop.test/",
-        consumer_key: "ck",
-        consumer_secret: "cs",
-      },
-    });
-
-    expect(result.storeId).toBe("store-1");
-    expect(insertPayloads.stores[0]).toMatchObject({
-      name: "Woo Main",
-      url: "https://shop.test/",
-      status: "connected",
-    });
-    expect(updatePayloads.order_sources[0]).toEqual({ legacy_woo_store_id: "store-1" });
-    const stampFilters = methodsOf("order_sources", "eq");
-    expect(stampFilters[0].args).toEqual(["id", "src-1"]);
-  });
-
-  it("keeps a half-configured connection disconnected (never picked up by sync)", async () => {
-    push("brands", { data: { id: "brand-1", woo_store_id: null }, error: null });
-    push("stores", { data: null, error: null }); // bare insert — no RETURNING
-    push("brands", { data: [{ id: "brand-1" }], error: null });
-    push("order_sources", { data: null, error: null });
-
-    await bridgeWooSourceToStore({
-      sourceId: "src-1",
-      brandId: "brand-1",
-      sourceName: "Woo Partial",
-      config: { url: "https://shop.test/", consumer_key: "ck" },
-    });
-
-    expect(insertPayloads.stores[0]).toMatchObject({ status: "disconnected" });
-  });
-
-  it("refuses to bridge a source without a store URL", async () => {
-    await expect(
-      bridgeWooSourceToStore({ sourceId: "s", brandId: "b", sourceName: "n", config: {} }),
-    ).rejects.toThrow("the source has no store URL");
-    expect(methodsOf("stores", "insert")).toHaveLength(0);
-  });
-
-  it("throws when the provenance stamp is rejected (caller keeps source fail-soft)", async () => {
-    push("brands", { data: { id: "brand-1", woo_store_id: null }, error: null });
-    push("stores", { data: null, error: null }); // bare insert — no RETURNING
-    push("brands", { data: [{ id: "brand-1" }], error: null });
-    push("order_sources", { data: null, error: { message: "no column" } });
-
-    await expect(
-      bridgeWooSourceToStore({
-        sourceId: "src-1",
-        brandId: "brand-1",
-        sourceName: "Woo Main",
-        config: { url: "https://shop.test/", consumer_key: "ck", consumer_secret: "cs" },
-      }),
-    ).rejects.toThrow("not recorded on the source");
   });
 });

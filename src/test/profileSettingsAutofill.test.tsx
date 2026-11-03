@@ -33,6 +33,13 @@ vi.mock("@/hooks/usePermissions", () => ({
   usePermissions: () => ({ canAny: () => true }),
 }));
 
+// The tab reads the business list for the personal "default business" picker.
+// These tests only exercise the credential fields' dirty tracking, so the
+// provider is stubbed rather than mounting the whole BusinessContext tree.
+vi.mock("@/hooks/useBusinessContext", () => ({
+  useBusinessContext: () => ({ businesses: [], activeBusiness: null }),
+}));
+
 vi.mock("@/lib/auditLog", () => ({ logChange: vi.fn(async () => {}) }));
 
 vi.mock("@/integrations/supabase/client", () => {

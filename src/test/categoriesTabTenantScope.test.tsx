@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { installFakeTenantClient, type Query, type QueryCall, type Row } from "@/test/support/tenantScopedClient";
 
@@ -197,27 +197,4 @@ describe("CategoriesTab scopes categories and stores to the active business", ()
     expect(client.argsFor("categories", "insert")[0][0]).toMatchObject({ store_id: "s1" });
   });
 
-  it("syncs only the stores the business owns", async () => {
-    client.setRows({
-      stores: [{ id: "s1", name: "Store One", status: "connected" }],
-      categories: [],
-      product_categories: [],
-    });
-
-    render(<CategoriesTab />);
-    expect(await screen.findByText("No categories found.")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /sync categories/i }));
-
-    await waitFor(() =>
-      expect(client.invoke).toHaveBeenCalledWith("woo-sync", { body: { store_id: "s1" } }),
-    );
-    const storeQueries = client.queriesFor("stores");
-    expect(storeQueries.length).toBeGreaterThan(0);
-    expect(
-      storeQueries.every((query) =>
-        query.calls.some((call) => call.method === "in" && call.args[0] === "id"),
-      ),
-    ).toBe(true);
   });
-});

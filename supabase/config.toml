@@ -1,13 +1,5 @@
 project_id = "jiwndicvfkiltgageqwv"
 
-# WooCommerce delivers webhooks with NO Authorization header — the Supabase
-# gateway's JWT check would reject every delivery with 401 before this
-# function runs. The function authenticates deliveries itself by matching
-# x-wc-webhook-source against the stores table and verifying the HMAC
-# signature against the store's consumer_secret.
-[functions.woo-webhook]
-verify_jwt = false
-
 [functions.storefront-checkout]
 verify_jwt = false
 
@@ -25,17 +17,6 @@ verify_jwt = false
 
 [functions.storefront-robots]
 verify_jwt = false
-
-[functions.get-orders]
-enabled = true
-verify_jwt = false
-import_map = "./functions/get-orders/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/get-orders/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/get-orders/*.html" ]
 
 [functions.signup-event]
 verify_jwt = false

@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
-  SourceBadge, PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
+  PaymentBadge, FulfillmentBadge, TrackingBadge, DeliveryBadge,
 } from "@/components/orders/OrderBadges";
+import { sourceFallbackLabel } from "@/lib/orderSources";
 import { ReactNode } from "react";
 import { useCurrency } from "@/hooks/useCurrency";
-import { BrandPresentation, type OrderBrandPresentation } from "@/components/orders/OrderTable";
+import { BrandSourcePresentation, type OrderBrandPresentation } from "@/components/orders/OrderTable";
 
 interface OrderCardProps {
   order: {
@@ -32,16 +33,19 @@ interface OrderCardProps {
     measurement_slip_printed_at?: string | null;
     stores: { name: string } | null;
     brand?: OrderBrandPresentation | null;
+    /** All brands attributed to the order's items — POS orders can span brands. */
+    brands?: OrderBrandPresentation[] | null;
     order_source?: { name: string; type: string } | null;
     productItems: { name: string; qty: number }[];
   };
+  duplicate?: boolean;
   selected: boolean;
   onSelect: () => void;
   onOpen: () => void;
   actions?: ReactNode;
 }
 
-const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProps) => {
+const OrderCard = ({ order, duplicate = false, selected, onSelect, onOpen, actions }: OrderCardProps) => {
   const { symbol } = useCurrency();
   return (
     <div
@@ -56,17 +60,21 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
         </div>
         <button onClick={onOpen} className="flex-1 text-left min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <div className="font-semibold text-foreground truncate">#{order.order_number}</div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <div className="font-semibold text-foreground truncate">#{order.order_number}</div>
+              {duplicate && <Badge variant="destructive" className="shrink-0 px-1.5 py-0 text-[9px]">Duplicate</Badge>}
+            </div>
             <div className="font-semibold text-foreground whitespace-nowrap">{symbol}{Number(order.total).toLocaleString()}</div>
           </div>
           <div className="text-[11px] text-muted-foreground">
             {format(new Date(order.created_at), "MMM d, h:mm a")}
           </div>
           <div className="mt-1">
-            <BrandPresentation
+            <BrandSourcePresentation
               brand={order.brand}
-              sellingPointName={order.order_source?.name}
-              storeName={order.stores?.name || (order.source === "pos" ? "POS" : null)}
+              brands={order.brands}
+              orderSource={order.order_source}
+              sourceFallback={sourceFallbackLabel(order.source, order.stores?.name)}
               compact
             />
           </div>
@@ -86,7 +94,6 @@ const OrderCard = ({ order, selected, onSelect, onOpen, actions }: OrderCardProp
           )}
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <SourceBadge source={order.source} storeName={order.stores?.name} orderSource={order.order_source} />
             <FulfillmentBadge status={order.status} />
             <DeliveryBadge type={order.fulfillment_type} />
             <PaymentBadge status={order.payment_status} source={order.source} paymentMethod={order.payment_method} />

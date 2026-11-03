@@ -123,10 +123,10 @@ export default function StoreHealthGrid({ orders }: Props) {
           <p className="text-xs text-muted-foreground mt-0.5">{stores.length} connected storefronts</p>
         </div>
         <button
-          onClick={() => navigate("/order-sources")}
+          onClick={() => navigate("/integrations")}
           className="text-xs text-muted-foreground hover:text-foreground"
         >
-          Order sources
+          Integrations
         </button>
       </div>
 

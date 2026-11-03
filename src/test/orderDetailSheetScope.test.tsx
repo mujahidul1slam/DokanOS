@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // Hybrid tenancy (issue #16): the order detail sheet.
@@ -143,7 +143,6 @@ const detailOrder = (over: Record<string, unknown> = {}) => ({
   customer_email: "alice@example.com",
   customer_city: "Dhaka",
   fulfillment_type: "delivery",
-  woo_order_id: null,
   store_id: "s1",
   storefront_id: null,
   stock_restored_at: null,
@@ -232,13 +231,17 @@ describe("OrderDetailSheet reads are scoped to the active business's stores", ()
     expect(screen.queryAllByText("#1001")).toEqual([]);
   });
 
-  it("fails closed when the active business has no mapped stores: no read at all", async () => {
+  it("fails closed when the active business has no mapped stores: no order read at all", async () => {
     setActiveBusiness("b1", []);
     mark();
 
     renderSheet();
 
-    await waitFor(() => expect(fromMock.mock.calls.length).toBe(since));
+    // The sheet may still load scope-free chrome (e.g. the courier picker's
+    // service list), but it must never read the order or any of its child rows
+    // without a tenant store to bound them.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(queriesFor("orders")).toHaveLength(0);
     expect(screen.queryAllByText("#1001")).toEqual([]);
   });
 

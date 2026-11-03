@@ -3,6 +3,7 @@ import {
   CheckSquare, Package, Hourglass, Wrench, Sparkles, PackageCheck, Truck,
   CheckCircle2, Undo2, XCircle, Loader2, Ruler, Send, RefreshCw,
   CreditCard, RotateCcw, Trash2, ChevronDown, X,
+  Combine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ interface Props {
   onDispatch: () => void;
   onBulkTrack: () => void;
   onBulkMarkPaid: () => void;
+  onMergeSelected: () => void;
   onRestore: () => void;
   onTrash: () => void;
   onClear: () => void;
@@ -33,7 +35,7 @@ interface Props {
 function OrderBulkActionsBarImpl({
   selectedCount, selectedOrders, bulkUpdating, canWrite, tab,
   onBulkStatusChange, onBulkPrintMeasurementSlips, onDispatch, onBulkTrack,
-  onBulkMarkPaid, onRestore, onTrash, onClear, onDeselect,
+  onBulkMarkPaid, onMergeSelected, onRestore, onTrash, onClear, onDeselect,
 }: Props) {
   const [selectionOpen, setSelectionOpen] = useState(false);
   if (selectedCount === 0) return null;
@@ -109,6 +111,11 @@ function OrderBulkActionsBarImpl({
           <Button size="sm" variant="outline" onClick={onBulkMarkPaid} disabled={bulkUpdating} className="gap-1.5">
             {bulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
             Mark Paid
+          </Button>
+        )}
+        {canWrite && selectedCount >= 2 && (
+          <Button size="sm" variant="outline" onClick={onMergeSelected} disabled={bulkUpdating} className="gap-1.5">
+            <Combine className="h-4 w-4" /> Merge selected
           </Button>
         )}
         {canWrite && tab === "trash" && (

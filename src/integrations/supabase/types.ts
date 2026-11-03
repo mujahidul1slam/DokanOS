@@ -7,6 +7,36 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.17"
+  }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       active_business_context: {
@@ -728,7 +758,6 @@ export type Database = {
           source: string
           store_id: string | null
           updated_at: string
-          woo_customer_id: number | null
           zone: string | null
         }
         Insert: {
@@ -746,7 +775,6 @@ export type Database = {
           source?: string
           store_id?: string | null
           updated_at?: string
-          woo_customer_id?: number | null
           zone?: string | null
         }
         Update: {
@@ -764,7 +792,6 @@ export type Database = {
           source?: string
           store_id?: string | null
           updated_at?: string
-          woo_customer_id?: number | null
           zone?: string | null
         }
         Relationships: [
@@ -1131,6 +1158,48 @@ export type Database = {
           },
         ]
       }
+      order_brands: {
+        Row: {
+          brand_id: string
+          created_at: string
+          is_primary: boolean
+          item_count: number
+          line_total: number
+          order_id: string
+        }
+        Insert: {
+          brand_id: string
+          created_at?: string
+          is_primary?: boolean
+          item_count?: number
+          line_total?: number
+          order_id: string
+        }
+        Update: {
+          brand_id?: string
+          created_at?: string
+          is_primary?: boolean
+          item_count?: number
+          line_total?: number
+          order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_brands_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_brands_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_item_measurements: {
         Row: {
           created_at: string
@@ -1295,6 +1364,7 @@ export type Database = {
           created_at: string
           fulfillment_preference: Json
           id: string
+          is_default: boolean
           is_stock_holding: boolean | null
           last_sync_at: string | null
           last_sync_error: string | null
@@ -1318,6 +1388,7 @@ export type Database = {
           created_at?: string
           fulfillment_preference?: Json
           id?: string
+          is_default?: boolean
           is_stock_holding?: boolean | null
           last_sync_at?: string | null
           last_sync_error?: string | null
@@ -1341,6 +1412,7 @@ export type Database = {
           created_at?: string
           fulfillment_preference?: Json
           id?: string
+          is_default?: boolean
           is_stock_holding?: boolean | null
           last_sync_at?: string | null
           last_sync_error?: string | null
@@ -1467,7 +1539,6 @@ export type Database = {
           total: number
           tracking_status: string | null
           updated_at: string
-          woo_order_id: number | null
           woo_updated_at: string | null
         }
         Insert: {
@@ -1520,7 +1591,6 @@ export type Database = {
           total?: number
           tracking_status?: string | null
           updated_at?: string
-          woo_order_id?: number | null
           woo_updated_at?: string | null
         }
         Update: {
@@ -1573,7 +1643,6 @@ export type Database = {
           total?: number
           tracking_status?: string | null
           updated_at?: string
-          woo_order_id?: number | null
           woo_updated_at?: string | null
         }
         Relationships: [
@@ -2216,7 +2285,6 @@ export type Database = {
           stock_status: string
           updated_at: string
           woo_updated_at: string | null
-          woo_variation_id: number | null
         }
         Insert: {
           attributes?: Json
@@ -2234,7 +2302,6 @@ export type Database = {
           stock_status?: string
           updated_at?: string
           woo_updated_at?: string | null
-          woo_variation_id?: number | null
         }
         Update: {
           attributes?: Json
@@ -2252,7 +2319,6 @@ export type Database = {
           stock_status?: string
           updated_at?: string
           woo_updated_at?: string | null
-          woo_variation_id?: number | null
         }
         Relationships: [
           {
@@ -2298,7 +2364,6 @@ export type Database = {
           tags: Json | null
           updated_at: string
           weight: number | null
-          woo_product_id: number | null
           woo_updated_at: string | null
         }
         Insert: {
@@ -2334,7 +2399,6 @@ export type Database = {
           tags?: Json | null
           updated_at?: string
           weight?: number | null
-          woo_product_id?: number | null
           woo_updated_at?: string | null
         }
         Update: {
@@ -2370,7 +2434,6 @@ export type Database = {
           tags?: Json | null
           updated_at?: string
           weight?: number | null
-          woo_product_id?: number | null
           woo_updated_at?: string | null
         }
         Relationships: [
@@ -3123,106 +3186,6 @@ export type Database = {
           },
         ]
       }
-      sync_queue: {
-        Row: {
-          action: string
-          attempts: number
-          created_at: string | null
-          error_log: string | null
-          id: string
-          idempotency_key: string | null
-          next_retry_at: string | null
-          order_id: string | null
-          payload: Json | null
-          status: string
-          store_id: string
-          updated_at: string | null
-        }
-        Insert: {
-          action: string
-          attempts?: number
-          created_at?: string | null
-          error_log?: string | null
-          id?: string
-          idempotency_key?: string | null
-          next_retry_at?: string | null
-          order_id?: string | null
-          payload?: Json | null
-          status?: string
-          store_id: string
-          updated_at?: string | null
-        }
-        Update: {
-          action?: string
-          attempts?: number
-          created_at?: string | null
-          error_log?: string | null
-          id?: string
-          idempotency_key?: string | null
-          next_retry_at?: string | null
-          order_id?: string | null
-          payload?: Json | null
-          status?: string
-          store_id?: string
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sync_queue_order_id_fkey"
-            columns: ["order_id"]
-            isOneToOne: false
-            referencedRelation: "orders"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sync_queue_store_id_fkey"
-            columns: ["store_id"]
-            isOneToOne: false
-            referencedRelation: "stores"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sync_queue_store_id_fkey"
-            columns: ["store_id"]
-            isOneToOne: false
-            referencedRelation: "stores_safe"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sync_queue_cleanup_log: {
-        Row: {
-          action: string | null
-          attempts: number | null
-          created_at: string | null
-          id: string
-          order_id: string | null
-          payload: Json | null
-          purged_at: string
-          status: string | null
-        }
-        Insert: {
-          action?: string | null
-          attempts?: number | null
-          created_at?: string | null
-          id: string
-          order_id?: string | null
-          payload?: Json | null
-          purged_at?: string
-          status?: string | null
-        }
-        Update: {
-          action?: string | null
-          attempts?: number | null
-          created_at?: string | null
-          id?: string
-          order_id?: string | null
-          payload?: Json | null
-          purged_at?: string
-          status?: string | null
-        }
-        Relationships: []
-      }
       user_business_access: {
         Row: {
           business_id: string
@@ -3415,60 +3378,6 @@ export type Database = {
           },
         ]
       }
-      webhook_events: {
-        Row: {
-          created_at: string
-          delivery_id: string | null
-          entity_type: string | null
-          error: string | null
-          id: string
-          payload_size: number | null
-          status_code: number
-          store_id: string | null
-          topic: string
-          woo_id: number | null
-        }
-        Insert: {
-          created_at?: string
-          delivery_id?: string | null
-          entity_type?: string | null
-          error?: string | null
-          id?: string
-          payload_size?: number | null
-          status_code?: number
-          store_id?: string | null
-          topic: string
-          woo_id?: number | null
-        }
-        Update: {
-          created_at?: string
-          delivery_id?: string | null
-          entity_type?: string | null
-          error?: string | null
-          id?: string
-          payload_size?: number | null
-          status_code?: number
-          store_id?: string | null
-          topic?: string
-          woo_id?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "webhook_events_store_id_fkey"
-            columns: ["store_id"]
-            isOneToOne: false
-            referencedRelation: "stores"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "webhook_events_store_id_fkey"
-            columns: ["store_id"]
-            isOneToOne: false
-            referencedRelation: "stores_safe"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
     }
     Views: {
       pathao_integrations_safe: {
@@ -3525,30 +3434,9 @@ export type Database = {
         }
         Relationships: []
       }
-      sync_health: {
-        Row: {
-          breaker_detail: Json | null
-          courier_tracking: Json | null
-          oldest_pending_seconds: number | null
-          pending_waiting_retry: number | null
-          queue_dead_letter: number | null
-          queue_failed: number | null
-          queue_pending: number | null
-          queue_processing: number | null
-          stores_breaker_tripped: number | null
-          stores_sync: Json | null
-          webhooks_failed_last_hour: number | null
-          webhooks_last_hour: number | null
-        }
-        Relationships: []
-      }
     }
     Functions: {
       accept_business_invitation: { Args: { p_token: string }; Returns: Json }
-      bump_store_sync_failure: {
-        Args: { p_store_id: string }
-        Returns: undefined
-      }
       business_has_other_owner: {
         Args: { p_business_id: string; p_user: string }
         Returns: boolean
@@ -3567,29 +3455,6 @@ export type Database = {
       }
       can_read_profile: { Args: { _user_id: string }; Returns: boolean }
       canonical_email: { Args: { p_email: string }; Returns: string }
-      claim_sync_queue_batch: {
-        Args: { p_limit: number }
-        Returns: {
-          action: string
-          attempts: number
-          created_at: string | null
-          error_log: string | null
-          id: string
-          idempotency_key: string | null
-          next_retry_at: string | null
-          order_id: string | null
-          payload: Json | null
-          status: string
-          store_id: string
-          updated_at: string | null
-        }[]
-        SetofOptions: {
-          from: "*"
-          to: "sync_queue"
-          isOneToOne: false
-          isSetofReturn: true
-        }
-      }
       create_additional_business: {
         Args: { p_business_name: string; p_user_id: string }
         Returns: Json
@@ -3635,10 +3500,6 @@ export type Database = {
       current_business_context: { Args: never; Returns: string }
       delete_unprovisioned_self: { Args: never; Returns: Json }
       describe_business_invitation: { Args: { p_token: string }; Returns: Json }
-      enqueue_order_push: {
-        Args: { p_order_id: string; p_reason?: string }
-        Returns: undefined
-      }
       format_order_number: {
         Args: { p_base: string; p_source: string; p_store_id: string }
         Returns: string
@@ -3690,7 +3551,6 @@ export type Database = {
           reason: string
         }[]
       }
-      get_sync_alert_webhook_url: { Args: never; Returns: string }
       get_sync_worker_cron_token: { Args: never; Returns: string }
       get_user_permissions: {
         Args: { _user_id: string }
@@ -3701,7 +3561,6 @@ export type Database = {
         Returns: Database["public"]["Enums"]["app_role"]
       }
       get_user_store_ids: { Args: { _user_id: string }; Returns: string[] }
-      get_woo_sync_cron_token: { Args: never; Returns: string }
       has_permission: {
         Args: {
           _permission: Database["public"]["Enums"]["app_permission"]
@@ -3770,10 +3629,7 @@ export type Database = {
         Returns: Json
       }
       purge_trashed_orders: { Args: never; Returns: undefined }
-      recover_orphaned_sync_rows: {
-        Args: { p_stale_before: string }
-        Returns: number
-      }
+      refresh_order_brands: { Args: { p_order_id: string }; Returns: undefined }
       remove_business_member: {
         Args: { p_business_id: string; p_user_id: string }
         Returns: Json
@@ -3886,12 +3742,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3915,11 +3771,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3940,11 +3796,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3965,11 +3821,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3982,11 +3838,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3996,6 +3852,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_permission: [
@@ -4052,4 +3911,3 @@ export const Constants = {
     },
   },
 } as const
-

@@ -23,6 +23,11 @@ interface LedgerOrder {
   customer_address: string | null;
   customer_city: string | null;
   salesperson_name: string | null;
+  order_brands?: Array<{
+    brand_id: string;
+    is_primary: boolean;
+    brands: { name: string | null } | null;
+  }> | null;
 }
 
 interface Props {
@@ -79,6 +84,15 @@ const PosOrdersLedger = ({
               <div className="mt-2 text-sm text-foreground truncate">{o.customer_name || "Walk-in"}</div>
               {o.customer_phone && <div className="text-xs text-muted-foreground truncate">{o.customer_phone}</div>}
               {addr && <div className="text-xs text-muted-foreground truncate">{addr}</div>}
+              {o.order_brands && o.order_brands.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {o.order_brands.map((attribution) => (
+                    <Badge key={attribution.brand_id} variant={attribution.is_primary ? "default" : "outline"} className="text-[10px]">
+                      {attribution.brands?.name || "Unknown brand"}
+                    </Badge>
+                  ))}
+                </div>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <StatusBadge status={o.status} />
                 {ms.map((m) => (<Badge key={m} variant="outline" className="text-[10px] capitalize">{m}</Badge>))}
@@ -105,6 +119,7 @@ const PosOrdersLedger = ({
               <TableHead className="text-xs">Order #</TableHead>
               <TableHead className="text-xs">Date</TableHead>
               <TableHead className="text-xs">Customer</TableHead>
+              <TableHead className="text-xs">Brands</TableHead>
               <TableHead className="text-xs">Cashier</TableHead>
               <TableHead className="text-xs text-right">Items</TableHead>
               <TableHead className="text-xs text-right">Subtotal</TableHead>
@@ -119,7 +134,7 @@ const PosOrdersLedger = ({
           </TableHeader>
           <TableBody>
             {orders.length === 0 ? (
-              <TableRow><TableCell colSpan={13} className="text-center text-sm text-muted-foreground py-10">No POS orders in this period</TableCell></TableRow>
+              <TableRow><TableCell colSpan={14} className="text-center text-sm text-muted-foreground py-10">No POS orders in this period</TableCell></TableRow>
             ) : orders.map((o) => {
               const paid = paidByOrder.get(o.id) || 0;
               const due = Math.max(0, Number(o.total) - paid);
@@ -131,6 +146,16 @@ const PosOrdersLedger = ({
                   <TableCell className="max-w-[200px]">
                     <div className="font-medium text-foreground truncate">{o.customer_name || "Walk-in"}</div>
                     {o.customer_phone && <div className="text-[11px] text-muted-foreground truncate">{o.customer_phone}</div>}
+                  </TableCell>
+                  <TableCell className="max-w-[160px]">
+                    <div className="flex flex-wrap gap-1">
+                      {(o.order_brands || []).map((attribution) => (
+                        <Badge key={attribution.brand_id} variant={attribution.is_primary ? "default" : "outline"} className="text-[10px]">
+                          {attribution.brands?.name || "Unknown brand"}
+                        </Badge>
+                      ))}
+                      {(!o.order_brands || o.order_brands.length === 0) && <span className="text-muted-foreground">—</span>}
+                    </div>
                   </TableCell>
                   <TableCell className="max-w-[140px] truncate text-muted-foreground">{o.salesperson_name || "—"}</TableCell>
                   <TableCell className="text-right">{itemsByOrder.get(o.id) || 0}</TableCell>

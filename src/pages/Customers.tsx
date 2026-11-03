@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import {
-  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, Download, RefreshCw, Loader2, Trash2,
+  Search, Users, ChevronRight, Phone, Mail, MapPin, ShoppingCart, Download, Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/exportCsv";
@@ -62,7 +62,6 @@ const Customers = () => {
   const [search, setSearch] = useState("");
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [page, setPage] = useState(1);
-  const [syncing, setSyncing] = useState(false);
 
   const [selected, setSelected] = useState<UnifiedCustomer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
@@ -159,37 +158,6 @@ const Customers = () => {
 
   useEffect(() => { loadCustomers(); loadStores(); }, [loadCustomers, loadStores]);
 
-  const handleSyncCustomers = async () => {
-    setSyncing(true);
-    try {
-      // Fail closed: sync may only touch the active business's stores.
-      if (!hasStoreScope(businessStoreIds)) {
-        toast({ title: "No stores connected", variant: "destructive" });
-        return;
-      }
-      const { data: storeRows } = await supabase.from("stores").select("id, name").in("id", businessStoreIds);
-      if (!storeRows || storeRows.length === 0) {
-        toast({ title: "No stores connected", variant: "destructive" });
-        return;
-      }
-      let started = 0;
-      for (const s of storeRows) {
-        const { error } = await supabase.functions.invoke("woo-sync", {
-          body: { store_id: s.id, sync_customers: true },
-        });
-        if (!error) started++;
-      }
-      toast({
-        title: `Customer sync started for ${started} store(s)`,
-        description: "Running in background. Refresh in a minute to see updates.",
-      });
-    } catch (err: any) {
-      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const openDetail = async (c: UnifiedCustomer) => {
     setSelected(c);
     setOrdersLoading(true);
@@ -269,10 +237,6 @@ const Customers = () => {
           <h1 className="font-heading text-2xl font-semibold">Customers</h1>
           <p className="text-sm text-muted-foreground">{customers.length} unique customers (grouped by phone)</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-2" onClick={handleSyncCustomers} disabled={syncing}>
-          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Sync Customers
-        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

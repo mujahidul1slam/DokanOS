@@ -18,6 +18,7 @@ import FinancialWaterfall from "@/components/analytics/FinancialWaterfall";
 import HourHeatmap from "@/components/analytics/HourHeatmap";
 import SalespersonLeaderboard from "@/components/analytics/SalespersonLeaderboard";
 import CustomerInsights from "@/components/analytics/CustomerInsights";
+import { isRevenueOrder } from "@/lib/orderRevenue";
 import InventoryHealth from "@/components/analytics/InventoryHealth";
 import GeoBreakdown from "@/components/analytics/GeoBreakdown";
 import OperationalMetrics from "@/components/analytics/OperationalMetrics";
@@ -96,7 +97,7 @@ const Analytics = () => {
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [returns, setReturns] = useState<ReturnRow[]>([]);
-  const [allCustomerOrders, setAllCustomerOrders] = useState<{ customer_id: string | null; customer_name: string | null; total: number; created_at: string }[]>([]);
+  const [allCustomerOrders, setAllCustomerOrders] = useState<{ customer_id: string | null; customer_name: string | null; total: number; status: string | null; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
@@ -165,7 +166,7 @@ const Analytics = () => {
         prevQuery,
         scopeStoreIds(supabase.from("products").select("id, name, price, cost_price, stock_quantity, stock_status, manage_stock, sales_count, updated_at"), businessStoreIds),
         returnsQuery,
-        scopeStoreIds(supabase.from("orders").select("customer_id, customer_name, total, created_at").is("deleted_at", null), businessStoreIds),
+        scopeStoreIds(supabase.from("orders").select("customer_id, customer_name, total, status, created_at").is("deleted_at", null), businessStoreIds),
       ]);
 
       const ordersData = (ordersRes.data || []) as OrderRow[];
@@ -192,36 +193,43 @@ const Analytics = () => {
     load();
   }, [datePreset, customRange, businessStoreIds]);
 
+  // Money-bearing orders only: merged sources, cancellations and returns must
+  // not be counted (a merge would otherwise add the same taka twice).
+  const revenueRows = useMemo(() => orders.filter(isRevenueOrder), [orders]);
+  const prevRevenueRows = useMemo(() => prevOrders.filter(isRevenueOrder), [prevOrders]);
+
   const stats = useMemo(() => {
-    const revenue = orders.reduce((s, o) => s + Number(o.total), 0);
-    const totalDiscount = orders.reduce((s, o) => s + Number(o.discount || 0), 0);
-    const totalShipping = orders.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
-    const totalTax = orders.reduce((s, o) => s + Number(o.tax_amount || 0), 0);
-    const avgOrder = orders.length > 0 ? revenue / orders.length : 0;
+    const revenue = revenueRows.reduce((s, o) => s + Number(o.total), 0);
+    const totalDiscount = revenueRows.reduce((s, o) => s + Number(o.discount || 0), 0);
+    const totalShipping = revenueRows.reduce((s, o) => s + Number(o.shipping_cost || 0), 0);
+    const totalTax = revenueRows.reduce((s, o) => s + Number(o.tax_amount || 0), 0);
+    const avgOrder = revenueRows.length > 0 ? revenue / revenueRows.length : 0;
 
     const costMap = new Map(products.map((p) => [p.id, Number(p.cost_price || 0)]));
+    const revenueIds = new Set(revenueRows.map((o) => o.id));
     const totalCost = orderItems.reduce((s, i) => {
+      if (!revenueIds.has(i.order_id)) return s;
       const cost = i.product_id ? (costMap.get(i.product_id) || 0) : 0;
       return s + cost * i.quantity;
     }, 0);
     const profit = revenue - totalCost;
     const netProfit = profit - totalShipping - totalTax;
 
-    const prevRevenue = prevOrders.reduce((s, o) => s + Number(o.total), 0);
-    const prevCount = prevOrders.length;
+    const prevRevenue = prevRevenueRows.reduce((s, o) => s + Number(o.total), 0);
+    const prevCount = prevRevenueRows.length;
     const prevAvg = prevCount > 0 ? prevRevenue / prevCount : 0;
 
     return {
-      revenue, totalOrders: orders.length, avgOrder, totalDiscount, totalShipping, totalTax,
+      revenue, totalOrders: revenueRows.length, avgOrder, totalDiscount, totalShipping, totalTax,
       profit, netProfit, totalCost,
       prevRevenue, prevCount, prevAvg,
     };
-  }, [orders, prevOrders, orderItems, products]);
+  }, [revenueRows, prevRevenueRows, orderItems, products]);
 
   // Revenue trend
   const revenueByDay = useMemo(() => {
     const grouped: Record<string, { online: number; pos: number; orders: number }> = {};
-    for (const o of orders) {
+    for (const o of revenueRows) {
       const day = format(new Date(o.created_at), "MMM d");
       if (!grouped[day]) grouped[day] = { online: 0, pos: 0, orders: 0 };
       if (o.source === "pos") grouped[day].pos += Number(o.total);
@@ -229,24 +237,26 @@ const Analytics = () => {
       grouped[day].orders++;
     }
     return Object.entries(grouped).reverse().map(([date, v]) => ({ date, ...v, total: v.online + v.pos }));
-  }, [orders]);
+  }, [revenueRows]);
 
   // Top products
   const topProducts = useMemo(() => {
     const map: Record<string, { name: string; qty: number; revenue: number }> = {};
+    const revenueIds = new Set(revenueRows.map((o) => o.id));
     for (const i of orderItems) {
+      if (!revenueIds.has(i.order_id)) continue;
       const key = i.product_name;
       if (!map[key]) map[key] = { name: key, qty: 0, revenue: 0 };
       map[key].qty += i.quantity;
       map[key].revenue += Number(i.line_total);
     }
     return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
-  }, [orderItems]);
+  }, [orderItems, revenueRows]);
 
   // Salesperson leaderboard
   const salespersonRows = useMemo(() => {
     const map: Record<string, { name: string; orders: number; revenue: number }> = {};
-    for (const o of orders) {
+    for (const o of revenueRows) {
       const name = o.salesperson_name || "Unassigned";
       if (!map[name]) map[name] = { name, orders: 0, revenue: 0 };
       map[name].orders++;
@@ -255,35 +265,36 @@ const Analytics = () => {
     return Object.values(map)
       .map((r) => ({ ...r, avgOrder: r.orders > 0 ? r.revenue / r.orders : 0 }))
       .sort((a, b) => b.revenue - a.revenue);
-  }, [orders]);
+  }, [revenueRows]);
 
   // Geographic breakdown
   const geoRows = useMemo(() => {
     const map: Record<string, { city: string; orders: number; revenue: number }> = {};
-    for (const o of orders) {
+    for (const o of revenueRows) {
       const city = (o.customer_city || "Unknown").trim() || "Unknown";
       if (!map[city]) map[city] = { city, orders: 0, revenue: 0 };
       map[city].orders++;
       map[city].revenue += Number(o.total);
     }
     return Object.values(map).sort((a, b) => b.revenue - a.revenue);
-  }, [orders]);
+  }, [revenueRows]);
 
   // Hour heatmap (7 days x 24 hours)
   const heatmapData = useMemo(() => {
     const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
-    for (const o of orders) {
+    for (const o of revenueRows) {
       const d = new Date(o.created_at);
       grid[getDay(d)][getHours(d)]++;
     }
     return grid;
-  }, [orders]);
+  }, [revenueRows]);
 
   // Customer insights
   const customerStats = useMemo(() => {
     // Build LTV map across ALL history
     const ltv: Record<string, { name: string; orders: number; revenue: number; firstAt: number }> = {};
     for (const o of allCustomerOrders) {
+      if (!isRevenueOrder(o)) continue;
       const key = o.customer_id || `name:${o.customer_name || "guest"}`;
       const ts = new Date(o.created_at).getTime();
       if (!ltv[key]) ltv[key] = { name: o.customer_name || "Walk-in", orders: 0, revenue: 0, firstAt: ts };

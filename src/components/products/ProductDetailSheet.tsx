@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { kickSyncWorker } from "@/lib/wooNotes";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -13,7 +12,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Trash2, RefreshCw, X, Sparkles, ExternalLink } from "lucide-react";
+import { Plus, Trash2, X, Sparkles } from "lucide-react";
 import { logAction } from "@/lib/auditLog";
 import { usePermissions } from "@/hooks/usePermissions";
 import SizePresetsEditor from "@/components/measurements/SizePresetsEditor";
@@ -28,7 +27,6 @@ import {
 /* ---------- types ---------- */
 interface Variation {
   id?: string;
-  woo_variation_id?: number | null;
   name: string;
   sku: string;
   price: number;
@@ -86,7 +84,7 @@ const normalizeStockStatus = (status: string) => {
 };
 
 /* ---------- category tree types ---------- */
-interface CatNode { id: string; label: string; woo_category_id?: number; children: CatNode[] }
+interface CatNode { id: string; label: string; children: CatNode[] }
 
 /* ---------- props ---------- */
 interface Props {
@@ -125,8 +123,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
   const [variations, setVariations] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [pushingStock, setPushingStock] = useState(false);
-  const [wooUrl, setWooUrl] = useState<string | null>(null);
 
   // category tree from DB
   const [catTree, setCatTree] = useState<CatNode[]>([]);
@@ -155,14 +151,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
   const [productGroups, setProductGroups] = useState<MeasurementGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
 
-  // Woo parent attributes/tags (read-only display — variation editing happens
-  // through the Variations tab; these come from Woo as structured terms).
-  const [wooAttributes, setWooAttributes] = useState<Array<Record<string, unknown>>>([]);
-  const [wooTags, setWooTags] = useState<Array<Record<string, unknown>>>([]);
-
   useEffect(() => {
     if (!open) return;
-    setWooUrl(null);
     if (productId) {
       // loadProduct loads the assignable category tree first, so the links it
       // seeds are already checked against this business's categories.
@@ -193,7 +183,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
     const { data: cats } = await scopeStoreIds(
       supabase
         .from("categories")
-        .select("id, name, slug, parent_id, woo_category_id")
+        .select("id, name, slug, parent_id")
         .order("name"),
       businessStoreIds,
     );
@@ -203,7 +193,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
     const nodeMap = new Map<string, CatNode>();
     const roots: CatNode[] = [];
     for (const c of cats) {
-      nodeMap.set(c.id, { id: c.id, label: c.name, woo_category_id: c.woo_category_id ?? undefined, children: [] });
+      nodeMap.set(c.id, { id: c.id, label: c.name, children: [] });
     }
     for (const c of cats) {
       const node = nodeMap.get(c.id)!;
@@ -226,7 +216,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
 
   const loadProduct = async (id: string) => {
     setLoading(true);
-    setWooUrl(null);
     if (!hasStoreScope(businessStoreIds)) {
       // Fail closed: with no store in this business there is no product to open.
       resetDraft();
@@ -264,19 +253,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
       weight: (p as any).weight != null ? String((p as any).weight) : "",
     });
 
-    // Build WooCommerce product URL if linked. The store id was read through
-    // the tenant-scoped product row, so only its own store can be resolved.
-    if (p.woo_product_id && p.store_id && businessStoreIds.includes(p.store_id)) {
-      const { data: store } = await supabase.from("stores").select("url").eq("id", p.store_id).single();
-      if (store?.url) {
-        const base = store.url.replace(/\/$/, "");
-        setWooUrl(`${base}/?p=${p.woo_product_id}`);
-      }
-    }
-
-    setWooAttributes(Array.isArray((p as any).attributes) ? (p as any).attributes : []);
-    setWooTags(Array.isArray((p as any).tags) ? (p as any).tags : []);
-
     // Load product categories — only links this business may assign survive,
     // so nothing of another business can be re-saved as this product's.
     const { data: pcData } = await supabase
@@ -296,7 +272,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
     const { data: vars } = await supabase.from("product_variations").select("*").eq("product_id", id).order("created_at");
     if (vars) {
       setVariations(vars.map((v: any) => ({
-        id: v.id, woo_variation_id: v.woo_variation_id || null,
+        id: v.id,
         name: v.name, sku: v.sku || "", price: Number(v.price),
         manage_stock: v.manage_stock, stock_quantity: v.stock_quantity,
         stock_status: normalizeStockStatus(v.stock_status || "in_stock"), barcode: v.barcode || "",
@@ -332,7 +308,7 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
 
   const set = (key: keyof ProductForm, val: any) => setForm(prev => ({ ...prev, [key]: val }));
 
-  /* ---------- quick stock push ---------- */
+  /* ---------- quick stock save ---------- */
   const handleStockStatusChange = async (newStatus: string) => {
     const normalizedStatus = normalizeStockStatus(newStatus);
     set("stock_status", normalizedStatus);
@@ -343,39 +319,19 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
 
     if (!form.id || !hasStoreScope(businessStoreIds)) return;
 
-    setPushingStock(true);
-    try {
+    await supabase
+      .from("products")
+      .update({ stock_status: normalizedStatus })
+      .eq("id", form.id)
+      .in("store_id", businessStoreIds);
+
+    if (variations.length > 0) {
       await supabase
-        .from("products")
+        .from("product_variations")
         .update({ stock_status: normalizedStatus })
-        .eq("id", form.id)
-        .in("store_id", businessStoreIds);
-
-      if (variations.length > 0) {
-        await supabase
-          .from("product_variations")
-          .update({ stock_status: normalizedStatus })
-          .eq("product_id", form.id);
-      }
-
-      const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", form.id).in("store_id", businessStoreIds).single();
-      if (prod?.woo_product_id && prod?.store_id) {
-        const { error } = await supabase.functions.invoke("woo-push", {
-          body: { action: "push_stock", product_id: form.id },
-        });
-
-        if (error) throw error;
-
-        toast({
-          title: variations.length > 0 ? "Product and variations synced to WooCommerce" : "Stock status synced to WooCommerce",
-        });
-      }
-    } catch (e) {
-      console.warn("WooCommerce stock push failed:", e);
-      toast({ title: "Saved locally, WooCommerce sync failed", variant: "destructive" });
-    } finally {
-      setPushingStock(false);
+        .eq("product_id", form.id);
     }
+    toast({ title: "Stock status updated" });
   };
 
   /* ---------- save ---------- */
@@ -457,34 +413,13 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
           manage_stock: v.manage_stock, stock_quantity: v.manage_stock ? v.stock_quantity : 0,
           stock_status: normalizeStockStatus(v.stock_status), barcode: v.barcode || null,
           attributes: v.attributes,
-          woo_variation_id: v.woo_variation_id || null,
         }));
         await supabase.from("product_variations").insert(rows);
       }
     }
 
-    // Push to WooCommerce if product is linked to a store
-    if (savedId) {
-      const { data: prod } = await supabase.from("products").select("woo_product_id, store_id").eq("id", savedId).in("store_id", businessStoreIds).single();
-      if (prod?.woo_product_id && prod?.store_id) {
-        try {
-          const { error } = await supabase.functions.invoke("woo-push", {
-            body: { action: "push_product", product_id: savedId },
-          });
-
-          if (error) throw error;
-        } catch (e) {
-          console.warn("WooCommerce push failed:", e);
-          toast({ title: "Saved locally, but WooCommerce sync failed", variant: "destructive" });
-        }
-      }
-      // Stock edits enqueue via the DB trigger; drain immediately so Woo
-      // reflects the change within seconds (throttled-cron fallback remains).
-      void kickSyncWorker();
-    }
-
     setSaving(false);
-    toast({ title: form.id ? "Product updated & synced" : "Product created" });
+    toast({ title: form.id ? "Product updated" : "Product created" });
     onSaved();
     onOpenChange(false);
   };
@@ -496,25 +431,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  };
-
-  const syncCategories = async () => {
-    if (!hasStoreScope(businessStoreIds)) return;
-    toast({ title: "Syncing categories…" });
-    // Sync targets are the ACTIVE business's connected stores. The stores table's
-    // tenant key is `id`, so the scope is applied as an id predicate.
-    const { data: stores } = await supabase
-      .from("stores")
-      .select("id")
-      .eq("status", "connected")
-      .in("id", businessStoreIds);
-    if (stores) {
-      for (const s of stores) {
-        await supabase.functions.invoke("woo-sync", { body: { store_id: s.id } });
-      }
-    }
-    await loadCategories();
-    toast({ title: "Categories synced from WooCommerce" });
   };
 
   /* ---------- attribute helpers ---------- */
@@ -615,16 +531,11 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
 
           {/* ===== Tab 1: Categories ===== */}
           <TabsContent value="categories" className="space-y-4 mt-4">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Product Categories</Label>
-              <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-muted-foreground" onClick={syncCategories}>
-                <RefreshCw className="h-3 w-3" /> Sync Categories
-              </Button>
-            </div>
+            <Label className="text-sm font-medium">Product Categories</Label>
 
             <div className="rounded-lg border border-border p-3 space-y-1 max-h-64 overflow-y-auto">
               {catTree.length === 0 && (
-                <p className="text-sm text-muted-foreground py-4 text-center">No categories yet. Click "Sync Categories" to fetch from WooCommerce.</p>
+                <p className="text-sm text-muted-foreground py-4 text-center">No categories yet. Add them under Products → Categories.</p>
               )}
               {catTree.map(node => renderCatNode(node))}
             </div>
@@ -680,9 +591,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
                 </div>
               )}
             </div>
-            {/* Woo pricing fields (Issue 4): regular vs sale price so DokanOS
-                edits stop destroying Woo sale structures, and so imported sale
-                data is visible/editable. `price` stays the effective price. */}
+            {/* Regular vs sale price: `price` stays the effective/POS price, so
+                a sale can run without overwriting what checkout charges. */}
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Regular Price (BDT)</Label>
@@ -700,8 +610,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
             {(form.regular_price > 0 || form.sale_price > 0) && (
               <p className="text-xs text-muted-foreground">
                 {form.sale_price > 0
-                  ? `On sale: ${symbol}${form.regular_price.toLocaleString()} → ${symbol}${form.sale_price.toLocaleString()} (pushed to Woo as a scheduled sale; Price ${symbol}${form.price.toLocaleString()} stays the effective/POS price)`
-                  : `Regular price ${symbol}${form.regular_price.toLocaleString()} — pushes to Woo's regular_price`}
+                  ? `On sale: ${symbol}${form.regular_price.toLocaleString()} → ${symbol}${form.sale_price.toLocaleString()} (Price ${symbol}${form.price.toLocaleString()} stays the effective/POS price)`
+                  : `Regular price ${symbol}${form.regular_price.toLocaleString()} (Price ${symbol}${form.price.toLocaleString()} stays the effective/POS price)`}
               </p>
             )}
             <div className="space-y-2">
@@ -710,36 +620,8 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
             </div>
             <div className="space-y-2">
               <Label>Short Description</Label>
-              <Textarea value={form.short_description} onChange={e => set("short_description", e.target.value)} rows={2} placeholder="Short description (Woo short_description / storefront snippets)…" />
+              <Textarea value={form.short_description} onChange={e => set("short_description", e.target.value)} rows={2} placeholder="Short description (storefront snippets)…" />
             </div>
-            {/* Woo attributes/tags (Issue 4): imported from Woo, shown read-only
-                so the merchant sees the full Woo product picture in DokanOS.
-                Editing stays in Woo (global taxonomy terms round-trip best there). */}
-            {(wooAttributes.length > 0 || wooTags.length > 0) && (
-              <div className="rounded-md border bg-muted/30 p-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  WooCommerce attributes & tags (synced from Woo — edit in Woo)
-                </p>
-                {wooAttributes.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {wooAttributes.map((a: any, i: number) => (
-                      <Badge key={i} variant="outline" className="text-xs">
-                        {String(a.name || a.slug || "?")}: {(a.options || []).join(", ")}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-                {wooTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {wooTags.map((t: any, i: number) => (
-                      <Badge key={i} variant="secondary" className="text-xs">
-                        {String(t.name || t.slug || "?")}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
             <div className="space-y-2">
               <Label>Image URL</Label>
               <Input value={form.image_url} onChange={e => set("image_url", e.target.value)} placeholder="https://..." />
@@ -773,14 +655,13 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
               )}
 
               <div className="space-y-2">
-                <Label>Stock Status {pushingStock && <span className="text-xs text-muted-foreground ml-2">Syncing…</span>}</Label>
-                <Select value={form.stock_status} onValueChange={handleStockStatusChange} disabled={pushingStock}>
+                <Label>Stock Status</Label>
+                <Select value={form.stock_status} onValueChange={handleStockStatusChange}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {STOCK_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Changes auto-sync to WooCommerce.</p>
               </div>
             </div>
           </TabsContent>
@@ -942,13 +823,6 @@ const ProductDetailSheet = ({ productId, open, onOpenChange, onSaved, defaultSto
 
         <SheetFooter className="mt-6 pt-4 border-t border-border">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          {wooUrl && (
-            <Button variant="outline" asChild className="gap-1.5">
-              <a href={wooUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="h-3.5 w-3.5" /> View on WooCommerce
-              </a>
-            </Button>
-          )}
           <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save Product"}</Button>
         </SheetFooter>
       </SheetContent>

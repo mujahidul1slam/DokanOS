@@ -4,9 +4,8 @@
  * "CSV is an action, not an entity" — there is no CSV source type; a one-shot
  * CSV file is parsed into validated drafts and inserted as ordinary `products`
  * rows carrying provenance `origin_kind = 'csv'` (spec §7: products remember
- * how they arrived). WooCommerce import is not handled here: it is the sync
- * worker kicked from the product-import step ("connection push → import
- * products", spec §6a step 3).
+ * how they arrived). WooCommerce import is retired; this module only handles CSV files and
+ * manual product entry.
  */
 
 import { supabase } from "@/integrations/supabase/client";

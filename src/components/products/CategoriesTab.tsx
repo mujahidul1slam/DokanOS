@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { Plus, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +22,6 @@ interface Category {
   slug: string;
   parent_id: string | null;
   store_id: string | null;
-  woo_category_id: number | null;
   created_at: string;
 }
 
@@ -36,7 +35,6 @@ const CategoriesTab = () => {
   const stores = useStoresList();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -68,18 +66,6 @@ const CategoriesTab = () => {
   };
 
   useEffect(() => { loadData(); }, [businessStoreIds]);
-
-  const handleSyncCategories = async () => {
-    setSyncing(true);
-    toast({ title: "Syncing categories from WooCommerce…" });
-    const connected = stores.filter(s => s.status === "connected");
-    for (const s of connected) {
-      await supabase.functions.invoke("woo-sync", { body: { store_id: s.id } });
-    }
-    await loadData();
-    setSyncing(false);
-    toast({ title: "Categories synced!" });
-  };
 
   const openNew = () => {
     setEditId(null);
@@ -122,14 +108,6 @@ const CategoriesTab = () => {
         .eq("id", editId)
         .in("store_id", businessStoreIds);
 
-      // Push to WooCommerce for the selected stores of this business
-      for (const sid of storeIds) {
-        try {
-          await supabase.functions.invoke("woo-push", {
-            body: { store_id: sid, type: "category", action: "update", payload: { name: name.trim(), slug: catSlug, parent_id: parentVal, category_id: editId } },
-          });
-        } catch { /* ignore push errors */ }
-      }
       toast({ title: "Category updated" });
     } else {
       // categories.store_id is the tenant link (RLS requires it), so a category
@@ -145,16 +123,7 @@ const CategoriesTab = () => {
       for (const sid of storeIds) {
         const insertData: any = { name: name.trim(), slug: catSlug, parent_id: parentVal, store_id: sid };
 
-        const { data: newCat } = await supabase.from("categories").insert(insertData).select().single();
-
-        // Push to WooCommerce
-        if (newCat) {
-          try {
-            await supabase.functions.invoke("woo-push", {
-              body: { store_id: sid, type: "category", action: "create", payload: { name: name.trim(), slug: catSlug, parent_id: parentVal, category_id: newCat.id } },
-            });
-          } catch { /* ignore push errors */ }
-        }
+        await supabase.from("categories").insert(insertData).select().single();
       }
       toast({ title: "Category created" });
     }
@@ -199,9 +168,6 @@ const CategoriesTab = () => {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{categories.length} categories</p>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleSyncCategories} disabled={syncing}>
-            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} /> Sync Categories
-          </Button>
           <Button size="sm" className="gap-1.5" onClick={openNew}>
             <Plus className="h-3.5 w-3.5" /> Add Category
           </Button>
@@ -254,7 +220,7 @@ const CategoriesTab = () => {
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Category" : "Add New Category"}</DialogTitle>
             <DialogDescription>
-              {editId ? "Update category details." : "Create a new category and sync it to selected stores."}
+              {editId ? "Update category details." : "Create a new category in the selected stores."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -279,7 +245,7 @@ const CategoriesTab = () => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Sync to Stores</Label>
+              <Label>Stores</Label>
               <div className="space-y-2 rounded-md border border-border p-3">
                 {stores.filter(s => s.status === "connected").length === 0 && (
                   <p className="text-sm text-muted-foreground">No connected stores.</p>

@@ -121,8 +121,11 @@ describe("category cascade with exclusions (scope: cascade_except)", () => {
     expect(resolve("p4", ["relaxed"], assignments)).toEqual([]);
   });
 
-  it("a product matching through a non-excluded category still gets the group", () => {
-    expect(resolve("p5", ["jeans", "formal"], assignments)).toEqual(["g-pant"]);
+  it("an exclusion vetoes the group even when the product also matches a non-excluded category", () => {
+    // Regression: a jeans product tagged with both "jeans" and a non-excluded
+    // sibling ("formal") used to match through the sibling and get measured,
+    // so excluding "jeans" did not actually stop the fields for jeans items.
+    expect(resolve("p5", ["jeans", "formal"], assignments)).toEqual([]);
   });
 
   it("still includes subcategories created after the assignment", () => {

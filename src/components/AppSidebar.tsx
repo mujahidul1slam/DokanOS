@@ -2,8 +2,8 @@ import { useState, useMemo } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   LayoutDashboard, ShoppingCart, Package, Users, Monitor,
-  Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3, Hourglass, Receipt, ChevronsUpDown, Check, Store,
-  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags, Plus, UserPlus, Inbox
+  Settings, UsersRound, LogOut, Menu, X, Search, Sun, Moon, BarChart3, Hourglass, Receipt, ChevronsUpDown, Check,
+  PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronDown, PackageCheck, Truck, Clock, CheckCircle2, AlertTriangle, Undo2, XCircle, Trash2, Tags, Plus, UserPlus, Inbox, Plug
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
@@ -67,7 +67,7 @@ const BASE_NAV_GROUPS: NavGroup[] = [
       { icon: BarChart3, label: "Analytics", path: "/analytics", roles: ["admin", "staff"] },
       { icon: Tags, label: "Brands", path: "/brands", roles: ["admin", "staff", "viewer"] },
       { icon: UserPlus, label: "Members", path: "/members", roles: ["admin"] },
-      { icon: Store, label: "Order Sources", path: "/order-sources", roles: ["admin", "staff"] },
+      { icon: Plug, label: "Integrations", path: "/integrations", roles: ["admin", "staff"] },
       { icon: Inbox, label: "Legacy Pool", path: "/legacy-pool", roles: ["admin", "staff"] },
       { icon: Monitor, label: "Storefronts", path: "/storefronts", roles: ["admin", "staff"] },
       { icon: UsersRound, label: "Team", path: "/team", roles: ["admin"] },

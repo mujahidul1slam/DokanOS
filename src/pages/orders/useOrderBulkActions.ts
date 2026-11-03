@@ -2,7 +2,6 @@ import { useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
-import { postWooOrderNote, kickSyncWorker } from "@/lib/wooNotes";
 import { printMeasurementSlipsBulk } from "@/components/orders/MeasurementSlipPrint";
 import { recordDuePayment } from "@/lib/dueCollection";
 import {
@@ -17,7 +16,6 @@ interface BulkOrder extends GateWiringOrder {
   order_number: string;
   total: number;
   consignment_id: string | null;
-  woo_order_id: number | null;
   store_id: string | null;
 }
 
@@ -71,7 +69,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
   );
 
   const runBulkStatus = useCallback(
-    async (newStatus: string, description: string, toastTitle: string, pushWoo = true) => {
+    async (newStatus: string, description: string, toastTitle: string) => {
       if (selected.size === 0) return;
       // Fail closed (issue #16): scope the requested ids to the active
       // business first — nothing outside it is ever read, written or pushed.
@@ -96,11 +94,6 @@ export function useOrderBulkActions<T extends BulkOrder>({
           runIds.map((id) => ({ order_id: id, event: "status_changed", description })),
         );
         await logAction("update", "order_status_bulk", undefined, { ids: runIds, to: newStatus });
-
-        // The DB trigger enqueued one push per order; drain them now so the
-        // Woo status flips within seconds (Issue 2: manual/bulk status changes
-        // must reach WooCommerce without waiting on the throttled cron).
-        void kickSyncWorker();
 
         toast({
           title: toastTitle.replace("{n}", String(runIds.length)),
@@ -152,7 +145,7 @@ export function useOrderBulkActions<T extends BulkOrder>({
           console.error("Bulk restore query error", err);
         }
       }
-      return runBulkStatus("cancelled", "Cancelled", "{n} order(s) cancelled", false);
+      return runBulkStatus("cancelled", "Cancelled", "{n} order(s) cancelled");
     },
     [selected, scopedIds, businessStoreIds, runBulkStatus],
   );
@@ -246,19 +239,9 @@ export function useOrderBulkActions<T extends BulkOrder>({
             order_id: id,
             event: "trashed",
             description: "Order moved to trash",
-            metadata: { skip_woo_note: true },
+            metadata: {},
           })),
         );
-        const wooOrders = orders.filter((o) => allowed.includes(o.id) && o.woo_order_id && o.store_id);
-        for (const o of wooOrders) {
-          try {
-            await postWooOrderNote(o.id, "[DokanOS] Order moved to trash");
-            await supabase.functions.invoke("woo-push", {
-              body: { action: "trash_order", order_id: o.id },
-            });
-          } catch {}
-        }
-        await logAction("delete", "order_trash_bulk", undefined, { ids: allowed });
         toast({ title: `${allowed.length} order(s) moved to trash` });
         setSelected(new Set());
         loadOrders();

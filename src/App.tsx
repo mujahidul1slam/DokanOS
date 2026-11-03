@@ -33,6 +33,7 @@ const Products = lazy(() => import("./pages/Products"));
 const POS = lazy(() => import("./pages/POS"));
 const PosReports = lazy(() => import("./pages/PosReports"));
 const Analytics = lazy(() => import("./pages/Analytics"));
+const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 const StorefrontsPage = lazy(() => import("./pages/StorefrontsPage"));
@@ -53,7 +54,6 @@ const StorefrontPreview = lazy(() =>
     }),
   ),
 );
-const OrderSources = lazy(() => import("./pages/OrderSources"));
 const Brands = lazy(() => import("./pages/Brands"));
 const BusinessMembers = lazy(() => import("./pages/BusinessMembers"));
 const LegacyPool = lazy(() => import("./pages/LegacyPool"));
@@ -160,13 +160,19 @@ const AppRoutes = () => {
               <Route path="/pos" element={<PermissionGuard permission="pos.use"><POS /></PermissionGuard>} />
               <Route path="/pos/reports" element={<PermissionGuard permission="analytics.view"><PosReports /></PermissionGuard>} />
               <Route path="/analytics" element={<PermissionGuard permission="analytics.view"><Analytics /></PermissionGuard>} />
-              <Route path="/integrations" element={<Navigate to="/settings" replace />} />
+              {/* Integrations is the single management surface for order sources
+                  and courier services (they left Settings). Guarded with
+                  dashboard.view so staff keep the order-source access they had
+                  via the old /order-sources page; courier writes stay gated by
+                  canCreateBusinessResources + RLS. */}
+              <Route path="/integrations" element={<PermissionGuard permission="dashboard.view"><Integrations /></PermissionGuard>} />
               <Route path="/settings" element={<PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard>} />
               <Route path="/team" element={<PermissionGuard permission="team.view"><TeamManagement /></PermissionGuard>} />
               <Route path="/brands" element={<Brands />} />
               <Route path="/members" element={<BusinessMembers />} />
-              <Route path="/stores" element={<Navigate to="/order-sources" replace />} />
-              <Route path="/order-sources" element={<PermissionGuard permission="dashboard.view"><OrderSources /></PermissionGuard>} />
+              {/* Order sources moved under Integrations — old URLs redirect. */}
+              <Route path="/stores" element={<Navigate to="/integrations" replace />} />
+              <Route path="/order-sources" element={<Navigate to="/integrations" replace />} />
               <Route path="/legacy-pool" element={<PermissionGuard permission="dashboard.view"><LegacyPool /></PermissionGuard>} />
               {/* Wildcard: deep admin URLs (/storefronts/:slug/admin/:surface)
                   mount StorefrontsPage, which parses the URL itself (fix C). */}

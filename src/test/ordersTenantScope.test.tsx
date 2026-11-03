@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
@@ -166,7 +166,6 @@ const orderRow = (over: Record<string, unknown> = {}) => ({
   created_at: "2026-10-26T02:00:00.000Z",
   deleted_at: null,
   store_id: "s1",
-  woo_order_id: null,
   customer_id: null,
   amount_to_collect: 0,
   pathao_recipient_city: null,

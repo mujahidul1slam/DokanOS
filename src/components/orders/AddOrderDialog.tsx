@@ -10,7 +10,7 @@ import { getProductVariations } from "@/lib/variations";
 import { fetchAllRows } from "@/lib/supabasePage";
 import { useActiveBusinessStoreIds, scopeStoreIds, hasStoreScope } from "@/hooks/useActiveBusinessStoreIds";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
-import { orderSourceLabel, pickWalkInSource, type OrderSourceRow } from "@/lib/orderSources";
+import { orderSourceLabel, pickDefaultOrderSource, pickWalkInSource, type OrderSourceRow } from "@/lib/orderSources";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
@@ -333,7 +333,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       fetchAllRows((range) =>
         supabase.from("product_variations").select("id, product_id, name, sku, price, stock_quantity, attributes").range(range.from, range.to),
       ),
-      supabase.from("order_sources").select("id, brand_id, name, type, is_stock_holding, accepted_payment_methods").in("brand_id", brands.map((b) => b.id)),
+      supabase.from("order_sources").select("id, brand_id, name, type, is_stock_holding, is_default, accepted_payment_methods, legacy_woo_store_id").in("brand_id", brands.map((b) => b.id)),
       supabase.from("pathao_cities").select("city_id, city_name").order("city_name"),
       supabase.from("pathao_zones").select("zone_id, zone_name, city_id"),
       supabase.from("pathao_areas").select("area_id, area_name, zone_id"),
@@ -375,13 +375,13 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
 
   }, [open, businessStoreIds, brands]);
 
-  // The order's brand follows its store (legacy link); the source picker lists
-  // that brand's order sources. Walk-ins attach to the showroom source itself
-  // (spec §2) until the operator picks a source by hand.
-  const activeStoreId = storeId && businessStoreIds.includes(storeId) ? storeId : null;
-  const activeBrandId = activeStoreId
-    ? brands.find((b) => b.woo_store_id === activeStoreId)?.id ?? null
-    : null;
+  // The Brand chosen in the identity strip is the single source of truth for
+  // attribution; the Stock store follows it (brand → woo_store_id, so → the
+  // selected source's legacy store binding). The old form asked for a "Legacy
+  // Woo store" by hand, which silently disagreed with the Brand picker and
+  // listed the WRONG brand's order sources — the duplicate selector this
+  // replacement removes.
+  const activeBrandId = selectedBrandId || null;
   const brandSources = useMemo(
     () => orderSources.filter((s) => s.brand_id === activeBrandId),
     [orderSources, activeBrandId],
@@ -397,6 +397,26 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
     () => staffPaymentOptions(selectedSourceRow?.accepted_payment_methods),
     [selectedSourceRow],
   );
+
+  // Stock store is derived, never hand-picked: the selected source's binding
+  // wins, then the brand's store, then the remembered one, then the business's
+  // first readable store. Any candidate outside the active business scope is
+  // ignored (fail closed) — that is what the old "Legacy Woo store" select got
+  // wrong when a stale localStorage value pointed at another business.
+  useEffect(() => {
+    if (!open) return;
+    const inScope = (id: string | null | undefined): string | null =>
+      id && businessStoreIds.includes(id) ? id : null;
+    const remembered = localStorage.getItem("last_selected_store_id");
+    const brandStoreId = activeBrands.find((b) => b.id === selectedBrandId)?.woo_store_id;
+    const next =
+      inScope(selectedSourceRow?.legacy_woo_store_id) ??
+      inScope(brandStoreId) ??
+      inScope(remembered) ??
+      stores[0]?.id ??
+      "";
+    setStoreId((previous) => (previous === next ? previous : next));
+  }, [open, selectedSourceRow, activeBrands, selectedBrandId, businessStoreIds, stores]);
   useEffect(() => {
     if (!paymentOptions.some((m) => m.code === paymentMethod)) {
       setPaymentMethod(paymentOptions[0]?.code ?? "cash");
@@ -412,8 +432,12 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       }
       return;
     }
+    // Walk-ins attach to the brand's physical channel (showroom first). Every
+    // other order defaults to the source marked default on the Integrations
+    // page — falling back to the brand's Facebook/Instagram source, then the
+    // first listed source.
     const walkIn = fulfillment === "walkin" ? pickWalkInSource(brandSources) : null;
-    const next = walkIn?.id ?? brandSources[0]?.id ?? "";
+    const next = walkIn?.id ?? pickDefaultOrderSource(brandSources)?.id ?? "";
     setOrderSourceId((prev) => (prev === next ? prev : next));
   }, [brandSources, fulfillment, orderSourceId]);
 
@@ -1220,14 +1244,20 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             const { data: existing } = await scopeStoreIds(supabase.from("customers").select("id").eq("phone", normalizedCustomerPhone), businessStoreIds).limit(1).maybeSingle();
             if (existing) {
               customerId = existing.id;
-              await supabase.from("customers").update({
+              // No store filter: a customer found by phone inside the active
+              // business may carry a different (or null) store_id, and the old
+              // `.eq("store_id", ...)` made this UPDATE silently affect zero
+              // rows — the "customer info doesn't save" bug. RLS already fails
+              // closed across businesses.
+              const { error: customerUpdateError } = await supabase.from("customers").update({
                 name: customerName || undefined,
                 phone: normalizedCustomerPhone,
                 address: customerAddress || undefined,
                 city: cityName || undefined,
                 zone: zoneName || undefined,
                 area: areaName || undefined,
-              }).eq("id", customerId).eq("store_id", orderStoreId);
+              }).eq("id", customerId);
+              if (customerUpdateError) throw customerUpdateError;
             }
           }
           if (!customerId) {
@@ -1426,42 +1456,100 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
       // The order is saved from here on — refresh lists even though the dialog
       // stays open for the dispatch step.
       onCreated();
-      const account = selectedAccount!;
-      const entry = buildDispatchOrderPayload(
-        {
-          orderId: created.orderId,
-          orderNumber: created.orderNumber,
-          recipientName: customerName.trim(),
-          recipientPhone: normalizeBdPhone(customerPhone) || customerPhone.trim(),
-          recipientAddress: customerAddress.trim(),
-          recipientCity: selectedCity!,
-          recipientZone: selectedZone!,
-          recipientArea: selectedArea,
-          itemQuantity: items.reduce((sum, item) => sum + item.qty, 0),
-          itemWeight: null,
-          amountToCollect: Math.max(0, total - paidAmount),
-          itemLines: items.map((item) => ({
-            product_name: formatOrderItemProductName(item.name, item.variationLabel),
-            quantity: item.qty,
-          })),
-          includeItemDescription: isCourierDescriptionEnabled(courierDescriptionOptions, account.key),
-        },
-        account,
-      );
-      await runDispatch({ created, entry, account });
+      await runDispatch(buildPendingDispatch(created));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** Courier payload built from the CURRENT form state (issue #23 + #11). */
+  const buildPendingDispatch = (created: { orderId: string; orderNumber: string }): PendingDispatch => {
+    const account = selectedAccount!;
+    const entry = buildDispatchOrderPayload(
+      {
+        orderId: created.orderId,
+        orderNumber: created.orderNumber,
+        recipientName: customerName.trim(),
+        recipientPhone: normalizeBdPhone(customerPhone) || customerPhone.trim(),
+        recipientAddress: customerAddress.trim(),
+        recipientCity: selectedCity!,
+        recipientZone: selectedZone!,
+        recipientArea: selectedArea,
+        itemQuantity: items.reduce((sum, item) => sum + item.qty, 0),
+        itemWeight: null,
+        amountToCollect: Math.max(0, total - paidAmount),
+        itemLines: items.map((item) => ({
+          product_name: formatOrderItemProductName(item.name, item.variationLabel),
+          quantity: item.qty,
+        })),
+        includeItemDescription: isCourierDescriptionEnabled(courierDescriptionOptions, account.key),
+      },
+      account,
+    );
+    return { created, entry, account };
+  };
+
+  /**
+   * Re-apply the form's contact/destination/money fields to the already-saved
+   * order before a dispatch retry. Without it, editing the customer after a
+   * failed dispatch changed nothing: the retry only re-sent the payload
+   * captured at creation time, so the order (and its customer) kept the old
+   * details. Order row first, then the linked customer row.
+   */
+  const syncOrderFromForm = async (orderId: string) => {
+    const cityName = cities.find((c) => c.city_id === selectedCity)?.city_name || locationHints.city || null;
+    const zoneName = zones.find((z) => z.zone_id === selectedZone)?.zone_name || locationHints.zone || null;
+    const areaName = areas.find((a) => a.area_id === selectedArea)?.area_name || locationHints.area || null;
+    const { data: updatedOrder, error } = await supabase
+      .from("orders")
+      .update({
+        customer_name: customerName.trim() || null,
+        customer_phone: normalizeBdPhone(customerPhone) || null,
+        customer_address: customerAddress.trim() || null,
+        customer_city: cityName,
+        pathao_recipient_city: selectedCity,
+        pathao_recipient_zone: selectedZone,
+        pathao_recipient_area: selectedArea,
+        subtotal,
+        discount,
+        shipping_cost: shippingCost,
+        total,
+        amount_to_collect: Math.max(0, total - paidAmount),
+      })
+      .eq("id", orderId)
+      .select("customer_id")
+      .maybeSingle();
+    if (error) throw error;
+    if (updatedOrder?.customer_id) {
+      const { error: customerError } = await supabase
+        .from("customers")
+        .update({
+          name: customerName.trim() || "Customer",
+          phone: normalizeBdPhone(customerPhone) || null,
+          address: customerAddress.trim() || null,
+          city: cityName,
+          zone: zoneName,
+          area: areaName,
+        })
+        .eq("id", updatedOrder.customer_id);
+      if (customerError) throw customerError;
     }
   };
 
   // Dispatch-only retry: the order stays saved and this can never create a
   // duplicate (issue #23). The edge function's consignment guard additionally
   // stops a second parcel when the first attempt actually landed on Pathao.
+  // Edited customer details are persisted first, then the payload is rebuilt
+  // from the current form state so the courier gets the corrected address.
   const handleRetryDispatch = async () => {
     if (dispatchPhase.kind !== "failed") return;
     setSaving(true);
     try {
-      await runDispatch(dispatchPhase.pending);
+      const pending = dispatchPhase.pending;
+      await syncOrderFromForm(pending.created.orderId);
+      await runDispatch(buildPendingDispatch(pending.created));
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't save the edited customer details");
     } finally {
       setSaving(false);
     }
@@ -1569,6 +1657,9 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent"
                       >
                         <span className="flex-1 truncate">{source.name}</span>
+                        {source.id === (pickDefaultOrderSource(brandSources)?.id ?? "") && (
+                          <Badge variant="outline" className="text-[9px]">Default</Badge>
+                        )}
                         {source.id === orderSourceId && <Check className="h-3.5 w-3.5" />}
                       </button>
                     ))}
@@ -2107,7 +2198,7 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Fulfillment</Label>
               <Select value={fulfillment} onValueChange={(v: any) => setFulfillment(v)}>
@@ -2119,42 +2210,17 @@ export default function AddOrderDialog({ open, onOpenChange, onCreated }: Props)
                 </SelectContent>
               </Select>
             </div>
-            {stores.length > 0 && (
-              <div className="space-y-1">
-                <Label className="text-xs">Legacy Woo store (optional)</Label>
-                <Select
-                  value={storeId}
-                  onValueChange={(v) => { setStoreId(v); localStorage.setItem("last_selected_store_id", v); }}
-                >
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Use Brand Woo store" /></SelectTrigger>
-                  <SelectContent>
-                    {stores.map((store) => <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            {/* Identity is chosen once in the footer strip (Brand + Order Source).
+                The stock store is derived from that identity, so it is shown
+                read-only instead of asking for a second, conflicting choice. */}
             <div className="space-y-1">
-              <Label className="text-xs">Order source</Label>
-              <Select
-                value={orderSourceId}
-                onValueChange={(v) => { sourceTouchedRef.current = true; setOrderSourceId(v); }}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder={brandSources.length > 0 ? "Select source" : "No sources yet"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {brandSources.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name} · {orderSourceLabel(s.type)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {brandSources.length === 0 && (
-                <p className="text-[10px] text-muted-foreground">
-                  No order sources for this brand yet — add one on the Order Sources page.
-                </p>
-              )}
+              <Label className="text-xs">Stock store</Label>
+              <div className="flex h-9 items-center rounded-md border bg-muted/40 px-3 text-xs text-muted-foreground">
+                <span className="truncate">
+                  {stores.find((store) => store.id === storeId)?.name ??
+                    (storeId ? "Store unavailable" : "Follows the order source")}
+                </span>
+              </div>
             </div>
           </div>
 

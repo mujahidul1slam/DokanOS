@@ -107,27 +107,37 @@ export function resolveGroupIdsForProduct(input: ResolveGroupsInput): string[] {
     // cascade_all / cascade_selected / cascade_except: the product matches
     // through any of its categories reached from the assigned category,
     // walked against the live tree (no snapshot).
-    for (const c of productCategoryIds) {
-      let hit: boolean;
+    const baseHit = (c: string): boolean => {
       if (scope === "cascade_selected") {
-        hit =
+        return (
           c === a.categoryId ||
-          (a.includedCategoryIds ?? []).some((i) => isSameOrDescendant(categories, c, i));
-      } else {
-        hit = isSameOrDescendant(categories, c, a.categoryId);
-      }
-      if (!hit) continue;
-      if (scope === "cascade_except") {
-        const excluded = a.excludedCategoryIds ?? [];
-        // Excluding a category excludes its whole subtree.
-        const inExcludedSubtree = excluded.some((e) =>
-          isSameOrDescendant(categories, c, e)
+          (a.includedCategoryIds ?? []).some((i) => isSameOrDescendant(categories, c, i))
         );
-        if (inExcludedSubtree) continue;
       }
-      add(a.groupId);
-      break;
+      return isSameOrDescendant(categories, c, a.categoryId);
+    };
+
+    const matchingCategories = productCategoryIds.filter(baseHit);
+    if (matchingCategories.length === 0) continue;
+
+    if (scope === "cascade_except") {
+      const excluded = a.excludedCategoryIds ?? [];
+      // Exclusions are a veto, not a per-category skip: a product tagged with
+      // BOTH the assigned parent ("Clothing") and an excluded child ("Jeans")
+      // used to match through the parent and get measured anyway — the
+      // reported "excluding a category doesn't stop the fields" bug. The veto
+      // also applies when the assigned category itself lives under an excluded
+      // one, so the exclusion can never be bypassed from below.
+      const assignedExcluded = excluded.some((e) =>
+        isSameOrDescendant(categories, a.categoryId, e)
+      );
+      const productExcluded = matchingCategories.some((c) =>
+        excluded.some((e) => isSameOrDescendant(categories, c, e))
+      );
+      if (assignedExcluded || productExcluded) continue;
     }
+
+    add(a.groupId);
   }
 
   return matched;

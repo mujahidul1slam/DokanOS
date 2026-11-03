@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Settings, Package, FileText, ScrollText, ShoppingCart, Tags, Ruler,
+  Settings, Package, FileText, ScrollText, ShoppingCart, Ruler,
   Building2, Hash, Hourglass, Search, ChevronRight, ArrowLeft, X,
-  Palette, User, Printer, Warehouse, Truck, CreditCard,
+  Palette, User, Printer, Warehouse, CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -19,9 +19,7 @@ import InvoiceSettingsTab from "@/components/settings/InvoiceSettingsTab";
 import PosSettingsTab from "@/components/settings/PosSettingsTab";
 import OrdersSettingsTab from "@/components/settings/OrdersSettingsTab";
 import AuditLogTab from "@/components/settings/AuditLogTab";
-import OrderSourcesTab from "@/components/settings/OrderSourcesTab";
 import WarehousesTab from "@/components/settings/WarehousesTab";
-import CourierServicesTab from "@/components/settings/CourierServicesTab";
 import PaymentAccountsTab from "@/components/settings/PaymentAccountsTab";
 import MeasurementsTab from "@/components/settings/MeasurementsTab";
 import BusinessProfileTab from "@/components/settings/BusinessProfileTab";
@@ -42,8 +40,8 @@ import {
 
 type TabId =
   | "profile" | "account" | "brands"
-  | "general" | "couriers" | "payments" | "printheader" | "inventory" | "warehouses" | "pos" | "orders"
-  | "preorders" | "measurements" | "invoice" | "sources" | "audit";
+  | "general" | "payments" | "printheader" | "inventory" | "warehouses" | "pos" | "orders"
+  | "preorders" | "measurements" | "invoice" | "audit";
 
 /**
  * Issue #25: one pending unsaved-changes decision at a time — either a tab
@@ -83,7 +81,6 @@ const groups: GroupDef[] = [
     label: "Business",
     tabs: [
       { id: "general", label: "General", icon: Settings, description: "Theme and install preferences", keywords: "appearance dark light mode theme install pwa" },
-      { id: "couriers", label: "Courier services", icon: Truck, description: "Courier accounts for the whole business", keywords: "courier pathao steadfast redx ecourier dispatch shipping parcel" },
       { id: "payments", label: "Payment accounts", icon: CreditCard, description: "Payment gateway accounts for the whole business", keywords: "payment bkash nagad stripe card gateway cod cash checkout" },
     ],
   },
@@ -101,11 +98,10 @@ const groups: GroupDef[] = [
   },
   {
     id: "documents",
-    label: "Documents & Sources",
+    label: "Documents",
     tabs: [
       { id: "printheader", label: "Print Header", icon: Printer, description: "Business name/logo/contact on invoices", keywords: "invoice header logo print brand tagline contact" },
       { id: "invoice", label: "Invoice / Pickup Slip", icon: FileText, description: "Print layouts and content" },
-      { id: "sources", label: "Order Sources", icon: Tags, description: "Channels orders come from" },
     ],
   },
   {
@@ -263,9 +259,7 @@ const SettingsPage = () => {
       case "orders": return <OrdersSettingsTab />;
       case "preorders": return <PreOrdersSettingsTab />;
       case "invoice": return <InvoiceSettingsTab />;
-      case "sources": return <OrderSourcesTab />;
       case "warehouses": return <WarehousesTab />;
-      case "couriers": return <CourierServicesTab />;
       case "payments": return <PaymentAccountsTab />;
       case "measurements": return <MeasurementsTab />;
       case "audit": return <AuditLogTab />;
@@ -599,7 +593,7 @@ const InventorySettings = () => {
           <div className="space-y-0.5 min-w-0">
             <Label className="text-sm font-medium">Enable Global Stock Management</Label>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Track inventory quantities for all products across POS and WooCommerce.
+              Track inventory quantities for all products across POS and your storefront channels.
             </p>
           </div>
           <Switch checked={globalStock} onCheckedChange={setGlobalStock} />

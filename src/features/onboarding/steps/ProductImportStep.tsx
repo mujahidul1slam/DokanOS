@@ -1,13 +1,7 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileSpreadsheet, Loader2, PackagePlus, RefreshCw, Store } from "lucide-react";
+import { FileSpreadsheet, Loader2, PackagePlus, Store } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import {
-  orderSourceConnectionState,
-  orderSourceLabel,
-  type OrderSourceRow,
-} from "@/lib/orderSources";
 import {
   importProductDrafts,
   parseProductsCsv,
@@ -15,7 +9,6 @@ import {
   type ProductCsvRow,
 } from "@/lib/productImport";
 import { downloadCsv } from "@/lib/exportCsv";
-import { kickSyncWorker } from "@/lib/wooNotes";
 import { localStoreUrl, provisionOperationalStore } from "@/lib/operationalStores";
 import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { useStoresList } from "@/hooks/useStoresList";
@@ -32,11 +25,9 @@ import type { OnboardingStepProps } from "../stepProps";
 import { StepFooter } from "./StepFooter";
 
 /**
- * Wizard step 5 (spec §6a: "Product import — WooCommerce import (if that
- * source was connected), CSV import, or manual. (CSV is an action, not an
- * entity.)"). Three actions, one step: the Woo import kicks the sync worker
- * for a connected source, the CSV action imports a one-shot file as products
- * with provenance `csv`, and manual deep-links to the product form.
+ * Wizard step 5 (spec §6a: "Product import — CSV import, or manual"). Two
+ * actions, one step: the CSV action imports a one-shot file as products with
+ * provenance `csv`, and manual deep-links to the product form.
  */
 export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStepProps) {
   const navigate = useNavigate();
@@ -45,38 +36,12 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
   const stores = useStoresList();
   const { refresh } = useBusinessContext();
 
-  const [wooSources, setWooSources] = useState<OrderSourceRow[]>([]);
-  const [loadingSources, setLoadingSources] = useState(false);
-  const [kicking, setKicking] = useState(false);
-
   const [targetStoreId, setTargetStoreId] = useState<string>("");
   const [parsedRows, setParsedRows] = useState<ProductCsvRow[]>([]);
   const [parseErrors, setParseErrors] = useState<{ line: number; message: string }[]>([]);
   const [fileName, setFileName] = useState<string>("");
   const [importing, setImporting] = useState(false);
   const [provisioningLocal, setProvisioningLocal] = useState(false);
-
-  const brandIds = useMemo(() => brands.map((b) => b.id), [brands]);
-
-  useEffect(() => {
-    if (brandIds.length === 0) return;
-    let cancelled = false;
-    setLoadingSources(true);
-    (async () => {
-      const { data } = await supabase
-        .from("order_sources")
-        .select("*")
-        .in("brand_id", brandIds)
-        .eq("type", "woocommerce")
-        .order("name");
-      if (cancelled) return;
-      setWooSources((data ?? []) as OrderSourceRow[]);
-      setLoadingSources(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [brandIds]);
 
   // Products attach to a store of the business (store-scoped catalog) — pick
   // the first one by default, like the Products page's filter. The target ids
@@ -87,28 +52,6 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
       stores.some((s) => s.id === current) ? current : (stores[0]?.id ?? ""),
     );
   }, [stores]);
-
-  const connectedWoo = wooSources.filter(
-    (s) => orderSourceConnectionState(s) === "connected",
-  );
-  const unconfiguredWoo = wooSources.filter(
-    (s) => orderSourceConnectionState(s) === "needs_setup",
-  );
-
-  const runWooImport = async () => {
-    if (kicking) return;
-    setKicking(true);
-    try {
-      await kickSyncWorker();
-      toast.success(
-        `WooCommerce import started — ${connectedWoo.length === 1 ? `“${connectedWoo[0].name}”` : "your connected stores"} will sync products and orders shortly.`,
-      );
-    } catch {
-      toast.error("Could not reach the sync worker. The import runs on its regular schedule instead.");
-    } finally {
-      setKicking(false);
-    }
-  };
 
   const onFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -146,9 +89,9 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
     downloadCsv("product-import-template.csv", headers, rows);
   };
 
-  // Local-store convenience (option B): pure-CSV/manual merchants need a store
-  // space without connecting WooCommerce. `local://` rows are created
-  // 'disconnected' and can never be picked up by a sync worker.
+  // Local-store convenience: pure-CSV/manual merchants need a store space
+  // without a connected channel. `local://` rows are created 'disconnected'
+  // and are never picked up by a sync worker.
   const addLocalStore = async () => {
     if (provisioningLocal) return;
     const brand = brands[0];
@@ -178,78 +121,6 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
   return (
     <div className="space-y-4">
       <section className="space-y-3 rounded-md border border-border p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="flex items-center gap-2 text-sm font-medium">
-              <RefreshCw className="h-4 w-4" /> WooCommerce import
-            </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Pull products (and orders) in from a connected WooCommerce store.
-            </p>
-          </div>
-        </div>
-        {loadingSources ? (
-          <p className="text-xs text-muted-foreground">Checking your sources…</p>
-        ) : connectedWoo.length > 0 ? (
-          <div className="space-y-2">
-            {connectedWoo.map((s) => (
-              <div
-                key={s.id}
-                className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{s.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {orderSourceLabel(s.type)} · connected
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => void runWooImport()}
-                  disabled={kicking}
-                >
-                  {kicking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  Import products
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-md border border-dashed border-border px-3 py-2.5">
-            <p className="text-xs text-muted-foreground">
-              {unconfiguredWoo.length > 0 ? (
-                <>
-                  {unconfiguredWoo.map((s) => s.name).join(", ")}: the connection isn’t finished yet.{" "}
-                  <button
-                    type="button"
-                    className="font-medium text-primary underline underline-offset-2"
-                    onClick={() => navigate("/order-sources")}
-                  >
-                    Add the URL + API keys on Order Sources
-                  </button>
-                  , then come back to import.
-                </>
-              ) : (
-                <>
-                  No WooCommerce source yet.{" "}
-                  <button
-                    type="button"
-                    className="font-medium text-primary underline underline-offset-2"
-                    onClick={() => navigate("/order-sources")}
-                  >
-                    Create one on Order Sources
-                  </button>{" "}
-                  to import from your store.
-                </>
-              )}
-            </p>
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-3 rounded-md border border-border p-4">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-medium">
             <FileSpreadsheet className="h-4 w-4" /> CSV import
@@ -266,9 +137,9 @@ export function ProductImportStep({ brands, onFinished, onBack }: OnboardingStep
               <button
                 type="button"
                 className="font-medium text-primary underline underline-offset-2"
-                onClick={() => navigate("/order-sources")}
+                onClick={() => navigate("/integrations")}
               >
-                Connect a WooCommerce store on Order Sources
+                Add a store on Integrations
               </button>{" "}
               to get one, then come back to import.
             </p>

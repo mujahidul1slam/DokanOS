@@ -3,13 +3,14 @@
  * source model — "one real-world place/channel orders come from, nothing else
  * represents that".
  *
- * Connected sources (WooCommerce, Storefront, Facebook, WhatsApp…) receive or
- * sync orders; manual sources are user-named and staff-picked when entering an
- * order. Walk-in sales attach to the showroom/physical-store source itself.
+ * Connected sources (Storefront, Facebook, WhatsApp…) receive or sync orders;
+ * manual sources are user-named and staff-picked when entering an order.
+ * Walk-in sales attach to the showroom/physical-store source itself.
  *
  * The DB enum lives in `supabase/migrations/20261031090000_unified_order_sources.sql`
- * (`order_source_type`); this module is the UI-side mirror plus the spec §7
- * legacy-mapping labels used by the read-only legacy section of the page.
+ * (`order_source_type`); this module is the UI-side mirror. `woocommerce` stays
+ * in the enum because rows created before the legacy Woo retirement still carry
+ * it, but it is read-only here: no connection config, no sync controls.
  */
 
 export type OrderSourceType =
@@ -31,15 +32,22 @@ export interface OrderSourceTypeInfo {
   holdsStockByDefault: boolean;
   /** One-line helper shown in the create dialog. */
   hint: string;
+  /**
+   * Legacy Woo retirement: the type survives only for order sources that
+   * already exist. It cannot be created or connected, so the create dialog
+   * hides it and no connect/sync controls are rendered for it.
+   */
+  legacy?: boolean;
 }
 
 export const ORDER_SOURCE_TYPES: readonly OrderSourceTypeInfo[] = [
   {
     value: "woocommerce",
-    label: "WooCommerce",
+    label: "WooCommerce (legacy)",
     kind: "connected",
     holdsStockByDefault: false,
-    hint: "Orders and products sync from a WooCommerce store (URL + API keys).",
+    hint: "Retired integration — kept for sources created before the legacy Woo retirement.",
+    legacy: true,
   },
   {
     value: "storefront",
@@ -122,6 +130,40 @@ export function pickWalkInSource<T extends { type: string }>(sources: readonly T
   );
 }
 
+/**
+ * Default order source for a brand's manually entered orders (Add Order form):
+ * 1. the source the operator marked as default on the Integrations page,
+ * 2. otherwise the brand's Facebook/Instagram source (the most common manual
+ *    channel — Facebook wins over Instagram),
+ * 3. otherwise the first source.
+ *
+ * Walk-in orders bypass this — they attach to the showroom/physical-store
+ * source via `pickWalkInSource`.
+ */
+export function pickDefaultOrderSource<
+  T extends { type: string; is_default?: boolean | null },
+>(sources: readonly T[]): T | null {
+  if (sources.length === 0) return null;
+  return (
+    sources.find((s) => s.is_default) ??
+    sources.find((s) => s.type === "facebook" || s.type === "instagram") ??
+    sources[0]
+  );
+}
+
+/**
+ * Fallback label for orders without an order_sources row (legacy text
+ * attribution): POS / WooCommerce [store] / capitalized source text / Manual.
+ */
+export function sourceFallbackLabel(source: string | null | undefined, storeName?: string | null): string {
+  if (source === "pos") return "POS";
+  if (source === "online" || source === "woo" || source === "woocommerce") {
+    return storeName ? `WooCommerce [${storeName}]` : "WooCommerce";
+  }
+  // Manual orders (phone, fb/ig, whatsapp, etc.) — show the source label directly
+  return source ? source.charAt(0).toUpperCase() + source.slice(1) : "Manual";
+}
+
 export interface OrderSourceConfigField {
   key: string;
   label: string;
@@ -166,6 +208,18 @@ export interface OrderSourceRow {
   last_sync_at: string | null;
   last_sync_error: string | null;
   is_stock_holding: boolean | null;
+  /**
+   * Default source for the brand's manually entered orders (Add Order form).
+   * At most one per brand — enforced by a partial unique index in the DB;
+   * picked on the Integrations page.
+   */
+  is_default?: boolean | null;
+  /**
+   * The `stores.id` this source ships stock from. Legacy Woo sources carry the
+   * old store binding here; the Add Order form derives its stock store from the
+   * chosen source/brand instead of asking the operator to pick one by hand.
+   */
+  legacy_woo_store_id?: string | null;
   ship_from_store: boolean;
   /** Ordered stock-holder id list (spec §3) — normalized via `normalizeFulfillmentPreference`. */
   fulfillment_preference: unknown;
@@ -177,14 +231,16 @@ export interface OrderSourceRow {
 
 /**
  * Display state for the connection column: manual sources are staff-entered,
- * physical sources live in a venue (nothing to connect), digital sources are
- * "connected" once their config is complete and "needs_setup" until then.
+ * physical sources live in a venue (nothing to connect), legacy types have no
+ * connection any more, and digital sources are "connected" once their config is
+ * complete and "needs_setup" until then.
  */
 export function orderSourceConnectionState(
   source: Pick<OrderSourceRow, "type" | "config">,
-): "manual" | "physical" | "connected" | "needs_setup" {
+): "manual" | "physical" | "legacy" | "connected" | "needs_setup" {
   const info = orderSourceTypeInfo(source.type);
   if (!info || info.kind === "manual") return "manual";
+  if (info.legacy) return "legacy";
   if (isPhysicalSourceType(source.type)) return "physical";
   const fields = orderSourceConfigFields(source.type);
   const config = source.config ?? {};

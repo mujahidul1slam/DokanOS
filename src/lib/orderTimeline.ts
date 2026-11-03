@@ -1,13 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
-import { postWooOrderNote } from "@/lib/wooNotes";
 import { getActiveCurrency, symbolFor } from "@/lib/currency";
 
 export interface TimelineMetadata {
   [key: string]: unknown;
-  // Set to true to skip mirroring this entry to the WooCommerce order notes timeline.
-  skip_woo_note?: boolean;
-  // Set to true to mark the mirrored Woo note as a customer-visible note.
-  woo_customer_note?: boolean;
 }
 
 /**
@@ -44,34 +39,6 @@ export async function addOrderTimeline(
     const { error } = await supabase.from("order_timeline").insert(rows as any);
     if (error) console.warn("addOrderTimeline failed:", error.message);
 
-    // Mirror each entry to the WooCommerce order's notes timeline (no-op for non-Woo orders).
-    // The note carries the event's key facts (items, amounts, consignments) so
-    // the Woo admin sees WHAT changed, not just that something did.
-    for (const e of arr) {
-      if (e.metadata?.skip_woo_note) continue;
-      const userLabel = userName ? ` — by ${userName}` : "";
-
-      // Enrich from metadata: quantified amounts, item lists, courier ids.
-      const extras: string[] = [];
-      const meta = (e.metadata || {}) as Record<string, unknown>;
-      if (Array.isArray(meta.changes) && meta.changes.length > 0) {
-        extras.push(String((meta.changes as unknown[]).join("; ")));
-      } else if (meta.new_total != null) {
-        extras.push(`New total: ${symbolFor(currency ?? getActiveCurrency())}${Number(meta.new_total).toLocaleString()}`);
-      }
-      if (meta.consignment_id) extras.push(`Consignment: ${String(meta.consignment_id)}`);
-      if (meta.tracking_status) extras.push(`Courier status: ${String(meta.tracking_status)}`);
-      if (Array.isArray(meta.items)) {
-        extras.push((meta.items as Array<Record<string, unknown>>).map((it) =>
-          `${it.product_name ?? it.name ?? "item"} ×${it.quantity ?? 1}`).join(", "));
-      }
-      if (typeof meta.amount === "number") extras.push(`Amount: ${symbolFor(currency ?? getActiveCurrency())}${meta.amount.toLocaleString()}`);
-
-      const detail = extras.length > 0 ? ` (${extras.join(" · ")})` : "";
-      const note = `[DokanOS] ${e.description}${detail}${userLabel}`;
-      // Fire-and-forget; postWooOrderNote already swallows errors.
-      void postWooOrderNote(e.order_id, note, Boolean(e.metadata?.woo_customer_note));
-    }
   } catch (e) {
     console.warn("addOrderTimeline failed:", e);
   }

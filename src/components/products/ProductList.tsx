@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { Search, Plus, RefreshCw, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download, Star, Box } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, PackageCheck, PackageX, Eye, EyeOff, Tags, AlertTriangle, Download, Star, Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -119,7 +119,6 @@ const ProductList = () => {
   const stores = useStoresList();
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [stockFilter, setStockFilter] = useState("all");
@@ -307,20 +306,6 @@ const ProductList = () => {
     loadProducts();
   };
 
-  const handleSyncProducts = async () => {
-    setSyncing(true);
-    toast({ title: "Syncing products from WooCommerce…" });
-    // Sync targets are the ACTIVE business's connected stores: they come from
-    // the scoped store list, never from an unscoped "connected stores" read.
-    const syncTargets = stores.filter((store) => store.status === "connected");
-    for (const store of syncTargets) {
-      await supabase.functions.invoke("woo-sync", { body: { store_id: store.id } });
-    }
-    await loadProducts();
-    setSyncing(false);
-    toast({ title: "Products synced!" });
-  };
-
   /* ====== BULK ACTIONS ====== */
   const selectedIds = Array.from(selected);
   const selectedCount = selectedIds.length;
@@ -341,14 +326,6 @@ const ProductList = () => {
         await supabase.from("products").update({ stock_status: status }).eq("id", id).in("store_id", businessStoreIds);
         await supabase.from("product_variations").update({ stock_status: status }).eq("product_id", id);
       }
-      const { data: linkedProducts } = await supabase.from("products").select("id, woo_product_id, store_id").in("id", targets).in("store_id", businessStoreIds).not("woo_product_id", "is", null);
-      if (linkedProducts) {
-        for (const prod of linkedProducts) {
-          if (prod.store_id) {
-            try { await supabase.functions.invoke("woo-push", { body: { action: "push_stock", product_id: prod.id } }); } catch {}
-          }
-        }
-      }
       toast({ title: `${targets.length} products updated to ${status.replace(/_/g, " ")}` });
       setSelected(new Set());
       await loadProducts();
@@ -361,14 +338,6 @@ const ProductList = () => {
     setBulkBusy(true);
     try {
       for (const id of targets) { await supabase.from("products").update({ is_active: isActive }).eq("id", id).in("store_id", businessStoreIds); }
-      const { data: linkedProducts } = await supabase.from("products").select("id, woo_product_id, store_id").in("id", targets).in("store_id", businessStoreIds).not("woo_product_id", "is", null);
-      if (linkedProducts) {
-        for (const prod of linkedProducts) {
-          if (prod.store_id) {
-            try { await supabase.functions.invoke("woo-push", { body: { action: "push_product", product_id: prod.id } }); } catch {}
-          }
-        }
-      }
       toast({ title: `${targets.length} products ${isActive ? "activated" : "deactivated"}` });
       setSelected(new Set());
       await loadProducts();
@@ -447,9 +416,6 @@ const ProductList = () => {
             downloadCsv(`products-${format(new Date(), "yyyy-MM-dd")}.csv`, headers, rows);
           }}>
             <Download className="h-3.5 w-3.5" /> Export
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleSyncProducts} disabled={syncing}>
-            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} /> Sync Products
           </Button>
           <Button size="sm" className="gap-1.5" onClick={openNew}>
             <Plus className="h-3.5 w-3.5" /> Add Product

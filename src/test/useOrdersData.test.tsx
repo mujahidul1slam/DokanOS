@@ -53,7 +53,7 @@ const queriesFor = (table: string) => queries.filter((q) => q.table === table);
 /** A chainable, thenable builder mock resolving like a supabase-js builder. */
 function makeBuilder(): { builder: Record<string, any>; resolve: (r: QueryResult) => void } {
   const builder: Record<string, any> = {};
-  for (const method of ["select", "order", "in", "eq", "or", "range"]) {
+  for (const method of ["select", "order", "in", "eq", "or", "range", "abortSignal"]) {
     builder[method] = vi.fn(() => builder);
   }
   let settle!: (r: QueryResult) => void;
@@ -113,6 +113,7 @@ describe("useOrdersData (issue #9)", () => {
     await waitFor(() => expect(queriesFor("orders")).toHaveLength(1));
     const runA = queriesFor("orders")[0];
     expect(runA.builder.or).not.toHaveBeenCalled(); // single-scope: .in(), not .or()
+    expect(runA.builder.eq).toHaveBeenCalledWith("business_id", "b1");
     expect(runA.builder.in).toHaveBeenCalledWith("order_source_id", ["src1"]);
 
     // Store scope lands second → run B (both scopes: full row set) starts.
@@ -121,6 +122,8 @@ describe("useOrdersData (issue #9)", () => {
     await waitFor(() => expect(queriesFor("orders")).toHaveLength(2));
     const runB = queriesFor("orders")[1];
     expect(runB.builder.or).toHaveBeenCalledTimes(1); // both scopes present
+    expect(runA.builder.abortSignal).toHaveBeenCalledTimes(1);
+    expect(runA.builder.abortSignal.mock.calls[0][0].aborted).toBe(true);
 
     // The NEWER run answers first: the full list (store-bound + source-only rows).
     await resolveQuery(runB, { data: [row("o1"), row("o2")], error: null });

@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowDown, ArrowUp, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { bridgeWooSourceToStore } from "@/lib/operationalStores";
-import { useBusinessContext } from "@/hooks/useBusinessContext";
 import {
   ORDER_SOURCE_TYPES,
   isPhysicalSourceType,
@@ -63,7 +61,6 @@ const SYNC_OPTIONS: Array<{ value: string; label: string }> = [
  */
 export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, source, onSaved }: Props) {
   const editing = !!source;
-  const { refresh } = useBusinessContext();
   const [name, setName] = useState("");
   const [type, setType] = useState<OrderSourceType | "">("");
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -75,9 +72,13 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const configFields = useMemo(() => orderSourceConfigFields(type || ""), [type]);
   const typeInfo = type ? orderSourceTypeInfo(type) : undefined;
-  const syncRelevant = type === "woocommerce" || type === "storefront";
+  // Legacy sources are read-only: their stored config is never re-edited.
+  const configFields = useMemo(
+    () => (typeInfo?.legacy ? [] : orderSourceConfigFields(type || "")),
+    [typeInfo?.legacy, type],
+  );
+  const syncRelevant = type === "storefront";
 
   useEffect(() => {
     if (!open) return;
@@ -163,7 +164,12 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
         name: name.trim(),
         type,
         config,
-        sync_direction: syncRelevant && syncDirection !== "none" ? syncDirection : null,
+        // Editing a legacy source must not wipe the direction it already carries.
+        sync_direction: syncRelevant
+          ? syncDirection !== "none"
+            ? syncDirection
+            : null
+          : (source?.sync_direction ?? null),
         ship_from_store: shipFromStore,
         fulfillment_preference: prefList.filter((r) => r.checked).map((r) => r.id),
         accepted_payment_methods: acceptedMethods,
@@ -175,31 +181,6 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
         ? await supabase.from("order_sources").update(payload).eq("id", source.id).select("id").single()
         : await supabase.from("order_sources").insert({ ...payload, brand_id: brandId }).select("id").single();
       if (result.error) throw result.error;
-      if (!source && type === "woocommerce") {
-        // Fail-soft operational-store bridge (option B): the source row above is
-        // saved either way — provisioning its transitional `stores` space must
-        // never undo that. The store carries the source's URL + consumer
-        // credentials for the legacy sync workers and is linked to the brand
-        // when the brand has no store link yet.
-        try {
-          await bridgeWooSourceToStore({
-            sourceId: result.data.id,
-            brandId,
-            sourceName: payload.name,
-            config,
-          });
-          toast.success(
-            `Store space ready — product pickers and sync can use “${payload.name}”.`,
-          );
-          void refresh(); // brand link changed → re-scope the stores list
-        } catch (bridgeErr) {
-          toast.error(
-            `Source saved, but its store space could not be provisioned (${
-              bridgeErr instanceof Error ? bridgeErr.message : "unknown error"
-            }). Products and sync will not see it until a store row exists.`,
-          );
-        }
-      }
       onSaved();
       onOpenChange(false);
     } catch (err) {
@@ -241,7 +222,7 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium leading-none">Source type</legend>
               <div className="grid grid-cols-2 gap-2">
-                {ORDER_SOURCE_TYPES.map((info) => (
+                {ORDER_SOURCE_TYPES.filter((info) => !info.legacy).map((info) => (
                   <label
                     key={info.value}
                     className={`flex cursor-pointer items-center gap-2 rounded-md border p-2.5 text-sm ${

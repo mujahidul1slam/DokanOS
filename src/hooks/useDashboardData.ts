@@ -5,6 +5,7 @@ import type { DateRange } from "react-day-picker";
 import { type DatePreset, resolveRange } from "@/components/DatePresetPicker";
 import { getEffectiveStock, useGlobalStockEnabled } from "@/lib/stockSettings";
 import { NO_STORE_IDS, scopeStoreIds, selectedStoreScope } from "@/hooks/useActiveBusinessStoreIds";
+import { isRevenueOrder } from "@/lib/orderRevenue";
 
 export interface OrderRow {
   id: string;
@@ -46,11 +47,6 @@ export interface ProductLite {
 
 const BASE_SEL =
   "id, order_number, total, subtotal, discount, shipping_cost, status, source, payment_status, payment_method, created_at, customer_name, customer_id, consignment_id, store_id";
-
-/** Statuses that should NOT contribute to revenue / AOV / mix / trend. */
-const NON_REVENUE_STATUSES = new Set(["cancelled", "failed", "refunded", "returned"]);
-
-const isRevenueOrder = (o: OrderRow) => !NON_REVENUE_STATUSES.has((o.status || "").toLowerCase());
 
 const calcStats = (rows: OrderRow[]) => {
   const revenueRows = rows.filter(isRevenueOrder);
@@ -329,9 +325,7 @@ export const useDashboardData = (
   const unpaidOrdersCount = useMemo(
     () =>
       orders.filter(
-        (o) =>
-          o.payment_status === "unpaid" &&
-          !NON_REVENUE_STATUSES.has((o.status || "").toLowerCase()),
+        (o) => o.payment_status === "unpaid" && isRevenueOrder(o),
       ).length,
     [orders],
   );

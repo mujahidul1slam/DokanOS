@@ -57,7 +57,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStepDef[] = [
     key: "product_import",
     title: "Product import",
     label: "Product import",
-    description: "Bring products in from WooCommerce, a CSV file, or add them manually.",
+    description: "Bring products in from a CSV file, or add them manually.",
   },
   {
     key: "storefront",

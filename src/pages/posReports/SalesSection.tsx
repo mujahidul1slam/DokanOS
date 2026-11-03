@@ -118,14 +118,14 @@ const SalesSection = ({ salesStats, trendData, topProducts, salesByStore }: Prop
       <div className="rounded-lg border border-border bg-card p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-heading text-sm font-medium text-card-foreground flex items-center gap-2">
-            <Store className="h-4 w-4 text-muted-foreground" /> Sales by Store
+            <Store className="h-4 w-4 text-muted-foreground" /> Sales by Brand
           </h3>
-          <span className="text-xs text-muted-foreground">{salesByStore.length} stores</span>
+          <span className="text-xs text-muted-foreground">{salesByStore.length} brands</span>
         </div>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-xs">Store</TableHead>
+              <TableHead className="text-xs">Brand</TableHead>
               <TableHead className="text-xs text-right">Orders</TableHead>
               <TableHead className="text-xs text-right">Items</TableHead>
               <TableHead className="text-xs text-right">Sales</TableHead>
@@ -144,7 +144,7 @@ const SalesSection = ({ salesStats, trendData, topProducts, salesByStore }: Prop
                       {isPosOnly ? (
                         <span className="inline-flex items-center gap-1.5">
                           <Badge variant="secondary" className="text-[10px]">POS Only</Badge>
-                          <span className="text-muted-foreground">no WooCommerce store</span>
+                          <span className="text-muted-foreground">no linked store</span>
                         </span>
                       ) : s.name}
                     </TableCell>

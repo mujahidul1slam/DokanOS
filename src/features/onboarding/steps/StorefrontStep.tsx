@@ -144,7 +144,7 @@ export function StorefrontStep({ brands, onFinished, onBack }: OnboardingStepPro
         <p className="text-sm text-foreground">
           {chosenChannel
             ? "You picked the Storefront channel — launch your storefront now (name, theme, payments, publish), or come back to it later."
-            : "You didn’t pick a Storefront channel in the order-sources step. You can still create one now, or skip this step."}
+            : "You didn’t pick a Storefront channel in the integrations step. You can still create one now, or skip this step."}
         </p>
       </div>
 

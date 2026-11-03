@@ -448,7 +448,11 @@ function mapOrderRows(
  * can never be skipped or duplicated across pages on equal `created_at`.
  */
 async function fetchOrderRows(
-  scope: { storeIds: readonly string[]; orderSourceIds: readonly string[] },
+  scope: {
+    businessId: string;
+    storeIds: readonly string[];
+    orderSourceIds: readonly string[];
+  },
   signal: AbortSignal,
 ): Promise<unknown[]> {
   const hasStoreScope = scope.storeIds.length > 0;
@@ -456,17 +460,22 @@ async function fetchOrderRows(
 
   const rows: unknown[] = await fetchAllRows(({ from, to }) => {
     const orderQuery = supabase.from("orders").select(ORDERS_SELECT);
+    // `business_id` is the authoritative tenancy key and has a composite
+    // created-at index. Keep the store/source predicate below as a defence-in-
+    // depth guard for legacy and source-only rows, but let the database narrow
+    // the relation by business before evaluating the more expensive OR branch.
+    const businessScopedQuery = orderQuery.eq("business_id", scope.businessId);
     // A business order is in scope through its legacy Woo store binding OR its
     // canonical Order Source — source-only orders (store_id NULL) must not
     // disappear from the list.
     const scopedQuery =
       hasStoreScope && hasOrderSourceScope
-        ? orderQuery.or(
+        ? businessScopedQuery.or(
             `store_id.in.(${scope.storeIds.join(",")}),order_source_id.in.(${scope.orderSourceIds.join(",")})`,
           )
         : hasStoreScope
-          ? orderQuery.in("store_id", scope.storeIds)
-          : orderQuery.in("order_source_id", scope.orderSourceIds);
+          ? businessScopedQuery.in("store_id", scope.storeIds)
+          : businessScopedQuery.in("order_source_id", scope.orderSourceIds);
     return withAbortSignal(scopedQuery, signal)
       .order("created_at", { ascending: false })
       .order("id", { ascending: true })
@@ -664,9 +673,17 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
   // timed out or resolved and got silently dropped by isStale(). Aborting it
   // frees the connection immediately and surfaces the new scope's response.
   const abortControllerRef = useRef<AbortController | null>(null);
-  const cancelLoad = useCallback(() => {
+  const activeLoadScopeRef = useRef<string | null>(null);
+  const cancelLoad = useCallback((nextScopeKey: string) => {
+    // A same-scope refresh may join the existing deduped request. Aborting in
+    // that case would cancel the request that the new caller is about to
+    // reuse, so only cancel when the query predicate actually changed.
+    if (activeLoadScopeRef.current === null || activeLoadScopeRef.current === nextScopeKey) {
+      return;
+    }
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    activeLoadScopeRef.current = null;
   }, []);
 
   const scopeKey = useMemo(
@@ -722,6 +739,11 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
   const loadOrders = useCallback(async () => {
     const token = ++loadTokenRef.current;
     const isStale = () => token !== loadTokenRef.current;
+
+    // Scope inputs resolve independently. Stop the old scope's network work
+    // before starting a new one; otherwise the initial source-only query and
+    // the later full query both scan the entire orders relation in parallel.
+    cancelLoad(scopeKey);
 
     const hasStoreScope = storeIds.length > 0;
     const hasOrderSourceScope = orderSourceIds.length > 0;
@@ -790,6 +812,17 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
     // used to leave the page on its skeleton forever. `abortSignal` is only
     // attached when the client supports it (mocks/older clients don't).
     const abortController = new AbortController();
+    // A same-scope caller can join the existing deduped promise. Keep the
+    // original controller in that case; replacing it would make a later scope
+    // switch unable to abort the network request that is actually running.
+    const ownsAbortController = activeLoadScopeRef.current !== scopeKey;
+    if (ownsAbortController) {
+      abortControllerRef.current = abortController;
+      activeLoadScopeRef.current = scopeKey;
+    }
+    const loadSignal = ownsAbortController
+      ? abortController.signal
+      : abortControllerRef.current?.signal ?? abortController.signal;
     const timeoutId = globalThis.setTimeout(
       () => abortController.abort(),
       ORDERS_LOAD_TIMEOUT_MS,
@@ -800,7 +833,10 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
       // a scope change, the "orders:refresh" event during a fetch) share one
       // request — telemetry says the list query is the expensive part.
       const rows = await dedupeFetch<unknown[]>(`${scopeKey}|rows`, () =>
-        fetchOrderRows({ storeIds, orderSourceIds }, abortController.signal),
+        fetchOrderRows(
+          { businessId: active?.id ?? "", storeIds, orderSourceIds },
+          loadSignal,
+        ),
       );
       if (isStale()) return;
 
@@ -816,7 +852,7 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
 
       // The map request starts in the same tick as the row commit, so its
       // query goes out immediately while React renders the rows.
-      const orderCatMap = await loadOrderCategoryMap(mapped.rows, abortController.signal);
+      const orderCatMap = await loadOrderCategoryMap(mapped.rows, loadSignal);
       if (isStale()) return;
 
       // 3. Second commit: rows + map are complete and safe to cache together.
@@ -832,10 +868,14 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
       // plus an error banner beats a silently blank page. A cached payload
       // painted above is deliberately left in place.
       if (isStale()) return;
-      setLoadError(describeLoadError(err, abortController.signal));
+      setLoadError(describeLoadError(err, loadSignal));
       setLoading(false);
     } finally {
       globalThis.clearTimeout(timeoutId);
+      if (ownsAbortController && abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+        activeLoadScopeRef.current = null;
+      }
     }
   }, [
     storeIds,
@@ -847,6 +887,7 @@ export function useOrdersData(options: UseOrdersDataOptions = {}): UseOrdersData
     active?.id,
     sessionScope,
     requestedStore,
+    cancelLoad,
   ]);
 
   // Refetch whenever the scope inputs settle/change. On first render this runs

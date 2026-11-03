@@ -19,14 +19,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CourierServiceDialog } from "@/components/courier/CourierServiceDialog";
+import { ConnectorSection } from "@/components/integrations/ConnectorSection";
 
 /**
- * Settings → Courier services (Task 9, spec §4): one courier account per
- * business, enabled at fulfillment time — no per-brand duplication. The
- * legacy per-brand courier connectors were dropped at the Task 16 contract
- * migration; their ids survive as the service's `legacy_*` audit columns.
+ * Courier services management, living on the Integrations page (Task 9, spec
+ * §4): one courier account per business, enabled at fulfillment time — no
+ * per-brand duplication. The legacy per-brand courier connectors were dropped
+ * at the Task 16 contract migration; their ids survive as the service's
+ * `legacy_*` audit columns.
  */
-const CourierServicesTab = () => {
+export function CourierServicesPanel() {
   const { active, myRole } = useBusinessContext();
   const canCreate = canCreateBusinessResources(myRole);
   const [services, setServices] = useState<CourierServiceRow[]>([]);
@@ -65,25 +67,21 @@ const CourierServicesTab = () => {
   }, [load]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary">
-          <Truck className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div>
-          <h2 className="font-heading text-lg font-semibold">Courier services</h2>
-          <p className="text-sm text-muted-foreground">
-            One courier account per business — picked at fulfillment time, never
-            duplicated per brand.
-          </p>
-        </div>
-        {canCreate && active && (
-          <Button size="sm" className="ml-auto" onClick={() => setDialog({ open: true, service: null })}>
+    <ConnectorSection
+      id="couriers-heading"
+      title="Couriers"
+      description="One courier account per business — picked at fulfillment time, never duplicated per brand."
+      icon={<Truck className="h-5 w-5 text-muted-foreground" aria-hidden="true" />}
+      count={services.length}
+      layout="stack"
+      actions={
+        canCreate && active ? (
+          <Button size="sm" onClick={() => setDialog({ open: true, service: null })}>
             <Plus className="h-3.5 w-3.5 mr-1" /> New service
           </Button>
-        )}
-      </div>
-
+        ) : undefined
+      }
+    >
       {error && (
         <div role="alert" className="flex items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
           <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
@@ -159,8 +157,6 @@ const CourierServicesTab = () => {
         service={dialog.service}
         onSaved={load}
       />
-    </div>
+    </ConnectorSection>
   );
-};
-
-export default CourierServicesTab;
+}

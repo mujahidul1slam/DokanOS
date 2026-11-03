@@ -119,7 +119,7 @@ export default function Brands() {
             </Button>
           )}
           <Button asChild size="sm" variant="ghost">
-            <Link to="/order-sources">View order sources and operational setup</Link>
+            <Link to="/integrations">View integrations and operational setup</Link>
           </Button>
         </div>
       ) : (
@@ -133,7 +133,7 @@ export default function Brands() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-heading text-sm font-semibold">{brand.name}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {brand.woo_store_id ? "Legacy Woo store linked" : "No stores yet"}
+                    {brand.woo_store_id ? "Store linked" : "No stores yet"}
                   </p>
                 </div>
               </div>

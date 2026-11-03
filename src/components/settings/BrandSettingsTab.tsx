@@ -268,7 +268,7 @@ export default function BrandSettingsTab() {
       {brands.length === 0 && (
         <div className="rounded-md border border-dashed border-border p-6 text-center">
           <p className="text-sm text-muted-foreground">
-            No brands yet. Brands are created automatically when a WooCommerce store is connected — or create one manually above.
+            No brands yet. Brands are created automatically when a store is connected — or create one manually above.
           </p>
         </div>
       )}
@@ -372,7 +372,7 @@ function BrandCard({
               className="h-8 max-w-[220px] font-mono text-xs"
             />
             {brand.woo_store_id ? (
-              <Badge variant="outline" className="shrink-0">WooCommerce linked</Badge>
+              <Badge variant="outline" className="shrink-0">Store linked</Badge>
             ) : (
               <Badge variant="outline" className="shrink-0 text-muted-foreground">No store linked</Badge>
             )}
@@ -417,8 +417,8 @@ interface IdentityPathaoLink {
 
 /**
  * Existing-table defaults used by order entry and courier dispatch. Pathao
- * defaults live on the existing Woo-store-to-Pathao mapping (keyed by the
- * brand's woo_store_id). Task 16 retired selling_points, so there is no
+ * defaults live on the existing store-to-Pathao mapping (keyed by the brand's
+ * woo_store_id tenancy column). Task 16 retired selling_points, so there is no
  * per-brand default order source to set here — an order's source is chosen at
  * order entry. Pending edits are committed through the universal save bar
  * (SettingsSaveHandler) and reported to the parent for the tab-level dirty flag.
@@ -536,7 +536,7 @@ function BrandIdentityDefaults({
 
   const savePathaoDefault = async () => {
     if (!brand.woo_store_id) {
-      toast.error("Connect a WooCommerce store to configure a default Pathao Account");
+      toast.error("Link a store to this brand before configuring a default Pathao Account");
       return;
     }
     if (!selectedIntegration) {
@@ -606,7 +606,7 @@ function BrandIdentityDefaults({
             <Label className="text-xs">Default Pathao Account</Label>
             {!brand.woo_store_id ? (
               <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                Connect a WooCommerce store to this brand before linking its default Pathao Account.
+                Link a store to this brand before linking its default Pathao Account.
               </p>
             ) : (
               <>

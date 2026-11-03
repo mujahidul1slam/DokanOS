@@ -95,47 +95,6 @@ async function upsertShipmentRow(
   }
 }
 
-// Enqueue a push_order so the linked WooCommerce order gets marked completed
-// once the Pathao cycle terminates (delivered/returned). Uses the new
-// store-aware queue — store_id is NOT NULL, so it must be looked up from the
-// order before enqueueing.
-async function pushOrderStatusToWoo(sb: any, orderId: string): Promise<void> {
-  const { data: order, error: orderErr } = await sb
-    .from("orders")
-    .select("store_id")
-    .eq("id", orderId)
-    .maybeSingle();
-  if (orderErr || !order?.store_id) {
-    throw new Error(
-      `Cannot queue woo-push for order ${orderId}: ${orderErr?.message || "no store_id"}`,
-    );
-  }
-  const { error } = await sb.from("sync_queue").insert({
-    store_id: order.store_id,
-    order_id: orderId,
-    action: "push_order",
-    payload: { order_id: orderId },
-  });
-  if (error) {
-    throw new Error(`Failed to queue woo-push: ${error.message}`);
-  }
-}
-
-// Post a note on the WooCommerce order (silently no-ops if not Woo-linked)
-async function postWooOrderNote(orderId: string, note: string): Promise<void> {
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    await fetch(`${supabaseUrl}/functions/v1/woo-push`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
-      body: JSON.stringify({ action: "post_note", order_id: orderId, note }),
-    });
-  } catch (e) {
-    console.warn("postWooOrderNote failed:", e);
-  }
-}
-
 interface PathaoCreds {
   id: string;
   client_id: string;
@@ -359,6 +318,10 @@ interface CancelPathaoResult {
   status?: number;
   /** True when Pathao rejected the cancel because the parcel is already in a terminal state (nothing to cancel). */
   noop?: boolean;
+  /** Live Pathao status observed while proving the no-op (so callers can sync
+   *  the local shipment to what Pathao actually reports instead of "cancelled"). */
+  rawStatus?: string;
+  canonicalStatus?: string;
 }
 
 // Query Pathao for the live status of a consignment and report whether it has
@@ -367,7 +330,7 @@ interface CancelPathaoResult {
 async function getParcelTerminalStatus(
   token: string,
   consignmentId: string,
-): Promise<{ terminal: boolean; rawStatus?: string }> {
+): Promise<{ terminal: boolean; rawStatus?: string; canonicalStatus?: string }> {
   try {
     const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/orders/${consignmentId}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -381,7 +344,7 @@ async function getParcelTerminalStatus(
       ? info.status.trim()
       : String(info.order_status_slug ?? "").trim();
     const canonical = canonicalStatusFor(raw);
-    return { terminal: canonical != null && TERMINAL_CANONICAL_STATUSES.has(canonical), rawStatus: raw || undefined };
+    return { terminal: canonical != null && TERMINAL_CANONICAL_STATUSES.has(canonical), rawStatus: raw || undefined, canonicalStatus: canonical ?? undefined };
   } catch {
     return { terminal: false };
   }
@@ -395,7 +358,11 @@ async function getParcelTerminalStatus(
 // get a confusing non-2xx failure that blocks a replace/delete.
 async function cancelPathaoOrder(token: string, consignmentId: string, auth?: PathaoAuthCtx): Promise<CancelPathaoResult> {
   let status = 0;
-  for (let attempt = 0; ; attempt++) {
+  // Pathao intermittently answers 429/5xx (and drops connections) while the
+  // parcel is genuinely cancellable; retrying transient failures with backoff
+  // keeps a valid cancel from surfacing as "Pathao rejected the cancel".
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
       const res = await fetch(`${PATHAO_BASE}/aladdin/api/v1/orders/${consignmentId}/cancel`, {
         method: "POST",
@@ -416,6 +383,10 @@ async function cancelPathaoOrder(token: string, consignmentId: string, auth?: Pa
         token = await getAccessToken(auth.creds, true);
         continue;
       }
+      if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS - 1) {
+        await sleep(300 * 2 ** attempt);
+        continue;
+      }
       const errMsg = data?.message || data?.errors || data?.error || JSON.stringify(data) || `HTTP ${res.status}`;
       const errText = typeof errMsg === "object" ? JSON.stringify(errMsg) : String(errMsg);
 
@@ -432,14 +403,25 @@ async function cancelPathaoOrder(token: string, consignmentId: string, auth?: Pa
       if (hintHit) {
         const live = await getParcelTerminalStatus(token, consignmentId);
         if (live.terminal) {
-          return { success: true, status, noop: true };
+          return {
+            success: true,
+            status,
+            noop: true,
+            rawStatus: live.rawStatus,
+            canonicalStatus: live.canonicalStatus,
+          };
         }
       }
       return { success: false, error: errText, status };
     } catch (err: any) {
+      if (attempt < MAX_ATTEMPTS - 1) {
+        await sleep(300 * 2 ** attempt);
+        continue;
+      }
       return { success: false, error: err.message || String(err), status };
     }
   }
+  return { success: false, error: `Pathao cancel failed after ${MAX_ATTEMPTS} attempts`, status };
 }
 // Cancel an order's previous active parcel on Pathao and mark it cancelled
 // locally in courier_shipments. Resolves the correct Pathao credentials for the
@@ -927,8 +909,6 @@ Deno.serve(async (req: Request) => {
             entity_id: order_id,
             details: { consignment_id, integration_id: creds.id, courier: "pathao" },
           });
-
-          await postWooOrderNote(order_id, `[DokanOS] Dispatched to Pathao by ${callerName || callerEmail || "system"}. Consignment: ${consignment_id}`);
         }
 
         result = { consignment_id, raw: data };
@@ -1098,8 +1078,6 @@ Deno.serve(async (req: Request) => {
                     entity_id: entry.order_id,
                     details: { consignment_id, integration_id: creds.id, courier: "pathao" },
                   });
-
-                  await postWooOrderNote(entry.order_id, `[DokanOS] Dispatched to Pathao by ${callerName || callerEmail || "system"}. Consignment: ${consignment_id}`);
                 }
 
                 return { order_id: entry.order_id, success: true, consignment_id };
@@ -1131,7 +1109,7 @@ Deno.serve(async (req: Request) => {
 
           const { data: ord } = await sb
             .from("orders")
-            .select("id, woo_order_id, store_id, tracking_status, pathao_integration_id")
+            .select("id, tracking_status, pathao_integration_id")
             .eq("consignment_id", consignment_id)
             .maybeSingle();
 
@@ -1143,18 +1121,6 @@ Deno.serve(async (req: Request) => {
               raw_status: order_status,
               canonical_status: canonicalStatusFor(order_status) || null,
             });
-          }
-
-          if (ord?.id && ord.tracking_status !== order_status) {
-            await postWooOrderNote(ord.id, `[DokanOS] Pathao status update: ${order_status}`);
-          }
-
-          // Once the Pathao cycle has terminated (delivered/returned), close out the
-          // linked WooCommerce order — woo-push maps both to "completed".
-          if ((mappedStatus === "delivered" || mappedStatus === "returned") && ord?.woo_order_id && ord?.store_id) {
-            await pushOrderStatusToWoo(sb, ord.id).catch((e) =>
-              console.warn(`woo-push from track_order failed: ${e?.message || e}`)
-            );
           }
         }
         result = info;
@@ -1262,16 +1228,6 @@ Deno.serve(async (req: Request) => {
                   user_email: null,
                 },
               });
-
-              await postWooOrderNote(order.id, `[DokanOS] Pathao status update: ${order_status}`);
-
-              // Once the Pathao cycle has terminated (delivered/returned), close out the
-              // linked WooCommerce order — woo-push maps both to "completed".
-              if (mappedStatus === "delivered" || mappedStatus === "returned") {
-                await pushOrderStatusToWoo(sb, order.id).catch((e) =>
-                  console.warn(`woo-push from track_all failed for ${order.id}: ${e?.message || e}`)
-                );
-              }
             }
 
             trackResults.push({
@@ -1350,7 +1306,7 @@ Deno.serve(async (req: Request) => {
         // --- Load the target order ---
         const { data: targetOrder, error: orderErr } = await sb
           .from("orders")
-          .select("id, consignment_id, status, tracking_status, order_number, store_id, woo_order_id, pathao_integration_id")
+          .select("id, consignment_id, status, tracking_status, order_number, pathao_integration_id")
           .eq("id", order_id)
           .maybeSingle();
         if (orderErr || !targetOrder) {
@@ -1575,12 +1531,6 @@ Deno.serve(async (req: Request) => {
           },
         });
 
-        // --- Woo note (best-effort) ---
-        await postWooOrderNote(
-          order_id,
-          `[DokanOS] Pathao parcel ${verb} by ${callerName || callerEmail || "system"}. Consignment: ${cid}. Status: ${liveStatus}`,
-        );
-
         result = {
           consignment_id: cid,
           tracking_status: liveStatus,
@@ -1682,13 +1632,23 @@ Deno.serve(async (req: Request) => {
 
         const now = new Date().toISOString();
 
+        // When Pathao says the parcel is already terminal (delivered/returned/
+        // cancelled), the local row must mirror THAT status — labelling a
+        // delivered parcel "cancelled" is exactly the desync this fixes.
+        const localRawStatus = cancelRes.noop
+          ? (cancelRes.rawStatus || "Cancelled")
+          : "Cancelled";
+        const localCanonicalStatus = cancelRes.noop
+          ? (cancelRes.canonicalStatus || "cancelled")
+          : "cancelled";
+
         // Soft-cancel the shipment row. Legacy entries have no courier_shipments
         // row yet, so record one (already cancelled) to keep the history intact.
         if (shipmentRow.id) {
           const { error: updShipErr } = await sb.from("courier_shipments").update({
             cancelled_at: now,
-            canonical_status: "cancelled",
-            raw_status: "Cancelled",
+            canonical_status: localCanonicalStatus,
+            raw_status: localRawStatus,
           }).eq("id", shipmentRow.id);
           if (updShipErr) {
             return new Response(
@@ -1701,8 +1661,8 @@ Deno.serve(async (req: Request) => {
             order_id,
             consignment_id: shipmentRow.consignment_id,
             integration_id: shipmentRow.integration_id || creds.id,
-            raw_status: "Cancelled",
-            canonical_status: "cancelled",
+            raw_status: localRawStatus,
+            canonical_status: localCanonicalStatus,
             cancelled_at: now,
           });
         }
@@ -1790,12 +1750,6 @@ Deno.serve(async (req: Request) => {
             next_active_consignment: nextActiveConsignment,
           },
         });
-
-        // Woo note (best-effort)
-        await postWooOrderNote(
-          order_id,
-          `[DokanOS] Courier entry ${shipmentRow.consignment_id} deleted by ${callerName || callerEmail || "system"}.`,
-        );
 
         result = {
           success: true,

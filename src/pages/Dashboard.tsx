@@ -5,7 +5,6 @@ import ActionQueue from "@/components/dashboard/ActionQueue";
 import FulfillmentFunnel from "@/components/dashboard/FulfillmentFunnel";
 import OrderPipeline from "@/components/dashboard/OrderPipeline";
 import StoreHealthGrid from "@/components/dashboard/StoreHealthGrid";
-import SyncHealthCard from "@/components/dashboard/SyncHealthCard";
 import CourierDispatchStation from "@/components/dashboard/CourierDispatchStation";
 import TopProducts from "@/components/dashboard/TopProducts";
 import SourceMix from "@/components/dashboard/SourceMix";
@@ -69,10 +68,10 @@ const Dashboard = () => {
         <EmptyState
           icon={StoreIcon}
           title="No stores in this business"
-          description="This business has no stores mapped yet, so there is no operational data to show. Add your stores and channels from the Order Sources page to see orders, revenue and store health here."
+          description="This business has no stores mapped yet, so there is no operational data to show. Add your stores and channels from the Integrations page to see orders, revenue and store health here."
           action={
-            <Button variant="outline" onClick={() => navigate("/order-sources")}>
-              <StoreIcon className="mr-1 h-4 w-4" /> Order sources
+            <Button variant="outline" onClick={() => navigate("/integrations")}>
+              <StoreIcon className="mr-1 h-4 w-4" /> Integrations
             </Button>
           }
         />
@@ -116,7 +115,6 @@ const Dashboard = () => {
       <OrderPipeline orders={data.orders} />
       <CourierDispatchStation orders={data.orders} />
       <StoreHealthGrid orders={data.orders} />
-      <SyncHealthCard />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <RevenueTrendChart data={data.trendData} />

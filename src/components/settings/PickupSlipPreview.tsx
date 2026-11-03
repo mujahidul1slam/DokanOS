@@ -32,7 +32,7 @@ const sampleOrders: SlipOrderData[] = [
     // "(default)" marker (issue #24).
     brand: { id: "b1", name: "Nuvia Fashion", accent: "#0f766e" },
     sellingPointName: "Banani Showroom",
-    sourceLabel: "WooCommerce",
+    sourceLabel: "Showroom",
     pathaoAccount: { name: "Nuvia Courier", pickupStoreName: "Banani Hub", isDefault: true },
     dispatched: false,
     consignmentId: null,

@@ -371,9 +371,13 @@ const Orders = () => {
       });
     }
     return Array.from(groups.values());
-  }, [orders, tab]);
+  }, [orders, tab, getTabOrders]);
   const duplicateOrderNumbers = useMemo(
     () => new Set(duplicateGroups.flatMap((group) => group.orders.map((order) => order.order_number))),
+    [duplicateGroups],
+  );
+  const duplicateOrderIds = useMemo(
+    () => new Set(duplicateGroups.flatMap((group) => group.orders.map((order) => order.id))),
     [duplicateGroups],
   );
 
@@ -518,9 +522,10 @@ const Orders = () => {
   /* ─── Merge dialog (issue #30) ───
      Load the full money/items/payments picture for the group's orders, then
      open the confirmation dialog with its merged preview. */
-  const openMergeDialog = async (groupOrders: MergeOrder[]) => {
+  const openMergeDialogForIds = async (orderIds: string[]) => {
+    if (orderIds.length < 2) return;
     try {
-      const full = await fetchMergeOrderDetails(groupOrders.map((o) => o.id));
+      const full = await fetchMergeOrderDetails(orderIds);
       if (full.length < 2) {
         toast({ title: "Merge unavailable", description: "Could not load these orders.", variant: "destructive" });
         return;
@@ -529,6 +534,10 @@ const Orders = () => {
     } catch (e: any) {
       toast({ title: "Merge failed", description: e?.message ? String(e.message) : String(e), variant: "destructive" });
     }
+  };
+
+  const openMergeDialog = async (groupOrders: MergeOrder[]) => {
+    await openMergeDialogForIds(groupOrders.map((order) => order.id));
   };
 
   const dispatchOrders = useMemo(() =>
@@ -815,6 +824,7 @@ const Orders = () => {
         onDispatch={() => { const ids = filterGatedForCourier(Array.from(selected)); if (ids.length) openDispatch(ids); }}
         onBulkTrack={handleBulkTrackSelected}
         onBulkMarkPaid={handleBulkMarkPaid}
+        onMergeSelected={() => openMergeDialogForIds(Array.from(selected))}
         onRestore={() => handleRestoreOrders(Array.from(selected))}
         onTrash={() => { setPendingTrashIds(Array.from(selected)); setTrashConfirmOpen(true); }}
         onClear={() => setSelected(new Set())}
@@ -949,6 +959,7 @@ const Orders = () => {
               <OrderCard
                 key={order.id}
                 order={order}
+                duplicate={duplicateOrderIds.has(order.id)}
                 selected={selected.has(order.id)}
                 onSelect={() => toggleSelect(order.id)}
                 onOpen={() => setDetailOrderId(order.id)}
@@ -964,6 +975,7 @@ const Orders = () => {
             tab={tab}
             onToggleSelect={toggleSelect}
             onToggleAll={toggleAll}
+            duplicateOrderIds={duplicateOrderIds}
             renderActions={(order) => renderActionButtons(order, 3)}
           />
           </>

@@ -70,6 +70,28 @@ describe("area/zone auto-detect (#3)", () => {
     expect(zone?.zone_name).toBe("Mirpur");
   });
 
+  it("resolves place names whose phonetic transliteration is too far to fuzzy-match", () => {
+    // "চট্টগ্রাম" transliterates character-by-character to "chttgram", which
+    // sits outside the edit-distance window of "Chattogram"; the place-name
+    // dictionary must short-circuit it to the canonical spelling.
+    const candidates = buildAddressCandidates(["বাসা ৩, আগ্রাবাদ, চট্টগ্রাম"]);
+    const city = strictMatch(
+      [...CITIES, { city_id: 3, city_name: "Cox's Bazar" }],
+      (c) => c.city_name,
+      candidates
+    );
+    expect(city?.city_name).toBe("Chattogram");
+  });
+
+  it("maps the old colonial spelling and Bangla Cox's Bazar spelling", () => {
+    const cities = [
+      { city_id: 2, city_name: "Chattogram" },
+      { city_id: 3, city_name: "Cox's Bazar" },
+    ];
+    expect(strictMatch(cities, (c) => c.city_name, ["Chittagong"])?.city_id).toBe(2);
+    expect(strictMatch(cities, (c) => c.city_name, ["কক্সবাজার"])?.city_id).toBe(3);
+  });
+
   it("rejects an ambiguous fuzzy area instead of guessing", () => {
     const ambiguous = [
       { area_id: 1, area_name: "Kazipara" },

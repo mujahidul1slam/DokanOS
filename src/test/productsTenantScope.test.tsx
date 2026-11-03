@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { installFakeTenantClient, type Query, type QueryCall, type Row } from "@/test/support/tenantScopedClient";
 
@@ -236,33 +236,4 @@ describe("ProductList scopes every products read to the active business's stores
     expect(storeScopeOf(assignUpdate)).toEqual([["s1"]]);
   });
 
-  it("takes the Woo sync targets from the scoped store list, never an unscoped status query", async () => {
-    client.setRows({
-      stores: [STORE_ONE],
-      products: [productRow()],
-      categories: [],
-      product_categories: [],
-    });
-
-    render(<ProductList />);
-    expect((await screen.findAllByText("Widget")).length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole("button", { name: /sync products/i }));
-
-    await waitFor(() =>
-      expect(client.invoke).toHaveBeenCalledWith("woo-sync", { body: { store_id: "s1" } }),
-    );
-    const storeQueries = client.queriesFor("stores");
-    expect(storeQueries.length).toBeGreaterThan(0);
-    expect(
-      storeQueries.every((query) =>
-        query.calls.some((call) => call.method === "in" && call.args[0] === "id"),
-      ),
-    ).toBe(true);
-    expect(
-      storeQueries.some((query) =>
-        query.calls.some((call) => call.method === "eq" && call.args[0] === "status"),
-      ),
-    ).toBe(false);
   });
-});

@@ -19,8 +19,7 @@
 ## track_all accepts: service-role bearer, a valid authenticated user JWT
 ## (Dispatch/Orders page buttons), or x-cron-secret matching the vault token
 ## `sync_worker_cron_token`. This workflow uses the anon key (valid project
-## JWT for the gateway) + the SYNC_WORKER_CRON_TOKEN repo secret (same value
-## as sync-worker — one scheduler token, two functions). Set via:
+## JWT for the gateway) + the SYNC_WORKER_CRON_TOKEN repo secret. Set via:
 ## `Write-Output '<token>' | gh secret set SYNC_WORKER_CRON_TOKEN`.
 ##
 ## CAVEATS

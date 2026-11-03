@@ -15,8 +15,6 @@ interface StoreRow {
   pos_order_suffix: string;
   manual_order_prefix: string;
   manual_order_suffix: string;
-  woo_order_prefix: string;
-  woo_order_suffix: string;
 }
 
 const PreviewRow = ({ prefix, base, suffix }: { prefix: string; base: string; suffix: string }) => (
@@ -29,7 +27,6 @@ const OrdersSettingsTab = () => {
   const [defaults, setDefaults] = useState({
     pos_prefix: "", pos_suffix: "",
     manual_prefix: "", manual_suffix: "",
-    woo_prefix: "", woo_suffix: "",
   });
   const [originalDefaults, setOriginalDefaults] = useState(defaults);
   const [stores, setStores] = useState<StoreRow[]>([]);
@@ -51,7 +48,7 @@ const OrdersSettingsTab = () => {
   useEffect(() => {
     supabase
       .from("invoice_settings" as any)
-      .select("id, pos_order_prefix, pos_order_suffix, manual_order_prefix, manual_order_suffix, woo_order_prefix, woo_order_suffix")
+      .select("id, pos_order_prefix, pos_order_suffix, manual_order_prefix, manual_order_suffix")
       .limit(1).single()
       .then(({ data }: any) => {
         if (data) {
@@ -59,7 +56,6 @@ const OrdersSettingsTab = () => {
           const d = {
             pos_prefix: data.pos_order_prefix || "", pos_suffix: data.pos_order_suffix || "",
             manual_prefix: data.manual_order_prefix || "", manual_suffix: data.manual_order_suffix || "",
-            woo_prefix: data.woo_order_prefix || "", woo_suffix: data.woo_order_suffix || "",
           };
           setDefaults(d);
           setOriginalDefaults(d);
@@ -68,7 +64,7 @@ const OrdersSettingsTab = () => {
 
     supabase
       .from("stores" as any)
-      .select("id, name, pos_order_prefix, pos_order_suffix, manual_order_prefix, manual_order_suffix, woo_order_prefix, woo_order_suffix")
+      .select("id, name, pos_order_prefix, pos_order_suffix, manual_order_prefix, manual_order_suffix")
       .order("name")
       .then(({ data }: any) => { if (data) { setStores(data as StoreRow[]); setOriginalStores(data as StoreRow[]); } });
   }, []);
@@ -81,7 +77,6 @@ const OrdersSettingsTab = () => {
       .update({
         pos_order_prefix: defaults.pos_prefix, pos_order_suffix: defaults.pos_suffix,
         manual_order_prefix: defaults.manual_prefix, manual_order_suffix: defaults.manual_suffix,
-        woo_order_prefix: defaults.woo_prefix, woo_order_suffix: defaults.woo_suffix,
       } as any)
       .eq("id", settingsId);
 
@@ -89,7 +84,6 @@ const OrdersSettingsTab = () => {
       await supabase.from("stores" as any).update({
         pos_order_prefix: s.pos_order_prefix || "", pos_order_suffix: s.pos_order_suffix || "",
         manual_order_prefix: s.manual_order_prefix || "", manual_order_suffix: s.manual_order_suffix || "",
-        woo_order_prefix: s.woo_order_prefix || "", woo_order_suffix: s.woo_order_suffix || "",
       } as any).eq("id", s.id);
     }
 
@@ -118,7 +112,7 @@ const OrdersSettingsTab = () => {
       />
       <SettingsSection
         title="Order Number Format"
-        description="Add prefix/suffix branding to order numbers. POS & Manual orders use a 4-digit sequence (from 3000); Woo orders keep their original number wrapped with your prefix/suffix."
+        description="Add prefix/suffix branding to order numbers. POS & Manual orders use a 4-digit sequence (from 3000)."
       >
       <div className="space-y-4">
         <h3 className="font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">Defaults</h3>
@@ -144,18 +138,6 @@ const OrdersSettingsTab = () => {
             <Input placeholder="Suffix" value={defaults.manual_suffix}
               onChange={(e) => setDefaults({ ...defaults, manual_suffix: e.target.value })} className="w-28" />
             <PreviewRow prefix={defaults.manual_prefix} base="3000" suffix={defaults.manual_suffix} />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-sm">WooCommerce Orders <span className="text-xs text-muted-foreground font-normal">(wraps Woo's own number)</span></Label>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Input placeholder="Prefix" value={defaults.woo_prefix}
-              onChange={(e) => setDefaults({ ...defaults, woo_prefix: e.target.value })} className="w-28" />
-            <span className="font-mono text-muted-foreground text-sm">12345</span>
-            <Input placeholder="Suffix" value={defaults.woo_suffix}
-              onChange={(e) => setDefaults({ ...defaults, woo_suffix: e.target.value })} className="w-28" />
-            <PreviewRow prefix={defaults.woo_prefix} base="12345" suffix={defaults.woo_suffix} />
           </div>
         </div>
       </div>
@@ -188,16 +170,6 @@ const OrdersSettingsTab = () => {
                 <Input placeholder="Suffix" value={s.manual_order_suffix || ""}
                   onChange={(e) => updateStore(i, { manual_order_suffix: e.target.value })} className="w-24 h-8" />
                 <span className="text-xs text-muted-foreground ml-1 font-mono">{s.manual_order_prefix || ""}3000{s.manual_order_suffix || ""}</span>
-              </div>
-
-              <Label className="text-xs text-muted-foreground">Woo</Label>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Input placeholder="Prefix" value={s.woo_order_prefix || ""}
-                  onChange={(e) => updateStore(i, { woo_order_prefix: e.target.value })} className="w-24 h-8" />
-                <span className="font-mono text-muted-foreground text-xs">12345</span>
-                <Input placeholder="Suffix" value={s.woo_order_suffix || ""}
-                  onChange={(e) => updateStore(i, { woo_order_suffix: e.target.value })} className="w-24 h-8" />
-                <span className="text-xs text-muted-foreground ml-1 font-mono">{s.woo_order_prefix || ""}12345{s.woo_order_suffix || ""}</span>
               </div>
             </div>
           </div>

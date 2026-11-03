@@ -29,19 +29,18 @@ interface Row {
 }
 
 /**
- * Read-only view of the legacy Woo-store rows that this brand's order sources
- * were mapped from (spec §7). The legacy contract tables were dropped in the
- * Task 16 contract migration; what remains is the Woo-connection record —
- * the store row each brand's WooCommerce order source syncs through, kept
- * visible here with its mapping. Nothing here is editable.
+ * Read-only view of the legacy store rows that this brand's order sources were
+ * mapped from (spec §7). The legacy contract tables were dropped in the Task 16
+ * contract migration; what remains is the store binding row, kept visible with
+ * its mapping. Nothing here is editable and no sync runs against it.
  */
 export function LegacySourceRows({ rows }: { rows: LegacyRows }) {
   const items: Row[] = [
     ...rows.stores.map((s) => ({
       key: `store-${s.id}`,
-      kind: "Woo store",
+      kind: "Legacy store",
       name: s.name,
-      detail: `${s.url} · ${s.status}${s.last_synced_at ? ` · synced ${new Date(s.last_synced_at).toLocaleString()}` : ""}`,
+      detail: `${s.url} · ${s.status}${s.last_synced_at ? ` · last synced ${new Date(s.last_synced_at).toLocaleString()}` : ""}`,
       mapsTo: LEGACY_WOO_STORE_MAPPING,
     })),
   ];
@@ -49,12 +48,14 @@ export function LegacySourceRows({ rows }: { rows: LegacyRows }) {
   if (items.length === 0) return null;
 
   return (
-    <section aria-label="Legacy rows, not yet migrated" className="rounded-md border border-dashed border-border bg-secondary/20 p-4">
-      <h3 className="text-sm font-medium">Legacy rows — not yet migrated (read-only)</h3>
+    <section aria-label="Legacy store binding" className="rounded-md border border-dashed border-border bg-secondary/20 p-4">
+      <h3 className="text-sm font-medium">Legacy store binding (read-only)</h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        The pre-revamp store record for this brand's WooCommerce connection. Its
-        orders were mapped into the order sources above; the store row itself
-        stays as the sync link. Nothing here is editable and nothing is lost.
+        The pre-revamp store record behind this brand's order sources. Its
+        orders were already migrated into the sources above — nothing is
+        waiting to be migrated here. The row itself is kept read-only because
+        the brand's store binding (order attribution and numbering) still
+        relies on it, and no sync runs against it.
       </p>
       <Table className="mt-3">
         <TableHeader>

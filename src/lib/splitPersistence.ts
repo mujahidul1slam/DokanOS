@@ -37,7 +37,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { addOrderTimeline } from "@/lib/orderTimeline";
 import { logAction } from "@/lib/auditLog";
 import { evaluatePaymentGate } from "@/lib/paymentGate";
-import { kickSyncWorker } from "@/lib/wooNotes";
 import {
   type SplitPaymentAssignment,
   type SplitPlan,
@@ -339,8 +338,8 @@ export function splitChildOrderFields(
     amount_to_collect: Math.max(plan.newOrder.total - plan.newOrder.paid, 0),
     item_qty: plan.newOrder.items.reduce((s, i) => s + i.quantity, 0),
     notes: `Split from order #${parent.order_number}`,
-    // The child is created manually and must never look like a WooCommerce
-    // order (woo_order_id stays NULL) — no Woo sync can pick it up.
+    // The child is created manually by staff, so it must never inherit the
+    // parent's order-source linkage — it is its own order from here on.
   };
 }
 
@@ -504,18 +503,6 @@ export async function persistOrderSplit(args: PersistSplitArgs): Promise<Persist
     },
     warnings: plan.warnings,
   });
-
-  // 8. The original's line items changed — same Woo push convention as the
-  //    item edits in OrderDetailSheet.handleSave (silent no-op for non-Woo).
-  try {
-    await supabase.rpc("enqueue_order_push", {
-      p_order_id: parent.id,
-      p_reason: "items_updated",
-    });
-    void kickSyncWorker();
-  } catch (e) {
-    console.warn("Woo push enqueue after split failed:", e);
-  }
 
   return { newOrderId: childId, newOrderNumber: childOrderNumber };
 }

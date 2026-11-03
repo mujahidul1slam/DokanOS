@@ -7,6 +7,7 @@ export interface Product {
   image_url: string | null;
   category: string | null;
   description: string | null;
+  store_id?: string | null;
   manage_stock?: boolean;
   stock_status?: string;
 }

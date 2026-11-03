@@ -27,15 +27,11 @@ interface OfferedSource {
 }
 
 /**
- * The channels the order-source step offers (Task 13 acceptance): exactly
- * WooCommerce / Storefront / Facebook / WhatsApp / Showroom / Manual.
+ * The channels the order-source step offers (Task 13 acceptance): Storefront /
+ * Facebook / WhatsApp / Showroom / Manual. Legacy WooCommerce is retired and
+ * cannot be created from onboarding.
  */
 const OFFERED: readonly OfferedSource[] = [
-  {
-    type: "woocommerce",
-    label: "WooCommerce",
-    blurb: "Orders and products sync from a WooCommerce store.",
-  },
   {
     type: "storefront",
     label: "Storefront",
@@ -73,9 +69,8 @@ interface SourceSummary {
 /**
  * Wizard step 3 (spec §6a: "connect order sources"). Selecting channels
  * creates real `order_sources` rows on the first brand — connection
- * credentials (Woo URL/keys, page handles…) are filled in later on the Order
- * Sources page, and the WooCommerce "connection push → import products"
- * belongs to Task 14's product-import step.
+ * credentials (page handles, etc.) are filled in later on the Order Sources
+ * page; product import is a separate step.
  */
 export function OrderSourcesStep({
   brands,

@@ -7,7 +7,6 @@ import {
   type TabKey,
   type TabOrder,
 } from "@/pages/orders/tabFilters";
-import { mapWooStatus, derivePaymentStatus } from "../../supabase/functions/_shared/woo-mapping";
 
 describe("tabFilters - Delivered and other tabs", () => {
   const preOrderOrderIds = new Set<string>();
@@ -205,26 +204,6 @@ describe("tabFilters - Pathao raw tracking_status coverage (regression: orders d
       expect(hits.length, `raw "${asSent}" should appear in exactly one courier tab, got: ${hits.join(",") || "NONE"}`).toBe(1);
       expect(matchesTab(o, "all", preOrderOrderIds)).toBe(true);
     }
-  });
-});
-
-describe("woo-mapping - WooCommerce status mapping", () => {
-  it("should map WooCommerce completed status to DokanOS delivered status", () => {
-    expect(mapWooStatus("completed")).toBe("delivered");
-  });
-
-  it("should map processing, pending, cancelled, refunded accurately", () => {
-    expect(mapWooStatus("processing")).toBe("processing");
-    expect(mapWooStatus("pending")).toBe("pending");
-    expect(mapWooStatus("cancelled")).toBe("cancelled");
-    expect(mapWooStatus("refunded")).toBe("returned");
-    expect(mapWooStatus("failed")).toBe("cancelled");
-  });
-
-  it("should derive payment status correctly for delivered orders", () => {
-    expect(derivePaymentStatus({ payment_method: "bKash", status: "delivered" })).toBe("paid");
-    expect(derivePaymentStatus({ payment_method: "card", status: "completed" })).toBe("paid");
-    expect(derivePaymentStatus({ payment_method: "cod", status: "processing" })).toBe("cod");
   });
 });
 

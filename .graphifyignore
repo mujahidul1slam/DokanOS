@@ -1,0 +1,13 @@
+# Vendored agent tooling - not project knowledge.
+# Excludes agent skill/command boilerplate from graphify extraction.
+.agents/
+.opencode/
+
+# Generated audit artifacts
+.audit-ux/
+.playwright-cli/
+.tmp/
+
+# Build/test output
+dist/
+coverage/

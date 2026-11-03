@@ -27,7 +27,6 @@ vi.mock("@/components/dashboard/ActionQueue", () => ({ default: vi.fn(() => null
 vi.mock("@/components/dashboard/FulfillmentFunnel", () => ({ default: vi.fn(() => null) }));
 vi.mock("@/components/dashboard/OrderPipeline", () => ({ default: vi.fn(() => null) }));
 vi.mock("@/components/dashboard/StoreHealthGrid", () => ({ default: vi.fn(() => null) }));
-vi.mock("@/components/dashboard/SyncHealthCard", () => ({ default: vi.fn(() => null) }));
 vi.mock("@/components/dashboard/CourierDispatchStation", () => ({ default: vi.fn(() => null) }));
 vi.mock("@/components/dashboard/TopProducts", () => ({ default: vi.fn(() => null) }));
 vi.mock("@/components/dashboard/SourceMix", () => ({ default: vi.fn(() => null) }));
@@ -42,13 +41,11 @@ import { supabase } from "@/integrations/supabase/client";
 import Dashboard from "@/pages/Dashboard";
 import KpiStats from "@/components/dashboard/KpiStats";
 import StoreHealthGrid from "@/components/dashboard/StoreHealthGrid";
-import SyncHealthCard from "@/components/dashboard/SyncHealthCard";
 
 const ctxMock = useBusinessContext as unknown as Mock;
 const fromMock = supabase.from as unknown as Mock;
 const kpiMock = KpiStats as unknown as Mock;
 const storeHealthMock = StoreHealthGrid as unknown as Mock;
-const syncHealthMock = SyncHealthCard as unknown as Mock;
 
 const EMPTY_STATE_TITLE = "No stores in this business";
 
@@ -132,7 +129,6 @@ describe("Dashboard with an active business that has no mapped stores", () => {
     // No KPI shell, no operational card.
     expect(kpiMock).not.toHaveBeenCalled();
     expect(storeHealthMock).not.toHaveBeenCalled();
-    expect(syncHealthMock).not.toHaveBeenCalled();
     // And no operational read was issued anywhere: failing closed means no
     // query, not a query that happens to return nothing. (The one read the page
     // does make is the global stock-settings flag, which is not tenant data.)

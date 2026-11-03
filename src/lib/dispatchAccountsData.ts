@@ -140,9 +140,7 @@ export async function recordPathaoAccountOverride(
         order_id: orderId,
         event: "dispatch_account_override",
         description: `Pathao Account override for ${brandLabel}: ${toLabel} ${verb} instead of the default (${fromLabel})`,
-        // Internal operational detail — not mirrored to the Woo order notes.
         metadata: {
-          skip_woo_note: true,
           brand_name: brandName,
           context: record.context ?? "dispatched",
           default_account_key: defaultAccount?.key ?? null,

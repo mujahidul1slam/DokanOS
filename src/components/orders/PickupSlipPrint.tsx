@@ -229,7 +229,7 @@ export default function PickupSlipPrint({ orders, onPrinted }: Props) {
           .in("id", ids);
         onPrinted?.(ids);
 
-        // Order timeline entry per order (also mirrors to Woo notes).
+        // Order timeline entry per order.
         await addOrderTimeline(
           printedOrders.map((o: any) => ({
             order_id: o.id,

@@ -15,9 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import {
@@ -704,6 +701,20 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
   const serviceSupportsDispatch = selectedService
     ? (courierProviderInfo(selectedService.provider)?.dispatchSupported ?? false)
     : false;
+  // The courier service is derived from the business's services (only Pathao
+  // dispatches today); there is no second selector to bind to it.
+  const dispatchableServices = useMemo(
+    () => courierServices.filter((s) => courierProviderInfo(s.provider)?.dispatchSupported),
+    [courierServices],
+  );
+  const dispatchableService = dispatchableServices[0] ?? null;
+
+  // Keep `selectedServiceId` on the dispatchable service whenever the list
+  // loads or the business switches, so the single state stays valid.
+  useEffect(() => {
+    const next = dispatchableService?.id ?? "";
+    setSelectedServiceId((prev) => (prev === next ? prev : next));
+  }, [dispatchableService?.id]);
 
   return (
     <>
@@ -835,33 +846,27 @@ export default function DispatchDialog({ open, onOpenChange, orders, onDispatche
         </div>
       }
     >
-        {/* Business-level courier service (spec §4) */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 pb-2">
-          <Label className="text-sm font-medium whitespace-nowrap">Courier service:</Label>
-          <Select value={selectedServiceId} onValueChange={setSelectedServiceId}>
-            <SelectTrigger className="w-full sm:w-[320px]">
-              <SelectValue placeholder={courierServices.length > 0 ? "Select courier service" : "No courier services yet"} />
-            </SelectTrigger>
-            <SelectContent>
-              {courierServices.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name} · {courierProviderLabel(s.provider)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedService && !serviceSupportsDispatch && (
+        {/* The courier service is DERIVED, not chosen again: dispatch only
+            supports Pathao today, and every account/brand override already
+            lives in the identity strip in the footer. The old business-level
+            "Courier service" Select was a second, redundant selector whose
+            only effect was a gate the strip already enforces (issue: duplicate
+            courier selector). It is auto-bound to the first dispatchable
+            service so `selectedServiceId` stays the single source of truth. */}
+        {!dispatchableService && (
+          <div className="space-y-1 pb-2">
             <p className="text-xs text-muted-foreground">
-              {courierProviderLabel(selectedService.provider)} dispatch arrives with its adapter —
-              pick a Pathao service to dispatch now.
+              No dispatchable courier service yet — add the business's Pathao account under
+              Settings → Courier services.
             </p>
-          )}
-          {courierServices.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              Add the business's courier account under Settings → Courier services.
-            </p>
-          )}
-        </div>
+            {courierServices.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {courierServices.map((s) => courierProviderLabel(s.provider)).join(", ")} dispatch
+                arrives with its adapter — pick a Pathao service to dispatch now.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-6">
           {visibleOrders.length === 0 && (

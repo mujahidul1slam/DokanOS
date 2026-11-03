@@ -9,7 +9,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import {
-  ShoppingCart, Package, Users, LayoutDashboard, Monitor, Store, Settings, UsersRound,
+  ShoppingCart, Package, Users, LayoutDashboard, Monitor, Settings, UsersRound,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -22,7 +22,6 @@ const navItems = [
   { icon: Package, label: "Products", path: "/products" },
   { icon: Users, label: "Customers", path: "/customers" },
   { icon: Monitor, label: "POS", path: "/pos" },
-  { icon: Store, label: "Order Sources", path: "/order-sources" },
   { icon: UsersRound, label: "Team", path: "/team" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];

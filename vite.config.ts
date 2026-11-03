@@ -29,6 +29,7 @@ export default defineConfig(({ mode }) => ({
         "**/.OMS-WORKFLOW-HANDOVER.md*/**",
         "**/backups/**",
         "**/dist/**",
+        "**/graphify-out/**",
         "**/dsh-oms-workflow/**",
         "**/xkiro-limits/**",
       ],

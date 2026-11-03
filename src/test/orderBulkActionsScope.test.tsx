@@ -21,13 +21,6 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-// The Woo mirror and the slip printer issue their own reads; they are not the
-// subject here, and mocking them keeps the recorded queries to the hook's own.
-vi.mock("@/lib/wooNotes", () => ({
-  postWooOrderNote: vi.fn(async () => {}),
-  kickSyncWorker: vi.fn(async () => {}),
-}));
-
 vi.mock("@/components/orders/MeasurementSlipPrint", () => ({
   printMeasurementSlipsBulk: vi.fn(async () => ({ printed: 1, skipped: 0 })),
 }));
@@ -84,8 +77,8 @@ const installClient = () => {
 };
 
 /** An order of the active business (store s1) and one of another (store s9). */
-const inScopeOrder = { id: "o1", order_number: "1001", total: 500, consignment_id: "c1", woo_order_id: null, store_id: "s1" };
-const foreignOrder = { id: "o9", order_number: "9001", total: 700, consignment_id: "c9", woo_order_id: null, store_id: "s9" };
+const inScopeOrder = { id: "o1", order_number: "1001", total: 500, consignment_id: "c1", store_id: "s1" };
+const foreignOrder = { id: "o9", order_number: "9001", total: 700, consignment_id: "c9", store_id: "s9" };
 
 const params = (over: Partial<Parameters<typeof useOrderBulkActions>[0]> = {}) => ({
   orders: [inScopeOrder, foreignOrder],

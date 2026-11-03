@@ -21,6 +21,7 @@ import { StatsSkeleton } from "@/components/ui/loading-states";
 import StatCardDelta from "@/components/dashboard/StatCardDelta";
 import DatePresetPicker, { DatePreset, resolveRange } from "@/components/DatePresetPicker";
 import { downloadCsv } from "@/lib/exportCsv";
+import { isRevenueOrder } from "@/lib/orderRevenue";
 import StatusBadge from "@/components/StatusBadge";
 import OrderDetailSheet from "@/components/orders/OrderDetailSheet";
 import PosOrdersLedger from "@/pages/posReports/PosOrdersLedger";
@@ -31,6 +32,7 @@ import FulfillmentSection from "@/pages/posReports/FulfillmentSection";
 import { AgingCard } from "@/pages/posReports/cards";
 import { useCurrency } from "@/hooks/useCurrency";
 import { useInvoiceSettings } from "@/hooks/useInvoiceSettings";
+import { useBusinessContext } from "@/hooks/useBusinessContext";
 import { openPrintWindow } from "@/lib/printWindow";
 import { buildPosDailyPrintDocument, type PosDailySummaryData } from "@/pages/posReports/posDailyPrint";
 import {
@@ -58,6 +60,11 @@ interface PosOrder {
   salesperson_name: string | null;
   store_id: string | null;
   fulfillment_type: string | null;
+  order_brands?: Array<{
+    brand_id: string;
+    is_primary: boolean;
+    brands: { name: string | null } | null;
+  }> | null;
 }
 
 interface PaymentRow {
@@ -80,7 +87,6 @@ interface ItemRow {
 interface ProductRow {
   id: string;
   store_id: string | null;
-  woo_product_id: number | null;
 }
 
 interface ReturnRow {
@@ -105,6 +111,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const PosReports = () => {
   const { symbol } = useCurrency();
   const { settings: invoiceSettings } = useInvoiceSettings();
+  const { brands } = useBusinessContext();
   const businessStoreIds = useActiveBusinessStoreIds();
   // ---- filters ----
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
@@ -151,7 +158,7 @@ const PosReports = () => {
       const prevFrom = from && days ? subDays(from, days) : null;
       const arWindowStart = subDays(new Date(), 365).toISOString();
 
-      const baseSelect = "id, order_number, total, subtotal, discount, shipping_cost, tax_amount, status, payment_status, payment_method, created_at, customer_name, customer_phone, customer_address, customer_city, customer_email, salesperson_name, store_id, fulfillment_type";
+      const baseSelect = "id, order_number, total, subtotal, discount, shipping_cost, tax_amount, status, payment_status, payment_method, created_at, customer_name, customer_phone, customer_address, customer_city, customer_email, salesperson_name, store_id, fulfillment_type, order_brands(brand_id, is_primary, brands(name))";
 
       // current orders (in period, by order date)
       let curQ = scopeStoreIds(supabase.from("orders").select(baseSelect).eq("source", "pos").is("deleted_at", null).order("created_at", { ascending: false }).limit(10000), businessStoreIds);
@@ -162,12 +169,17 @@ const PosReports = () => {
         .neq("payment_status", "paid").neq("status", "cancelled")
         .gte("created_at", arWindowStart).order("created_at", { ascending: true }).limit(10000), businessStoreIds);
       // payments in period (by payment created_at) - filtered for POS and non-cancelled orders
-      let payInPeriodQ = scopeStoreIds(supabase.from("order_payments")
+      // `order_payments` has no store_id of its own. Scoping it with
+      // scopeStoreIds() silently produces a bad query and leaves paidByOrder
+      // empty, which makes every order appear fully due. The inner orders
+      // relation is the authoritative scope for this child table.
+      let payInPeriodQ = supabase.from("order_payments")
         .select("id, method, amount, order_id, created_at, notes, orders!inner(source, status, store_id)")
         .eq("orders.source", "pos")
         .neq("orders.status", "cancelled")
         .is("orders.deleted_at", null)
-        .limit(20000), businessStoreIds);
+        .in("orders.store_id", businessStoreIds)
+        .limit(20000);
       // returns in period (by return created_at)
       let retInPeriodQ = scopeStoreIds(supabase.from("pos_returns").select("id, order_id, refund_amount, refund_method, created_at, store_id").limit(10000), businessStoreIds);
 
@@ -176,6 +188,7 @@ const PosReports = () => {
         prevQ = prevQ.eq("store_id", storeFilter);
         arQ = arQ.eq("store_id", storeFilter);
         retInPeriodQ = retInPeriodQ.eq("store_id", storeFilter);
+        payInPeriodQ = payInPeriodQ.eq("orders.store_id", storeFilter);
       }
       if (from) {
         curQ = curQ.gte("created_at", from.toISOString());
@@ -186,9 +199,6 @@ const PosReports = () => {
         curQ = curQ.lte("created_at", to.toISOString());
         payInPeriodQ = payInPeriodQ.lte("created_at", to.toISOString());
         retInPeriodQ = retInPeriodQ.lte("created_at", to.toISOString());
-      }
-      if (storeFilter !== "all") {
-        payInPeriodQ = payInPeriodQ.eq("orders.store_id", storeFilter);
       }
       if (prevFrom && from) {
         prevQ = prevQ.gte("created_at", prevFrom.toISOString()).lt("created_at", from.toISOString());
@@ -230,7 +240,7 @@ const PosReports = () => {
         const productIds = Array.from(new Set(itemRows.map((i) => i.product_id).filter(Boolean))) as string[];
         if (productIds.length > 0) {
           const { data: prodData } = await scopeStoreIds(supabase.from("products")
-            .select("id, store_id, woo_product_id").in("id", productIds), businessStoreIds);
+            .select("id, store_id").in("id", productIds), businessStoreIds);
           setProducts((prodData || []) as ProductRow[]);
         } else setProducts([]);
       } else {
@@ -241,8 +251,8 @@ const PosReports = () => {
       // All payments on the in-period orders (any date) — for due/paid per order in ledger
       const allPaymentsMap = new Map<string, PaymentRow[]>();
       if (curIds.length > 0) {
-        const { data: allPays } = await scopeStoreIds(supabase.from("order_payments")
-          .select("id, method, amount, order_id, created_at, notes").in("order_id", curIds).limit(50000), businessStoreIds);
+        const { data: allPays } = await supabase.from("order_payments")
+          .select("id, method, amount, order_id, created_at, notes").in("order_id", curIds).limit(50000);
         for (const p of (allPays || []) as PaymentRow[]) {
           const arr = allPaymentsMap.get(p.order_id) || [];
           arr.push(p);
@@ -278,8 +288,8 @@ const PosReports = () => {
       const arPaidM = new Map<string, number>();
       const arIds = arData.map((o) => o.id);
       if (arIds.length > 0) {
-        const { data: arPays } = await scopeStoreIds(supabase.from("order_payments")
-          .select("order_id, amount").in("order_id", arIds).limit(50000), businessStoreIds);
+        const { data: arPays } = await supabase.from("order_payments")
+          .select("order_id, amount").in("order_id", arIds).limit(50000);
         for (const p of (arPays || []) as any[]) {
           arPaidM.set(p.order_id, (arPaidM.get(p.order_id) || 0) + Number(p.amount));
         }
@@ -299,8 +309,16 @@ const PosReports = () => {
     for (const [oid, arr] of paymentsByOrderId.entries()) {
       m.set(oid, arr.reduce((s, p) => s + Number(p.amount), 0));
     }
+    // Older POS rows can be marked paid without a payment-ledger row. They
+    // must not render a false full-balance due in the order ledger; cash
+    // collection still remains ledger-backed below.
+    for (const order of orders) {
+      if (order.payment_status === "paid" && !m.has(order.id)) {
+        m.set(order.id, Number(order.total) || 0);
+      }
+    }
     return m;
-  }, [paymentsByOrderId]);
+  }, [paymentsByOrderId, orders]);
 
   const methodsByOrder = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -318,8 +336,10 @@ const PosReports = () => {
     return m;
   }, [items]);
 
-  const activeOrders = useMemo(() => orders.filter((o) => o.status !== "cancelled"), [orders]);
-  const activePrevOrders = useMemo(() => prevOrders.filter((o) => o.status !== "cancelled"), [prevOrders]);
+  // Money-bearing orders only — "cancelled" alone let a merged source order
+  // (status "merged") count its total twice inside the POS report.
+  const activeOrders = useMemo(() => orders.filter(isRevenueOrder), [orders]);
+  const activePrevOrders = useMemo(() => prevOrders.filter(isRevenueOrder), [prevOrders]);
   const activeOrderIds = useMemo(() => new Set(activeOrders.map((o) => o.id)), [activeOrders]);
   const activeItems = useMemo(() => items.filter((i) => activeOrderIds.has(i.order_id)), [items, activeOrderIds]);
 
@@ -393,6 +413,25 @@ const PosReports = () => {
       .sort((a, b) => b.value - a.value);
   }, [cashStats]);
 
+  // Fulfilled = money/shipment work is finished. POS writes "delivered" for
+// counter sales, but Pathao-synced parcels land on "completed" and legacy
+// rows on "complete"/"picked"; counting only "delivered" reported those as
+// still pending (issue: completed POS orders missing from fulfillment stats).
+const FULFILLED_STATUSES = new Set([
+  "delivered",
+  "completed",
+  "complete",
+  "picked",
+  "picked_up",
+  "picked up",
+  "received",
+  "fulfilled",
+  "success",
+  "successful",
+]);
+const isFulfilledStatus = (status: string) =>
+  FULFILLED_STATUSES.has(status) || status === "delivered_to_customer";
+
   // ============ FULFILLMENT (counts, by order date) ============
   const fulfillStats = useMemo(() => {
     const buckets = {
@@ -411,7 +450,7 @@ const PosReports = () => {
       const st = (o.status || "").toLowerCase();
       if (st === "cancelled") { buckets.cancelled++; continue; }
       if (st === "returned") { buckets.returned++; continue; }
-      const done = st === "delivered";
+      const done = isFulfilledStatus(st);
       if (ft === "walkin") {
         buckets.walkinDelivered++;
       } else if (ft === "pickup") {
@@ -505,15 +544,17 @@ const PosReports = () => {
 
   const salesByStore = useMemo(() => {
     const storeMap = new Map(stores.map((s) => [s.id, s.name]));
+    const brandMap = new Map(brands.filter((b) => b.woo_store_id).map((b) => [b.woo_store_id as string, { id: b.id, name: b.name }]));
     const productMap = new Map(products.map((p) => [p.id, p]));
     const map = new Map<string, { name: string; sales: number; qty: number; orderIds: Set<string> }>();
     for (const it of activeItems) {
       const prod = it.product_id ? productMap.get(it.product_id) : null;
       let key: string, name: string;
-      if (prod && prod.store_id && prod.woo_product_id) {
-        key = prod.store_id;
-        name = storeMap.get(prod.store_id) || "Unknown Store";
-      } else { key = "__pos_only__"; name = "POS Only (no WooCommerce store)"; }
+      if (prod && prod.store_id) {
+        const brand = brandMap.get(prod.store_id);
+        key = brand ? `brand:${brand.id}` : prod.store_id;
+        name = brand?.name || storeMap.get(prod.store_id) || "Unknown Store";
+      } else { key = "__pos_only__"; name = "POS Only (no linked store)"; }
       const cur = map.get(key) || { name, sales: 0, qty: 0, orderIds: new Set<string>() };
       cur.sales += Number(it.line_total || 0);
       cur.qty += Number(it.quantity || 0);
@@ -523,7 +564,7 @@ const PosReports = () => {
     return Array.from(map.values())
       .map((v) => ({ name: v.name, sales: v.sales, qty: v.qty, orders: v.orderIds.size }))
       .sort((a, b) => b.sales - a.sales);
-  }, [activeItems, products, stores]);
+  }, [activeItems, products, stores, brands]);
 
   const trendData = useMemo(() => {
     const grouped: Record<string, { date: string; sortKey: number; sales: number; orders: number }> = {};

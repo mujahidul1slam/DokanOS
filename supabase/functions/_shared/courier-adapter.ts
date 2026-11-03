@@ -1,10 +1,9 @@
 // Revamp Phase 2.2: the courier-agnostic adapter contract.
 //
 // One file per courier implements this interface; the dispatch/tracking core
-// (pathao-courier function today, the queue router in sync-worker) talks ONLY
-// to this interface. Pathao is the reference implementation
-// (adapters/pathao.ts); courier #2 (Steadfast/RedX/eCourier) lands as another
-// file without touching the core.
+// (pathao-courier function) talks ONLY to this interface. Pathao is the
+// reference implementation (adapters/pathao.ts); courier #2
+// (Steadfast/RedX/eCourier) lands as another file without touching the core.
 //
 // Canonical statuses (Phase 2 spec):
 //   pending | picked_up | in_transit | out_for_delivery | delivered |

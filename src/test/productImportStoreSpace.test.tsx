@@ -152,11 +152,11 @@ describe("ProductImportStep — CSV import target id space", () => {
     expect(screen.queryByText("Brand Store")).toBeNull();
   });
 
-  it("points store-less businesses at Order Sources (not the Brands page)", async () => {
+  it("points store-less businesses at Integrations (not the Brands page)", async () => {
     renderStep([]);
 
     expect(
-      await screen.findByText(/Connect a WooCommerce store on Order Sources/),
+      await screen.findByText(/Add a store on Integrations/),
     ).toBeTruthy();
     expect(screen.queryByText(/Add a store on the Brands page/)).toBeNull();
   });

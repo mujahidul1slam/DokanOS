@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { installFakeTenantClient, type Query, type QueryCall, type Row } from "@/test/support/tenantScopedClient";
 
@@ -59,7 +59,6 @@ const productRow = (over: Row = {}): Row => ({
   stock_status: "in_stock",
   is_active: true,
   weight: null,
-  woo_product_id: null,
   store_id: "s1",
   ...over,
 });

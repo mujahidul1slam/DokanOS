@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { ShoppingBag, Package, Truck } from "lucide-react";
 import { evaluatePaymentGate, PAYMENT_NEEDS_CONFIRMATION_LABEL } from "@/lib/paymentGate";
+import { sourceFallbackLabel } from "@/lib/orderSources";
 
 export function DeliveryBadge({ type }: { type: string }) {
   switch (type) {
@@ -33,18 +34,17 @@ export function SourceBadge({
       </Badge>
     );
   }
+  const label = sourceFallbackLabel(source, storeName);
   if (source === "pos") {
     return <Badge className="bg-purple-500/15 text-purple-400 border-purple-500/20 hover:bg-purple-500/25">POS</Badge>;
   }
   if (source === "online" || source === "woo" || source === "woocommerce") {
     return (
       <Badge className="bg-primary/15 text-primary border-primary/20 hover:bg-primary/25">
-        WooCommerce{storeName ? ` [${storeName}]` : ""}
+        {label}
       </Badge>
     );
   }
-  // Manual orders (phone, fb/ig, whatsapp, etc.) — show the source label directly
-  const label = source ? source.charAt(0).toUpperCase() + source.slice(1) : "Manual";
   return (
     <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20 hover:bg-blue-500/25">
       {label}
