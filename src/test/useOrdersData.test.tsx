@@ -184,26 +184,27 @@ describe("useOrdersData (issue #9)", () => {
 
     await waitFor(() => expect(queriesFor("orders")).toHaveLength(1));
     // 250 distinct products across the rows → 150 + 100 id chunks, fetched
-    // sequentially (chunk N+1 is issued once chunk N resolves).
+    // concurrently so lookup latency is the slowest chunk, not their sum.
     const rows = Array.from({ length: 250 }, (_, i) => row(`o${i}`, `p${i}`));
     await resolveQuery(queriesFor("orders")[0], { data: rows, error: null });
 
-    await waitFor(() => expect(queriesFor("product_categories")).toHaveLength(1));
+    await waitFor(() => expect(queriesFor("product_categories")).toHaveLength(2));
     const chunk1 = queriesFor("product_categories")[0];
+    const chunk2 = queriesFor("product_categories")[1];
     const ids1 = chunk1.builder.in.mock.calls[0][1] as string[];
     expect(ids1).toHaveLength(150);
-    await resolveQuery(chunk1, {
-      data: ids1.map((p) => ({ product_id: p, category_id: "c-pre" })),
-      error: null,
-    });
-
-    await waitFor(() => expect(queriesFor("product_categories")).toHaveLength(2));
-    const chunk2 = queriesFor("product_categories")[1];
     const ids2 = chunk2.builder.in.mock.calls[0][1] as string[];
     expect(ids2).toHaveLength(100);
-    await resolveQuery(chunk2, {
-      data: ids2.map((p) => ({ product_id: p, category_id: "c-pre" })),
-      error: null,
+    await act(async () => {
+      chunk1.resolve({
+        data: ids1.map((p) => ({ product_id: p, category_id: "c-pre" })),
+        error: null,
+      });
+      chunk2.resolve({
+        data: ids2.map((p) => ({ product_id: p, category_id: "c-pre" })),
+        error: null,
+      });
+      await new Promise((r) => setTimeout(r, 0));
     });
 
     // Every order gets a complete category set (feeds "new"/"pre_order" tabs).

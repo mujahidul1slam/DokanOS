@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DUPLICATE_ORDER_WINDOW_HOURS,
   DUPLICATE_ORDER_WINDOW_MS,
+  findDuplicateOrderPairs,
   findDuplicateOrders,
   normalizeCustomerPhone,
   parseOrderItemName,
@@ -362,6 +363,38 @@ describe("duplicate order detection (issue #29)", () => {
         order({ orderNumber: "#1001", createdAt: "not-a-date" }),
       ]);
       expect(warning.isDuplicateCandidate).toBe(false);
+    });
+  });
+
+  describe("batch detection", () => {
+    it("only compares orders that can share a customer and brand", () => {
+      const matches = findDuplicateOrderPairs([
+        order({ orderNumber: "#1001" }),
+        order({ orderNumber: "#1002", customerPhone: "01911-654321" }),
+        order({ orderNumber: "#1003", brandId: "brand-b" }),
+        order({ orderNumber: "#1004", createdAt: "2026-10-29T12:00:00+06:00" }),
+        order({ orderNumber: "#1005", createdAt: "2026-10-25T12:00:00+06:00" }),
+      ]);
+
+      expect(matches.map((match) => [match.first.orderNumber, match.second.orderNumber])).toEqual([
+        ["#1001", "#1005"],
+      ]);
+      expect(matches[0].sharedProducts.map((product) => product.name)).toEqual(["Cotton Shirt"]);
+    });
+
+    it("does not turn unrelated New-tab orders into an all-pairs scan", () => {
+      const candidates = Array.from({ length: 5000 }, (_, index) =>
+        order({
+          orderNumber: `#${index}`,
+          customerPhone: `017000${String(index).padStart(5, "0")}`,
+          items: [{ productName: `Product ${index}` }],
+        }),
+      );
+      const started = performance.now();
+      const matches = findDuplicateOrderPairs(candidates);
+
+      expect(matches).toEqual([]);
+      expect(performance.now() - started).toBeLessThan(1000);
     });
   });
 });

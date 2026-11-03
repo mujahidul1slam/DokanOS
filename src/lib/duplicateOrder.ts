@@ -118,6 +118,13 @@ export interface DuplicateOrderWarning {
   readonly matches: readonly DuplicateOrderMatch[];
 }
 
+/** One duplicate pair found while scanning a whole Orders-tab snapshot. */
+export interface DuplicateOrderPair {
+  readonly first: DuplicateOrderCandidate;
+  readonly second: DuplicateOrderCandidate;
+  readonly sharedProducts: readonly SharedProductMatch[];
+}
+
 /** Normalized comparison key for a base product name. */
 function productNameKey(productName: string): string {
   return parseOrderItemName(productName)
@@ -169,6 +176,79 @@ function toTime(value: string | Date): number | null {
 function brandKey(brandId: string | null | undefined): string | null {
   const key = String(brandId ?? "").trim();
   return key ? key : null;
+}
+
+interface PreparedDuplicateCandidate {
+  candidate: DuplicateOrderCandidate;
+  time: number;
+}
+
+/**
+ * Find duplicate pairs in one pass over customer/brand buckets.
+ *
+ * Calling `findDuplicateOrders(candidate, allOrders)` once per order makes the
+ * Orders page do an O(n²) scan, even when every order belongs to a different
+ * customer. This batch seam indexes the two equality gates first, then only
+ * compares orders in the same customer/brand bucket and 48-hour window.
+ */
+export function findDuplicateOrderPairs(
+  orders: readonly DuplicateOrderCandidate[],
+): DuplicateOrderPair[] {
+  const buckets = new Map<string, PreparedDuplicateCandidate[]>();
+
+  for (const candidate of orders) {
+    const time = toTime(candidate.createdAt);
+    const phone = normalizeCustomerPhone(candidate.customerPhone);
+    const brand = brandKey(candidate.brandId);
+    if (time === null || phone === null || brand === null) continue;
+
+    const key = `${phone}\u0000${brand}`;
+    const bucket = buckets.get(key);
+    const prepared = { candidate, time };
+    if (bucket) bucket.push(prepared);
+    else buckets.set(key, [prepared]);
+  }
+
+  const pairs: DuplicateOrderPair[] = [];
+  for (const bucket of buckets.values()) {
+    bucket.sort((a, b) => {
+      if (a.time !== b.time) return a.time - b.time;
+      return a.candidate.orderNumber < b.candidate.orderNumber
+        ? -1
+        : a.candidate.orderNumber > b.candidate.orderNumber
+          ? 1
+          : 0;
+    });
+
+    let firstInWindow = 0;
+    for (let right = 0; right < bucket.length; right++) {
+      const current = bucket[right];
+      while (
+        firstInWindow < right &&
+        current.time - bucket[firstInWindow].time > DUPLICATE_ORDER_WINDOW_MS
+      ) {
+        firstInWindow++;
+      }
+
+      for (let left = firstInWindow; left < right; left++) {
+        const previous = bucket[left];
+        // The single-order API treats an order number as the identity.
+        if (previous.candidate.orderNumber === current.candidate.orderNumber) continue;
+        const sharedProducts = sharedProductsBetween(
+          current.candidate.items,
+          previous.candidate.items,
+        );
+        if (sharedProducts.length === 0) continue;
+        pairs.push({
+          first: current.candidate,
+          second: previous.candidate,
+          sharedProducts,
+        });
+      }
+    }
+  }
+
+  return pairs;
 }
 
 /** Deterministic match order: most recent first, then by order number. */

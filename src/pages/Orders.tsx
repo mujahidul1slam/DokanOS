@@ -12,7 +12,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { supabase } from "@/integrations/supabase/client";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
-import { postWooOrderNote } from "@/lib/wooNotes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -80,7 +79,7 @@ import { useOrderBulkActions } from "./orders/useOrderBulkActions";
 // Issue #9: loading (business scoping, fetch race, pagination, error
 // handling) lives in the hook; the page renders its state.
 import { useOrdersData, type OrderRow } from "./orders/useOrdersData";
-import { findDuplicateOrders } from "@/lib/duplicateOrder";
+import { findDuplicateOrderPairs } from "@/lib/duplicateOrder";
 import { useStoresList } from "@/hooks/useStoresList";
 import {
   hasStoreScope,
@@ -122,13 +121,17 @@ const PAGE_SIZE = 200;
 // TabKey moved to ./orders/tabFilters
 
 const Orders = () => {
+  // Declared before useOrdersData: the hook needs to know whether the store
+  // filter points at one of THIS business's stores (a foreign one fails closed
+  // instead of reading every store and filtering down to nothing).
+  const [storeFilter, setStoreFilter] = useState("all");
   // Issue #9: all order loading (business scoping, overlapping-fetch race
   // guard, pagination, error surfacing) lives in useOrdersData — the page
   // renders its state and the error/retry banner.
   const {
     orders, setOrders, orderCategoryMap, loading, loadError, orderSourceError,
     loadOrders, retryLoad,
-  } = useOrdersData();
+  } = useOrdersData({ storeFilter });
   const { can } = usePermissions();
   const canAttachCourier = can("orders.attach_courier");
   const { settings: invoiceSettings } = useInvoiceSettings();
@@ -147,7 +150,6 @@ const Orders = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
-  const [storeFilter, setStoreFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [deliveryFilter, setDeliveryFilter] = useState("all");
   const [courierFilter, setCourierFilter] = useState("all");
@@ -340,6 +342,7 @@ const Orders = () => {
   const debouncedSearch = useDebounce(search, 200);
 
   const duplicateGroups = useMemo(() => {
+    if (!showDuplicateWarningOn(tab)) return [];
     // Trashed orders are gone — never actionable — so they must not pair up as
     // duplicates (deleted rows were inflating the count and the cards).
     // Issue: scope duplicates to the CURRENT tab so each tab only shows pairs
@@ -355,19 +358,17 @@ const Orders = () => {
       items: order.productItems.map((item) => ({ productName: item.name })),
     }));
     const groups = new Map<string, { orders: [OrderRow, OrderRow]; reasons: string[] }>();
-    for (const candidate of candidates) {
-      for (const match of findDuplicateOrders(candidate, candidates).matches) {
-        const pair = [candidate.orderNumber, match.orderNumber].sort();
-        const key = `${pair[0]}\u0000${pair[1]}`;
-        if (groups.has(key)) continue;
-        const first = byNumber.get(pair[0]);
-        const second = byNumber.get(pair[1]);
-        if (!first || !second) continue;
-        groups.set(key, {
-          orders: [first, second],
-          reasons: match.sharedProducts.map((product) => `Same product: ${product.name}`),
-        });
-      }
+    for (const match of findDuplicateOrderPairs(candidates)) {
+      const pair = [match.first.orderNumber, match.second.orderNumber].sort();
+      const key = `${pair[0]}\u0000${pair[1]}`;
+      if (groups.has(key)) continue;
+      const first = byNumber.get(pair[0]);
+      const second = byNumber.get(pair[1]);
+      if (!first || !second) continue;
+      groups.set(key, {
+        orders: [first, second],
+        reasons: match.sharedProducts.map((product) => `Same product: ${product.name}`),
+      });
     }
     return Array.from(groups.values());
   }, [orders, tab]);
@@ -431,13 +432,16 @@ const Orders = () => {
      collapsible group whose Merge action is gated by checkMergeEligibility.
      Already-"merged" source rows are history, not merge candidates, so they
      are excluded here. Trashed and missing-phone orders are skipped inside
-     groupOrdersForMerge. */
+     groupOrdersForMerge. The groups use the complete filtered result rather
+     than only the current 200-row page, so pagination cannot hide a merge
+     candidate. */
   const mergeGroups = useMemo(() => {
-    const groupable = paginated
+    if (!showMergePanelOn(tab)) return [];
+    const groupable = filtered
       .filter((o) => o.status !== "merged")
       .map(toMergeGroupOrder);
     return groupOrdersForMerge(groupable);
-  }, [paginated]);
+  }, [filtered, tab]);
 
   useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, paymentFilter, sourceFilter, storeFilter, deliveryFilter, courierFilter, preOrderStatusFilter, categoryFilter, dateRange, tab, duplicateFilterActive]);
 
@@ -815,7 +819,7 @@ const Orders = () => {
         onTrash={() => { setPendingTrashIds(Array.from(selected)); setTrashConfirmOpen(true); }}
         onClear={() => setSelected(new Set())}
          onDeselect={(id) => setSelected((current) => { const next = new Set(current); next.delete(id); return next; })}
-      />`r`n
+      />
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
         <OrderTabs tab={tab} onChange={setTab} counts={counts} />
@@ -1017,7 +1021,7 @@ const Orders = () => {
         open={trashConfirmOpen}
         onOpenChange={setTrashConfirmOpen}
         title="Move to Trash?"
-        description={`${pendingTrashIds.length} order(s) will be moved to trash and automatically deleted after 15 days.${orders.some((o) => pendingTrashIds.includes(o.id) && o.woo_order_id) ? " WooCommerce orders will also be trashed on the store." : ""}`}
+        description={`${pendingTrashIds.length} order(s) will be moved to trash and automatically deleted after 15 days.`}
         confirmLabel="Move to Trash"
         variant="destructive"
         onConfirm={() => { handleTrashOrders(pendingTrashIds); setTrashConfirmOpen(false); }}
@@ -1213,7 +1217,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
     delivered: { icon: CheckCircle2, text: "No delivered orders" },
     on_hold: { icon: AlertTriangle, text: "No orders on hold" },
     returned: { icon: Undo2, text: "No returned orders" },
-    cancelled: { icon: XCircle, text: "No cancelled orders — WooCommerce cancellations and Pathao pickup-cancel parcels appear here" },
+    cancelled: { icon: XCircle, text: "No cancelled orders — cancelled orders and Pathao pickup-cancel parcels appear here" },
     trash: { icon: Trash2, text: "Trash is empty — deleted orders appear here for 15 days" },
   };
   const config = configs[tab];
