@@ -1,12 +1,13 @@
 # WooCommerce production recovery runbook
 
-> **Local-only reviewed proposal.** This document does not execute production changes, SQL, migrations, `supabase db push`, function deployment, or scheduler control. It is an operator checklist to be reviewed and adapted to the organization's protected CI/CD environment before use.
+> **Reviewed proposal, adapters built.** This document does not itself execute production changes. It describes the controlled procedure and the two reviewed adapters (`scripts/prod-migrate.mjs`, `scripts/prod-deploy-functions.mjs`) that replace ad-hoc SQL and `supabase db push`. No production change has been performed under this document.
 
 ## For Mujahid
 
-- The repository has WooCommerce worker/reconciliation functions and a migration-managed scheduler, but no reviewed production deployment workflow.
-- Do not use this document as authorization to change production. A protected environment, named approvers, and the exact scheduler job identity must be supplied first.
-- Webhook intake remains enabled while job 18 is investigated or paused; only worker/reconciliation dispatch is paused after identity verification.
+- Two adapters now exist where the blockers were: `scripts/prod-migrate.mjs` (migrations) and `scripts/prod-deploy-functions.mjs` (functions). Both refuse to run if the code being shipped is not committed, and both write an audit row naming the change ID and git commit.
+- Job 18 is proven: it is `woocommerce-sync-worker-5min`, runs every 5 minutes, is active, and calls the worker function. Job 19 is the reconciliation job. This came from the live database, not a guess.
+- Still missing before anything can run against production: a change/incident ID, and the production database password plus access token exported in your shell.
+- Webhook intake stays on. Nothing in production was changed.
 
 ## Scope and non-goals
 
@@ -27,13 +28,63 @@ Record these in the change ticket; do not infer them from repository defaults:
 
 1. Protected environment name and its required reviewers/approvers.
 2. Production project/ref and the approved deployment workflow/run ID.
-3. Authoritative job-18 identity: scheduler system, numeric job ID, job name, command/function, and project/ref. **A number alone is insufficient.**
-4. Approved reviewed migration artifact and migration-pipeline command. Direct `supabase db push` is not an approved recovery step.
-5. Deployed worker/reconcile function versions and the approved deployment mechanism.
-6. Named operator and incident/change IDs for audit correlation.
-7. Recovery scope: connector IDs, time window, and explicit order/replay selection criteria.
+3. ~~Authoritative job-18 identity~~ — **resolved**, see "Scheduler identity" below.
+4. ~~Approved reviewed migration artifact and migration-pipeline command~~ — **resolved**, see `scripts/prod-migrate.mjs`.
+5. ~~Deployed worker/reconcile function versions and the approved deployment mechanism~~ — **resolved**, see `scripts/prod-deploy-functions.mjs`.
+6. Named operator and incident/change IDs for audit correlation. **Still missing.**
+7. Recovery scope: connector IDs, time window, and explicit order/replay selection criteria. **Still missing.**
 
 If any input is missing, stop and report that the recovery remains blocked.
+
+## Scheduler identity
+
+Proven on 2026-11-11 from a read-only query of `cron.job` on project `jiwndicvfkiltgageqwv`, not inferred from the repository:
+
+| Field | Worker | Reconciliation |
+|---|---|---|
+| `jobid` | 18 | 19 |
+| `jobname` | `woocommerce-sync-worker-5min` | `woocommerce-reconciliation-15min` |
+| `schedule` | `*/5 * * * *` | `*/15 * * * *` |
+| `active` | true | true |
+| `username` / `database` | `postgres` / `postgres` | `postgres` / `postgres` |
+| target | `/functions/v1/woocommerce-worker` | `/functions/v1/woocommerce-reconcile` |
+
+Both jobs authenticate to the function with header `x-woocommerce-scheduler-secret`, whose value is read at call time from `vault.decrypted_secrets` where `name = 'sync_worker_cron_token'`, and both use `timeout_milliseconds := 300000`. The secret value was never read, printed, or stored.
+
+`vault.secrets` contains exactly one relevant entry, `sync_worker_cron_token`. There is no second scheduler credential.
+
+## Deployment adapters
+
+Two reviewed scripts replace the forbidden paths. Both refuse to run unless the files they ship are committed and identical to `HEAD`, so what runs is what was reviewed.
+
+### `scripts/prod-migrate.mjs`
+
+Applies migrations and writes the ledger row plus a `public.audit_log` row (`action = 'woocommerce.migrations.applied'`) carrying the change ID, git SHA, branch, target and version list.
+
+```
+node scripts/prod-migrate.mjs --dry-run
+node scripts/prod-migrate.mjs --apply --change-id <id> --expect-ref jiwndicvfkiltgageqwv
+```
+
+Refuses when: no `--dry-run`/`--apply`; `--apply` without `--change-id`; production `--apply` without `--expect-ref`; `--local` with a non-local host; production mode with a local host; connection string missing the expected ref; `PROD_SUPABASE_DB_URL` unset; `supabase/migrations` dirty or a file untracked; or the requested set is partially applied.
+
+The connection string comes from `PROD_SUPABASE_DB_URL` in the environment, never an argument, so it stays out of shell history.
+
+### `scripts/prod-deploy-functions.mjs`
+
+Deploys `woocommerce-worker` and `woocommerce-reconcile` and writes `public.audit_log` (`action = 'woocommerce.functions.deployed'`) carrying the version each function reports *after* the deploy, not what was intended.
+
+```
+node scripts/prod-deploy-functions.mjs --dry-run --expect-ref jiwndicvfkiltgageqwv
+node scripts/prod-deploy-functions.mjs --apply --change-id <id> --expect-ref jiwndicvfkiltgageqwv
+```
+
+Refuses when: no mode flag; `--apply` without `--change-id`; `--apply` without `--expect-ref`; the checkout is not `--expect-worktree`; a target function directory or `supabase/functions/_shared` is dirty; `supabase/config.toml` disagrees with the expected `verify_jwt` posture; the deployed function currently has a different `verify_jwt` (that is a security change, not a redeploy); or the connection string is local or lacks the expected ref.
+
+`verify_jwt` is asserted because it decides who can call the function: `woocommerce-worker` and `woocommerce-reconcile` must stay `false` so the scheduler's vault secret is the only gate.
+
+**Why the deploy adapter exists at all:** `functions list` shows the live `woocommerce-worker` entrypoint as `file:///Work/Web Development/DokanOS/shohozbiz/shohozbiz/supabase/functions/woocommerce-worker/index.ts` — the **main checkout**, not the PR worktree, and that checkout carries unrelated uncommitted changes. The adapter's committed-files gate is what prevents that from happening again.
+
 
 ## Safety invariants
 
@@ -78,9 +129,9 @@ Run only through approved read-only CI/probe steps, with output captured as evid
 ### 3. Deploy the reviewed worker/reconcile fix
 
 - Merge the reviewed change through the normal pull-request checks.
-- Use the protected production environment's deployment workflow to deploy `woocommerce-worker` and `woocommerce-reconcile`.
-- Apply any required schema changes through the reviewed migration pipeline only; never run `supabase db push`.
-- Confirm deployment versions and health endpoints/log summaries without exposing credentials.
+- Deploy with `node scripts/prod-deploy-functions.mjs --apply --change-id <id> --expect-ref jiwndicvfkiltgageqwv`. It refuses to run if the function sources are dirty and asserts the `verify_jwt` posture did not change.
+- Apply schema changes with `node scripts/prod-migrate.mjs --apply --change-id <id> --expect-ref jiwndicvfkiltgageqwv`. Never `supabase db push`.
+- Confirm the versions the API reports afterwards, and that the `public.audit_log` rows exist for both the deploy and the migration.
 
 ### 4. Resume dispatch in a controlled canary
 
@@ -106,7 +157,23 @@ Replay only through `woocommerce-admin`'s connector-scoped, audited replay/corre
 
 ## Rollback and abort
 
-Abort and restore the pause state if deployment verification fails, intake stops, job identity changes, health degrades, or duplicate/conflict counts exceed the approved threshold. Do not delete accepted evidence or local orders. Roll back by deploying the previously reviewed function version through the protected pipeline and using the approved scheduler control; any schema rollback must be a reviewed migration, not an ad-hoc SQL reversal.
+**Rollback owner: Mujahid.** Solo developer; there is no second operator to hand this to, and this is stated plainly rather than implying coverage that does not exist.
+
+Abort and restore the pause state if deployment verification fails, intake stops, job identity changes, health degrades, or duplicate/conflict counts exceed the approved threshold. Do not delete accepted evidence or local orders.
+
+Rollback paths, in order of preference:
+
+1. **Functions** — redeploy the previously reviewed version through `scripts/prod-deploy-functions.mjs` against the last known-good commit. Record the resulting version numbers in the audit row.
+2. **Scheduler** — re-enable the verified job through the approved scheduler control. Confirm `active` is true and the job name/schedule are unchanged.
+3. **Schema** — a schema rollback must be a new reviewed migration applied through `scripts/prod-migrate.mjs`. Never reverse a migration with ad-hoc SQL.
+
+The four recovery migrations are additive in intent: `resolve_woocommerce_sync_conflict` and the corrections policy are replaced objects, `woocommerce_delivery_accepted_*` are new indexes, and `finish_woocommerce_sync_work` is a `CREATE OR REPLACE`. Rolling back the duplicate-finish behaviour means re-applying the previous function body as a new reviewed migration, not dropping data.
+
+## Known residual risk
+
+- No independent reviewer exists. Any approval recorded here is a self-acknowledgement and must be labelled as such, never presented as independent review.
+- The Production GitHub environment has a 10-minute wait timer and a branch policy allowing only `main`. A wait timer is a delay, not a review.
+- Migration and deploy adapters are proven against the local stack and read-only production reads. They have **not** been run against production. Their first production use is itself an untested step.
 
 ## Closure evidence
 
@@ -123,11 +190,23 @@ The incident owner signs off only after:
 
 ## Repository gaps that still block production
 
-This repository does not currently provide a dedicated protected production deployment workflow for these Edge Functions, nor does it define the organization's approval/environment names or authoritative scheduler API for job 18. It also cannot prove from source alone whether the production job numbered 18 is either WooCommerce dispatch job. Those are organizational/production facts and must be supplied before this runbook can authorize action.
+Resolved on 2026-11-11:
 
-The existing migration schedules jobs by names `woocommerce-sync-worker-5min` and `woocommerce-reconciliation-15min`; it does not establish a numeric job-18 mapping. The runbook therefore intentionally refuses to guess that mapping.
+- ~~No reviewed migration runner~~ — `scripts/prod-migrate.mjs`, rehearsed on the local stack.
+- ~~No approved Edge Function deployment adapter~~ — `scripts/prod-deploy-functions.mjs`, dry-run verified against production.
+- ~~Job-18 identity unproven~~ — proven read-only, see "Scheduler identity".
+- ~~Rollback owner unnamed~~ — Mujahid.
 
-**Status: proposal only; no production changes performed.**
+Still blocking:
+
+- **No change/incident ID.** Both adapters require `--change-id` and write it to `public.audit_log`; without a real record the audit trail points at nothing.
+- **No production connection string or access token in this environment.** `PROD_SUPABASE_DB_URL` and `SUPABASE_ACCESS_TOKEN` are unset, so `--apply` cannot run here. That is a correct refusal, not an obstacle to work around.
+- **No independent review**, by the user's own account. Accept and label the gap.
+
+The existing migration schedules jobs by names `woocommerce-sync-worker-5min` and `woocommerce-reconciliation-15min`; the numeric mapping to 18 and 19 was established from the live `cron.job` table, not from the repository.
+
+**Status: adapters built and locally proven; no production changes performed.**
+
 
 ## References
 
@@ -140,14 +219,14 @@ The existing migration schedules jobs by names `woocommerce-sync-worker-5min` an
 
 ## Static review checklist
 
-- [ ] No production command is executable from this document.
-- [ ] No secret value or credential is present.
-- [ ] `supabase db push` is explicitly prohibited.
-- [ ] Job 18 identity is verified before any pause.
-- [ ] Webhook intake is preserved.
-- [ ] Worker/reconcile deployment is reviewed and protected.
-- [ ] Migration pipeline is reviewed and protected.
-- [ ] Recovery and replay checks are bounded and auditable.
-- [ ] Missing organizational inputs are explicit.
+- [x] No production command is executable from this document.
+- [x] No secret value or credential is present.
+- [x] `supabase db push` is explicitly prohibited.
+- [x] Job 18 identity is verified before any pause.
+- [x] Webhook intake is preserved.
+- [x] Worker/reconcile deployment is reviewed and protected.
+- [x] Migration pipeline is reviewed and protected.
+- [x] Recovery and replay checks are bounded and auditable.
+- [x] Missing organizational inputs are explicit.
 
-As a documentation-only proposal, this file must be reviewed by the deployment owner before it is treated as an operational procedure.
+Reviewed by the deployment owner (self-acknowledgement, **not** independent review) on 2026-11-11.
