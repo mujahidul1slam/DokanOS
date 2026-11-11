@@ -32,6 +32,23 @@ ALTER TABLE public.woocommerce_sync_conflicts
   ADD COLUMN IF NOT EXISTS resolution_note text,
   ADD COLUMN IF NOT EXISTS resolution_work_id uuid REFERENCES public.woocommerce_sync_work(id) ON DELETE SET NULL;
 
+-- The 20261110090000 CHECK lists only 'pending', 'accepted_external',
+-- 'kept_local', 'dismissed'. The RPC below accepts 'replayed' (meaning "import
+-- this order's current external state again"), which is the remedy the runbook
+-- leans on for every inbound conflict reason. Without widening the constraint
+-- the UPDATE would raise 23514 AFTER the re-enqueue decision had already been
+-- made, rolling the whole call back: no resolution recorded, no work created.
+--
+-- Widened rather than dropping 'replayed' from the RPC because the alternative
+-- would delete a working remedy to satisfy a stale allowlist. 'pending' is kept
+-- so this migration cannot fail on an existing row; the RPC still refuses to
+-- write it (an operator decision can never mean "pending").
+ALTER TABLE public.woocommerce_sync_conflicts
+  DROP CONSTRAINT IF EXISTS woocommerce_sync_conflicts_resolution_check;
+ALTER TABLE public.woocommerce_sync_conflicts
+  ADD CONSTRAINT woocommerce_sync_conflicts_resolution_check
+  CHECK (resolution IS NULL OR resolution IN ('pending', 'accepted_external', 'kept_local', 'dismissed', 'replayed'));
+
 CREATE OR REPLACE FUNCTION public.resolve_woocommerce_sync_conflict(
   p_conflict_id uuid,
   p_resolution text,

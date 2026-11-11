@@ -107,10 +107,23 @@ function assertSharedCommitted() {
   }
 }
 
-/** Refuse to deploy from a checkout other than the one named as the source. */
-function assertWorktree(expected) {
-  if (!expected) return;
+/**
+ * Refuse to deploy from a checkout other than the one named as the source.
+ *
+ * Required for --apply, not optional: `functions list` shows the live worker
+ * entrypoint resolving to the MAIN checkout, which carries unrelated
+ * uncommitted changes. A gate that silently passes when the flag is omitted
+ * would deploy whatever happens to be in the working directory.
+ */
+function assertWorktree(expected, required) {
   const real = path.resolve(REPO);
+  if (!expected) {
+    if (!required) return;
+    fail(
+      `--apply requires --expect-worktree <path>. The live worker entrypoint resolves to ${real}; ` +
+        "state which checkout is being deployed so it is verified, not assumed.",
+    );
+  }
   if (path.resolve(expected).toLowerCase() !== real.toLowerCase()) {
     fail(`this checkout is ${real}, not the expected ${path.resolve(expected)}.`);
   }
@@ -235,7 +248,7 @@ async function main() {
     );
   }
 
-  assertWorktree(expectWorktree);
+  assertWorktree(expectWorktree, apply);
 
   for (const target of TARGETS) {
     assertFunctionCommitted(target.name);

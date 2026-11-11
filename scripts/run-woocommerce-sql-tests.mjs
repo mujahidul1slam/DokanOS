@@ -52,6 +52,10 @@ const TESTS = [
     file: "woocommerce_duplicate_finish_test.sql",
     requires: ["20261111110000_woocommerce_duplicate_finish.sql"],
   },
+  {
+    file: "woocommerce_conflict_resolution_test.sql",
+    requires: ["20261110110000_woocommerce_conflict_resolution.sql"],
+  },
 ];
 
 function localDbUrl() {
