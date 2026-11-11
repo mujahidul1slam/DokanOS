@@ -72,9 +72,12 @@ Dividing an order into two independent orders. The original keeps its payment re
 The Pathao merchant account used to dispatch an order. It determines the courier credentials and pickup configuration used for that dispatch.
 _Avoid_: Pathao store
 
+**Order source**:
+The canonical configured channel-origin record that identifies where an order came from, such as WooCommerce, POS, or Facebook/Instagram. It belongs to a brand and replaces the retired `selling_points` model; it is not a Store or a Pathao account.
+_Avoid_: Store, storefront, Pathao store, selling point
+
 **Selling point**:
-A place or channel where a brand sells, such as a showroom, Facebook page, or online storefront. An order belongs to one selling point for operational attribution.
-_Avoid_: Store (in user-facing copy when it would be confused with a Pathao account)
+Retired schema vocabulary. Use **Order source** for the canonical channel-origin record; do not add new connector bindings to `selling_points`.
 
 **Courier integration**:
 A configured connection between DokanOS and a courier account, used to create, cancel, track, and replace consignments.

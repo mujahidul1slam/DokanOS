@@ -27,6 +27,24 @@ verify_jwt = false
 [functions.create-business]
 verify_jwt = true
 
+# WooCommerce sends its own HMAC signature; Supabase JWT auth is not applicable.
+[functions.woocommerce-webhook]
+verify_jwt = false
+
+[functions.woocommerce-worker]
+verify_jwt = false
+
+[functions.woocommerce-reconcile]
+verify_jwt = false
+
+[functions.woocommerce-admin]
+verify_jwt = true
+
+# Cutover is an operator action and requires a Supabase access token; it only
+# reads WooCommerce and writes local evidence/work.
+[functions.woocommerce-cutover]
+verify_jwt = true
+
 [functions.purge-unconfirmed]
 verify_jwt = false
 

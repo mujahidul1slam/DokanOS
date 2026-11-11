@@ -11,6 +11,9 @@ export default defineConfig({
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    alias: {
+      "npm:@supabase/supabase-js@2.49.4": path.resolve(__dirname, "./src/test/fixtures/denoSupabaseClient.ts"),
+      "@": path.resolve(__dirname, "./src"),
+    },
   },
 });
