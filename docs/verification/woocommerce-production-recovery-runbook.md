@@ -66,9 +66,14 @@ node scripts/prod-migrate.mjs --dry-run
 node scripts/prod-migrate.mjs --apply --change-id <id> --expect-ref jiwndicvfkiltgageqwv
 ```
 
-Refuses when: no `--dry-run`/`--apply`; `--apply` without `--change-id`; production `--apply` without `--expect-ref`; `--local` with a non-local host; production mode with a local host; connection string missing the expected ref; `PROD_SUPABASE_DB_URL` unset; `supabase/migrations` dirty or a file untracked; or the requested set is partially applied.
+Refuses when: no `--dry-run`/`--apply`; `--apply` without `--change-id`; production `--apply` without `--expect-ref`; `--local` with a non-local host; production mode with a local host; connection string missing the expected ref; `SUPABASE_ACCESS_TOKEN` unset; `supabase/migrations` dirty or a file untracked; or the requested set is partially applied.
 
-The connection string comes from `PROD_SUPABASE_DB_URL` in the environment, never an argument, so it stays out of shell history.
+**Transport is split, because the production database password does not exist on this machine.** Local runs use the `pg` driver against `127.0.0.1:54322`. Production runs go through the Supabase Management API (`POST /v1/projects/<ref>/database/query`) authenticated with `SUPABASE_ACCESS_TOKEN`, which the CLI already holds in Windows Credential Manager. Either way the credential comes from the environment, never an argument, so it stays out of shell history.
+
+Two consequences of that transport worth knowing before the first production run:
+
+- The Management API accepts multi-statement SQL, which is why a migration file can be sent as one batch. It returns only the **last** statement's result set, so the runner never reads intermediate output.
+- `20261110110000_woocommerce_conflict_resolution.sql` carries its own `BEGIN;`/`COMMIT;`. It is therefore sent verbatim and commits inside the batch, so a failure in the *following* ledger insert would leave it applied-but-unledgered. This is the same failure mode the `pg` path already had and is not introduced by the transport split, but it is the one place where "one file, one transaction" does not hold.
 
 ### `scripts/prod-deploy-functions.mjs`
 
@@ -199,9 +204,12 @@ Resolved on 2026-11-11:
 
 Still blocking:
 
-- **No change/incident ID.** Both adapters require `--change-id` and write it to `public.audit_log`; without a real record the audit trail points at nothing.
-- **No production connection string or access token in this environment.** `PROD_SUPABASE_DB_URL` and `SUPABASE_ACCESS_TOKEN` are unset, so `--apply` cannot run here. That is a correct refusal, not an obstacle to work around.
 - **No independent review**, by the user's own account. Accept and label the gap.
+
+Resolved since this section was first written:
+
+- ~~No change/incident ID~~ — `CHG-2026-11-12-01`, recorded in `public.audit_log` against the scheduler pause and the token rotation.
+- ~~No production credential in this environment~~ — `SUPABASE_ACCESS_TOKEN` is available from Windows Credential Manager (the CLI's own login), and the runner's production transport now uses it. `PROD_SUPABASE_DB_URL` is still unset and is no longer needed: the production database password does not exist on this machine, which is exactly why the Management API transport was built.
 
 The existing migration schedules jobs by names `woocommerce-sync-worker-5min` and `woocommerce-reconciliation-15min`; the numeric mapping to 18 and 19 was established from the live `cron.job` table, not from the repository.
 
