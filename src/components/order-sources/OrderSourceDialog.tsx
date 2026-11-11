@@ -208,7 +208,10 @@ export function OrderSourceDialog({ open, onOpenChange, brandId, brandName, sour
 
   return (
     <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
-      <DialogContent>
+      {/* The form is taller than a laptop viewport. DialogContent is position:fixed,
+          so without a max height the footer — and its submit button — renders off
+          screen and cannot be reached by scrolling the page. */}
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit order source" : "New order source"}</DialogTitle>
