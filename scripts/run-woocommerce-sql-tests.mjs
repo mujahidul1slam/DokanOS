@@ -58,7 +58,10 @@ const TESTS = [
   },
   {
     file: "woocommerce_order_number_collision_test.sql",
-    requires: ["20261112120000_woocommerce_order_number_namespace.sql"],
+    requires: [
+      "20261112120000_woocommerce_order_number_namespace.sql",
+      "20261112130000_woocommerce_order_snapshot_and_prefix.sql",
+    ],
   },
 ];
 

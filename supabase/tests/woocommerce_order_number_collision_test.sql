@@ -21,10 +21,10 @@ DECLARE
   order_count integer;
   identity_count integer;
 BEGIN
-  INSERT INTO public.stores(id, name, url)
+  INSERT INTO public.stores(id, name, url, woo_order_prefix, woo_order_suffix)
   VALUES
-    (store, 'Order number collision store', 'https://collision.invalid'),
-    (store2, 'Order number collision store 2', 'https://collision-2.invalid');
+    (store, 'Order number collision store', 'https://collision.invalid', 'SHOP-', '-W'),
+    (store2, 'Order number collision store 2', 'https://collision-2.invalid', 'SHOP-', '-W');
   INSERT INTO public.brands(id, business_id, name, slug, woo_store_id)
   VALUES
     (brand, '11111111-0000-0000-0000-000000000001', 'Collision brand', 'woocommerce-order-number-collision', store),
@@ -59,12 +59,22 @@ BEGIN
     RAISE EXCEPTION 'Woo import reused an unrelated local order';
   END IF;
   imported_number := (SELECT order_number FROM public.orders WHERE id = imported_order);
-  IF imported_number <> 'WC-8c000000-0000-0000-0000-00000000f001-8847' THEN
-    RAISE EXCEPTION 'Woo import did not use the full deterministic connector namespace: %', imported_number;
+  IF imported_number <> 'SHOP-WC-8c000000-0000-0000-0000-00000000f001-8847-W' THEN
+    RAISE EXCEPTION 'Woo import did not apply the configured prefix/suffix around the deterministic namespace: %', imported_number;
   END IF;
   IF (SELECT external_order_number FROM public.woocommerce_order_identities
       WHERE connector_id = c AND external_order_id = 8847) <> '8847' THEN
     RAISE EXCEPTION 'Woo external order number was not preserved in the identity row';
+  END IF;
+  IF (SELECT customer_name FROM public.orders WHERE id = imported_order) <> 'Woo Buyer'
+     OR (SELECT customer_email FROM public.orders WHERE id = imported_order) <> 'buyer@collision.invalid'
+     OR (SELECT customer_phone FROM public.orders WHERE id = imported_order) IS NOT NULL
+     OR (SELECT customer_address FROM public.orders WHERE id = imported_order) <> '1 Test St'
+     OR (SELECT customer_city FROM public.orders WHERE id = imported_order) <> 'Dhaka' THEN
+    RAISE EXCEPTION 'Woo order did not preserve the imported customer snapshot on the order row';
+  END IF;
+  IF (SELECT woo_order_prefix FROM public.stores WHERE id = store) <> 'SHOP-' THEN
+    RAISE EXCEPTION 'Woo order prefix fixture was not configured';
   END IF;
 
   -- Repeated delivery/reconciliation for the same connector is idempotent.
@@ -92,7 +102,7 @@ BEGIN
     '2 Test St', 'Dhaka', NULL, NULL, NULL, timestamptz '2026-01-01 00:00:00+00',
     '[]'::jsonb, jsonb_build_object('status', 'processing', 'currency', 'BDT'));
   imported_number_2 := (SELECT order_number FROM public.orders WHERE id = imported_order_2);
-  IF imported_order_2 = imported_order OR imported_number_2 <> 'WC-8c000000-0000-0000-0000-00000000f002-8847' THEN
+  IF imported_order_2 = imported_order OR imported_number_2 <> 'SHOP-WC-8c000000-0000-0000-0000-00000000f002-8847-W' THEN
     RAISE EXCEPTION 'second connector did not receive its own deterministic namespace: id=% number=%', imported_order_2, imported_number_2;
   END IF;
 
