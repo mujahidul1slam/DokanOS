@@ -89,7 +89,20 @@ BEGIN
     RAISE EXCEPTION 'Woo order prefix fixture was not configured';
   END IF;
 
-  -- A repeat delivery repairs the configured number and fills missing snapshots.
+  -- The reviewed backfill repairs rows imported before the snapshot/prefix fix.
+  PERFORM public.backfill_woocommerce_order_snapshots();
+  IF (SELECT order_number FROM public.orders WHERE id = legacy_order) <> 'SHOP-WC-8c000000-0000-0000-0000-00000000f001-8848-W'
+     OR (SELECT customer_name FROM public.orders WHERE id = legacy_order) <> 'Legacy Buyer'
+     OR (SELECT customer_email FROM public.orders WHERE id = legacy_order) <> 'legacy@collision.invalid'
+     OR (SELECT customer_address FROM public.orders WHERE id = legacy_order) <> 'Old St' THEN
+    RAISE EXCEPTION 'backfill did not repair order number and customer snapshot: number=% name=% email=% address=%',
+      (SELECT order_number FROM public.orders WHERE id = legacy_order),
+      (SELECT customer_name FROM public.orders WHERE id = legacy_order),
+      (SELECT customer_email FROM public.orders WHERE id = legacy_order),
+      (SELECT customer_address FROM public.orders WHERE id = legacy_order);
+  END IF;
+
+  -- A repeat delivery remains idempotent after the backfill.
   PERFORM public.upsert_woocommerce_order(
     c, 8848, '8848', 'processing', timestamptz '2026-01-01 00:00:00+00',
     100, 100, 0, 0, 'cod', 'pending', 'paid', 'Legacy Buyer', 'legacy@collision.invalid', NULL,
