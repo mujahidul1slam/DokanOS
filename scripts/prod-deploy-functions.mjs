@@ -32,13 +32,13 @@
  *     --expect-ref jiwndicvfkiltgageqwv
  *
  * Authentication uses SUPABASE_ACCESS_TOKEN when it is exported, otherwise the
- * CLI's own `supabase login` session. Never passed as an argument, so it stays
- * out of shell history, and never printed.
+ * CLI's own `supabase login` session for read-only listing/deploy. An apply also
+ * needs the token for the Management API audit insert. Never pass it as an
+ * argument, so it stays out of shell history, and never print it.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
-import pg from "pg";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const FUNCTIONS_DIR = path.join(REPO, "supabase", "functions");
@@ -149,15 +149,41 @@ function declaredVerifyJwt(name) {
   return undefined;
 }
 
-function connectionString() {
-  const url = process.env.PROD_SUPABASE_DB_URL;
-  if (!url) {
+const API_BASE = "https://api.supabase.com/v1";
+
+function managementSqlLiteral(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function assertSafeChangeId(changeId) {
+  if (!/^[A-Za-z0-9._:-]{1,64}$/.test(changeId)) {
+    fail(`--change-id ${JSON.stringify(changeId)} has characters outside [A-Za-z0-9._:-].`);
+  }
+}
+
+async function managementQuery(sql) {
+  const token = process.env.SUPABASE_ACCESS_TOKEN;
+  if (!token) {
     fail(
-      "PROD_SUPABASE_DB_URL is not set. It is needed to write the audit row for " +
-        `${PRODUCTION_REF}. Export it rather than passing it as an argument.`,
+      "SUPABASE_ACCESS_TOKEN is not set. The production audit path uses the " +
+        `Supabase Management API for ${PRODUCTION_REF}; export the token rather than passing it as an argument.`,
     );
   }
-  return url;
+  const response = await fetch(`${API_BASE}/projects/${PRODUCTION_REF}/database/query`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query: sql }),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`the Management API rejected the audit statement: ${text.slice(0, 400)}`);
+  }
+  if (!text) return [];
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`the Management API returned non-JSON: ${text.slice(0, 200)}`);
+  }
 }
 
 /**
@@ -242,6 +268,7 @@ async function main() {
   if (apply && !changeId) {
     fail("--apply requires --change-id. Every production change must be traceable to a record.");
   }
+  if (apply) assertSafeChangeId(changeId);
   if (apply && !expectRef) {
     fail(
       `--apply requires --expect-ref ${PRODUCTION_REF} so the target is stated, not implied.`,
@@ -270,12 +297,15 @@ async function main() {
     }
   }
 
-  // A dry run only reads the API, so it must not demand the database password.
-  // --apply writes an audit row, which does need it.
-  const url = apply ? connectionString() : process.env.PROD_SUPABASE_DB_URL;
-  const target = url
-    ? assertTarget(url, expectRef)
-    : { label: expectRef || PRODUCTION_REF, host: "(not checked — dry run)", port: "" };
+  // Dry run and deploy use the CLI session or SUPABASE_ACCESS_TOKEN. The audit
+  // row uses the Management API, so --apply needs the token but never a DB URL.
+  if (apply && !process.env.SUPABASE_ACCESS_TOKEN) {
+    fail(
+      "--apply requires SUPABASE_ACCESS_TOKEN for the Management API audit row. " +
+        "Export it rather than passing it as an argument.",
+    );
+  }
+  const target = { label: expectRef || PRODUCTION_REF, host: "api.supabase.com", port: "443" };
   const token = accessToken();
   const sha = git("rev-parse", "HEAD");
   const branch = git("rev-parse", "--abbrev-ref", "HEAD");
@@ -361,31 +391,26 @@ async function main() {
     }
   }
 
-  const client = new pg.Client({ connectionString: url });
-  await client.connect();
-  try {
-    await client.query(
-      `INSERT INTO public.audit_log (action, entity_type, entity_id, details)
-       VALUES ($1, $2, $3, $4)`,
+  const details = {
+    change_id: changeId,
+    commit: sha,
+    branch,
+    target: target.label,
+    project_ref: remote,
+    functions: shipped,
+  };
+  await managementQuery(
+    "INSERT INTO public.audit_log (action, entity_type, entity_id, details) VALUES (" +
       [
-        "woocommerce.functions.deployed",
-        "edge_functions",
-        changeId,
-        JSON.stringify({
-          change_id: changeId,
-          commit: sha,
-          branch,
-          target: target.label,
-          project_ref: remote,
-          functions: shipped,
-        }),
-      ],
-    );
-    console.log("");
-    console.log(`deployed ${shipped.length} function(s); audit_log written under ${changeId}.`);
-  } finally {
-    await client.end();
-  }
+        managementSqlLiteral("woocommerce.functions.deployed"),
+        managementSqlLiteral("edge_functions"),
+        managementSqlLiteral(changeId),
+        `${managementSqlLiteral(JSON.stringify(details))}::jsonb`,
+      ].join(", ") +
+      ")",
+  );
+  console.log("");
+  console.log(`deployed ${shipped.length} function(s); audit_log written under ${changeId}.`);
 }
 
 main().catch((error) => {
