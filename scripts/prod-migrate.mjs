@@ -399,6 +399,7 @@ async function main() {
         "20261110111000_woocommerce_sync_corrections_policy.sql",
         "20261111100000_woocommerce_durable_intake.sql",
         "20261111110000_woocommerce_duplicate_finish.sql",
+         "20261112120000_woocommerce_order_number_namespace.sql",
       ];
 
   const metas = requested.map((file) => parseMigration(file));
