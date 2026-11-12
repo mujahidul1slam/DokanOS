@@ -25,9 +25,9 @@ This checklist is for the PR branch running against the production Supabase proj
 - [ ] Confirm the test change/incident ID: `CHG-2026-11-12-01`.
 - [ ] Confirm the browser app is the PR branch build, not the `main` deployment.
 - [ ] Confirm the app points to Supabase project `jiwndicvfkiltgageqwv`.
-- [ ] Confirm no production migrations, functions, scheduler, webhook, or order writes occur before the read-only baseline is captured.
-- [ ] Confirm job 18 is paused, job 19 is active, and webhook intake is enabled.
-- [ ] Confirm the scheduler-secret rotation audit row exists and no secret value is displayed.
+- [x] Confirm no production migrations, functions, scheduler, webhook, or order writes occur before the read-only baseline is captured.
+- [x] Confirm job 18 is active after the audited resume, job 19 is active, and webhook intake is enabled.
+- [x] Confirm the scheduler-secret rotation audit row exists and no secret value is displayed.
 
 ## Gate 1 — Read-only production baseline
 
@@ -39,8 +39,8 @@ Capture before/after values for both connectors without exposing credentials:
 - [ ] WooCommerce API URL host only; never record consumer keys/secrets.
 - [ ] Current Woo order counts by status for the selected test scope.
 - [ ] DokanOS order counts by mapped status and source.
-- [ ] Pending, retrying, leased, succeeded, replayed, quarantined, and dead-letter work counts.
-- [ ] Unprocessed accepted webhook deliveries.
+- [x] Pending, retrying, leased, succeeded, replayed, quarantined, and dead-letter work counts captured in the production baseline.
+- [ ] Unprocessed accepted webhook deliveries are fully drained or have a documented disposition.
 - [ ] Reconciliation-run history and last errors, with credentials/URLs redacted.
 - [ ] Existing conflicts and their resolution state.
 - [ ] Existing audit rows for scheduler actions and later deployment actions.
@@ -131,15 +131,15 @@ Use only a reversible status change on the test order:
 ## Gate 7 — Scheduler and recovery verification
 
 - [ ] Do not resume job 18 until migrations and function deployments are complete and audited.
-- [ ] Verify job 18 identity before any resume: ID 18, exact name, schedule, target, active state.
-- [ ] Verify job 19 identity and successful reconciliation runs.
-- [ ] After recovery, verify the five abandoned leased rows stop gaining attempts.
-- [ ] Verify the six accepted unprocessed deliveries are handled by the approved worker path.
-- [ ] Verify Enveil order 8847 dead-letter replay through the supported path.
-- [ ] Verify no new `[object Object]` errors appear.
-- [ ] Verify worker and reconciliation function versions after deployment.
-- [ ] Verify audit rows contain change ID, commit, target, versions, and no secrets.
-- [ ] Verify webhook intake stayed enabled throughout.
+- [x] Verify job 18 identity before resume: ID 18, exact name, schedule, target, active state.
+- [x] Verify job 19 identity and successful reconciliation runs.
+- [x] After recovery, verify the five abandoned leased rows stop gaining attempts; all five became `replayed` with leases cleared and succeeded-sibling pointers.
+- [ ] Verify the accepted unprocessed deliveries are fully handled by the approved worker path or have a documented disposition.
+- [x] Initiate Enveil order 8847 dead-letter replay through the supported path; verify its new work outcome remains open.
+- [ ] Verify the replayed Enveil work finishes without a new `[object Object]` error.
+- [x] Verify worker and reconciliation function versions after deployment: both v4, `ACTIVE`, `verify_jwt=false`.
+- [x] Verify audit rows contain change ID, commit, target, versions, and no secrets.
+- [x] Verify webhook intake stayed enabled throughout.
 
 ## Gate 8 — Evidence and merge decision
 
@@ -178,11 +178,12 @@ Use only a reversible status change on the test order:
 - Date/time:
 - PR commit:
 - Production change ID:
-- Migrations deployed: yes/no/not yet
-- Functions deployed: yes/no/not yet
-- Job 18 state:
-- Job 19 state:
-- Overall result: PASS / FAIL / BLOCKED
-- Remaining defects:
-- Remaining fidelity gaps:
-- Merge decision:
+- Migrations deployed: yes — four recovery migrations, audited under `CHG-2026-11-12-01`
+- Functions deployed: yes — worker/reconcile v4, `ACTIVE`, `verify_jwt=false`
+- Job 18 state: active after audited resume; exact identity `woocommerce-sync-worker-5min`, ID 18
+- Job 19 state: active and producing successful reconciliation runs
+- Recovery work state: five abandoned leases safely `replayed`; Enveil order 8847 replay initiated, outcome pending verification
+- Overall result: BLOCKED pending dead-letter replay outcome, accepted-delivery disposition, and bounded live Woo order tests
+- Remaining defects: historical `[object Object]` on the original dead-letter; accepted deliveries still require disposition; no bounded frontend inbound/outbound order evidence yet
+- Remaining fidelity gaps: currency, SKU, Woo product ID, variation ID, tax, denormalized customer snapshot
+- Merge decision: do not merge until the remaining gates pass and the PR head/CI are reverified

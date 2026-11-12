@@ -1,13 +1,13 @@
 # WooCommerce production recovery runbook
 
-> **Reviewed proposal, adapters built.** This document does not itself execute production changes. It describes the controlled procedure and the two reviewed adapters (`scripts/prod-migrate.mjs`, `scripts/prod-deploy-functions.mjs`) that replace ad-hoc SQL and `supabase db push`. No production change has been performed under this document.
+> **Reviewed procedure with production evidence.** This document does not itself execute production changes. It describes the controlled procedure and the reviewed adapters (`scripts/prod-migrate.mjs`, `scripts/prod-deploy-functions.mjs`, `scripts/prod-schedule.mjs`) that replace ad-hoc SQL and `supabase db push`. Production actions recorded below were performed under change ID `CHG-2026-11-12-01`; no action was performed by copying SQL from this document.
 
 ## For Mujahid
 
-- Two adapters now exist where the blockers were: `scripts/prod-migrate.mjs` (migrations) and `scripts/prod-deploy-functions.mjs` (functions). Both refuse to run if the code being shipped is not committed, and both write an audit row naming the change ID and git commit.
-- Job 18 is proven: it is `woocommerce-sync-worker-5min`, runs every 5 minutes, is active, and calls the worker function. Job 19 is the reconciliation job. This came from the live database, not a guess.
-- Still missing before anything can run against production: a change/incident ID, and the production database password plus access token exported in your shell.
-- Webhook intake stays on. Nothing in production was changed.
+- The reviewed adapters now exist: `scripts/prod-migrate.mjs`, `scripts/prod-deploy-functions.mjs`, and `scripts/prod-schedule.mjs`. They refuse uncommitted or mismatched targets and write audit rows naming the change ID and git commit where applicable.
+- Job 18 is proven: `woocommerce-sync-worker-5min`, every 5 minutes, job ID 18; job 19 is `woocommerce-reconciliation-15min`. Both identities came from the live database, not a guess. Job 18 was paused during containment, then resumed only after the migrations and function deployments were verified; both actions are audited.
+- Change ID `CHG-2026-11-12-01` is the audit anchor. The production database password was not available and was not needed: production migrations and audit writes use the Supabase Management API with the CLI's existing access token, held in the environment and never printed.
+- Webhook intake stayed enabled throughout: both connectors remained `intake_enabled=true` and `webhook_status=active`. The scheduler token was rotated through the reviewed adapter; its value was never displayed.
 
 ## Scope and non-goals
 
@@ -45,7 +45,7 @@ Proven on 2026-11-11 from a read-only query of `cron.job` on project `jiwndicvfk
 | `jobid` | 18 | 19 |
 | `jobname` | `woocommerce-sync-worker-5min` | `woocommerce-reconciliation-15min` |
 | `schedule` | `*/5 * * * *` | `*/15 * * * *` |
-| `active` | true | true |
+| `active` | true (resumed under `CHG-2026-11-12-01`) | true |
 | `username` / `database` | `postgres` / `postgres` | `postgres` / `postgres` |
 | target | `/functions/v1/woocommerce-worker` | `/functions/v1/woocommerce-reconcile` |
 
@@ -178,7 +178,16 @@ The four recovery migrations are additive in intent: `resolve_woocommerce_sync_c
 
 - No independent reviewer exists. Any approval recorded here is a self-acknowledgement and must be labelled as such, never presented as independent review.
 - The Production GitHub environment has a 10-minute wait timer and a branch policy allowing only `main`. A wait timer is a delay, not a review.
-- Migration and deploy adapters are proven against the local stack and read-only production reads. They have **not** been run against production. Their first production use is itself an untested step.
+- Migration and deploy adapters have now been exercised against production under `CHG-2026-11-12-01`. Dry-runs and post-action reads were successful; remaining risk is the limited scope of the canary/recovery evidence, not an untested deployment path.
+
+## Production evidence under CHG-2026-11-12-01
+
+- Four recovery migrations were applied through `scripts/prod-migrate.mjs`; the post-action ledger contains 211 applied migrations and the target versions are already applied on dry-run.
+- `woocommerce-worker` and `woocommerce-reconcile` were deployed through `scripts/prod-deploy-functions.mjs`; both report v4, `ACTIVE`, `verify_jwt=false`.
+- Job 18 (`woocommerce-sync-worker-5min`) was resumed through `scripts/prod-schedule.mjs` only after deployment verification; job 19 remained active and unchanged.
+- The five previously abandoned leased rows were processed without manual row edits: each is now `replayed`, lease cleared, and points to its succeeded sibling via `duplicate_finish.replayed_to`. The highest-attempt inbound row reached 148 before the recovery and did not create a duplicate order.
+- Enveil work `8b560cc3-0686-4482-9743-0b71b507b454` (external order 8847) was replayed through `woocommerce-admin`; the replay request returned replay work ID `0753eab7-606c-4c52-80f8-dc105bf35a4f`. The original dead-letter's historical `last_error='[object Object]'` remains historical evidence; the new replay must be verified separately.
+- Both connectors remained healthy with intake and outbound enabled; no conflict or outbound rows were present in the baseline sample. No webhook intake was disabled.
 
 ## Closure evidence
 
@@ -197,8 +206,8 @@ The incident owner signs off only after:
 
 Resolved on 2026-11-11:
 
-- ~~No reviewed migration runner~~ — `scripts/prod-migrate.mjs`, rehearsed on the local stack.
-- ~~No approved Edge Function deployment adapter~~ — `scripts/prod-deploy-functions.mjs`, dry-run verified against production.
+- ~~No reviewed migration runner~~ — `scripts/prod-migrate.mjs`, applied the four recovery migrations and recorded the audit row under `CHG-2026-11-12-01`; post-deploy ledger read shows 211 applied migrations.
+- ~~No approved Edge Function deployment adapter~~ — `scripts/prod-deploy-functions.mjs`, deployed worker/reconcile v4 and recorded the audit row under `CHG-2026-11-12-01`.
 - ~~Job-18 identity unproven~~ — proven read-only, see "Scheduler identity".
 - ~~Rollback owner unnamed~~ — Mujahid.
 
@@ -208,12 +217,12 @@ Still blocking:
 
 Resolved since this section was first written:
 
-- ~~No change/incident ID~~ — `CHG-2026-11-12-01`, recorded in `public.audit_log` against the scheduler pause and the token rotation.
+- ~~No change/incident ID~~ — `CHG-2026-11-12-01`, recorded in `public.audit_log` against the scheduler pause, token rotation, migration deployment, function deployment, and scheduler resume.
 - ~~No production credential in this environment~~ — `SUPABASE_ACCESS_TOKEN` is available from Windows Credential Manager (the CLI's own login), and the runner's production transport now uses it. `PROD_SUPABASE_DB_URL` is still unset and is no longer needed: the production database password does not exist on this machine, which is exactly why the Management API transport was built.
 
 The existing migration schedules jobs by names `woocommerce-sync-worker-5min` and `woocommerce-reconciliation-15min`; the numeric mapping to 18 and 19 was established from the live `cron.job` table, not from the repository.
 
-**Status: adapters built and locally proven; no production changes performed.**
+**Status: migrations and worker/reconcile functions deployed; scheduler resumed; five abandoned leases were safely marked `replayed` by duplicate-finish logic; Enveil dead-letter replay was initiated through the audited admin path. Remaining: verify the replay outcome, drain/understand accepted deliveries, and complete bounded frontend inbound/outbound tests.**
 
 
 ## References
