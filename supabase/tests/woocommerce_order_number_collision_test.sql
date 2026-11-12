@@ -14,6 +14,8 @@ DECLARE
   source uuid := '8d000000-0000-0000-0000-00000000f001';
   source2 uuid := '8d000000-0000-0000-0000-00000000f002';
   existing_order uuid := '8a000000-0000-0000-0000-00000000f001';
+  legacy_order uuid := '8a000000-0000-0000-0000-00000000f002';
+  legacy_customer uuid := '8b000000-0000-0000-0000-00000000f002';
   imported_order uuid;
   imported_order_2 uuid;
   imported_number text;
@@ -47,7 +49,17 @@ BEGIN
 
   -- Occupy the raw Woo number with an unrelated local order.
   INSERT INTO public.orders(id, business_id, store_id, order_number, source, status, payment_method, payment_status)
-  VALUES (existing_order, '11111111-0000-0000-0000-000000000001', store, '8847', 'manual', 'pending', 'cod', 'unpaid');
+  VALUES
+    (existing_order, '11111111-0000-0000-0000-000000000001', store, '8847', 'manual', 'pending', 'cod', 'unpaid'),
+    (legacy_order, '11111111-0000-0000-0000-000000000001', store, '8848', 'woocommerce', 'pending', 'cod', 'unpaid');
+  INSERT INTO public.customers(id, business_id, store_id, source, origin_kind, name, email, address, city)
+  VALUES (legacy_customer, '11111111-0000-0000-0000-000000000001', store, 'woocommerce', 'woo_sync', 'Legacy Buyer', 'legacy@collision.invalid', 'Old St', 'Dhaka');
+  INSERT INTO public.woocommerce_order_identities(
+    connector_id, external_order_id, order_id, external_order_number, last_external_status,
+    last_external_modified_at, last_external_payload
+  ) VALUES (
+    c, 8848, legacy_order, '8848', 'processing', timestamptz '2026-01-01 00:00:00+00', '{}'::jsonb
+  );
 
   imported_order := public.upsert_woocommerce_order(
     c, 8847, '8847', 'processing', timestamptz '2026-01-01 00:00:00+00',
@@ -77,6 +89,23 @@ BEGIN
     RAISE EXCEPTION 'Woo order prefix fixture was not configured';
   END IF;
 
+  -- A repeat delivery repairs the configured number and fills missing snapshots.
+  PERFORM public.upsert_woocommerce_order(
+    c, 8848, '8848', 'processing', timestamptz '2026-01-01 00:00:00+00',
+    100, 100, 0, 0, 'cod', 'pending', 'paid', 'Legacy Buyer', 'legacy@collision.invalid', NULL,
+    'Old St', 'Dhaka', NULL, NULL, NULL, timestamptz '2026-01-01 00:00:00+00',
+    '[]'::jsonb, jsonb_build_object('status', 'processing', 'currency', 'BDT'));
+  IF (SELECT order_number FROM public.orders WHERE id = legacy_order) <> 'SHOP-WC-8c000000-0000-0000-0000-00000000f001-8848-W'
+     OR (SELECT customer_name FROM public.orders WHERE id = legacy_order) <> 'Legacy Buyer'
+     OR (SELECT customer_email FROM public.orders WHERE id = legacy_order) <> 'legacy@collision.invalid'
+     OR (SELECT customer_address FROM public.orders WHERE id = legacy_order) <> 'Old St' THEN
+    RAISE EXCEPTION 'repeat Woo import did not repair order number and customer snapshot: number=% name=% email=% address=%',
+      (SELECT order_number FROM public.orders WHERE id = legacy_order),
+      (SELECT customer_name FROM public.orders WHERE id = legacy_order),
+      (SELECT customer_email FROM public.orders WHERE id = legacy_order),
+      (SELECT customer_address FROM public.orders WHERE id = legacy_order);
+  END IF;
+
   -- Repeated delivery/reconciliation for the same connector is idempotent.
   imported_order_2 := public.upsert_woocommerce_order(
     c, 8847, '8847', 'processing', timestamptz '2026-01-01 00:00:00+00',
@@ -91,7 +120,7 @@ BEGIN
   FROM public.orders AS o
   WHERE o.source = 'woocommerce' AND o.store_id = store;
   SELECT count(*) INTO identity_count FROM public.woocommerce_order_identities WHERE connector_id = c AND external_order_id = 8847;
-  IF order_count <> 1 OR identity_count <> 1 THEN
+  IF order_count <> 2 OR identity_count <> 1 THEN
     RAISE EXCEPTION 'repeated Woo import created duplicate rows: orders=% identities=%', order_count, identity_count;
   END IF;
 
