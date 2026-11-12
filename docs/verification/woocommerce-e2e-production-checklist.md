@@ -22,9 +22,9 @@ This checklist is for the PR branch running against the production Supabase proj
 
 ## Gate 0 — Change and environment identity
 
-- [ ] Confirm the test change/incident ID: `CHG-2026-11-12-01`.
-- [ ] Confirm the browser app is the PR branch build, not the `main` deployment.
-- [ ] Confirm the app points to Supabase project `jiwndicvfkiltgageqwv`.
+- [x] Confirm the test change/incident ID: `CHG-2026-11-12-01`.
+- [x] Confirm the browser app is the PR branch build, not the `main` deployment` — preview URL and local PR build verified.
+- [x] Confirm the app points to Supabase project `jiwndicvfkiltgageqwv` — local PR build used the production URL/key in process memory; no key was persisted.
 - [x] Confirm no production migrations, functions, scheduler, webhook, or order writes occur before the read-only baseline is captured.
 - [x] Confirm job 18 is active after the audited resume, job 19 is active, and webhook intake is enabled.
 - [x] Confirm the scheduler-secret rotation audit row exists and no secret value is displayed.
@@ -136,18 +136,18 @@ Use only a reversible status change on the test order:
 - [x] After recovery, verify the five abandoned leased rows stop gaining attempts; all five became `replayed` with leases cleared and succeeded-sibling pointers.
 - [ ] Verify the accepted unprocessed deliveries are fully handled by the approved worker path or have a documented disposition.
 - [x] Initiate Enveil order 8847 dead-letter replay through the supported path; verify its new work outcome remains open.
-- [ ] Verify the replayed Enveil work finishes without a new `[object Object]` error.
+- [x] Verify the replayed Enveil work finishes without a new `[object Object]` error — second replay succeeded; health showed no dead letters, queue `replayed=2, succeeded=1`, latest reconciliation succeeded with `error_class=null` and `last_error=null`.
 - [x] Verify worker and reconciliation function versions after deployment: both v4, `ACTIVE`, `verify_jwt=false`.
 - [x] Verify audit rows contain change ID, commit, target, versions, and no secrets.
 - [x] Verify webhook intake stayed enabled throughout.
 
 ## Gate 8 — Evidence and merge decision
 
-- [ ] Attach a redacted evidence table with every Woo order ID, DokanOS order ID, delivery ID, work ID, final state, and timestamp.
+- [ ] Attach a redacted evidence table with every Woo order ID, DokanOS order ID, delivery ID, work ID, final state, and timestamp. Current evidence covers recovery/replay IDs; bounded new frontend order IDs are still absent.
 - [ ] Record known fidelity gaps separately: currency, SKU, Woo product ID, variation ID, tax, and denormalized customer snapshot.
-- [ ] Record every failed scenario, root cause, code fix, commit, and rerun result.
-- [ ] Run typecheck, unit tests, SQL regression, browser tests, and CI required checks again after any fix.
-- [ ] Confirm branch protection checks are green and the PR head is current.
+- [x] Record the replay failure, root cause, code fix, production migration, and rerun result in the runbook; [ ] bounded frontend failures/results remain to be recorded.
+- [ ] Run typecheck, unit tests, SQL regression, browser tests, and CI required checks again after any fix — local checks are green; CI for the current head remains to be rechecked.
+- [ ] Confirm branch protection checks are green and the PR head is current — branch protection is configured; current-head CI and PR status remain to be rechecked.
 - [ ] Merge only after all required gates pass; deployment and cron resumption remain separate approved actions.
 
 ## Explicitly out of scope for this pass
@@ -178,12 +178,12 @@ Use only a reversible status change on the test order:
 - Date/time:
 - PR commit:
 - Production change ID:
-- Migrations deployed: yes — four recovery migrations, audited under `CHG-2026-11-12-01`
+- Migrations deployed: yes — five recovery migrations, audited under `CHG-2026-11-12-01`
 - Functions deployed: yes — worker/reconcile v4, `ACTIVE`, `verify_jwt=false`
 - Job 18 state: active after audited resume; exact identity `woocommerce-sync-worker-5min`, ID 18
 - Job 19 state: active and producing successful reconciliation runs
-- Recovery work state: five abandoned leases safely `replayed`; Enveil order 8847 replay initiated, outcome pending verification
-- Overall result: BLOCKED pending dead-letter replay outcome, accepted-delivery disposition, and bounded live Woo order tests
-- Remaining defects: historical `[object Object]` on the original dead-letter; accepted deliveries still require disposition; no bounded frontend inbound/outbound order evidence yet
+- Recovery work state: five abandoned leases safely `replayed`; Enveil order 8847 replay completed with no current dead letter
+- Overall result: BLOCKED pending accepted-delivery disposition and bounded live Woo order tests
+- Remaining defects: historical `[object Object]` remains only on the original dead-letter; accepted deliveries still require disposition; no bounded frontend inbound/outbound order evidence yet
 - Remaining fidelity gaps: currency, SKU, Woo product ID, variation ID, tax, denormalized customer snapshot
 - Merge decision: do not merge until the remaining gates pass and the PR head/CI are reverified

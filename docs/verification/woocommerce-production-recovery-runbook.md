@@ -172,7 +172,7 @@ Rollback paths, in order of preference:
 2. **Scheduler** — re-enable the verified job through the approved scheduler control. Confirm `active` is true and the job name/schedule are unchanged.
 3. **Schema** — a schema rollback must be a new reviewed migration applied through `scripts/prod-migrate.mjs`. Never reverse a migration with ad-hoc SQL.
 
-The four recovery migrations are additive in intent: `resolve_woocommerce_sync_conflict` and the corrections policy are replaced objects, `woocommerce_delivery_accepted_*` are new indexes, and `finish_woocommerce_sync_work` is a `CREATE OR REPLACE`. Rolling back the duplicate-finish behaviour means re-applying the previous function body as a new reviewed migration, not dropping data.
+The five recovery migrations are additive in intent: `resolve_woocommerce_sync_conflict` and the corrections policy are replaced objects, `woocommerce_delivery_accepted_*` are new indexes, `finish_woocommerce_sync_work` and `upsert_woocommerce_order` are `CREATE OR REPLACE` functions. The order-number migration namespaces new Woo imports by full connector UUID while preserving the raw Woo number in the identity row; existing identity rows are unchanged. Rolling back a function behaviour means re-applying the previous function body as a new reviewed migration, not dropping data.
 
 ## Known residual risk
 
@@ -182,11 +182,11 @@ The four recovery migrations are additive in intent: `resolve_woocommerce_sync_c
 
 ## Production evidence under CHG-2026-11-12-01
 
-- Four recovery migrations were applied through `scripts/prod-migrate.mjs`; the post-action ledger contains 211 applied migrations and the target versions are already applied on dry-run.
+- Five recovery migrations were applied through `scripts/prod-migrate.mjs`; the post-action ledger contains 212 applied migrations and the target versions are already applied on dry-run. The fifth is `20261112120000_woocommerce_order_number_namespace` under the same change ID.
 - `woocommerce-worker` and `woocommerce-reconcile` were deployed through `scripts/prod-deploy-functions.mjs`; both report v4, `ACTIVE`, `verify_jwt=false`.
 - Job 18 (`woocommerce-sync-worker-5min`) was resumed through `scripts/prod-schedule.mjs` only after deployment verification; job 19 remained active and unchanged.
 - The five previously abandoned leased rows were processed without manual row edits: each is now `replayed`, lease cleared, and points to its succeeded sibling via `duplicate_finish.replayed_to`. The highest-attempt inbound row reached 148 before the recovery and did not create a duplicate order.
-- Enveil work `8b560cc3-0686-4482-9743-0b71b507b454` (external order 8847) was replayed through `woocommerce-admin`; the replay request returned replay work ID `0753eab7-606c-4c52-80f8-dc105bf35a4f`. The original dead-letter's historical `last_error='[object Object]'` remains historical evidence; the new replay must be verified separately.
+- Enveil work `8b560cc3-0686-4482-9743-0b71b507b454` (external order 8847) was replayed through `woocommerce-admin`; the first replay work `0753eab7-606c-4c52-80f8-dc105bf35a4f` exposed the real `uq_orders_order_number` collision and dead-lettered without `[object Object]`. After applying `20261112120000_woocommerce_order_number_namespace` through the audited runner, a second connector-scoped replay returned work `18ac3e58-36f9-454c-b526-8c0d8e78ec7d`; health then showed no dead letters, queue counts `replayed=2, succeeded=1`, and the latest reconciliation succeeded with `error_class=null` and `last_error=null`.
 - Both connectors remained healthy with intake and outbound enabled; no conflict or outbound rows were present in the baseline sample. No webhook intake was disabled.
 
 ## Closure evidence
@@ -222,7 +222,7 @@ Resolved since this section was first written:
 
 The existing migration schedules jobs by names `woocommerce-sync-worker-5min` and `woocommerce-reconciliation-15min`; the numeric mapping to 18 and 19 was established from the live `cron.job` table, not from the repository.
 
-**Status: migrations and worker/reconcile functions deployed; scheduler resumed; five abandoned leases were safely marked `replayed` by duplicate-finish logic; Enveil dead-letter replay was initiated through the audited admin path. Remaining: verify the replay outcome, drain/understand accepted deliveries, and complete bounded frontend inbound/outbound tests.**
+**Status: five migrations and worker/reconcile functions deployed; scheduler resumed; five abandoned leases were safely marked `replayed` by duplicate-finish logic; Enveil order 8847 replay now completes with no dead letters and no new `[object Object]`; accepted-delivery disposition and bounded frontend inbound/outbound tests remain.**
 
 
 ## References
