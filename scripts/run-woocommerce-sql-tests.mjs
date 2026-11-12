@@ -56,6 +56,10 @@ const TESTS = [
     file: "woocommerce_conflict_resolution_test.sql",
     requires: ["20261110110000_woocommerce_conflict_resolution.sql"],
   },
+  {
+    file: "woocommerce_order_number_collision_test.sql",
+    requires: ["20261112120000_woocommerce_order_number_namespace.sql"],
+  },
 ];
 
 function localDbUrl() {
