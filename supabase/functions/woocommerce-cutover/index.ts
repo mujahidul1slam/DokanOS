@@ -1,5 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import {
+  describeWooExternalOrderId,
+  isValidWooExternalOrderId,
   matchWooOrder,
   planCutoverEnqueue,
   type CutoverIdentity,
@@ -17,7 +19,7 @@ const corsHeaders = {
 // Raw WooCommerce v3 order fields consumed by the cutover scanner. Only these
 // external facts are trusted; payload tenant identifiers are never read.
 type WooOrder = {
-  id?: number;
+  id?: unknown;
   status?: string;
   date_modified_gmt?: string;
   date_created_gmt?: string;
@@ -67,8 +69,8 @@ function isoOrUndefined(value: string | null | undefined): string | undefined {
 function toCutoverOrder(value: unknown): CutoverOrder | null {
   if (!value || typeof value !== "object") return null;
   const order = value as WooOrder;
-  const externalId = asNumber(order.id);
-  if (externalId === null) return null;
+  if (!isValidWooExternalOrderId(order.id)) return null;
+  const externalId = order.id;
   const billing = order.billing ?? {};
   const sku = (order.line_items ?? []).map((item) => item.sku).find((item) => typeof item === "string" && item.trim());
   return {
@@ -131,7 +133,7 @@ Deno.serve(async (req) => {
   const auth = credentials(connector.data.credentials_ref);
   const token = btoa(`${auth.consumer_key}:${auth.consumer_secret}`);
   let url: string | null = `${connector.data.external_store_url.replace(/\/$/, "")}/wp-json/wc/v3/orders?modified_after=${encodeURIComponent(start.toISOString())}&modified_before=${encodeURIComponent(end.toISOString())}&orderby=modified&order=asc&per_page=100&page=1`;
-  let pages = 0; let requests = 0; let discovered = 0; let enqueued = 0; let exact = 0; let review = 0; let unmapped = 0; let failures = 0;
+  let pages = 0; let requests = 0; let discovered = 0; let enqueued = 0; let exact = 0; let review = 0; let unmapped = 0; let failures = 0; const conflicts = 0;
   const pageMetadata: unknown[] = [];
   const failureDetails: string[] = [];
   try {
@@ -141,11 +143,16 @@ Deno.serve(async (req) => {
       .select("external_order_id,order_id").eq("connector_id", connectorId);
     if (identitiesResult.error) throw new Error(`woocommerce_identity_lookup_failed: ${identitiesResult.error.message}`);
     const identityRows = identitiesResult.data ?? [];
-    const identities: CutoverIdentity[] = identityRows.map((row) => ({
-      connectorId,
-      externalOrderId: Number(row.external_order_id),
-      localOrderId: row.order_id,
-    }));
+    const identities: CutoverIdentity[] = identityRows.flatMap((row) => {
+      const externalOrderId = typeof row.external_order_id === "number"
+        ? row.external_order_id
+        : typeof row.external_order_id === "string" && /^[1-9]\d*$/.test(row.external_order_id)
+          ? Number(row.external_order_id)
+          : null;
+      return externalOrderId !== null && isValidWooExternalOrderId(externalOrderId)
+        ? [{ connectorId, externalOrderId, localOrderId: row.order_id }]
+        : [];
+    });
     const knownLocalIds = new Set(identityRows.map((row) => row.order_id));
     // Only legacy `woocommerce` Orders inside this connector's Business without
     // a provable external identity are fuzzy-review candidates. Rows with an
@@ -178,7 +185,21 @@ Deno.serve(async (req) => {
       for (const value of payload) {
         const order = value as WooOrder;
         const cutoverOrder = toCutoverOrder(value);
-        if (!cutoverOrder) { failures += 1; continue; }
+        if (!cutoverOrder) {
+          const malformedId = value && typeof value === "object" ? (value as WooOrder).id : undefined;
+          failures += 1;
+          const malformedDetail = `Malformed WooCommerce order payload: external ID is ${describeWooExternalOrderId(malformedId)}`;
+          failureDetails.push(malformedDetail);
+          const item = await sb.from("woocommerce_cutover_report_items").insert({
+            run_id: runRow.id, connector_id: connectorId, external_order_id: null,
+            external_status: typeof (value as WooOrder)?.status === "string" ? (value as WooOrder).status : null,
+            match_kind: "unmapped", local_order_id: null, fuzzy_candidate_ids: [], fuzzy_signals: [],
+            outcome: "failed", work_id: null, failure_class: "incomplete", failure_detail: malformedDetail,
+            external_snapshot: value,
+          });
+          if (item.error) failureDetails.push(item.error.message.slice(0, 500));
+          continue;
+        }
         const externalId = cutoverOrder.id!;
         const status = cutoverOrder.status;
         const match = matchWooOrder(cutoverOrder, connectorId, identities, legacyOrders);
@@ -236,11 +257,16 @@ Deno.serve(async (req) => {
     }
     if (url) failures += 1;
     const finalState = failures > 0 ? "partial" : dryRun ? "dry_run_complete" : "backfill_complete";
-    await sb.rpc("finish_woocommerce_cutover_run", { p_run_id: runRow.id, p_state: finalState, p_pages: pages, p_requests: requests, p_discovered: discovered, p_enqueued: enqueued, p_exact_matches: exact, p_review_candidates: review, p_unmapped: unmapped, p_failure_count: failures, p_conflict_count: review, p_page_metadata: pageMetadata, p_report_metadata: { dry_run: dryRun, failure_details: failureDetails.slice(0, 10) } });
+    const finished = await sb.rpc("finish_woocommerce_cutover_run", { p_run_id: runRow.id, p_state: finalState, p_pages: pages, p_requests: requests, p_discovered: discovered, p_enqueued: enqueued, p_exact_matches: exact, p_review_candidates: review, p_unmapped: unmapped, p_failure_count: failures, p_conflict_count: conflicts, p_page_metadata: pageMetadata, p_report_metadata: { dry_run: dryRun, failure_details: failureDetails.slice(0, 10) } });
+    if (finished.error || finished.data !== true) throw new Error(finished.error?.message ?? "cutover_run_finish_failed");
     return response({ run_id: runRow.id, state: finalState, dry_run: dryRun, window: { start: start.toISOString(), end: end.toISOString() }, pages, requests, discovered, enqueued, exact_matches: exact, review_candidates: review, unmapped, failures, failure_details: failureDetails.slice(0, 10) });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    await sb.rpc("finish_woocommerce_cutover_run", { p_run_id: runRow.id, p_state: "failed", p_pages: pages, p_requests: requests, p_discovered: discovered, p_enqueued: enqueued, p_exact_matches: exact, p_review_candidates: review, p_unmapped: unmapped, p_failure_count: failures + 1, p_conflict_count: review, p_page_metadata: pageMetadata, p_last_error: message.slice(0, 1000), p_error_class: "transport" });
-    return response({ error: "cutover_failed", run_id: runRow.id }, 502);
+    const failed = await sb.rpc("finish_woocommerce_cutover_run", { p_run_id: runRow.id, p_state: "failed", p_pages: pages, p_requests: requests, p_discovered: discovered, p_enqueued: enqueued, p_exact_matches: exact, p_review_candidates: review, p_unmapped: unmapped, p_failure_count: failures + 1, p_conflict_count: conflicts, p_page_metadata: pageMetadata, p_last_error: message.slice(0, 1000), p_error_class: "transport" });
+    if (failed.error || failed.data !== true) {
+      const finishMessage = failed.error?.message ?? "cutover_run_finish_failed";
+      return response({ error: "cutover_failed", run_id: runRow.id, detail: `${message}; finish_failed: ${finishMessage}` }, 502);
+    }
+    return response({ error: "cutover_failed", run_id: runRow.id, detail: message }, 502);
   }
 });

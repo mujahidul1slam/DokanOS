@@ -39,6 +39,23 @@ export type BackfillFailure = {
   detail: string;
 };
 
+export function describeWooExternalOrderId(value: unknown): string {
+  if (value === undefined) return "missing";
+  if (value === null) return "null";
+  if (typeof value === "string") return "string";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "non-finite number";
+    if (!Number.isInteger(value)) return "fractional number";
+    if (value <= 0) return "non-positive number";
+    if (!Number.isSafeInteger(value)) return "unsafe integer";
+  }
+  return typeof value;
+}
+
+export function isValidWooExternalOrderId(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
 export type BackfillItem = {
   externalOrderId?: number;
   status: string;
@@ -127,7 +144,7 @@ export function matchWooOrder(
   identities: readonly CutoverIdentity[],
   legacyOrders: readonly CutoverOrder[],
 ): CutoverMatch {
-  if (remote.id !== undefined) {
+  if (isValidWooExternalOrderId(remote.id)) {
     const exact = identities.find(
       (identity) => identity.connectorId === connectorId && identity.externalOrderId === remote.id,
     );
@@ -173,8 +190,8 @@ export function createBackfillPlan(input: {
       failures.push({ kind: "unsupported_status", externalOrderId: remote.id, detail: `Unsupported WooCommerce status: ${remote.status}` });
       continue;
     }
-    if (remote.id === undefined) {
-      failures.push({ kind: "incomplete", detail: "WooCommerce Order has no external ID" });
+    if (!isValidWooExternalOrderId(remote.id)) {
+      failures.push({ kind: "incomplete", detail: "WooCommerce Order has no valid positive integer external ID" });
       continue;
     }
     if (input.dryRun) continue;

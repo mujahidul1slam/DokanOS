@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildCutoverWindow,
   createBackfillPlan,
+  describeWooExternalOrderId,
+  isValidWooExternalOrderId,
   matchWooOrder,
   planCutoverEnqueue,
   type CutoverIdentity,
@@ -32,6 +34,32 @@ describe("WooCommerce cutover window", () => {
     const window = buildCutoverWindow(watermark);
     expect(window.contains("2026-11-03T00:00:00.000Z")).toBe(true);
     expect(window.contains("2026-11-10T00:00:00.000Z")).toBe(false);
+  });
+});
+
+describe("WooCommerce external order IDs", () => {
+  it("accepts only positive safe integer numbers without coercion", () => {
+    expect(isValidWooExternalOrderId(42)).toBe(true);
+    expect(describeWooExternalOrderId(undefined)).toBe("missing");
+    expect(describeWooExternalOrderId("42")).toBe("string");
+    expect(describeWooExternalOrderId(1.5)).toBe("fractional number");
+    for (const value of [undefined, null, "42", 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN]) {
+      expect(isValidWooExternalOrderId(value)).toBe(false);
+    }
+  });
+
+  it("audits malformed IDs as incomplete planner failures", () => {
+    const report = createBackfillPlan({
+      connectorId: "connector-a",
+      watermark,
+      dryRun: true,
+      remoteOrders: [{ ...remote, id: 0 }, { ...remote, id: 1.5 }, { ...remote, id: undefined }],
+      identities: [],
+      legacyOrders: [],
+    });
+    expect(report.items).toHaveLength(3);
+    expect(report.failures).toHaveLength(3);
+    expect(report.failures.every((failure) => failure.kind === "incomplete")).toBe(true);
   });
 });
 
