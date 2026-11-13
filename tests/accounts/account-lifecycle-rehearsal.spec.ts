@@ -46,7 +46,8 @@ type World = {
   user: typeof owner;
   memberships: Membership[];
   brands: Record<string, unknown>[];
-  stores: Record<string, unknown>[];
+  /** Order sources — the post-Task-16 replacement for brand stores. */
+  sources: Record<string, unknown>[];
   invitations: Record<string, unknown>[];
   describe?: unknown;
   accept?: unknown;
@@ -107,8 +108,33 @@ async function installHarness(page: Page, world: World) {
       await route.fulfill({ json: [...world.brands] });
       return;
     }
-    if (url.pathname.endsWith("/brand_stores") && method === "GET") {
-      await route.fulfill({ json: [...world.stores] });
+    if (url.pathname.endsWith("/order_sources") && method === "GET") {
+      await route.fulfill({ json: [...world.sources] });
+      return;
+    }
+    if (url.pathname.endsWith("/order_sources") && method === "POST") {
+      const source = {
+        id: `66666666-0000-0000-0000-${String(world.sources.length + 1).padStart(12, "0")}`,
+        brand_id: body?.brand_id,
+        name: body?.name,
+        type: body?.type,
+        config: {},
+        sync_direction: null,
+        last_sync_at: null,
+        last_sync_error: null,
+        is_stock_holding: body?.is_stock_holding ?? false,
+        is_default: false,
+        ship_from_store: false,
+        fulfillment_preference: [],
+        accepted_payment_methods: ["cod", "cash"],
+        legacy_woo_store_id: null,
+      };
+      world.sources.push(source);
+      await route.fulfill({ json: source });
+      return;
+    }
+    if (url.pathname.endsWith("/stores") || url.pathname.endsWith("/warehouses") || url.pathname.endsWith("/orders")) {
+      await route.fulfill({ json: [] });
       return;
     }
     if (url.pathname.endsWith("/selling_points")) {
@@ -129,18 +155,9 @@ async function installHarness(page: Page, world: World) {
       await route.fulfill({ json: brand });
       return;
     }
-    if (url.pathname.endsWith("/rpc/create_brand_store")) {
-      const store = {
-        id: `55555555-0000-0000-0000-${String(world.stores.length + 1).padStart(12, "0")}`,
-        brand_id: body?.p_brand_id,
-        name: body?.p_name,
-        store_type: body?.p_store_type,
-        is_published: false,
-      };
-      world.stores.push(store);
-      await route.fulfill({ json: store });
-      return;
-    }
+    // The retired brand-store RPC is deliberately NOT mocked: the contract
+    // migration dropped it, so a call to it must fall through and fail rather
+    // than be quietly answered. The spec asserts the path is never requested.
     if (url.pathname.endsWith("/rpc/invite_business_member")) {
       const invitation = {
         id: `22222222-0000-0000-0000-${String(world.invitations.length + 1).padStart(12, "0")}`,
@@ -206,7 +223,7 @@ async function signedIn(page: Page, user: typeof owner, businessId?: string) {
 }
 
 function world(): World {
-  return { user: owner, memberships: [], brands: [], stores: [], invitations: [], writes: [], paths: [] };
+  return { user: owner, memberships: [], brands: [], sources: [], invitations: [], writes: [], paths: [] };
 }
 
 test("an owner rehearses signup -> verification -> business -> brand -> physical and online stores without old-model provisioning", async ({ page }) => {
@@ -254,21 +271,29 @@ test("an owner rehearses signup -> verification -> business -> brand -> physical
   expect(state.brands).toHaveLength(1);
   expect(state.brands[0].woo_store_id).toBeNull();
 
-  // ---- a physical and an online store under that brand ----
-  // (Task 11: StoresHub retired — store creation lives on the Brands page.)
-  await page.goto("/brands");
-  await expect(page.getByText("Rehearsal Brand", { exact: true })).toBeVisible();
-  for (const [name, type] of [["Rehearsal Outlet", "Physical store"], ["Rehearsal Online", "Online store"]] as const) {
-    await page.getByRole("button", { name: "New Store", exact: true }).click();
+  // ---- a physical and a digital order source under that brand ----
+  // (Task 11 retired the StoresHub; the Task 16 contract migration dropped
+  // brand_stores + create_brand_store. A merchant now names the places orders
+  // come from as ORDER SOURCES on the Integrations page.)
+  await page.goto("/integrations");
+  await expect(page.getByRole("heading", { name: "Order Sources", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rehearsal Brand", exact: true })).toBeVisible();
+  for (const [name, type] of [["Rehearsal Outlet", "Physical store"], ["Rehearsal Online", "Storefront"]] as const) {
+    const section = page.getByRole("region", { name: "Order sources — Rehearsal Brand" });
+    await section.getByRole("button", { name: "Add source" }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Store name").fill(name);
-    await dialog.getByLabel("Parent brand").selectOption({ label: "Rehearsal Brand" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Name", { exact: true }).fill(name);
     await dialog.getByLabel(type).check();
-    await dialog.getByRole("button", { name: "Create store" }).click();
+    await dialog.getByRole("button", { name: "Create source" }).click();
     await expect(dialog).toHaveCount(0);
   }
-  expect(state.stores.map((store) => store.store_type).sort()).toEqual(["online", "physical"]);
-  expect(state.stores.every((store) => store.is_published === false)).toBe(true);
+  expect(state.sources.map((source) => source.type).sort()).toEqual(["physical_store", "storefront"]);
+  // Physical sources hold stock by default; the storefront source does not.
+  expect(state.sources.find((source) => source.type === "physical_store")?.is_stock_holding).toBe(true);
+  expect(state.sources.find((source) => source.type === "storefront")?.is_stock_holding).toBe(false);
+  // No legacy brand-store row was created behind the merchant's back.
+  expect(state.paths.some((path) => path.endsWith("/rpc/create_brand_store"))).toBe(false);
 
   // No business, brand, store, storefront or platform role was auto-provisioned.
   expect(state.paths.some((path) => path.endsWith("/signup-provision"))).toBe(false);

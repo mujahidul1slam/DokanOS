@@ -28,7 +28,7 @@ concurrency:
 jobs:
   gate:
     name: Typecheck + Test + Browser
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +42,14 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium --with-deps
+        ## No --with-deps: the ubuntu-24.04 image already ships every runtime
+        ## library Chromium needs (libnss3, libgbm1, libasound2t64, libatk*,
+        ## libx*). --with-deps adds an apt-get install for 9 font packages only,
+        ## and that apt call cannot resolve azure.archive.ubuntu.com from these
+        ## runners. It failed identically on four attempts and made the gate
+        ## unrunnable. The suite has no screenshot assertions, so fonts are not
+        ## needed.
+        run: npx playwright install chromium
 
       - name: Typecheck
         run: npm run typecheck
@@ -54,6 +61,55 @@ jobs:
         run: npm run test:browser
         env:
           PLAYWRIGHT_CHANNEL: ""
+
+  sql:
+    ## Rollback-only rehearsal of the WooCommerce SQL regression battery.
+    ##
+    ## WHY THIS EXISTS
+    ## supabase/tests/woocommerce_*_test.sql are the only tests that exercise the
+    ## real PostgreSQL schema — triggers, RPCs, RLS and idempotency asserted
+    ## against a database built by the actual migrations, not mocks. Every file
+    ## owns its own BEGIN; ... ROLLBACK; block, so a run proves the migrations
+    ## apply and the RPCs behave while leaving nothing behind.
+    ##
+    ## They ran nowhere before this job. `npm run test:local:woocommerce-sql` is
+    ## local-only and refuses any non-local host, so nothing caught a migration
+    ## that stopped applying or a trigger that stopped firing until someone
+    ## remembered to run it by hand. A fresh `supabase db reset` puts every
+    ## migration in the local ledger, so the runner's --with-pending flag is
+    ## never needed here.
+    ##
+    ## No secrets: the whole job talks to the throwaway local Docker stack.
+    name: Migration rehearsal + SQL regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase stack
+        run: supabase start
+
+      - name: Rehearse every migration from scratch
+        run: supabase db reset
+
+      - name: WooCommerce SQL regression tests
+        run: npm run test:local:woocommerce-sql
+
+      - name: Stop stack
+        if: always()
+        run: supabase stop
 
   smoke:
     ## Opt-in: set repository variable SMOKE=true or dispatch manually.

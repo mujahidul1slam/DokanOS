@@ -442,12 +442,13 @@ test("an account member reaches operational routes and can create orders without
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
   await expect(page.getByText("Access denied")).toHaveCount(0);
-  for (const label of ["Analytics", "Order Sources", "Storefronts"]) {
+  for (const label of ["Analytics", "Integrations", "Storefronts"]) {
     await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
-  // Task 11: the integrations area and the StoresHub are retired; the nav
-  // points at Order Sources / business settings instead.
-  await expect(page.getByRole("link", { name: "Integrations", exact: true })).toHaveCount(0);
+  // Task 11 retired the StoresHub, then a5ab695 moved order sources onto the
+  // Integrations page: the nav entry is "Integrations" (/integrations) and the
+  // old /order-sources path redirects there.
+  await expect(page.getByRole("link", { name: "Order Sources", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Stores", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Team", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Members", exact: true })).toHaveCount(0);
