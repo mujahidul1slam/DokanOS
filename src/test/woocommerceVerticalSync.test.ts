@@ -511,9 +511,10 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
     expect(Number(row.discount)).toBe(50);
     expect(Number(row.subtotal)).toBe(1350);
 
-    // Identity and provenance.
+    // Identity and provenance. The v2 contract appends exactly one Woo source
+    // suffix and retains the external number in the identity row.
     expect(row).toMatchObject({
-      order_number: `WC-${externalOrderId}`,
+      order_number: `WC-${externalOrderId}-W`,
       source: "woocommerce",
       payment_method: "cod",
       business_id: fixture.businessId,
@@ -521,18 +522,16 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
       order_source_id: fixture.orderSourceId,
     });
 
-    // Status mapping: Woo `processing` -> local `pending`, paid.
-    expect(row.status).toBe("pending");
-    expect(row.payment_status).toBe("paid");
+    // Status mapping: Woo `processing` -> DokanOS New Order, paid.
+    expect(row.status).toBe("new_order");
+    expect(row.payment_status).toBe("unpaid");
     expect(row.woocommerce_external_status).toBe("processing");
     expect(row.woocommerce_external_status_at).not.toBeNull();
     // The customer note is the one customer-facing fact the import does copy.
     expect(row.notes).toBe("Leave at the side gate");
 
-    // Customer facts land in `public.customers` (the RPC resolves-or-creates the
-    // customer by email/phone), but the denormalized snapshot columns on
-    // `public.orders` are left NULL. Asserting both halves pins the actual
-    // behaviour and keeps the gap visible instead of silently assumed.
+    // Customer facts land in `public.customers` and the v2 contract also keeps
+    // the denormalized order snapshot for the imported customer.
     const customer = await db.query(
       `SELECT id, name, email, phone, address, city, zone, area, source, origin_kind
        FROM public.customers WHERE business_id = $1`,
@@ -553,12 +552,11 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
     // The order is linked to that customer…
     const linked = await db.query("SELECT customer_id FROM public.orders WHERE id = $1", [row.id]);
     expect(linked.rows[0].customer_id).toBe(customer.rows[0].id);
-    // …but the order's own customer snapshot is not populated by the import.
-    // This is the documented fidelity gap (handoff defect 7), not an accident.
-    expect(row.customer_name).toBeNull();
-    expect(row.customer_email).toBeNull();
-    expect(row.customer_phone).toBeNull();
-    expect(row.customer_city).toBeNull();
+    // …and the order keeps a denormalized customer snapshot for display.
+    expect(row.customer_name).toBe("Nadia Rahman");
+    expect(row.customer_email).toBe("nadia.vertical@example.test");
+    expect(row.customer_phone).toBe("+8801700000000");
+    expect(row.customer_city).toBe("Dhaka");
 
     // Line items: the SQL contract imports name/quantity/price/total only. This
     // assertion documents the fidelity gap (no SKU, no product_id, no tax) so
@@ -651,7 +649,7 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
     const before = woo.requests.length;
 
     const updated = await db.query(
-      "UPDATE public.orders SET status = 'delivered' WHERE business_id = $1 RETURNING id, status",
+      "UPDATE public.orders SET payment_status = 'paid', status = 'delivered' WHERE business_id = $1 RETURNING id, status",
       [fixture.businessId],
     );
     expect(updated.rows).toHaveLength(1);

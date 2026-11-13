@@ -4,6 +4,10 @@ import {
   classifyWooFailure,
   isStaleWooOrder,
   mapWooOrderStatus,
+  mapWooFulfillmentType,
+  mapWooLocalStatus,
+  mapWooPaymentStatus,
+  hasWooPreOrderItem,
   nextWooPageUrl,
   outboundIdempotencyKey,
   outboundWooStatus,
@@ -40,6 +44,63 @@ describe("WooCommerce operations contract", () => {
   it("makes rollback containment explicit and resume deliberate", () => {
     expect(rollbackWooConnectorPatch()).toEqual({ status: "rolled_back", intake_enabled: false, outbound_enabled: false });
     expect(resumeWooConnectorPatch()).toEqual({ status: "healthy", intake_enabled: true, outbound_enabled: true });
+  });
+});
+
+describe("WooCommerce connector recovery requirements", () => {
+  it("maps paid Woo processing orders to DokanOS New Order", () => {
+    expect(mapWooOrderStatus("processing", false, "bacs")).toMatchObject({
+      outcome: "fulfillment_eligible",
+      createsCourierWork: true,
+      localStatus: "new_order",
+      paymentStatus: "paid",
+    });
+  });
+
+  it("keeps COD processing orders unpaid", () => {
+    expect(mapWooOrderStatus("processing", false, "cod")).toMatchObject({
+      localStatus: "new_order",
+      paymentStatus: "unpaid",
+    });
+  });
+
+  it("keeps unpaid Woo pending orders in payment pending", () => {
+    expect(mapWooOrderStatus("pending")).toMatchObject({
+      outcome: "payment_needs_confirmation",
+      createsCourierWork: false,
+      localStatus: "payment_pending",
+      paymentStatus: "unpaid",
+    });
+  });
+
+  it.each([
+    ["walk-in", "walkin"],
+    ["walkin", "walkin"],
+    ["local_pickup", "walkin"],
+    ["flat_rate", "delivery"],
+    ["courier", "delivery"],
+    ["", "delivery"],
+    [null, "delivery"],
+  ] as const)("maps Woo shipping method %s to DokanOS %s", (method, expected) => {
+    expect(mapWooFulfillmentType(method)).toBe(expected);
+  });
+
+  it("maps processing and pending states for the worker RPC", () => {
+    expect(mapWooLocalStatus("processing")).toBe("new_order");
+    expect(mapWooLocalStatus("processing", true)).toBe("pre_order_pending");
+    expect(mapWooLocalStatus("pending")).toBe("payment_pending");
+    expect(mapWooPaymentStatus("processing", "bacs")).toBe("paid");
+    expect(mapWooPaymentStatus("processing", "cod")).toBe("unpaid");
+    expect(mapWooPaymentStatus("completed", "cash_on_delivery")).toBe("unpaid");
+    expect(mapWooPaymentStatus("pending", "bacs")).toBe("unpaid");
+  });
+
+  it("classifies mixed Woo items as pre-order when any item is configured", () => {
+    expect(hasWooPreOrderItem([
+      { product_id: 10, categories: [{ id: 3 }, { id: 7 }] },
+      { product_id: 11, categories: [{ id: 9 }] },
+    ], new Set([7]))).toBe(true);
+    expect(hasWooPreOrderItem([{ product_id: 11, categories: [9] }], new Set([7]))).toBe(false);
   });
 });
 

@@ -198,8 +198,23 @@ Deno.serve(async (req) => {
         const enqueue = planCutoverEnqueue({ dryRun, matchKind: match.kind, status });
         if (enqueue.failureClass === "unsupported_status") { outcome = "unsupported"; failures += 1; }
         else if (enqueue.work) {
-          const work = await sb.from("woocommerce_sync_work").upsert({ connector_id: connectorId, direction: "reconciliation", kind: "order_refresh", external_order_id: externalId, identity_key: `cutover:${runRow.id}:${externalId}`, payload: { source: "cutover", cutover_run_id: runRow.id, external_order_id: externalId, match_kind: matchKind } }, { onConflict: "connector_id,identity_key,state", ignoreDuplicates: true }).select("id").maybeSingle();
-          if (work.error) { failures += 1; outcome = "failed"; } else { enqueued += 1; outcome = "queued"; workId = work.data?.id ?? null; }
+          // supabase-js's `onConflict` option only accepts a column list; it cannot
+          // express the partial-index predicate `WHERE state IN (...)`. The old
+          // `onConflict: "connector_id,identity_key,state"` no longer resolves because
+          // 20261113130000 replaced that constraint with the partial unique index
+          // woocommerce_sync_work_live_identity_key. So: plain insert, and a live
+          // sibling is detected from the 23505 error instead.
+          const cutoverIdentityKey = `cutover:${runRow.id}:${externalId}`;
+          const inserted = await sb.from("woocommerce_sync_work").insert({ connector_id: connectorId, direction: "reconciliation", kind: "order_refresh", external_order_id: externalId, identity_key: cutoverIdentityKey, payload: { source: "cutover", cutover_run_id: runRow.id, external_order_id: externalId, match_kind: matchKind } }).select("id").maybeSingle();
+          if (!inserted.error) {
+            enqueued += 1; outcome = "queued"; workId = inserted.data?.id ?? null;
+          } else if (inserted.error.code === "23505") {
+            // A live row already owns this identity; reuse it. The partial index only
+            // constrains live states, so this lookup cannot pick up terminal history.
+            const existing = await sb.from("woocommerce_sync_work").select("id").eq("connector_id", connectorId).eq("identity_key", cutoverIdentityKey).in("state", ["pending", "leased", "retrying"]).maybeSingle();
+            if (existing.error) { failures += 1; outcome = "failed"; }
+            else { enqueued += 1; outcome = "queued"; workId = existing.data?.id ?? null; }
+          } else { failures += 1; outcome = "failed"; }
         }
         const item = await sb.from("woocommerce_cutover_report_items").insert({
           run_id: runRow.id, connector_id: connectorId, external_order_id: externalId,

@@ -1,5 +1,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { decideWorkFailure, type WorkFailureDecision } from "../../../src/lib/woocommerceWork.ts";
+import {
+  hasWooPreOrderItem,
+  mapWooFulfillmentType,
+  mapWooLocalStatus,
+  mapWooPaymentStatus,
+} from "../../../src/lib/woocommerceConnector.ts";
 import { assertOutboundWritePersisted, serializeWorkerFailure, validateFinishResult, validateOutboundConfirmation } from "../../../src/lib/woocommerceWorkerValidation.ts";
 export { assertOutboundWritePersisted, serializeWorkerFailure, validateFinishResult, validateOutboundConfirmation } from "../../../src/lib/woocommerceWorkerValidation.ts";
 
@@ -60,6 +66,7 @@ type WooOrder = {
   date_modified?: string;
   billing?: WooAddress;
   line_items?: unknown[];
+  shipping_lines?: Array<{ method_id?: string; method_title?: string }>;
 };
 
 function sb() {
@@ -97,15 +104,24 @@ async function currentOrder(connector: Connector, id: number): Promise<WooOrder>
   return value as WooOrder;
 }
 
-function localStatus(externalStatus: string): string {
-  if (externalStatus === "pending" || externalStatus === "on-hold") return "payment_pending";
-  return "pending";
+function shippingMethod(external: WooOrder): string | null {
+  const line = external.shipping_lines?.[0];
+  return line?.method_id || line?.method_title || null;
 }
 
-function paymentStatus(externalStatus: string): string {
-  if (externalStatus === "processing" || externalStatus === "completed") return "paid";
-  if (externalStatus === "refunded") return "refunded";
-  return "unpaid";
+function preorderCategoryIds(): ReadonlySet<string> {
+  // Woo order line items do not carry authoritative category metadata in the
+  // current adapter, so absence is fail-closed until a reviewed catalog
+  // resolver is added. The v2 RPC still accepts an explicit audited flag.
+  return new Set<string>();
+}
+
+function localStatus(externalStatus: string, items: unknown[]): string {
+  return mapWooLocalStatus(externalStatus, hasWooPreOrderItem(items, preorderCategoryIds()));
+}
+
+function paymentStatus(externalStatus: string, paymentMethod: string | null | undefined): string {
+  return mapWooPaymentStatus(externalStatus, paymentMethod);
 }
 
 async function writeExternalStatus(connector: Connector, externalOrderId: number, payload: Record<string, unknown>): Promise<void> {
@@ -137,7 +153,9 @@ async function persistOrder(client: ReturnType<typeof sb>, connector: Connector,
   // make an older observation appear newer than the trusted identity watermark.
   const modified = external.date_modified_gmt || external.date_modified || null;
   const billing: WooAddress = external.billing ?? {};
-  const { error } = await client.rpc("upsert_woocommerce_order", {
+  const items = Array.isArray(external.line_items) ? external.line_items : [];
+  const isPreOrder = hasWooPreOrderItem(items, preorderCategoryIds());
+  const { error } = await client.rpc("upsert_woocommerce_order_v2", {
     p_connector_id: connector.id,
     p_external_order_id: externalId,
     p_external_order_number: external.number ? String(external.number) : null,
@@ -148,8 +166,10 @@ async function persistOrder(client: ReturnType<typeof sb>, connector: Connector,
     p_discount: Number(external.discount_total ?? 0),
     p_shipping: Number(external.shipping_total ?? 0),
     p_payment_method: external.payment_method || "online",
-    p_local_status: localStatus(status),
-    p_payment_status: paymentStatus(status),
+    p_local_status: localStatus(status, items),
+    p_payment_status: paymentStatus(status, external.payment_method),
+    p_fulfillment_type: mapWooFulfillmentType(shippingMethod(external)),
+    p_is_preorder: isPreOrder,
     p_customer_name: [billing.first_name, billing.last_name].filter(Boolean).join(" "),
     p_customer_email: billing.email || null,
     p_customer_phone: billing.phone || null,
@@ -159,7 +179,7 @@ async function persistOrder(client: ReturnType<typeof sb>, connector: Connector,
     p_customer_area: billing.postcode || null,
     p_notes: external.customer_note || null,
     p_created_at: external.date_created_gmt || external.date_created || null,
-    p_items: Array.isArray(external.line_items) ? external.line_items : [],
+    p_items: items,
     p_safe_external_facts: {
       status,
       payment_method: external.payment_method || null,

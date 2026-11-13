@@ -100,6 +100,7 @@ export function normalizeWooStoreUrl(value: string): string {
 export function mapWooOrderStatus(
   status: string | null | undefined,
   localHasEnteredFulfillment = false,
+  paymentMethod: string | null | undefined = null,
 ): WooInboundDecision {
   switch (status) {
     case "pending":
@@ -116,7 +117,8 @@ export function mapWooOrderStatus(
         outcome: "fulfillment_eligible",
         createsCourierWork: true,
         requiresConflictReview: false,
-        paymentStatus: "paid",
+        localStatus: "new_order",
+        paymentStatus: mapWooPaymentStatus(status, paymentMethod),
       };
     case "completed":
       return {
@@ -125,7 +127,7 @@ export function mapWooOrderStatus(
         // command. Staff may still review/dispatch the paid local order.
         createsCourierWork: false,
         requiresConflictReview: false,
-        paymentStatus: "paid",
+        paymentStatus: mapWooPaymentStatus(status, paymentMethod),
       };
     case "cancelled":
     case "refunded":
@@ -149,6 +151,53 @@ export function mapWooOrderStatus(
         requiresConflictReview: true,
       };
   }
+}
+
+export type WooFulfillmentType = "walkin" | "delivery";
+
+/** Map an imported Woo status and pre-order flag to the local order state. */
+export function mapWooLocalStatus(status: string | null | undefined, isPreOrder = false): string {
+  if (status === "pending" || status === "on-hold") return "payment_pending";
+  if (isPreOrder && status === "processing") return "pre_order_pending";
+  if (status === "processing") return "new_order";
+  return "pending";
+}
+
+/** Preserve COD payment uncertainty until DokanOS records collection. */
+export function mapWooPaymentStatus(
+  status: string | null | undefined,
+  paymentMethod: string | null | undefined = null,
+): string {
+  if (status === "refunded") return "refunded";
+  const method = (paymentMethod ?? "").trim().toLowerCase();
+  if (method === "cod" || method.includes("cash_on_delivery")) return "unpaid";
+  if (status === "processing" || status === "completed") return "paid";
+  return "unpaid";
+}
+
+/** Map Woo shipping method identifiers/titles to the two DokanOS fulfillment modes. */
+export function mapWooFulfillmentType(method: string | null | undefined): WooFulfillmentType {
+  const normalized = (method ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return normalized === "walk_in" || normalized === "walkin" || normalized === "local_pickup"
+    ? "walkin"
+    : "delivery";
+}
+
+/** Any configured preorder category on any line makes the whole order preorder. */
+export function hasWooPreOrderItem(
+  items: unknown,
+  preorderCategoryIds: ReadonlySet<number | string>,
+): boolean {
+  if (!Array.isArray(items) || preorderCategoryIds.size === 0) return false;
+  return items.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const categories = (item as { categories?: unknown }).categories;
+    return Array.isArray(categories) && categories.some((category) => {
+      if (!category || typeof category !== "object") return false;
+      const id = (category as { id?: unknown }).id;
+      return (typeof id === "number" || typeof id === "string") && preorderCategoryIds.has(id);
+    });
+  });
 }
 
 export function isKnownWooStatus(status: string | null | undefined): status is WooOrderStatus {
