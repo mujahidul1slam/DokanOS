@@ -40,7 +40,7 @@ Capture before/after values for both connectors without exposing credentials:
 - [ ] Current Woo order counts by status for the selected test scope.
 - [ ] DokanOS order counts by mapped status and source.
 - [x] Pending, retrying, leased, succeeded, replayed, quarantined, and dead-letter work counts captured in the production baseline.
-- [ ] Unprocessed accepted webhook deliveries are fully drained or have a documented disposition.
+- [ ] Establish the disposition of all previously unprocessed accepted webhook deliveries. Subsequent health reads showed the latest deliveries accepted, verified and processed, but aggregate health does not prove the entire backlog drained.
 - [ ] Reconciliation-run history and last errors, with credentials/URLs redacted.
 - [ ] Existing conflicts and their resolution state.
 - [ ] Existing audit rows for scheduler actions and later deployment actions.
@@ -56,7 +56,7 @@ For each of Enveil and Vincent:
 - [ ] Legacy store-binding cards are clearly separated from live connector health.
 - [ ] Connector health, sync timestamp, last error, and order counts are internally consistent.
 - [ ] Orders page loads without unscoped or cross-business requests.
-- [ ] Existing order detail shows customer, address, items, quantities, prices, discounts, shipping, total, payment method/status, source, and timeline.
+- [ ] Verify complete order detail including discounts and payment status. The order list showed customer name, phone, address, item, total, source and configured prefixes after backfill; the latest attempt to open the detail sheet did not succeed.
 - [ ] Sync/conflict/reconciliation views load and show actionable errors without leaking credentials.
 - [ ] Browser console has no errors and failed requests are explained or fixed.
 
@@ -88,26 +88,30 @@ Use the WooCommerce frontend, not the admin order editor:
 - [ ] Use a low-value in-stock product.
 - [ ] Include a unique customer name/phone and marker in the order note, e.g. `DOKANOS-E2E-<timestamp>`.
 - [ ] Do not use the stale out-of-stock item `Sarmad Beige Punjabi – L`.
-- [ ] Place one Enveil order and one Vincent order only.
-- [ ] Capture Woo order ID, order number, status, payment status, customer, items, totals, and timestamps.
+- [x] Place one Enveil order and one Vincent order only: Enveil Woo `8848` (`Ivory-Rose - L`, COD, ৳4,076) and Vincent Woo `11047` (`Nomad Olive Green Linen Shirt - M`, COD, ৳2,070).
+- [x] Capture Woo order IDs/statuses: Enveil `8848` and Vincent `11047`, both COD and observed as `Processing` in Woo admin; totals ৳4,076 and ৳2,070 respectively, with customer/item/address/note evidence in the Woo admin views.
 - [ ] Confirm webhook delivery is accepted and signature/source/resource checks pass.
 - [ ] Confirm exactly one work row is created for each order.
 - [ ] Confirm the worker claims and finishes each row without duplicate rows.
-- [ ] Confirm DokanOS order appears under the correct brand/source.
-- [ ] Confirm customer, item, SKU/product/variation IDs, quantity, price, discount, tax, shipping, currency, total, payment, address, note, and order number.
-- [ ] Confirm Woo `processing` maps to the expected DokanOS New/processing state.
-- [ ] Confirm Woo `on-hold` or unpaid COD behavior maps to Payment Needs Confirmation/On Hold where applicable.
+- [x] Confirm DokanOS orders appear under the correct brand/source: Enveil `#EE-WC-4fa8dbf5-d638-47ed-b0b1-cce4b1430b31-8848W` and Vincent `#VC-WC-f5e5920b-7252-4880-9a7d-1ebfa47c1409-11047W` (historical production evidence; the v2 contract now targets configured prefix + Woo number + one `W`).
+- [ ] Verify all order details end-to-end. Customer name, phone, address and configured number were visible in the order list after backfill; item and totals were observed. Payment display was inconsistent and requires investigation. Woo admin separately showed SKU and variation IDs; their DokanOS persistence remains unverified.
+- [ ] Re-run production evidence that Woo `processing` maps to the expected DokanOS New Order state; local vertical coverage now passes.
+- [ ] Confirm Woo `on-hold` or unpaid COD behavior maps to Payment Needs Confirmation/On Hold where applicable; local pure mapping coverage preserves `payment_pending`.
+- [ ] Re-run the production verification for the reported Woo import `pending` vs DokanOS New Order discrepancy without bypassing payment-confirmation rules. The reviewed worker/v2 contract now maps Woo `processing` to `new_order`; local vertical coverage is green, but production deployment is not approved.
+- [ ] Verify checkout walk-in vs delivery mapping using actual Woo shipping selections. The local worker maps `walk-in`/`walkin`/`local_pickup` to `walkin` and other selections to `delivery`; the adapter currently reads only the first Woo shipping line, so production evidence and payload-shape review remain open.
+- [ ] Verify pre-order product and mixed-product cases using authoritative Woo product metadata. The worker remains fail-closed because current line items lack authoritative category metadata; a reviewed catalog resolver is still required before production pre-order claims.
+- [ ] Apply the collision-safe v2 order-number contract only through the reviewed production adapter and an explicit migration gate: configured prefix(es) + Woo number + one `W`, manual/social `M`, POS unchanged. Same-prefix collisions fail closed as `woocommerce_order_number_collision`; existing UUID-based production identifiers remain unchanged until the approved preview/rewrite step.
 - [ ] Confirm no credential or raw secret appears in any failure field.
-- [ ] Confirm final work state is `succeeded` and no retry/dead-letter row remains.
+- [ ] Confirm final per-order work state is `succeeded` and no retry/dead-letter row remains. Aggregate connector health showed accepted/verified/processed latest deliveries, successful reconciliation, and no dead letters; the supported health surface does not expose per-order delivery/work IDs.
 
 ## Gate 5 — DokanOS outbound status verification
 
 Use only a reversible status change on the test order:
 
-- [ ] Change one test order in DokanOS to the documented outbound `processing` equivalent.
-- [ ] Capture the outbound work row and audit/timeline event.
-- [ ] Confirm exactly one Woo update is sent for the intended order.
-- [ ] Confirm Woo status becomes `processing`.
+- [x] Change test orders in DokanOS to the UI's `New Order` equivalent; timeline/audit events were observed.
+- [ ] Capture each corresponding outbound work row and verify its final state.
+- [ ] Confirm exactly one Woo update was sent for the intended order.
+- [x] Observe Woo `processing` on both test orders. Enveil showed a pending-to-processing note after the save; Vincent's prior status and the causal outbound work are not established.
 - [ ] Confirm a repeated identical DokanOS save is idempotent and does not create a second effective write.
 - [ ] Confirm the Woo-originated echo does not create a loop or overwrite a newer local timestamp.
 - [ ] Confirm all other statuses remain unchanged.
@@ -134,20 +138,22 @@ Use only a reversible status change on the test order:
 - [x] Verify job 18 identity before resume: ID 18, exact name, schedule, target, active state.
 - [x] Verify job 19 identity and successful reconciliation runs.
 - [x] After recovery, verify the five abandoned leased rows stop gaining attempts; all five became `replayed` with leases cleared and succeeded-sibling pointers.
-- [ ] Verify the accepted unprocessed deliveries are fully handled by the approved worker path or have a documented disposition.
-- [x] Initiate Enveil order 8847 dead-letter replay through the supported path; verify its new work outcome remains open.
-- [x] Verify the replayed Enveil work finishes without a new `[object Object]` error — second replay succeeded; health showed no dead letters, queue `replayed=2, succeeded=1`, latest reconciliation succeeded with `error_class=null` and `last_error=null`.
+- [ ] Verify or document the disposition of all previously unprocessed accepted deliveries. Latest-delivery health and successful reconciliation do not establish the disposition of the entire backlog.
+- [x] Initiate Enveil order 8847 dead-letter replay through the supported path; the first replay exposed an order-number collision. A later replay was accepted after the namespace migration, but its individual final work state remains unverified.
+- [ ] Verify the second Enveil replay's individual work state. Subsequent aggregate health showed no dead letters, queue `replayed=2, succeeded=1`, and successful reconciliation without a new `[object Object]`; the returned work ID was not independently inspected.
 - [x] Verify worker and reconciliation function versions after deployment: both v4, `ACTIVE`, `verify_jwt=false`.
 - [x] Verify audit rows contain change ID, commit, target, versions, and no secrets.
 - [x] Verify webhook intake stayed enabled throughout.
 
 ## Gate 8 — Evidence and merge decision
 
-- [ ] Attach a redacted evidence table with every Woo order ID, DokanOS order ID, delivery ID, work ID, final state, and timestamp. Current evidence covers recovery/replay IDs; bounded new frontend order IDs are still absent.
-- [ ] Record known fidelity gaps separately: currency, SKU, Woo product ID, variation ID, tax, and denormalized customer snapshot.
-- [x] Record the replay failure, root cause, code fix, production migration, and rerun result in the runbook; [ ] bounded frontend failures/results remain to be recorded.
-- [ ] Run typecheck, unit tests, SQL regression, browser tests, and CI required checks again after any fix — local checks are green; CI for the current head remains to be rechecked.
-- [ ] Confirm branch protection checks are green and the PR head is current — branch protection is configured; current-head CI and PR status remain to be rechecked.
+- [ ] Complete the redacted evidence table for the bounded scenarios. Order IDs and partial observations are below; per-order delivery/work IDs and final states remain unverified.
+- [x] Record known fidelity gaps separately: currency, SKU, Woo product ID, variation ID, tax, and customer fields not explicitly verified. Customer name, phone and address and configured prefixes were observed after backfill; full customer-snapshot fidelity is not established.
+- [ ] Update and run the local vertical sync test: its existing assertions still expect the pre-repair order number and null customer snapshot, and it currently expects a Woo `processing` COD order to be `paid`. Revisit the payment expectation only after the payment invariant is agreed and reproduced.
+- [x] Strengthen and rerun the local snapshot backfill regression: the legacy customer fixture is linked to the legacy order and snapshot comparisons use NULL-safe assertions. The rollback-only SQL suite passed 6/6 locally; the change is not yet committed or tested in CI.
+- [x] Record the replay failure, collision fix, migration, and aggregate follow-up in the runbook; bounded frontend observations and the COD payment-state risk are recorded below.
+- [ ] Run typecheck, unit tests, SQL regression, browser tests, and CI required checks again after any further fix. Required CI passed for commit `8ecf830` on run `43188691551`; uncommitted documentation changes are not included in that run.
+- [ ] Recheck branch protection, PR head, and required checks before a merge decision. At the last read, `8ecf830` was the PR head and both required checks passed.
 - [ ] Merge only after all required gates pass; deployment and cron resumption remain separate approved actions.
 
 ## Explicitly out of scope for this pass
@@ -165,25 +171,24 @@ Use only a reversible status change on the test order:
 
 | Scenario | Store | Woo order | DokanOS order | Delivery/work IDs | Expected mapping | Actual | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Historical missed order |  |  |  |  |  |  |  |
-| New COD inbound |  |  |  |  |  |  |  |
-| Woo on-hold/unpaid |  |  |  |  |  |  |  |
-| DokanOS → Woo processing |  |  |  |  |  |  |  |
-| Duplicate webhook/finish |  |  |  |  |  |  |  |
-| Conflict replay |  |  |  |  |  |  |  |
-| Dead-letter replay |  |  |  |  |  |  |  |
+| New COD inbound | Enveil | `8848` | `EE-WC-…-8848W` | Per-order IDs unavailable in supported health | Correct brand/source, item, total, customer | Present after reviewed backfill; latest delivery aggregate accepted/verified/processed | Partial: per-order work not exposed |
+| New COD inbound | Vincent | `11047` | `VC-WC-…-11047W` | Per-order IDs unavailable in supported health | Correct brand/source, item, total, customer | Present after reviewed backfill; latest delivery aggregate accepted/verified/processed | Partial: per-order work not exposed |
+| DokanOS → Woo processing | Enveil | `8848` | `EE-WC-…-8848W` | Timeline/audit observed; per-order work ID not exposed | Woo `processing` | Woo admin showed a pending-to-processing transition after the DokanOS save; the individual outbound work was not inspected | Partial |
+| DokanOS → Woo processing | Vincent | `11047` | `VC-WC-…-11047W` | Timeline/audit observed; per-order work ID not exposed | Woo `processing` | Woo admin showed `Processing`; its prior state and causal outbound write are not established | Partial |
+| Duplicate finish recovery | Vincent/Enveil | Existing identities | Existing orders preserved | Five duplicate work rows | Duplicate lease becomes `replayed` | Leases cleared; succeeded siblings preserved | Pass |
+| Dead-letter replay | Enveil | `8847` | `EE-WC-…-8847W` | `18ac3e58-36f9-454c-b526-8c0d8e78ec7d` | Replay succeeds without duplicate order | Aggregate health showed succeeded work and no new dead letter; per-work state not independently verified | Partial |
 
 ## Result
 
 - Date/time:
 - PR commit:
 - Production change ID:
-- Migrations deployed: yes — five recovery migrations, audited under `CHG-2026-11-12-01`
+- Migrations deployed: yes — eight recovery migrations, audited under `CHG-2026-11-12-01`; production ledger count 215
 - Functions deployed: yes — worker/reconcile v4, `ACTIVE`, `verify_jwt=false`
 - Job 18 state: active after audited resume; exact identity `woocommerce-sync-worker-5min`, ID 18
 - Job 19 state: active and producing successful reconciliation runs
-- Recovery work state: five abandoned leases safely `replayed`; Enveil order 8847 replay completed with no current dead letter
-- Overall result: BLOCKED pending accepted-delivery disposition and bounded live Woo order tests
-- Remaining defects: historical `[object Object]` remains only on the original dead-letter; accepted deliveries still require disposition; no bounded frontend inbound/outbound order evidence yet
-- Remaining fidelity gaps: currency, SKU, Woo product ID, variation ID, tax, denormalized customer snapshot
-- Merge decision: do not merge until the remaining gates pass and the PR head/CI are reverified
+- Recovery work state: five abandoned leases safely `replayed`; aggregate Enveil health showed no current dead letter after the 8847 replay, but its individual work state was not verified
+- Overall result: PARTIAL — both COD orders appeared in DokanOS and Woo showed processing; individual delivery/work state and causal outbound writes are not proven. Customer fields and prefixes were visible after backfill.
+- Remaining risk: historical `[object Object]` remains on the original dead-letter. After status saves, both COD test orders showed Unpaid after initially showing Paid; a later read showed Vincent Paid again and Enveil Unpaid. The cause and actual payment state need investigation; do not repeat this test in production. The save path recomputes payment from recorded payments. The local v2 worker contract now keeps Woo COD `processing`/`completed` imports unpaid until collection is recorded; production deployment and root-cause verification remain gated.
+- Remaining fidelity gaps: currency, SKU, Woo product ID, variation ID, tax, and any denormalized fields not explicitly verified above. Customer name/phone/address and configured prefixes were repaired and observed on the two test orders.
+- Merge decision: do not merge until the remaining evidence/payment risks are explicitly accepted and the PR head/CI are reverified

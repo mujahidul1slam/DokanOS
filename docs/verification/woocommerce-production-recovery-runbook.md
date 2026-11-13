@@ -20,7 +20,7 @@ The repository currently contains:
 - `supabase/functions/woocommerce-reconcile` for overlapping REST reconciliation.
 - `supabase/functions/woocommerce-admin` for audited health, pause/resume, replay, correction, and conflict controls.
 - Migration-managed pg_cron jobs named `woocommerce-sync-worker-5min` and `woocommerce-reconciliation-15min` in `supabase/migrations/20261110090000_woocommerce_order_connector.sql`.
-- Read-only inspection tooling in `scripts/prod-probe.mjs`.
+- Read-only inspection is performed through the reviewed Management API adapter and authenticated `woocommerce-admin` health path; the historical `scripts/prod-probe.mjs` reference is not present in this checkout.
 
 ## Required organizational inputs before any production action
 
@@ -109,7 +109,7 @@ Run only through approved read-only CI/probe steps, with output captured as evid
 1. Confirm the incident/change ticket, protected environment, approvers, operator, and scope.
 2. Inspect connector health for the affected connector(s): intake status, webhook status, last received/verified/processed timestamps, reconciliation watermark, queue depth, retry/dead-letter/quarantine counts, and open conflicts.
 3. Confirm the expected webhook ID/topic/delivery URL from the connector record and WooCommerce admin. Do not reveal webhook secrets.
-4. Inspect recent deliveries, work, reconciliation runs, conflicts, and outbound writes using `scripts/prod-probe.mjs` or its approved CI equivalent.
+4. Inspect recent deliveries, work, reconciliation runs, conflicts, and outbound writes using the reviewed Management API transport and authenticated `woocommerce-admin` health path; do not use direct production SQL.
 5. Confirm current deployed function versions and the migration ledger through the deployment platform's read-only view.
 6. Verify job 18 identity using the authoritative scheduler UI/API. Capture the complete identity tuple listed above.
 
@@ -172,17 +172,20 @@ Rollback paths, in order of preference:
 2. **Scheduler** — re-enable the verified job through the approved scheduler control. Confirm `active` is true and the job name/schedule are unchanged.
 3. **Schema** — a schema rollback must be a new reviewed migration applied through `scripts/prod-migrate.mjs`. Never reverse a migration with ad-hoc SQL.
 
-The five recovery migrations are additive in intent: `resolve_woocommerce_sync_conflict` and the corrections policy are replaced objects, `woocommerce_delivery_accepted_*` are new indexes, `finish_woocommerce_sync_work` and `upsert_woocommerce_order` are `CREATE OR REPLACE` functions. The order-number migration namespaces new Woo imports by full connector UUID while preserving the raw Woo number in the identity row; existing identity rows are unchanged. Rolling back a function behaviour means re-applying the previous function body as a new reviewed migration, not dropping data.
+The recovery migrations are additive in intent: `resolve_woocommerce_sync_conflict` and the corrections policy are replaced objects, `woocommerce_delivery_accepted_*` are new indexes, and `finish_woocommerce_sync_work`/`upsert_woocommerce_order` are `CREATE OR REPLACE` functions. `20261112120000` namespaces new Woo imports by full connector UUID; `20261112130000` applies configured prefix/suffix and customer snapshots to new imports; `20261112140000` repairs repeat-import behavior; and `20261112150000` runs the reviewed service-role-only backfill for existing Woo rows. The un-deployed `20261112160000` contract v2 is append-only: local verification covers processing to `new_order`, COD-safe payment preservation, supported shipping to `walkin`/`delivery`, local fulfillment-state preservation, configured connector-store prefix + Woo number + one `W`, and fail-closed same-prefix collisions. It does not yet provide authoritative Woo pre-order classification or multi-brand prefix attribution because the current worker payload/catalog path lacks product/category linkage; its backfill raises `woocommerce_order_number_collision` instead of silently retaining a UUID-based identifier. Rolling back function behavior means re-applying a prior function body as a new reviewed migration, not dropping data. No v2 migration or identifier rewrite has been applied to production.
 
 ## Known residual risk
 
 - No independent reviewer exists. Any approval recorded here is a self-acknowledgement and must be labelled as such, never presented as independent review.
 - The Production GitHub environment has a 10-minute wait timer and a branch policy allowing only `main`. A wait timer is a delay, not a review.
-- Migration and deploy adapters have now been exercised against production under `CHG-2026-11-12-01`. Dry-runs and post-action reads were successful; remaining risk is the limited scope of the canary/recovery evidence, not an untested deployment path.
+- Migration and deploy adapters have been exercised against production under `CHG-2026-11-12-01`; this does not establish that the deployment path or production recovery is free of risk.
+- The two COD test orders showed a payment-display change following status saves. Later Vincent showed Paid again, while Enveil showed Unpaid. Actual payment state and root cause remain unverified; do not treat Woo `processing` alone as proof of payment.
+- Latest-delivery health is aggregate evidence; it does not prove full backlog disposition or the final state of a specific replay or outbound work item.
+- The local snapshot-backfill regression was strengthened to link its customer fixture and use NULL-safe assertions; the rollback-only SQL suite passed 6/6 locally. This test change remains uncommitted and has not run in CI. Live UI showed customer fields on two test orders; broader production coverage remains unverified.
 
 ## Production evidence under CHG-2026-11-12-01
 
-- Five recovery migrations were applied through `scripts/prod-migrate.mjs`; the post-action ledger contains 212 applied migrations and the target versions are already applied on dry-run. The fifth is `20261112120000_woocommerce_order_number_namespace` under the same change ID.
+- Eight recovery migrations were applied through `scripts/prod-migrate.mjs`; the post-action ledger contains 215 applied migrations and the target versions are already applied on dry-run. The later additions are `20261112130000_woocommerce_order_snapshot_and_prefix`, `20261112140000_woocommerce_order_snapshot_and_prefix_repair`, and `20261112150000_woocommerce_order_snapshot_prefix_backfill`, all under the same change ID.
 - `woocommerce-worker` and `woocommerce-reconcile` were deployed through `scripts/prod-deploy-functions.mjs`; both report v4, `ACTIVE`, `verify_jwt=false`.
 - Job 18 (`woocommerce-sync-worker-5min`) was resumed through `scripts/prod-schedule.mjs` only after deployment verification; job 19 remained active and unchanged.
 - The five previously abandoned leased rows were processed without manual row edits: each is now `replayed`, lease cleared, and points to its succeeded sibling via `duplicate_finish.replayed_to`. The highest-attempt inbound row reached 148 before the recovery and did not create a duplicate order.
@@ -206,7 +209,7 @@ The incident owner signs off only after:
 
 Resolved on 2026-11-11:
 
-- ~~No reviewed migration runner~~ — `scripts/prod-migrate.mjs`, applied the four recovery migrations and recorded the audit row under `CHG-2026-11-12-01`; post-deploy ledger read shows 211 applied migrations.
+- ~~No reviewed migration runner~~ — `scripts/prod-migrate.mjs`, applied the eight recovery migrations and recorded audit rows under `CHG-2026-11-12-01`; post-deploy ledger read shows 215 applied migrations.
 - ~~No approved Edge Function deployment adapter~~ — `scripts/prod-deploy-functions.mjs`, deployed worker/reconcile v4 and recorded the audit row under `CHG-2026-11-12-01`.
 - ~~Job-18 identity unproven~~ — proven read-only, see "Scheduler identity".
 - ~~Rollback owner unnamed~~ — Mujahid.
@@ -222,7 +225,7 @@ Resolved since this section was first written:
 
 The existing migration schedules jobs by names `woocommerce-sync-worker-5min` and `woocommerce-reconciliation-15min`; the numeric mapping to 18 and 19 was established from the live `cron.job` table, not from the repository.
 
-**Status: five migrations and worker/reconcile functions deployed; scheduler resumed; five abandoned leases were safely marked `replayed` by duplicate-finish logic; Enveil order 8847 replay now completes with no dead letters and no new `[object Object]`; accepted-delivery disposition and bounded frontend inbound/outbound tests remain.**
+**Status: eight migrations and worker/reconcile functions deployed; scheduler resumed; five abandoned leases were marked `replayed`. Following the Enveil 8847 replay, aggregate health showed no dead letters, but the individual replay state was not verified. Both COD test orders appeared in DokanOS and Woo admin showed `processing`; causal per-order outbound work evidence remains unverified. Customer fields and configured prefixes were visible after backfill. Delivery evidence is aggregate-only; no terminal/courier/payment-capture checks were performed.**
 
 
 ## References
@@ -231,7 +234,7 @@ The existing migration schedules jobs by names `woocommerce-sync-worker-5min` an
 - [`supabase/functions/woocommerce-admin/index.ts`](../../supabase/functions/woocommerce-admin/index.ts#L177-L253)
 - [`supabase/functions/woocommerce-worker/index.ts`](../../supabase/functions/woocommerce-worker/index.ts#L174-L180)
 - [`supabase/functions/woocommerce-reconcile/index.ts`](../../supabase/functions/woocommerce-reconcile/index.ts#L45-L56)
-- [`scripts/prod-probe.mjs`](../../scripts/prod-probe.mjs#L1-L14)
+- [`scripts/prod-migrate.mjs`](../../scripts/prod-migrate.mjs) — reviewed migration adapter.
 - [`docs/verification/2026-11-10-woocommerce-connector-implementation.md`](./2026-11-10-woocommerce-connector-implementation.md#L31-L80)
 
 ## Static review checklist
