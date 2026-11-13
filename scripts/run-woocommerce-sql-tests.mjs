@@ -53,6 +53,14 @@ const TESTS = [
     requires: ["20261111110000_woocommerce_duplicate_finish.sql"],
   },
   {
+    file: "woocommerce_work_identity_liveness_test.sql",
+    requires: [
+      "20261111100000_woocommerce_durable_intake.sql",
+      "20261111110000_woocommerce_duplicate_finish.sql",
+      "20261113130000_woocommerce_work_identity_liveness.sql",
+    ],
+  },
+  {
     file: "woocommerce_conflict_resolution_test.sql",
     requires: ["20261110110000_woocommerce_conflict_resolution.sql"],
   },
@@ -63,6 +71,7 @@ const TESTS = [
       "20261112130000_woocommerce_order_snapshot_and_prefix.sql",
       "20261112140000_woocommerce_order_snapshot_and_prefix_repair.sql",
       "20261112150000_woocommerce_order_snapshot_prefix_backfill.sql",
+      "20261112160000_woocommerce_order_contract_v2.sql",
     ],
   },
 ];
