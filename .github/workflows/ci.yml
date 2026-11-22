@@ -94,9 +94,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      ## Pinned, not `latest`. `version: latest` makes setup-cli resolve the
+      ## newest release through the GitHub REST API, and that call fails the
+      ## whole job with "Failed to resolve latest Supabase CLI release: rate
+      ## limit exceeded" whenever the shared runner IP is throttled — which it
+      ## was on 2026-11-22, twice, with no code change involved. A pinned
+      ## version downloads the release asset directly and never touches that
+      ## endpoint. 3.2.0 is the version this branch was rehearsed against
+      ## locally: all 217 migrations applied from scratch and the full
+      ## WooCommerce SQL battery passed.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 3.2.0
 
       - name: Start local Supabase stack
         run: supabase start
