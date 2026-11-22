@@ -17,7 +17,7 @@ This checklist is for the PR branch running against the production Supabase proj
 - Record IDs, timestamps, status values, and screenshots/log references without recording secrets.
 - Do not edit or delete production sync work rows manually.
 - Keep webhook intake enabled.
-- Job 18 remains paused until migration/function deployment and recovery gates pass.
+- Job 18 is active as of 2026-11-22 (resumed under `CHG-2026-11-12-01` after the first eight migrations and the worker/reconcile v4 deploy). It is running the old worker against the old RPC, which is consistent. Two migrations are still unapplied — `20261112160000` and `20261113130000` — so apply migrations **before** deploying the new worker; the new worker calls `upsert_woocommerce_order_v2`, which only exists after `20261112160000`.
 - Job 19 remains unchanged unless a separately approved incident action is required.
 
 ## Gate 0 — Change and environment identity

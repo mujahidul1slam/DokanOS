@@ -133,10 +133,14 @@ Run only through approved read-only CI/probe steps, with output captured as evid
 
 ### 3. Deploy the reviewed worker/reconcile fix
 
+**Migrations first, functions second. This order is not a preference.**
+
+The worker in this branch calls `upsert_woocommerce_order_v2`, which does not exist until `20261112160000_woocommerce_order_contract_v2.sql` is applied. Deploying functions first makes every inbound order import fail on a missing function. The reverse order is safe: `20261112160000` deliberately retains the deployed 23-argument `upsert_woocommerce_order` for replay compatibility, so the currently deployed v4 worker keeps working against the new schema until it is replaced.
+
 - Merge the reviewed change through the normal pull-request checks.
-- Deploy with `node scripts/prod-deploy-functions.mjs --apply --change-id <id> --expect-ref jiwndicvfkiltgageqwv`. It refuses to run if the function sources are dirty and asserts the `verify_jwt` posture did not change.
 - Apply schema changes with `node scripts/prod-migrate.mjs --apply --change-id <id> --expect-ref jiwndicvfkiltgageqwv`. Never `supabase db push`.
-- Confirm the versions the API reports afterwards, and that the `public.audit_log` rows exist for both the deploy and the migration.
+- Then deploy with `node scripts/prod-deploy-functions.mjs --apply --change-id <id> --expect-ref jiwndicvfkiltgageqwv`. It refuses to run if the function sources are dirty and asserts the `verify_jwt` posture did not change.
+- Confirm the versions the API reports afterwards, and that the `public.audit_log` rows exist for both the migration and the deploy.
 
 ### 4. Resume dispatch in a controlled canary
 
@@ -174,6 +178,8 @@ Rollback paths, in order of preference:
 
 The recovery migrations are additive in intent: `resolve_woocommerce_sync_conflict` and the corrections policy are replaced objects, `woocommerce_delivery_accepted_*` are new indexes, and `finish_woocommerce_sync_work`/`upsert_woocommerce_order` are `CREATE OR REPLACE` functions. `20261112120000` namespaces new Woo imports by full connector UUID; `20261112130000` applies configured prefix/suffix and customer snapshots to new imports; `20261112140000` repairs repeat-import behavior; and `20261112150000` runs the reviewed service-role-only backfill for existing Woo rows. The un-deployed `20261112160000` contract v2 is append-only: local verification covers processing to `new_order`, COD-safe payment preservation, supported shipping to `walkin`/`delivery`, local fulfillment-state preservation, configured connector-store prefix + Woo number + one `W`, and fail-closed same-prefix collisions. It does not yet provide authoritative Woo pre-order classification or multi-brand prefix attribution because the current worker payload/catalog path lacks product/category linkage; its backfill raises `woocommerce_order_number_collision` instead of silently retaining a UUID-based identifier. Rolling back function behavior means re-applying a prior function body as a new reviewed migration, not dropping data. No v2 migration or identifier rewrite has been applied to production.
 
+Two further migrations are in this branch and not in production. `20261112160000_woocommerce_order_contract_v2.sql` is a hard prerequisite for deploying this branch's worker, which calls `upsert_woocommerce_order_v2` at `supabase/functions/woocommerce-worker/index.ts:158`; it retains the deployed `upsert_woocommerce_order` so the old worker survives the schema change. `20261113130000_woocommerce_work_identity_liveness.sql` fixes the production `23505 woocommerce_finish_failed` dead letters: the old `UNIQUE (connector_id, identity_key, state)` constrained duplicate *state buckets* rather than duplicate identities, so every reconcile tick added a sibling row and a later transition into an occupied terminal state collided. It replaces that constraint with a partial unique index over `pending`/`leased`/`retrying` and repoints all four enqueue functions at it. It fails closed: it raises before creating the index if any live `(connector_id, identity_key)` group already holds more than one row, so check for that read-only first. Neither has been applied to production.
+
 ## Known residual risk
 
 - No independent reviewer exists. Any approval recorded here is a self-acknowledgement and must be labelled as such, never presented as independent review.
@@ -191,6 +197,8 @@ The recovery migrations are additive in intent: `resolve_woocommerce_sync_confli
 - The five previously abandoned leased rows were processed without manual row edits: each is now `replayed`, lease cleared, and points to its succeeded sibling via `duplicate_finish.replayed_to`. The highest-attempt inbound row reached 148 before the recovery and did not create a duplicate order.
 - Enveil work `8b560cc3-0686-4482-9743-0b71b507b454` (external order 8847) was replayed through `woocommerce-admin`; the first replay work `0753eab7-606c-4c52-80f8-dc105bf35a4f` exposed the real `uq_orders_order_number` collision and dead-lettered without `[object Object]`. After applying `20261112120000_woocommerce_order_number_namespace` through the audited runner, a second connector-scoped replay returned work `18ac3e58-36f9-454c-b526-8c0d8e78ec7d`; health then showed no dead letters, queue counts `replayed=2, succeeded=1`, and the latest reconciliation succeeded with `error_class=null` and `last_error=null`.
 - Both connectors remained healthy with intake and outbound enabled; no conflict or outbound rows were present in the baseline sample. No webhook intake was disabled.
+
+**Ledger delta as of 2026-11-22:** production holds 215 applied migrations; this branch carries 217. The two absent versions are `20261112160000_woocommerce_order_contract_v2.sql` and `20261113130000_woocommerce_work_identity_liveness.sql`. Nothing else is outstanding. Applying them and redeploying worker/reconcile are the only production actions that remain, and they require `SUPABASE_ACCESS_TOKEN` in the environment — it was unset on this machine on 2026-11-22, so the guarded preflight stopped before mutation.
 
 ## Closure evidence
 
@@ -221,11 +229,11 @@ Still blocking:
 Resolved since this section was first written:
 
 - ~~No change/incident ID~~ — `CHG-2026-11-12-01`, recorded in `public.audit_log` against the scheduler pause, token rotation, migration deployment, function deployment, and scheduler resume.
-- ~~No production credential in this environment~~ — `SUPABASE_ACCESS_TOKEN` is available from Windows Credential Manager (the CLI's own login), and the runner's production transport now uses it. `PROD_SUPABASE_DB_URL` is still unset and is no longer needed: the production database password does not exist on this machine, which is exactly why the Management API transport was built.
+- ~~No production credential in this environment~~ — the Supabase CLI login is stored in Windows Credential Manager as `Supabase CLI:supabase`, and the runner's production transport uses the Management API. **Correction, 2026-11-22:** Credential Manager holding the login does not put the token in the environment. `SUPABASE_ACCESS_TOKEN` is unset in a fresh shell and must be exported by the operator before `--apply` will run; the adapter refuses without it. `PROD_SUPABASE_DB_URL` is still unset and is not needed: the production database password does not exist on this machine, which is exactly why the Management API transport was built.
 
 The existing migration schedules jobs by names `woocommerce-sync-worker-5min` and `woocommerce-reconciliation-15min`; the numeric mapping to 18 and 19 was established from the live `cron.job` table, not from the repository.
 
-**Status: eight migrations and worker/reconcile functions deployed; scheduler resumed; five abandoned leases were marked `replayed`. Following the Enveil 8847 replay, aggregate health showed no dead letters, but the individual replay state was not verified. Both COD test orders appeared in DokanOS and Woo admin showed `processing`; causal per-order outbound work evidence remains unverified. Customer fields and configured prefixes were visible after backfill. Delivery evidence is aggregate-only; no terminal/courier/payment-capture checks were performed.**
+**Status: eight migrations and worker/reconcile functions deployed; scheduler resumed; five abandoned leases were marked `replayed`. Following the Enveil 8847 replay, aggregate health showed no dead letters, but the individual replay state was not verified. Both COD test orders appeared in DokanOS and Woo admin showed `processing`; causal per-order outbound work evidence remains unverified. Customer fields and configured prefixes were visible after backfill. Delivery evidence is aggregate-only; no terminal/courier/payment-capture checks were performed. Two migrations remain unapplied — `20261112160000` and `20261113130000` — and the `23505 woocommerce_finish_failed` dead letters are not fixed in production until the second one runs.**
 
 
 ## References
