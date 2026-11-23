@@ -54,9 +54,11 @@
  *   node scripts/prod-migrate.mjs --local --apply --change-id REHEARSAL
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import pg from "pg";
+
+import { stalePlanMessage, unrequestedPendingMigrations } from "./lib/woocommerce-migration-plan.mjs";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const MIGRATIONS_DIR = path.join(REPO, "supabase", "migrations");
@@ -79,6 +81,13 @@ function redact(value) {
 function fail(message) {
   console.error(`REFUSED: ${message}`);
   process.exit(1);
+}
+
+/** Every `<timestamp>_<slug>.sql` in the migrations directory, in ledger order. */
+function listOnDiskMigrations() {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter((file) => /^\d+_.+\.sql$/.test(file))
+    .sort();
 }
 
 function arg(name) {
@@ -390,8 +399,13 @@ async function main() {
     }
   }
 
-  // Which migrations are in scope: the four this recovery is missing, unless
-  // the operator narrows it with --only.
+  // Which migrations are in scope: the eight this recovery shipped, unless the
+  // operator narrows it with --only. This list is the reviewed set, and it has
+  // already gone stale once (the two newest WooCommerce migrations were absent
+  // from it), which made --dry-run report a clean ledger while production was
+  // two migrations short. The completeness check below is what prevents a
+  // repeat: a default run refuses when the branch carries a migration the
+  // target ledger does not have.
   const requested = only.length
     ? only
     : [
@@ -458,6 +472,19 @@ async function main() {
           "This run expected all of them to be pending. Reconcile before continuing.",
       );
     }
+
+    // A default run is only trustworthy if it names every migration the branch
+    // carries. --only is an explicit operator decision, so it is exempt: the
+    // operator has stated the scope and the per-file state below is printed.
+    if (!only.length) {
+      const omitted = unrequestedPendingMigrations({
+        onDisk: listOnDiskMigrations(),
+        requested,
+        applied,
+      });
+      if (omitted.length) fail(stalePlanMessage(omitted));
+    }
+
     if (!pending.length) {
       console.log("Nothing to do: every requested migration is already applied.");
       return;

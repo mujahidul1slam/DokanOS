@@ -94,6 +94,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      ## No database needed: this only compares the branch's migration files
+      ## against the plan the recovery runner would build. It exists because
+      ## that plan silently fell behind the branch once and made `--dry-run`
+      ## report "nothing to do" while production was two migrations short.
+      - name: Recovery plan completeness
+        run: npm run test:local:migration-plan
+
       ## Pinned, not `latest`. `version: latest` makes setup-cli resolve the
       ## newest release through the GitHub REST API, and that call fails the
       ## whole job with "Failed to resolve latest Supabase CLI release: rate
