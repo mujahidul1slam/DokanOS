@@ -1,1 +1,7 @@
 graphify-out/graph.json merge=graphify
+
+# The rollback artifact must keep its bytes exactly as captured. One of the
+# function bodies is stored with CRLF line endings in production, and the md5
+# of pg_get_functiondef() is how a restore is verified. Letting git normalise
+# this file would silently change that hash.
+docs/verification/woocommerce-e2e-fixes-rollback-20261124.sql -text

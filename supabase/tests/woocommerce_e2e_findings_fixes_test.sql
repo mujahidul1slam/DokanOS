@@ -124,8 +124,8 @@ BEGIN
   -- D2 creation: a first-seen external terminal order must be created cancelled,
   -- not parked in pending/local status.
   PERFORM public.upsert_woocommerce_order(c, 93006, '93006', 'cancelled', now(), 100, 90, 0, 10, 'cod', 'pending', 'unpaid', 'New Terminal', NULL, NULL, NULL, NULL, NULL, NULL, 'created', now(), '[]'::jsonb, '{}'::jsonb);
-  SELECT id INTO created_order FROM public.woocommerce_order_identities WHERE connector_id=c AND external_order_id=93006;
-  IF created_order IS NULL OR (SELECT status FROM public.orders WHERE id=created_order) <> 'cancelled' THEN RAISE EXCEPTION 'D2 creation: external terminal order was not created cancelled'; END IF;
+  SELECT order_id INTO created_order FROM public.woocommerce_order_identities WHERE connector_id=c AND external_order_id=93006;
+  IF created_order IS NULL OR (SELECT status FROM public.orders WHERE id=created_order) IS DISTINCT FROM 'cancelled' THEN RAISE EXCEPTION 'D2 creation: external terminal order was not created cancelled'; END IF;
 END $$;
 
 ROLLBACK;
