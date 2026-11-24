@@ -54,8 +54,33 @@ The safety fix is now live in production. It was applied at 21:20 your time unde
 
 - **Guard markers present in the live bodies** (`position(...)` over `pg_get_functiondef`): D1 payment guard at char 3189 and D2 conflict marker at char 8802 and the D4 advisory lock at char 1403 inside `upsert_woocommerce_order`; D4 lock at char 1314 inside `accept_woocommerce_webhook_delivery`; D5 duplicate-finish marker at char 704 inside `finish_woocommerce_sync_work`; D3 trigger markers `OLD.status` 467, `entered` 1203, `cancelled` 1685, `consignment_id` 2656 inside `enqueue_woocommerce_outbound_on_order_status`.
 - **Signatures and privileges unchanged:** `upsert_woocommerce_order` still has exactly **1** overload with the same 23 identity arguments; ACLs remain `{postgres=X/postgres,service_role=X/postgres}` except the trigger function (`acl` null); owner `postgres`; all `prosecdef = true`.
+- **Deployed code is byte-identical to the migration file (strongest available proof).** The same migration file was applied to the local database inside a `BEGIN … ROLLBACK` and the resulting hashes were compared with production's post-deploy hashes. All four match exactly:
+
+| Function | Local after applying the file | Production after deploy | Match |
+|---|---|---|---|
+| `accept_woocommerce_webhook_delivery` | `5246e6aefbbc35acb62d7a08243b95c6` | `5246e6aefbbc35acb62d7a08243b95c6` | yes |
+| `enqueue_woocommerce_outbound_on_order_status` | `3dd31d025177af88fe67b5dd77b42b82` | `3dd31d025177af88fe67b5dd77b42b82` | yes |
+| `finish_woocommerce_sync_work` | `a53e8e68f0c5dd6253cf497aba7ecfd7` | `a53e8e68f0c5dd6253cf497aba7ecfd7` | yes |
+| `upsert_woocommerce_order` | `500ee128abee7ee6aadbde910c64defa` | `500ee128abee7ee6aadbde910c64defa` | yes |
+
+  This rules out the two ways a deploy can silently go wrong: a function that failed to be replaced, and a function replaced with *different* text than the reviewed file. It still does not prove runtime behaviour on live traffic.
+- **Note on the local stack:** the local database keeps the *pre-fix* functions outside test transactions (hashes `3acd8148…`, `30725ee6…`, `70421479…`, `6511eef5…`). The SQL suite applies the pending migration inside each rollback-only test, so local function state is not evidence either way about production. Do not read the local hashes as a deploy signal.
+- **The deployed frontend uses production Supabase (previously an open question, now answered).** Captured network traffic from `https://dokanos-n9l7i48yn-mujahidul1slams-projects.vercel.app/orders` in an authenticated session showed every API call going to `https://jiwndicvfkiltgageqwv.supabase.co/rest/v1/...` — the same project the fix was applied to. So the Vercel deployment and the database deploy are the same system; there is no second backend to reconcile.
 - **Runtime unchanged after deploy:** both connectors still `healthy`, intake/outbound enabled, `webhook_status = active`, `error_class` null, reconciliation at 15:15 UTC. Work states 4 `dead_letter`, 56 `replayed`, 139 `succeeded`; 1 open conflict; 22 `succeeded` outbound writes. Identical to the pre-deploy baseline — the deploy broke nothing.
-- **Still NOT proven:** the D1–D5 behaviour itself. Hashes and markers prove the new code is installed; they do not prove it behaves correctly on live traffic. No fixture was created and no dead letter was replayed. Every `W` row and every `S` scenario remains **Pending**.
+- **Still NOT proven:** the D1–D5 behaviour itself on *new* traffic. Hashes and markers prove the new code is installed; they do not prove it behaves correctly when a webhook arrives. No fixture was created and no dead letter was replayed. Every `W` row and every `S` scenario remains **Pending**.
+
+### D2 warning banner — PROVEN RENDERING on real production data (read-only)
+
+This is UI proof on an existing order, not a new fixture. It answers "does the D2 warning actually appear?", which the earlier partial observation could not.
+
+- Query found **3 real production orders** where the store says terminal but DokanOS still shows them active: `11084W` (`deleted` / local `delivered`), `11053W` (`cancelled` / local `delivered`), `11049W` (`cancelled` / local `pre_order_making`). All on connector `f5e5920b-7252-4880-9a7d-1ebfa47c1409` (Vincent).
+- Opened `11053W` in DokanOS at UTC `2026-11-24 15:27` via `/orders?order=dc13c65d-31db-46d7-b0c6-a1e87facfc18`. The banner rendered exactly as designed:
+  > ⚠ **Status mismatch with the online store — do not dispatch**
+  > The store order is **cancelled** (updated Nov 16, 2026 · 3:50 PM), but this order still reads **delivered** in DokanOS. A cancellation made on the store has not reached this order. Review before shipping or changing status.
+- The Payment & Source section also rendered `Store status (WooCommerce): Cancelled · Nov 16, 2026 · 3:50 PM`, so the external status and its timestamp are both visible, not just the warning.
+- Cross-checked against the database: `woocommerce_external_status = cancelled`, `woocommerce_external_status_at = 2026-11-16 09:50:08+00` (= 15:50 Asia/Dhaka). UI text and stored values agree.
+- Screenshot: `screenshot-bwph.png`, sha256 `b2df17af692445d3567baabf0f4e232258039b767a88e7487a738898b58145e1` (1416×726). No order was modified; the sheet was closed with **Close**, never **Save Changes**.
+- **What this proves and does not prove:** the D2 *visibility* half is proven on live data — a human now sees the divergence. The D2 *write* half (that the inbound status update sets `cancelled` on eligible orders and records a conflict instead of cancelling fulfilled ones) still needs a new fixture. `W-13`/`W-41` stay Pending.
 
 ### Read-only UI observation — EXISTING order (NOT a fixture pass, NOT causal proof)
 
