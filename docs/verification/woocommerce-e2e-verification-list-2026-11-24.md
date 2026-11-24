@@ -155,6 +155,17 @@ This is UI proof on an existing order, not a new fixture. It answers "does the D
 - No production deployment, mutation, or dead-letter replay occurred. Live/read-only preflight and post-deployment disposable-order proof remain open.
 - Prior live observations from 2026-11-23 (findings doc, order #8867) are historical context only: inbound ~4 min, delivered→completed after COD collection, pre-dispatch cancel, reconciliation `order_refresh`. They are **not** re-run or claimed as new live execution here.
 
+### Local suite re-run — 2026-11-24 22:30 Asia/Dhaka (16:30 UTC), after the production deploy
+
+All re-run against the local stack with the pending fix migration rehearsed, to confirm the deployed state still matches a green local suite:
+
+- `npm run test:local:woocommerce-sql -- --with-pending`: **ALL GREEN (8 of 8)** — `woocommerce_e2e_findings_fixes_test.sql`, `woocommerce_outbound_status_test.sql`, `woocommerce_order_freshness_test.sql`, `woocommerce_durable_intake_test.sql`, `woocommerce_duplicate_finish_test.sql`, `woocommerce_work_identity_liveness_test.sql`, `woocommerce_conflict_resolution_test.sql`, `woocommerce_order_number_collision_test.sql`.
+- `npm run test:local:woocommerce-vertical`: **6 passed** (1 file), 38.93s.
+- `npm run test:local:woocommerce-intake-race`: **ALL GREEN** — one delivery row, one work row, exact byte preservation, distinct delivery for the same order accepted, second delivery reuses the pending work row, reusing an accepted delivery id for another order is a conflict.
+- `npm run test:local:webhook-bytea`: **PASS** — 20-byte payload with invalid UTF-8 + NUL + `\x` prefix preserved through PostgREST at `http://127.0.0.1:54321`; probe function dropped.
+- `npm run test:local:migration-plan`: **5 passed, 0 failed**.
+- Note for future runs: the script names are `test:local:woocommerce-vertical`, `test:local:woocommerce-intake-race`, `test:local:webhook-bytea` — there are no `test:local:vertical` / `:intake` / `:bytea` scripts.
+
 ## 1. Local preflight (historical regressions only — NOT live proof)
 
 - [ ] **L-01** Fresh-stack rehearsal (`supabase start`, `supabase db reset`, `supabase status`): **NOT RUN** in this continuation. The existing local stack was already running and accepted the tests. Note that the local stack's migration set is applied by the runner, not by `db reset`.
