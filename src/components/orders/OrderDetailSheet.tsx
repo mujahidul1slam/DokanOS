@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logAction } from "@/lib/auditLog";
 import { addOrderTimeline } from "@/lib/orderTimeline";
+import { computeOrderTotals } from "@/lib/orderTotals";
 import { printMeasurementSlip } from "./MeasurementSlipPrint";
 import { detectSizeFromItem, getGroupsForProduct, resolveSizePreset, type MeasurementGroup, type SizePreset } from "@/lib/measurements";
 import { getGroupsWithoutRows } from "@/lib/measurementRules";
@@ -866,8 +867,33 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   /* ---------- helpers ---------- */
 
   const activeItems = editedItems.filter((i) => !deletedItemIds.includes(i.id));
-  const computedSubtotal = activeItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-  const computedTotal = computedSubtotal - discount + shippingCost;
+
+  // Did the person actually change the items? Only then may the item list
+  // decide the money. A store order can carry its value in fees or tax with no
+  // line items at all, and rebuilding from an empty list would zero it on save
+  // (see src/lib/orderTotals.ts).
+  const itemsTouched =
+    deletedItemIds.length > 0 ||
+    editedItems.length !== items.length ||
+    editedItems.some((it) => {
+      if (it._isNew || it.id.startsWith("new-")) return true;
+      const original = items.find((b) => b.id === it.id);
+      return (
+        !original ||
+        Number(original.quantity) !== Number(it.quantity) ||
+        Number(original.unit_price) !== Number(it.unit_price)
+      );
+    });
+
+  const { subtotal: computedSubtotal, total: computedTotal } = computeOrderTotals({
+    items: activeItems,
+    discount,
+    shippingCost,
+    taxAmount: Number(order?.tax_amount || 0),
+    storedSubtotal: order?.subtotal,
+    storedTotal: order?.total,
+    itemsTouched,
+  });
 
   // The Measurements section shows whenever something can be edited — or added:
   // an item whose product has measurement groups but no entry yet must expose
