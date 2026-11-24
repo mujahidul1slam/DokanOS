@@ -1,6 +1,6 @@
 <!-- FOR MUJAHID ONLY - AGENTS: SKIP THIS SECTION -->
 ## Summary (for Mujahid)
-Local checks all pass, and the safety fix is ready to deploy — but nothing is deployed and no live test has been run yet. The undo copy of the four functions the fix replaces has been tested on the local database and put everything back exactly, so the deploy is reversible. One read-only look at an EXISTING order is recorded below; it is not a test result. For every live row, capture screenshots BEFORE and AFTER in BOTH Woo admin and DokanOS, keep the database evidence separate, and mark the result Pending, Pass, Fail, or Blocked. Some behaviours are UNSUPPORTED because the old Woo stock/catalog pipeline was retired; others are UNKNOWN until checked. The next step is one approval to deploy the fix, then run the ten scenarios.
+The safety fix is now live in production. It was applied at 21:20 your time under change id `CHG-2026-11-24-WOO-E2E-01`, and all four database functions were confirmed replaced. Production is still healthy: both stores connected, no new errors, same counts as before the deploy. What is NOT yet proven is that the fix actually behaves correctly — that needs real test orders, which have not been created. The next step is to run the ten live scenarios. Nothing was broken, and no customer data was touched.
 <!-- END FOR MUJAHID ONLY - AGENTS: RESUME READING -->
 
 # WooCommerce E2E verification list — 2026-11-24
@@ -24,7 +24,7 @@ Local checks all pass, and the safety fix is ready to deploy — but nothing is 
 - User confirmed the intended production Supabase project is `jiwndicvfkiltgageqwv`. Authenticated browser access to its Supabase SQL Editor is available; no token was extracted.
 - **Live read-only migration proof:** at database UTC `2026-11-24 07:28:41.734328+00`, `EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261124090000')` returned **false** and `max(version)` returned **20261113130000**. The D1–D5 fix migration is not recorded as deployed. Evidence query: `SELECT now() AS checked_at, EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261124090000') AS findings_fix_recorded, (SELECT max(version) FROM supabase_migrations.schema_migrations) AS latest_migration;`. Only SELECT queries were executed; the dashboard may retain their query snippets/history. No application data or schema was changed. Stop live fixture creation until an explicitly authorized deployment and post-deployment read-only verification; do not deploy through this SQL Editor.
 - Evidence location: Supabase SQL Editor query `cc8ff4bc-1235-4be7-9a0f-77120bb23577` on the confirmed project. This proves the migration ledger state, not byte-for-byte deployed function definitions or the backend used by the Vercel app.
-- Live deployment / read-only causal preflight is not established; fixture checks are not executed. No `W` row or `S` scenario has passed.
+- Live deployment / read-only causal preflight was not established before the deploy; it has since been satisfied by the post-deploy verification in the DEPLOYED section below. Fixture checks are still not executed. No `W` row or `S` scenario has passed.
 - **Read-only continuation, DB UTC `2026-11-24 12:34:39.144748+00`:** migration `20261124090000` was absent; latest was `20261113130000`. Supabase Free Plan explicitly states it has no scheduled project backups; usable external recovery evidence remains unverified.
 - **Authenticated CLI preflight, DB UTC `2026-11-24 13:50:06+00:** target `jiwndicvfkiltgageqwv` confirmed. The CLI is authenticated (Supabase CLI 3.3.0). Preview shows exactly one pending migration: `20261124090000_woocommerce_e2e_findings_fixes.sql`; no apply occurred. Connectors `4fa8dbf5-d638-47ed-b0b1-cce4b1430b31` and `f5e5920b-7252-4880-9a7d-1ebfa47c1409` are `healthy`, intake/outbound enabled, webhook status `active`; reconciliation ran at 13:45 UTC. Read-only counts at 13:53 UTC: 4 dead letters, 1 unresolved conflict, 0 pending outbound writes, 22 succeeded outbound writes, 139 succeeded and 56 replayed work rows. Schedulers 18 (`*/5`) and 19 (`*/15`) are active.
 - The current remote function hashes/signatures were captured read-only for recovery; a local artifact was written under `.tmp/` and is not a deployment authorization. No application data/schema changed. Do not replay dead letters or create live fixtures until migration deployment and recovery approval are complete.
@@ -37,6 +37,25 @@ Local checks all pass, and the safety fix is ready to deploy — but nothing is 
 - The adapter needs `SUPABASE_ACCESS_TOKEN` in the environment and refuses without it. The token is present in the Supabase CLI's Windows Credential Manager entry; it was loaded into the child process environment only and never printed, logged, or written to disk.
 - Local continuation check: corrected the first-seen terminal-order assertion to use identity `order_id` and a null-safe status check; SQL with pending migration passed **8/8** again. This is local-only evidence.
 - Read-only continuation observation on `2026-11-24` (exact capture UTC not retained): DokanOS Integrations showed Enveil WooCommerce as **WooCommerce (legacy)**, **Manual**, with `—` sync and `653 orders`; this is historical/manual-source UI evidence, not proof of the deployed connector or current webhook health. No controls were changed.
+
+## DEPLOYED — 2026-11-24 21:20 UTC+6 (15:20 UTC)
+
+- **Authorization:** Mujahid approved deployment in-session. Change id `CHG-2026-11-24-WOO-E2E-01`. Scope was exactly one file: `20261124090000_woocommerce_e2e_findings_fixes.sql`.
+- **Applied through the reviewed adapter**, not ad-hoc SQL: `node scripts/prod-migrate.mjs --apply --change-id CHG-2026-11-24-WOO-E2E-01 --expect-ref jiwndicvfkiltgageqwv --only 20261124090000_woocommerce_e2e_findings_fixes.sql`. Target `jiwndicvfkiltgageqwv` (Management API), commit `bdbb829`, branch `pr/woocommerce-sync-recovery`. Output: `applying 20261124090000 … ok`, `applied 1 migration(s); audit_log written under CHG-2026-11-24-WOO-E2E-01`.
+- **Ledger:** `fix_recorded = true`, `latest = 20261124090000`, total **218** applied migrations.
+- **All four function hashes changed** — this is the proof the bodies were replaced, because the adapter does not verify hashes itself:
+
+| Function | Before | After |
+|---|---|---|
+| `accept_woocommerce_webhook_delivery` | `3acd8148b84558084dd0f35cf700f559` | `5246e6aefbbc35acb62d7a08243b95c6` |
+| `enqueue_woocommerce_outbound_on_order_status` | `30725ee67673481b6fc7c8ff512f8750` | `3dd31d025177af88fe67b5dd77b42b82` |
+| `finish_woocommerce_sync_work` | `704214796c9be00e90d4a65181dde0b1` | `a53e8e68f0c5dd6253cf497aba7ecfd7` |
+| `upsert_woocommerce_order` | `6511eef5575a10b118b494d4d83dc999` | `500ee128abee7ee6aadbde910c64defa` |
+
+- **Guard markers present in the live bodies** (`position(...)` over `pg_get_functiondef`): D1 payment guard at char 3189 and D2 conflict marker at char 8802 and the D4 advisory lock at char 1403 inside `upsert_woocommerce_order`; D4 lock at char 1314 inside `accept_woocommerce_webhook_delivery`; D5 duplicate-finish marker at char 704 inside `finish_woocommerce_sync_work`; D3 trigger markers `OLD.status` 467, `entered` 1203, `cancelled` 1685, `consignment_id` 2656 inside `enqueue_woocommerce_outbound_on_order_status`.
+- **Signatures and privileges unchanged:** `upsert_woocommerce_order` still has exactly **1** overload with the same 23 identity arguments; ACLs remain `{postgres=X/postgres,service_role=X/postgres}` except the trigger function (`acl` null); owner `postgres`; all `prosecdef = true`.
+- **Runtime unchanged after deploy:** both connectors still `healthy`, intake/outbound enabled, `webhook_status = active`, `error_class` null, reconciliation at 15:15 UTC. Work states 4 `dead_letter`, 56 `replayed`, 139 `succeeded`; 1 open conflict; 22 `succeeded` outbound writes. Identical to the pre-deploy baseline — the deploy broke nothing.
+- **Still NOT proven:** the D1–D5 behaviour itself. Hashes and markers prove the new code is installed; they do not prove it behaves correctly on live traffic. No fixture was created and no dead letter was replayed. Every `W` row and every `S` scenario remains **Pending**.
 
 ### Read-only UI observation — EXISTING order (NOT a fixture pass, NOT causal proof)
 
