@@ -37,6 +37,10 @@ const FIXTURE_BUSINESS_SQL = `INSERT INTO public.businesses (id, name, slug, cur
 // ledger does not already contain them.
 const TESTS = [
   {
+    file: "woocommerce_e2e_findings_fixes_test.sql",
+    requires: ["20261124090000_woocommerce_e2e_findings_fixes.sql"],
+  },
+  {
     file: "woocommerce_outbound_status_test.sql",
     requires: [],
   },
@@ -128,7 +132,13 @@ async function run() {
       }
 
       let preamble = "";
-      const missing = test.requires.filter(
+      // Rehearse the latest fix in every test transaction, after older
+      // prerequisites, so legacy regression files also exercise the new bodies.
+      const required = [...new Set([
+        ...test.requires,
+        "20261124090000_woocommerce_e2e_findings_fixes.sql",
+      ])];
+      const missing = required.filter(
         (name) => !applied.has(name.slice(0, name.indexOf("_"))),
       );
       if (missing.length > 0) {

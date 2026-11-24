@@ -417,6 +417,7 @@ async function main() {
         "20261112130000_woocommerce_order_snapshot_and_prefix.sql",
         "20261112140000_woocommerce_order_snapshot_and_prefix_repair.sql",
         "20261112150000_woocommerce_order_snapshot_prefix_backfill.sql",
+        "20261124090000_woocommerce_e2e_findings_fixes.sql",
       ];
 
   const metas = requested.map((file) => parseMigration(file));

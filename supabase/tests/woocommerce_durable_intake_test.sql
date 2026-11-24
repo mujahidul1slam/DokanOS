@@ -33,8 +33,12 @@ BEGIN
  END IF;
  IF (SELECT count(*) FROM public.woocommerce_webhook_deliveries WHERE connector_id=c AND delivery_id IN ('durable-test-1','durable-test-2'))<>2
     OR (SELECT count(*) FROM public.woocommerce_sync_work WHERE connector_id=c AND external_order_id=90001 AND state='pending')<>1
-    OR NOT EXISTS(SELECT FROM public.woocommerce_sync_work WHERE id=w1 AND related_delivery_id=d1 AND identity_key='webhook:'||d1::text)
-    OR EXISTS(SELECT FROM public.woocommerce_sync_work WHERE id=w2 AND related_delivery_id=d2) THEN RAISE EXCEPTION 'coalesced work/evidence links incorrect'; END IF;
+    -- D4: latest arrival (d2) is the current evidence link; d1 stays the stable identity
+     OR NOT EXISTS(SELECT FROM public.woocommerce_sync_work WHERE id=w1 AND related_delivery_id=d2 AND identity_key='webhook:'||d1::text)
+    -- earlier evidence d1 retained + acknowledged; no duplicate pending work
+     OR (SELECT processed_at FROM public.woocommerce_webhook_deliveries WHERE id=d1) IS NULL
+     OR (SELECT processed_at FROM public.woocommerce_webhook_deliveries WHERE id=d2) IS NOT NULL
+     OR (SELECT count(*) FROM public.woocommerce_sync_work WHERE id<>w1 AND related_delivery_id IN (d1,d2))<>0 THEN RAISE EXCEPTION 'coalesced work/evidence links incorrect'; END IF;
 
  r:=public.accept_woocommerce_webhook_delivery(c,19::bigint,NULL,'  '||repeat('b',64)||'  ','order.updated','order','https://durable.invalid','1',decode('02','hex'),jsonb_build_object('id',90002),90002::bigint);
  d1:=(r->>'delivery_id')::uuid;

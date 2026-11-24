@@ -10,10 +10,16 @@ DECLARE
   store uuid := '8f000000-0000-0000-0000-00000000e001';
   source uuid := '8d000000-0000-0000-0000-00000000e001';
   o uuid := '8a000000-0000-0000-0000-00000000e001';
+  early_order uuid := '8a000000-0000-0000-0000-00000000e002';
+  echo_order uuid := '8a000000-0000-0000-0000-00000000e003';
   before_count integer;
   after_count integer;
   before_work integer;
   after_work integer;
+  cancel_before_writes integer;
+  cancel_before_work integer;
+  echo_before_writes integer;
+  echo_before_work integer;
   write_row record;
   work_row record;
 BEGIN
@@ -84,19 +90,69 @@ BEGIN
     RAISE EXCEPTION 'successful confirmation was not recorded';
   END IF;
 
+  -- D3: the order was just delivered, so it is post-dispatch even without a
+  -- consignment row. Cancelling it must NOT enqueue an outbound cancellation.
+  -- Capture counts before the update so the assertion is relative, not a
+  -- hardcoded magic number.
+  SELECT count(*) INTO cancel_before_writes FROM public.woocommerce_outbound_writes WHERE connector_id = c;
+  SELECT count(*) INTO cancel_before_work FROM public.woocommerce_sync_work WHERE connector_id = c;
   UPDATE public.orders SET status = 'cancelled', updated_at = '2026-11-11T00:03:00Z' WHERE id = o;
-  SELECT * INTO write_row FROM public.woocommerce_outbound_writes WHERE connector_id = c AND external_order_id = 91001 AND target_status = 'cancelled';
-  IF write_row.origin <> 'pre_dispatch_cancel' THEN
-    RAISE EXCEPTION 'safe pre-dispatch cancellation did not enqueue';
+  IF (SELECT count(*) FROM public.woocommerce_outbound_writes WHERE connector_id = c) <> cancel_before_writes
+     OR (SELECT count(*) FROM public.woocommerce_sync_work WHERE connector_id = c) <> cancel_before_work THEN
+    RAISE EXCEPTION 'delivered->cancelled created an unsafe outbound write/work row';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.woocommerce_outbound_writes
+             WHERE connector_id = c AND external_order_id = 91001 AND target_status = 'cancelled') THEN
+    RAISE EXCEPTION 'post-dispatch cancellation must not enqueue a cancelled write';
   END IF;
 
-  -- Inbound upsert changes local facts but must not change orders.status.
-  UPDATE public.orders SET status = 'processing' WHERE id = o;
-  IF (SELECT status FROM public.orders WHERE id = o) <> 'processing' THEN
-    RAISE EXCEPTION 'fixture status reset failed';
+  -- A genuinely early (never-dispatched) order may still be cancelled locally
+  -- and must enqueue a pre_dispatch_cancel write. Use a fresh fixture whose
+  -- OLD.status is an early, pre-dispatch status and whose external status is
+  -- open, so neither the post-dispatch nor the echo guard suppresses it.
+  INSERT INTO public.orders(id, store_id, order_number, source, status, payment_method,
+    payment_status, updated_at)
+  VALUES (early_order, store, 'OUTBOUND-91002', 'online', 'pending', 'online', 'paid', '2026-11-11T00:00:00Z');
+  INSERT INTO public.woocommerce_order_identities(connector_id, order_id, external_order_id)
+  VALUES (c, early_order, 91002);
+  SELECT count(*) INTO cancel_before_writes FROM public.woocommerce_outbound_writes WHERE connector_id = c;
+  UPDATE public.orders SET status = 'cancelled', updated_at = '2026-11-11T00:01:00Z' WHERE id = early_order;
+  IF (SELECT count(*) FROM public.woocommerce_outbound_writes WHERE connector_id = c) <> cancel_before_writes + 1 THEN
+    RAISE EXCEPTION 'genuine pre-dispatch cancellation did not enqueue exactly one write';
   END IF;
-  IF (SELECT count(*) FROM public.woocommerce_outbound_writes WHERE connector_id = c) <> 3 THEN
-    RAISE EXCEPTION 'inbound echo would have created an outbound loop';
+  IF NOT EXISTS (SELECT 1 FROM public.woocommerce_outbound_writes
+                 WHERE connector_id = c AND local_order_id = early_order
+                   AND external_order_id = 91002 AND target_status = 'cancelled'
+                   AND origin = 'pre_dispatch_cancel') THEN
+    RAISE EXCEPTION 'genuine pre-dispatch cancellation write evidence is incorrect';
+  END IF;
+
+  -- Echo suppression: use the REAL inbound upsert, not a local status reset.
+  -- An external terminal state that already reached WooCommerce must cancel an
+  -- early local order without writing a cancellation back (no outbound loop).
+  INSERT INTO public.orders(id, store_id, order_number, source, status, payment_method,
+    payment_status, updated_at)
+  VALUES (echo_order, store, 'OUTBOUND-91003', 'online', 'pending', 'online', 'paid', '2026-11-11T00:00:00Z');
+  INSERT INTO public.woocommerce_order_identities(connector_id, order_id, external_order_id,
+    external_order_number, last_external_status)
+  VALUES (c, echo_order, 91003, '91003', 'processing');
+  SELECT count(*) INTO echo_before_writes FROM public.woocommerce_outbound_writes WHERE connector_id = c;
+  SELECT count(*) INTO echo_before_work FROM public.woocommerce_sync_work WHERE connector_id = c;
+  PERFORM public.upsert_woocommerce_order(
+    c, 91003, '91003', 'cancelled', '2026-11-11T00:02:00Z', 100, 90, 0, 10,
+    'online', 'pending', 'unpaid', NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    'echo', '2026-11-11T00:00:00Z', '[]'::jsonb, '{}'::jsonb);
+  IF (SELECT status FROM public.orders WHERE id = echo_order) <> 'cancelled' THEN
+    RAISE EXCEPTION 'inbound terminal upsert did not cancel the early local order';
+  END IF;
+  IF (SELECT count(*) FROM public.woocommerce_outbound_writes WHERE connector_id = c) <> echo_before_writes
+     OR (SELECT count(*) FROM public.woocommerce_sync_work WHERE connector_id = c) <> echo_before_work THEN
+    RAISE EXCEPTION 'inbound echo created an outbound loop';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.woocommerce_outbound_writes
+             WHERE connector_id = c AND local_order_id = echo_order
+               AND external_order_id = 91003 AND target_status = 'cancelled') THEN
+    RAISE EXCEPTION 'inbound echo produced a cancelled outbound write';
   END IF;
 END $$;
 

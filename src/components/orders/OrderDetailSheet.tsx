@@ -85,6 +85,8 @@ interface OrderDetail {
   order_number: string;
   status: string;
   payment_status: string;
+  woocommerce_external_status?: string | null;
+  woocommerce_external_status_at?: string | null;
   payment_method: string | null;
   source: string;
   subtotal: number;
@@ -233,6 +235,18 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
   const gate = order ? evaluatePaymentGate(order) : null;
   const paymentGateLocked = !!gate?.gated;
   const canEnterCourierNow = canAttachCourier && !paymentGateLocked;
+
+  // D2 safety: a terminal status recorded by the online store (WooCommerce)
+  // must stay visible even when the local order has moved on — e.g. a Woo
+  // cancellation that never reached DokanOS. The operator must see the
+  // divergence before dispatching. This reads only the external-status fields
+  // already present on the order row; no conflict-table query is introduced.
+  const wooExternalStatus = order?.woocommerce_external_status ?? null;
+  const wooExternalStatusAt = order?.woocommerce_external_status_at ?? null;
+  const wooTerminalStatuses = ["cancelled", "refunded", "failed", "trash", "deleted"];
+  const wooTerminal = !!wooExternalStatus && wooTerminalStatuses.includes(wooExternalStatus.toLowerCase());
+  const localTerminal = order?.status === "cancelled" || order?.status === "refunded";
+  const wooStatusDiverged = wooTerminal && !localTerminal;
   const [items, setItems] = useState<LineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
@@ -431,7 +445,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
     const orderRes = await scopeStoreIds(
       supabase
         .from("orders")
-        .select("id, order_number, status, payment_status, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, store_id, storefront_id, stock_restored_at, order_source_id, pathao_integration_id, pathao_store_id, stores(url, name), order_source:order_sources(id, name, type, brand_id, brands(id, name, woo_store_id)), order_brands(brand_id, is_primary, brands(id, name, logo_url))")
+        .select("id, order_number, status, payment_status, woocommerce_external_status, woocommerce_external_status_at, payment_method, source, subtotal, discount, shipping_cost, total, tax_amount, amount_to_collect, notes, consignment_id, tracking_status, created_at, customer_name, customer_phone, customer_address, customer_email, customer_city, fulfillment_type, store_id, storefront_id, stock_restored_at, order_source_id, pathao_integration_id, pathao_store_id, stores(url, name), order_source:order_sources(id, name, type, brand_id, brands(id, name, woo_store_id)), order_brands(brand_id, is_primary, brands(id, name, logo_url))")
         .eq("id", orderId),
       businessStoreIds,
     ).single();
@@ -1736,6 +1750,24 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
           {loading ? (
             <div className="flex items-center justify-center h-40 text-muted-foreground">Loading…</div>
           ) : (
+            <>
+            {/* D2 safety banner: the online store recorded a terminal status
+                (e.g. cancelled) that the local order has NOT picked up. Shown on
+                every tab so staff cannot dispatch a cancelled store order. */}
+            {wooStatusDiverged && (
+              <div className="mx-6 mt-3 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-500 space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Status mismatch with the online store — do not dispatch
+                </div>
+                <p>
+                  The store order is <strong>{wooExternalStatus}</strong>
+                  {wooExternalStatusAt ? ` (updated ${format(new Date(wooExternalStatusAt), "MMM d, yyyy · h:mm a")})` : ""},
+                  but this order still reads <strong>{order?.status}</strong> in DokanOS. A cancellation made on
+                  the store has not reached this order. Review before shipping or changing status.
+                </p>
+              </div>
+            )}
             <Tabs defaultValue="info" className="h-full">
               <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent px-6 pt-2">
                 <TabsTrigger value="info" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">Order Info</TabsTrigger>
@@ -1998,6 +2030,21 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                       </Select>
                     </div>
                   </div>
+                  {/* D2: always surface the online-store status for Woo orders,
+                      even when it matches locally, so staff can reconcile. */}
+                  {wooExternalStatus && (
+                    <div className="mt-3 flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">Store status (WooCommerce):</span>
+                      <span className={wooTerminal ? "font-medium text-red-500" : "font-medium text-foreground"}>
+                        {wooExternalStatus.replace(/-/g, " ").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </span>
+                      {wooExternalStatusAt && (
+                        <span className="text-muted-foreground">
+                          · {format(new Date(wooExternalStatusAt), "MMM d, yyyy · h:mm a")}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </section>
 
                 <Separator />
@@ -2652,6 +2699,7 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
                 )}
               </TabsContent>
             </Tabs>
+            </>
           )}
         </div>
 
@@ -2811,6 +2859,9 @@ export default function OrderDetailSheet({ orderId, open, onOpenChange, onSaved 
 function FulfillmentBadge({ status }: { status: string }) {
   switch (status) {
     case "processing":
+    // WooCommerce "processing" maps to the local "new_order" status. The
+    // detail sheet used to fall through to the raw enum here (D7).
+    case "new_order":
       return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">New Order</Badge>;
     case "payment_pending":
       // Display-only rename (issue #27): stored value stays "payment_pending".
