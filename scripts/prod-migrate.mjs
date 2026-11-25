@@ -420,6 +420,7 @@ async function main() {
         "20261124090000_woocommerce_e2e_findings_fixes.sql",
         "20261125090000_woocommerce_item_fidelity.sql",
         "20261126090000_woocommerce_product_import.sql",
+        "20261127090000_woocommerce_product_webhook_bindings.sql",
       ];
 
   const metas = requested.map((file) => parseMigration(file));

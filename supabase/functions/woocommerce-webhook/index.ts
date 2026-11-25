@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import {
   allowedWooWebhookTopic,
+  bindingMatchesDelivery,
   deliveryFingerprintInput,
   extractWooExternalId,
   isStrictWebhookId,
@@ -30,6 +31,14 @@ type Connector = {
   previous_webhook_secret_ref: string | null;
   previous_secret_expires_at: string | null;
   intake_enabled: boolean;
+  status: string;
+};
+
+type Binding = {
+  connector_id: string;
+  webhook_id: number;
+  topic: string;
+  secret_ref: string;
   status: string;
 };
 
@@ -154,13 +163,36 @@ Deno.serve(async (req: Request) => {
     });
     return response({ error: "invalid_webhook_identity" }, 400);
   }
-  const { data: connectors, error: connectorError } = await sb.from("woocommerce_connectors")
-    .select("id,business_id,brand_id,store_id,order_source_id,external_store_url,expected_webhook_id,webhook_secret_fingerprint,webhook_secret_ref,previous_webhook_secret_ref,previous_secret_expires_at,intake_enabled,status")
-    .eq("expected_webhook_id", webhookId)
-    .eq("intake_enabled", true)
-    .in("status", ["healthy", "degraded"])
+  const CONNECTOR_FIELDS = "id,business_id,brand_id,store_id,order_source_id,external_store_url,expected_webhook_id,webhook_secret_fingerprint,webhook_secret_ref,previous_webhook_secret_ref,previous_secret_expires_at,intake_enabled,status";
+  // An active binding takes precedence: it is a separate webhook registration
+  // (usually product.*) that must not clash with the connector's order id.
+  const { data: bindings, error: bindingError } = await sb.from("woocommerce_webhook_bindings")
+    .select("connector_id,webhook_id,topic,secret_ref,status")
+    .eq("webhook_id", webhookId)
+    .eq("status", "active")
     .limit(20);
-  if (connectorError || !connectors?.length) {
+  const binding = bindingError ? null : (bindings?.find((row) => row.webhook_id === webhookId && row.status === "active") as Binding | undefined) ?? null;
+  let connectors: Connector[] = [];
+  if (binding) {
+    const bound = await sb.from("woocommerce_connectors")
+      .select(CONNECTOR_FIELDS)
+      .eq("id", binding.connector_id)
+      .eq("intake_enabled", true)
+      .in("status", ["healthy", "degraded"])
+      .limit(20);
+    if (bound.error) console.error("woocommerce binding connector lookup failed", bound.error.message);
+    connectors = bound.data ?? [];
+  } else {
+    const legacy = await sb.from("woocommerce_connectors")
+      .select(CONNECTOR_FIELDS)
+      .eq("expected_webhook_id", webhookId)
+      .eq("intake_enabled", true)
+      .in("status", ["healthy", "degraded"])
+      .limit(20);
+    if (legacy.error) console.error("woocommerce connector lookup failed", legacy.error.message);
+    connectors = legacy.data ?? [];
+  }
+  if (!connectors.length) {
     await retainRejection(sb, {
       webhook_id: webhookId,
       delivery_id: deliveryId,
@@ -176,10 +208,10 @@ Deno.serve(async (req: Request) => {
 
   // The binding contract module is imported piecemeal on purpose. Its
   // resolveWooWebhookBinding() would re-assert the expected webhook id (the
-  // connector is already selected by that id in the query above) and returns
-  // wrong_source for an unclaimed id, turning the 404 unbound_webhook above
-  // into a 401 wrong_webhook_source. These predicates carry the same rules
-  // without changing the responses the live intake already returns.
+  // connector is already selected by that id or by an active binding) and
+  // returns wrong_source for an unclaimed id, turning the 404 unbound_webhook
+  // above into a 401 wrong_webhook_source. These predicates carry the same
+  // rules without changing the responses the live intake already returns.
   const rawSource = normalizeWooWebhookSource(source);
   const typedConnector = connectors.find((candidate) => normalizeWooWebhookSource(candidate.external_store_url) === rawSource) as Connector | undefined;
   // A webhook id is only meaningful within its external store. Do not let a
@@ -205,7 +237,15 @@ Deno.serve(async (req: Request) => {
   // closed. This does not touch the signature, secret or source checks below.
   const resourceValid = isWooWebhookResourceValid(topic, resource);
   const isProductTopic = typeof topic === "string" && topic.startsWith("product.");
-  const signatureValid = sourceValid && (await Promise.all((await secretsFor(typedConnector)).map((secret) => verify(raw, signature, secret)))).some(Boolean);
+  // A binding owns its own signing secret; do not merge it with the
+  // connector's order secret, or one registration could authenticate another.
+  const signingConnector: Connector = binding
+    ? { ...typedConnector, webhook_secret_fingerprint: null, webhook_secret_ref: binding.secret_ref, previous_webhook_secret_ref: null, previous_secret_expires_at: null }
+    : typedConnector;
+  // A binding promises exactly one topic. A topic mismatch crosses wires, so
+  // it fails closed with the same unsupported_webhook rejection as a bad topic.
+  const bindingTopicValid = !binding || bindingMatchesDelivery(binding, { webhookId, topic });
+  const signatureValid = sourceValid && (await Promise.all((await secretsFor(signingConnector)).map((secret) => verify(raw, signature, secret)))).some(Boolean);
   let parsed: Record<string, unknown> | null = null;
   try {
     const value: unknown = JSON.parse(new TextDecoder().decode(raw));
@@ -238,7 +278,7 @@ Deno.serve(async (req: Request) => {
     });
     return response({ error: "invalid_signature" }, 401);
   }
-  if (!topicValid || !resourceValid) {
+  if (!topicValid || !resourceValid || !bindingTopicValid) {
     await retainRejection(sb, {
       connector_id: typedConnector.id,
       webhook_id: webhookId,

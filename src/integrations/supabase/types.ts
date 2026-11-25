@@ -2396,6 +2396,47 @@ export type Database = {
           },
         ]
       }
+      woocommerce_webhook_bindings: {
+        Row: {
+          connector_id: string
+          created_at: string
+          id: string
+          secret_ref: string
+          status: string
+          topic: string
+          updated_at: string
+          webhook_id: number
+        }
+        Insert: {
+          connector_id: string
+          created_at?: string
+          id?: string
+          secret_ref: string
+          status?: string
+          topic: string
+          updated_at?: string
+          webhook_id: number
+        }
+        Update: {
+          connector_id?: string
+          created_at?: string
+          id?: string
+          secret_ref?: string
+          status?: string
+          topic?: string
+          updated_at?: string
+          webhook_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "woocommerce_webhook_bindings_connector_id_fkey"
+            columns: ["connector_id"]
+            isOneToOne: false
+            referencedRelation: "woocommerce_connectors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           attributes: Json | null

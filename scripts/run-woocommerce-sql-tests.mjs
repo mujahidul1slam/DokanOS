@@ -39,6 +39,7 @@ const ALWAYS_REHEARSED = [
   "20261124090000_woocommerce_e2e_findings_fixes.sql",
   "20261125090000_woocommerce_item_fidelity.sql",
   "20261126090000_woocommerce_product_import.sql",
+  "20261127090000_woocommerce_product_webhook_bindings.sql",
 ];
 
 // Each test file, and the migrations it needs applied first when the local
@@ -54,6 +55,11 @@ const TESTS = [
     file: "woocommerce_product_import_test.sql",
     // The product-import migration is in ALWAYS_REHEARSED, after the fixes it
     // builds on; no extra per-test prerequisites.
+    requires: [],
+  },
+  {
+    file: "woocommerce_product_webhook_bindings_test.sql",
+    // The bindings migration is in ALWAYS_REHEARSED, after product import.
     requires: [],
   },
   {

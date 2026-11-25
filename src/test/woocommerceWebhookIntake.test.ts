@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allowedWooWebhookTopic,
+  bindingMatchesDelivery,
   deliveryFingerprintInput,
   extractWooExternalId,
   extractWooOrderId,
@@ -33,6 +34,28 @@ describe("WooCommerce webhook intake contract", () => {
     expect(isStrictWebhookId("1.5")).toBe(false);
     expect(isStrictWebhookId("-1")).toBe(false);
     expect(isStrictWebhookId("9007199254740992")).toBe(false);
+  });
+
+  describe("bindingMatchesDelivery", () => {
+    const binding = { webhook_id: 77, topic: "product.updated", status: "active" };
+    it("accepts an active binding on the matching webhook id and topic", () => {
+      expect(bindingMatchesDelivery(binding, { webhookId: 77, topic: "product.updated" })).toBe(true);
+    });
+    it("rejects a topic mismatch", () => {
+      expect(bindingMatchesDelivery(binding, { webhookId: 77, topic: "product.created" })).toBe(false);
+      expect(bindingMatchesDelivery(binding, { webhookId: 77, topic: "order.updated" })).toBe(false);
+    });
+    it("rejects a paused or disabled binding", () => {
+      expect(bindingMatchesDelivery({ ...binding, status: "paused" }, { webhookId: 77, topic: "product.updated" })).toBe(false);
+      expect(bindingMatchesDelivery({ ...binding, status: "disabled" }, { webhookId: 77, topic: "product.updated" })).toBe(false);
+    });
+    it("fails closed on a blank or missing delivery topic", () => {
+      expect(bindingMatchesDelivery(binding, { webhookId: 77, topic: "" })).toBe(false);
+      expect(bindingMatchesDelivery(binding, { webhookId: 77, topic: null })).toBe(false);
+    });
+    it("rejects a different webhook id", () => {
+      expect(bindingMatchesDelivery(binding, { webhookId: 78, topic: "product.updated" })).toBe(false);
+    });
   });
 
   it("binds the source, webhook id, and active intake state without payload tenancy", () => {

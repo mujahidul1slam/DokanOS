@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { createClient, db } = vi.hoisted(() => {
   const state = {
     connectors: [] as Record<string, unknown>[],
+    bindings: [] as Record<string, unknown>[],
     rejections: [] as Record<string, unknown>[],
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     rpcResults: [] as Array<{ data: unknown; error: { code?: string; message: string } | null }>,
@@ -29,7 +30,7 @@ const { createClient, db } = vi.hoisted(() => {
         select() { return query; },
         eq(column: string, value: unknown) { filters.push([column, value]); return query; },
         in(column: string, values: unknown[]) { filters.push([column, values]); return query; },
-        limit(count: number) { return Promise.resolve({ data: state.connectors.filter((row) => filters.every(([k, v]) => Array.isArray(v) ? v.includes(row[k]) : row[k] === v)).slice(0, count), error: null }); },
+        limit(count: number) { const rows = table === "woocommerce_webhook_bindings" ? state.bindings : state.connectors; return Promise.resolve({ data: rows.filter((row) => filters.every(([k, v]) => Array.isArray(v) ? v.includes(row[k]) : row[k] === v)).slice(0, count), error: null }); },
         insert(row: Record<string, unknown>) {
           if (table === "woocommerce_webhook_rejections") state.rejections.push({ ...row, id: `rejection-${state.nextId++}` });
           return Promise.resolve({ data: null, error: null });
@@ -50,14 +51,15 @@ const { createClient, db } = vi.hoisted(() => {
 vi.mock("npm:@supabase/supabase-js@2.49.4", () => ({ createClient }));
 
 const secret = "test-only-woo-webhook-secret";
+const productSecret = "test-only-woo-product-webhook-secret";
 const connector = { id: "connector-test", business_id: "business-test", brand_id: "brand-test", store_id: "store-test", order_source_id: "source-test", external_store_url: "https://shop.example", expected_webhook_id: 42, webhook_secret_fingerprint: null, webhook_secret_ref: "WOO_TEST_WEBHOOK_SECRET", previous_webhook_secret_ref: null, previous_secret_expires_at: null, intake_enabled: true, status: "healthy" };
 type EdgeRuntime = { env: { get(name: string): string | undefined }; serve(handler: (request: Request) => Response | Promise<Response>): void };
 const edgeRuntime = globalThis as typeof globalThis & { Deno?: EdgeRuntime };
 let handler: ((request: Request) => Promise<Response>) | undefined;
-async function signature(body: string) { const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body))))); }
-async function requestFor(input: { body?: string; deliveryId?: string | null; validSignature?: boolean; topic?: string; resource?: string } = {}) { const body = input.body ?? JSON.stringify({ id: 731, status: "processing" }); const signed = await signature(body); return new Request("https://edge.test/woocommerce-webhook", { method: "POST", headers: { "x-wc-webhook-source": "https://shop.example/", "x-wc-webhook-id": "42", "x-wc-webhook-topic": input.topic ?? "order.updated", "x-wc-webhook-resource": input.resource ?? "order", ...(input.deliveryId === null ? {} : { "x-wc-webhook-delivery-id": input.deliveryId ?? "delivery-test" }), "x-wc-webhook-signature": input.validSignature === false ? "invalid-signature" : signed }, body }); }
+async function signature(body: string, value = secret) { const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(value), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body))))); }
+async function requestFor(input: { body?: string; deliveryId?: string | null; validSignature?: boolean; topic?: string; resource?: string; webhookId?: string; signingSecret?: string } = {}) { const body = input.body ?? JSON.stringify({ id: 731, status: "processing" }); const signed = await signature(body, input.signingSecret); return new Request("https://edge.test/woocommerce-webhook", { method: "POST", headers: { "x-wc-webhook-source": "https://shop.example/", "x-wc-webhook-id": input.webhookId ?? "42", "x-wc-webhook-topic": input.topic ?? "order.updated", "x-wc-webhook-resource": input.resource ?? "order", ...(input.deliveryId === null ? {} : { "x-wc-webhook-delivery-id": input.deliveryId ?? "delivery-test" }), "x-wc-webhook-signature": input.validSignature === false ? "invalid-signature" : signed }, body }); }
 async function send(input?: Parameters<typeof requestFor>[0]) { if (!handler) throw new Error("Deno.serve handler not registered"); return handler(await requestFor(input)); }
-beforeEach(async () => { db.connectors = [{ ...connector }]; db.rejections = []; db.rpcCalls = []; db.rpcResults = []; db.connectorUpdateErrors = []; db.nextId = 1; edgeRuntime.Deno = { env: { get: (name) => name === "SUPABASE_URL" ? "https://supabase.test" : name === "SUPABASE_SERVICE_ROLE_KEY" ? "test-service-key" : name === "WOO_TEST_WEBHOOK_SECRET" ? secret : undefined }, serve: (registered) => { handler = registered as (request: Request) => Promise<Response>; } }; vi.resetModules(); const handlerModule = "../../supabase/functions/woocommerce-webhook/index.ts"; await import(handlerModule); });
+beforeEach(async () => { db.connectors = [{ ...connector }]; db.bindings = []; db.rejections = []; db.rpcCalls = []; db.rpcResults = []; db.connectorUpdateErrors = []; db.nextId = 1; edgeRuntime.Deno = { env: { get: (name) => name === "SUPABASE_URL" ? "https://supabase.test" : name === "SUPABASE_SERVICE_ROLE_KEY" ? "test-service-key" : name === "WOO_TEST_WEBHOOK_SECRET" ? secret : name === "WOO_TEST_PRODUCT_SECRET" ? productSecret : undefined }, serve: (registered) => { handler = registered as (request: Request) => Promise<Response>; } }; vi.resetModules(); const handlerModule = "../../supabase/functions/woocommerce-webhook/index.ts"; await import(handlerModule); });
 afterEach(() => { edgeRuntime.Deno = undefined; handler = undefined; });
 
 describe("WooCommerce webhook HTTP intake", () => {
@@ -101,6 +103,33 @@ describe("WooCommerce webhook HTTP intake", () => {
     const response = await send({ body, topic: "product.updated", resource: "product" });
     expect(response.status).toBe(200);
     expect(db.rpcCalls[0]?.name).toBe("accept_woocommerce_product_delivery");
+  });
+
+  it("accepts a product.updated delivery resolved via a binding's own secret", async () => {
+    db.bindings = [{ connector_id: "connector-test", webhook_id: 77, topic: "product.updated", secret_ref: "WOO_TEST_PRODUCT_SECRET", status: "active" }];
+    const body = JSON.stringify({ id: 88003, name: "Bound Widget" });
+    const response = await send({ body, webhookId: "77", topic: "product.updated", resource: "product", signingSecret: productSecret, deliveryId: "delivery-bound" });
+    expect(response.status).toBe(200);
+    expect(db.rpcCalls).toHaveLength(1);
+    expect(db.rpcCalls[0]).toMatchObject({
+      name: "accept_woocommerce_product_delivery",
+      args: { p_connector_id: "connector-test", p_webhook_id: 77, p_topic: "product.updated", p_delivery_id: "delivery-bound", p_external_order_id: 88003 },
+    });
+  });
+
+  it("rejects a binding delivery signed with the connector's order secret", async () => {
+    db.bindings = [{ connector_id: "connector-test", webhook_id: 77, topic: "product.updated", secret_ref: "WOO_TEST_PRODUCT_SECRET", status: "active" }];
+    const body = JSON.stringify({ id: 88003, name: "Bound Widget" });
+    const response = await send({ body, webhookId: "77", topic: "product.updated", resource: "product", signingSecret: secret });
+    expect(response.status).toBe(401);
+    expect(db.rpcCalls).toHaveLength(0);
+  });
+
+  it("returns 404 unbound_webhook for an unknown webhook id", async () => {
+    const response = await send({ webhookId: "99999" });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ error: "unbound_webhook" });
+    expect(db.rpcCalls).toHaveLength(0);
   });
 });
 

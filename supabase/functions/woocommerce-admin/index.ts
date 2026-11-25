@@ -9,7 +9,7 @@ const OWNER_ADMIN_ACTIONS = new Set(["create", "view", "update", "pause", "disab
 const ACTIONS = OWNER_ADMIN_ACTIONS;
 const SAFE_CONNECTOR_FIELDS = "id,business_id,brand_id,store_id,order_source_id,external_store_url,status,intake_enabled,outbound_enabled,webhook_status,expected_webhook_id,expected_webhook_topic,expected_delivery_url,webhook_secret_fingerprint,cutover_watermark,reconciliation_watermark,last_webhook_received_at,last_webhook_verified_at,last_webhook_processed_at,last_reconciliation_at,last_error,error_class,created_at,updated_at";
 const TRANSITIONS = ["pause", "disable", "quarantine", "rollback", "resume"];
-const WEBHOOK_TOPICS = ["order.created", "order.updated", "order.deleted"];
+const WEBHOOK_TOPICS = ["order.created", "order.updated", "order.deleted", "product.created", "product.updated"];
 // Must stay identical to the allowlist inside resolve_woocommerce_sync_conflict;
 // the RPC re-validates, this only produces a clean 400 instead of a 409.
 const CONFLICT_RESOLUTIONS = ["accepted_external", "kept_local", "dismissed", "replayed"];
@@ -266,11 +266,21 @@ Deno.serve(async (req) => {
   if (action === "setup_webhook") {
     // Registers the delivery webhook on the WooCommerce store (Woo REST v3)
     // using the deployment-managed consumer credentials, then binds the
-    // returned webhook id to the connector. Nothing secret is stored — the
-    // signing secret lives in the deployment environment under
-    // webhook_secret_ref and is passed to Woo once at registration.
+    // returned webhook id to the connector for order topics or to a binding
+    // row for product topics. Only a secret reference is stored (never the
+    // value): order topics use the connector ref, product topics use the
+    // caller-supplied ref, each passed to Woo once at registration.
     const topic = text(input, "topic") ?? connector.expected_webhook_topic ?? "order.updated";
     if (!WEBHOOK_TOPICS.includes(topic)) return json({ error: "unsupported_webhook_topic" }, 400);
+    const isProductTopic = topic.startsWith("product.");
+    // A product binding carries its own secret: it must never reuse or rotate
+    // the connector's order secret.
+    let productSecretRef: string | null = null;
+    const requestedSecretRef = text(input, "webhook_secret_ref");
+    if (isProductTopic) {
+      if (!secretRef(requestedSecretRef)) return json({ error: "invalid_secret_reference" }, 400);
+      productSecretRef = requestedSecretRef;
+    }
     if (!connector.credentials_ref || !connector.webhook_secret_ref || !connector.external_store_url) {
       return json({ error: "connector_identity_incomplete" }, 409);
     }
@@ -278,7 +288,8 @@ Deno.serve(async (req) => {
     let secret: string;
     try {
       credentials = wooCredentials(connector.credentials_ref);
-      secret = Deno.env.get(connector.webhook_secret_ref) ?? "";
+      if (isProductTopic && productSecretRef) secret = Deno.env.get(productSecretRef) ?? "";
+      else secret = Deno.env.get(connector.webhook_secret_ref) ?? "";
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : "woocommerce_credentials_unavailable" }, 409);
     }
@@ -291,7 +302,7 @@ Deno.serve(async (req) => {
       const webhookResult = await fetch(`${storeBase}/wp-json/wc/v3/webhooks`, {
         method: "POST",
         headers: { Authorization: `Basic ${token}`, "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ name: "DokanOS Order Sync", topic, delivery_url: deliveryUrl, secret }),
+        body: JSON.stringify({ name: isProductTopic ? "DokanOS Product Sync" : "DokanOS Order Sync", topic, delivery_url: deliveryUrl, secret }),
       });
       if (!webhookResult.ok) {
         const detail = await webhookResult.text().catch(() => "");
@@ -305,6 +316,22 @@ Deno.serve(async (req) => {
     }
     const webhookId = typeof webhookRow?.id === "number" ? webhookRow.id : null;
     if (!webhookId) return json({ error: "webhook_registration_failed" }, 502);
+    if (isProductTopic && productSecretRef) {
+      const status = webhookRow?.status === "paused" ? "paused" : "active";
+      // The Upsert keeps re-registering the same topic idempotent; the unique
+      // webhook_id index makes a cross-store id collision fail closed.
+      const bound = await client.from("woocommerce_webhook_bindings").upsert({
+        connector_id: connectorId,
+        webhook_id: webhookId,
+        topic,
+        secret_ref: productSecretRef,
+        status,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "webhook_id" }).select("id,connector_id,webhook_id,topic,secret_ref,status").single();
+      if (bound.error) return json({ error: bound.error.message }, 500);
+      await audit(client, user, action, connectorId, { webhook_id: webhookId, topic, binding: true });
+      return json({ binding: bound.data });
+    }
     const bound = await client.from("woocommerce_connectors").update({
       expected_webhook_id: webhookId,
       expected_webhook_topic: topic,

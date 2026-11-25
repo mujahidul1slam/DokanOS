@@ -72,6 +72,22 @@ export function isStrictWebhookId(value: string | null | undefined): boolean {
   return Number.isSafeInteger(parsed) && parsed >= 0;
 }
 
+/**
+ * A binding is a promise about one topic: honouring a product binding for an
+ * order topic (or a blank topic) would cross wires. Fail closed unless the
+ * binding is active, the id matches and the topic matches exactly.
+ */
+export function bindingMatchesDelivery(
+  binding: { webhook_id: number; topic: string; status: string },
+  input: { webhookId: number; topic: string | null },
+): boolean {
+  return binding.status === "active"
+    && binding.webhook_id === input.webhookId
+    && typeof input.topic === "string"
+    && input.topic.length > 0
+    && binding.topic === input.topic;
+}
+
 export function resolveWooWebhookBinding(
   connector: WooWebhookBindingConnector,
   input: WooWebhookBindingInput,
