@@ -175,12 +175,24 @@ export function mapWooPaymentStatus(
   return "unpaid";
 }
 
-/** Map Woo shipping method identifiers/titles to the two DokanOS fulfillment modes. */
-export function mapWooFulfillmentType(method: string | null | undefined): WooFulfillmentType {
+const WALKIN_METHOD_TOKENS = new Set(["walk_in", "walkin", "local_pickup", "pickup", "pick_up", "collect"]);
+
+/**
+ * Map Woo shipping method identifiers/titles to the two DokanOS fulfillment modes.
+ *
+ * Some stores offer pickup as a `flat_rate` whose title says "Showroom Pickup"
+ * instead of using WooCommerce's `local_pickup` method. Those orders are still
+ * pickups, so the title is consulted when the method id is not conclusive.
+ */
+export function mapWooFulfillmentType(
+  method: string | null | undefined,
+  methodTitle: string | null | undefined = null,
+): WooFulfillmentType {
   const normalized = (method ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  return normalized === "walk_in" || normalized === "walkin" || normalized === "local_pickup"
-    ? "walkin"
-    : "delivery";
+  if (WALKIN_METHOD_TOKENS.has(normalized)) return "walkin";
+  const title = (methodTitle ?? "").trim().toLowerCase();
+  if (title.includes("pickup") || title.includes("pick up") || title.includes("pick-up")) return "walkin";
+  return "delivery";
 }
 
 /** Any configured preorder category on any line makes the whole order preorder. */

@@ -88,6 +88,21 @@ describe("WooCommerce connector recovery requirements", () => {
     expect(mapWooFulfillmentType(method)).toBe(expected);
   });
 
+  it.each([
+    ["flat_rate", "Showroom Pickup (Location: Cha 71/4 Gulshan Lake Roads)", "walkin"],
+    ["flat_rate", "Pick up from store", "walkin"],
+    ["flat_rate", "Local Pick-up", "walkin"],
+    ["flat_rate", "Inside Dhaka (1-2 Days)", "delivery"],
+    ["flat_rate", "Outside Dhaka (1-4 Days)", "delivery"],
+    ["", "Pickup", "walkin"],
+    [null, null, "delivery"],
+  ] as const)(
+    "maps a %s shipping method titled %s to DokanOS %s",
+    (method, title, expected) => {
+      expect(mapWooFulfillmentType(method, title)).toBe(expected);
+    },
+  );
+
   it("maps processing and pending states for the worker RPC", () => {
     expect(mapWooLocalStatus("processing")).toBe("new_order");
     expect(mapWooLocalStatus("processing", true)).toBe("pre_order_pending");

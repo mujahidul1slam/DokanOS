@@ -131,9 +131,9 @@ async function currentOrder(connector: Connector, id: number): Promise<WooOrder>
   return value as WooOrder;
 }
 
-function shippingMethod(external: WooOrder): string | null {
+function shippingMethod(external: WooOrder): { method: string | null; title: string | null } {
   const line = external.shipping_lines?.[0];
-  return line?.method_id || line?.method_title || null;
+  return { method: line?.method_id || null, title: line?.method_title || null };
 }
 
 async function currentProduct(connector: Connector, productId: number): Promise<{ categories?: unknown }> {
@@ -299,7 +299,7 @@ async function persistOrder(client: ReturnType<typeof sb>, connector: Connector,
     p_payment_method: external.payment_method || "online",
     p_local_status: localStatus(status, isPreOrder),
     p_payment_status: paymentStatus(status, external.payment_method),
-    p_fulfillment_type: mapWooFulfillmentType(shippingMethod(external)),
+    p_fulfillment_type: mapWooFulfillmentType(shippingMethod(external).method, shippingMethod(external).title),
     p_is_preorder: isPreOrder,
     p_customer_name: [billing.first_name, billing.last_name].filter(Boolean).join(" "),
     p_customer_email: billing.email || null,
