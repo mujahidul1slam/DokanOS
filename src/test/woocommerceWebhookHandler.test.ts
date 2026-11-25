@@ -76,7 +76,32 @@ describe("WooCommerce webhook HTTP intake", () => {
   it("maps conflict and RPC failures without promotion", async () => { db.rpcResults.push({ data: { status: "conflict" }, error: null }, { data: null, error: { message: "temporary" } }, { data: null, error: null }); expect((await send()).status).toBe(409); expect((await send()).status).toBe(503); expect((await send()).status).toBe(503); expect(db.connectors[0].webhook_status).toBeUndefined(); });
   it("rejects invalid signature without RPC", async () => { const response = await send({ validSignature: false }); expect(response.status).toBe(401); expect(db.rpcCalls).toHaveLength(0); expect(db.rejections).toHaveLength(1); });
   it("recovers from invalid to valid and sends absent ID as null", async () => { expect((await send({ validSignature: false, deliveryId: null })).status).toBe(401); expect((await send({ deliveryId: null })).status).toBe(200); expect(db.rpcCalls).toHaveLength(1); expect(db.rpcCalls[0].args.p_delivery_id).toBeNull(); });
-  it.each([["unsupported", { topic: "product.updated" }], ["malformed", { body: "{" }], ["missing ID", { body: JSON.stringify({ status: "processing" }) }]] as const)("rejects %s without RPC", async (_name, input) => { expect((await send(input)).status).toBe(400); expect(db.rpcCalls).toHaveLength(0); });
+  it.each([["unsupported", { topic: "product.deleted" }], ["resource mismatch", { topic: "order.updated", resource: "product" }], ["malformed", { body: "{" }], ["missing ID", { body: JSON.stringify({ status: "processing" }) }]] as const)("rejects %s without RPC", async (_name, input) => { expect((await send(input)).status).toBe(400); expect(db.rpcCalls).toHaveLength(0); });
+
+  it("routes a signed product.created delivery to the product intake RPC", async () => {
+    const body = JSON.stringify({ id: 88001, name: "Import Widget" });
+    const response = await send({ body, topic: "product.created", resource: "product", deliveryId: "delivery-product" });
+    expect(response.status).toBe(200);
+    expect(db.rpcCalls).toHaveLength(1);
+    expect(db.rpcCalls[0]).toMatchObject({
+      name: "accept_woocommerce_product_delivery",
+      args: {
+        p_connector_id: "connector-test",
+        p_webhook_id: 42,
+        p_delivery_id: "delivery-product",
+        p_topic: "product.created",
+        p_resource: "product",
+        p_external_order_id: 88001,
+      },
+    });
+  });
+
+  it("routes a signed product.updated delivery to the product intake RPC", async () => {
+    const body = JSON.stringify({ id: 88002, name: "Updated Widget" });
+    const response = await send({ body, topic: "product.updated", resource: "product" });
+    expect(response.status).toBe(200);
+    expect(db.rpcCalls[0]?.name).toBe("accept_woocommerce_product_delivery");
+  });
 });
 
 export {};

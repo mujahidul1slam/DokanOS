@@ -130,8 +130,17 @@ function wooOrder(externalId: number, overrides: Partial<WooOrder> = {}): WooOrd
       postcode: "1207",
     },
     line_items: [
-      { name: "Vertical Widget", quantity: 2, price: "600.00", total: "1200.00", sku: "VW-1" },
-      { name: "Vertical Gadget", quantity: 1, price: "300.00", total: "300.00", sku: "VG-1" },
+      {
+        name: "Vertical Widget",
+        quantity: 2,
+        price: "600.00",
+        total: "1200.00",
+        sku: "VW-1",
+        product_id: 6823,
+        variation_id: 7331,
+        total_tax: "120.00",
+      },
+      { name: "Vertical Gadget", quantity: 1, price: "300.00", total: "300.00", sku: "VG-1", product_id: 6824, variation_id: 0, total_tax: "0.00" },
     ],
     ...overrides,
   };
@@ -142,7 +151,12 @@ function wooOrder(externalId: number, overrides: Partial<WooOrder> = {}): WooOrd
  * functions call and rejects anything else, so a request the test did not expect
  * fails loudly instead of silently succeeding.
  */
-function startWooStore(orders: Map<number, WooOrder>, expectedBasic: string) {
+function startWooStore(
+  orders: Map<number, WooOrder>,
+  expectedBasic: string,
+  products: Map<number, WooOrder> = new Map(),
+  variations: Map<number, WooOrder[]> = new Map(),
+) {
   const requests: Array<{ method: string; path: string; authorized: boolean; body?: unknown }> = [];
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -152,6 +166,10 @@ function startWooStore(orders: Map<number, WooOrder>, expectedBasic: string) {
       res.end(JSON.stringify(body));
     };
     const single = url.pathname.match(/^\/wp-json\/wc\/v3\/orders\/(\d+)$/);
+    // The variations route must be matched before the single-product route,
+    // otherwise its id would be swallowed by the product regex.
+    const productVariations = url.pathname.match(/^\/wp-json\/wc\/v3\/products\/(\d+)\/variations$/);
+    const product = url.pathname.match(/^\/wp-json\/wc\/v3\/products\/(\d+)$/);
 
     // The outbound path: the worker PUTs `{status}` and trusts the echoed
     // status as confirmation. The stand-in applies the change to its own copy,
@@ -185,6 +203,15 @@ function startWooStore(orders: Map<number, WooOrder>, expectedBasic: string) {
       const order = orders.get(Number(single[1]));
       if (!order) return send(404, { code: "woocommerce_rest_shop_order_invalid_id", message: "Invalid ID" });
       return send(200, order);
+    }
+    if (productVariations && req.method === "GET") {
+      const list = variations.get(Number(productVariations[1])) ?? [];
+      return send(200, list);
+    }
+    if (product && req.method === "GET") {
+      const item = products.get(Number(product[1]));
+      if (!item) return send(404, { code: "woocommerce_rest_product_invalid_id", message: "Invalid ID" });
+      return send(200, item);
     }
     return send(404, { code: "rest_no_route", message: "No route" });
   });
@@ -229,6 +256,9 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
   let db: pg.Client;
   let fixture: Fixture;
   let woo: Awaited<ReturnType<typeof startWooStore>>;
+  let wooOrders: Map<number, WooOrder>;
+  let wooProducts: Map<number, WooOrder>;
+  let wooVariations: Map<number, WooOrder[]>;
   let cutoverHandler: (request: Request) => Promise<Response>;
   let workerHandler: (request: Request) => Promise<Response>;
   let cronToken: string;
@@ -243,7 +273,15 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
     await db.connect();
 
     const orders = new Map<number, WooOrder>([[externalOrderId, wooOrder(externalOrderId)]]);
-    woo = await startWooStore(orders, Buffer.from(`${CONSUMER_KEY}:${CONSUMER_SECRET}`).toString("base64"));
+    wooOrders = orders;
+    wooProducts = new Map<number, WooOrder>();
+    wooVariations = new Map<number, WooOrder[]>();
+    woo = await startWooStore(
+      orders,
+      Buffer.from(`${CONSUMER_KEY}:${CONSUMER_SECRET}`).toString("base64"),
+      wooProducts,
+      wooVariations,
+    );
     // `localhost` rather than `127.0.0.1`: the connector scope trigger
     // (`public.validate_woocommerce_connector_scope`) accepts only HTTPS or the
     // literal `http://localhost…` development form, even though the sibling
@@ -268,6 +306,10 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
     const signedIn = await userClient.auth.signInWithPassword({ email, password });
     if (signedIn.error || !signedIn.data.session) throw new Error(`signIn failed: ${signedIn.error?.message}`);
     accessToken = signedIn.data.session.access_token;
+
+    // Defensive: a prior crashed run could leave a global pre-order setting,
+    // which would add product lookups to the baseline assertions below.
+    await db.query("DELETE FROM public.app_settings WHERE key = 'preorder_category_ids'");
 
     fixture = {
       businessId: randomUUID(),
@@ -381,6 +423,7 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
         for (const [table, column] of [
           ["woocommerce_cutover_report_items", "connector_id"],
           ["woocommerce_cutover_runs", "connector_id"],
+          ["woocommerce_product_map", "connector_id"],
           ["woocommerce_outbound_writes", "connector_id"],
           ["woocommerce_sync_conflicts", "connector_id"],
           ["woocommerce_sync_work", "connector_id"],
@@ -389,6 +432,11 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
         ] as const) {
           await db.query(`DELETE FROM public.${table} WHERE ${column} = $1`, [fixture.connectorId]);
         }
+        // Imported products are not removed by the store delete (their store_id
+        // FK is ON DELETE SET NULL), so remove them explicitly. Variation and
+        // product-category rows cascade from the product.
+        await db.query("DELETE FROM public.products WHERE store_id = $1 OR origin_order_source_id = $2", [fixture.storeId, fixture.orderSourceId]);
+        await db.query("DELETE FROM public.categories WHERE store_id = $1", [fixture.storeId]);
         await db.query("DELETE FROM public.order_items WHERE order_id IN (SELECT id FROM public.orders WHERE business_id = $1)", [fixture.businessId]);
         await db.query("DELETE FROM public.orders WHERE business_id = $1", [fixture.businessId]);
         await db.query("DELETE FROM public.customers WHERE business_id = $1", [fixture.businessId]);
@@ -493,7 +541,7 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
 
     const order = await db.query(
       `SELECT id, order_number, source, status, payment_status, payment_method,
-              subtotal, discount, shipping_cost, total, notes,
+              subtotal, discount, shipping_cost, total, notes, currency,
               customer_name, customer_email, customer_phone, customer_city,
               woocommerce_external_status, woocommerce_external_status_at,
               business_id, store_id, order_source_id
@@ -558,11 +606,12 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
     expect(row.customer_phone).toBe("+8801700000000");
     expect(row.customer_city).toBe("Dhaka");
 
-    // Line items: the SQL contract imports name/quantity/price/total only. This
-    // assertion documents the fidelity gap (no SKU, no product_id, no tax) so
-    // that closing it is a deliberate, visible change.
+    // Line items: the SQL contract now keeps the external product facts the
+    // store sends (SKU, external product/variation id, line tax) in addition to
+    // name/quantity/price/total. This assertion is the W-11 fidelity contract.
     const items = await db.query(
-      `SELECT product_name, quantity, unit_price, line_total, product_id, variation_id
+      `SELECT product_name, quantity, unit_price, line_total, product_id, variation_id,
+              sku, woocommerce_product_id, woocommerce_variation_id, tax_amount
        FROM public.order_items WHERE order_id = $1 ORDER BY product_name`,
       [row.id],
     );
@@ -573,10 +622,29 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
     expect(items.rows[1]).toMatchObject({ product_name: "Vertical Widget", quantity: 2 });
     expect(Number(items.rows[1].unit_price)).toBe(600);
     expect(Number(items.rows[1].line_total)).toBe(1200);
-    // Fidelity gap, asserted rather than assumed: the import does not link
-    // line items to catalogue products.
-    expect(items.rows[0].product_id).toBeNull();
-    expect(items.rows[0].variation_id).toBeNull();
+
+    // External identity is preserved verbatim, as text/bigint, without inventing
+    // a local catalogue link: product_id/variation_id stay NULL because the
+    // imported lines are not matched to local products.
+    expect(items.rows[0]).toMatchObject({
+      sku: "VG-1",
+      woocommerce_product_id: "6824",
+      woocommerce_variation_id: null,
+      product_id: null,
+      variation_id: null,
+    });
+    expect(Number(items.rows[0].tax_amount)).toBe(0);
+    expect(items.rows[1]).toMatchObject({
+      sku: "VW-1",
+      woocommerce_product_id: "6823",
+      woocommerce_variation_id: "7331",
+      product_id: null,
+      variation_id: null,
+    });
+    expect(Number(items.rows[1].tax_amount)).toBe(120);
+
+    // The order keeps the store currency next to the money facts.
+    expect(row.currency).toBe("USD");
 
     // The external identity row is what makes the next sync a refresh instead
     // of a second import.
@@ -740,6 +808,230 @@ describe.skipIf(!enabled)("WooCommerce vertical sync (cutover -> worker -> persi
     expect(response.status).toBe(401);
     expect(await response.text()).toBe("unauthorized");
   }, 30_000);
+
+  it("routes a configured pre-order product to pre_order_pending via the product lookup", async () => {
+    // S-03: Woo line items carry only a product_id, never categories. Configure a
+    // local pre-order parent category and make the product belong to its child,
+    // so the worker must expand descendants and look up the product to decide.
+    const parentId = randomUUID();
+    const childId = randomUUID();
+    const preOrderId = 6002;
+    try {
+      await db.query(
+        `INSERT INTO public.categories (id, name, slug, woo_category_id, store_id)
+         VALUES ($1, 'Pre Order Parent', 'pre-order-parent', 41, $2),
+                ($3, 'Pre Order Child', 'pre-order-child', 42, $2)`,
+        [parentId, fixture.storeId, childId],
+      );
+      await db.query("UPDATE public.categories SET parent_id = $1 WHERE id = $2", [parentId, childId]);
+      await db.query(
+        `INSERT INTO public.app_settings (key, value) VALUES ('preorder_category_ids', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [JSON.stringify({ ids: [parentId] })],
+      );
+      // The variation's product is fetched by product_id (6823), not variation_id.
+      wooProducts.set(6823, { id: 6823, categories: [{ id: 42, slug: "pre-order-child", name: "Pre Order Child" }] });
+      wooOrders.set(preOrderId, wooOrder(preOrderId, {
+        line_items: [{ product_id: 6823, variation_id: 7331, name: "Vertical Widget", quantity: 1, price: "100.00", total: "100.00" }],
+      }));
+
+      const cutover = await cutoverHandler(
+        new Request(`${config.apiUrl}/functions/v1/woocommerce-cutover`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ connector_id: fixture.connectorId, dry_run: false }),
+        }),
+      );
+      expect(cutover.status, JSON.stringify(await cutover.json())).toBe(200);
+      // The cutover scans every order in the stand-in, so it also queues a
+      // refresh of the original order. Drop that row so this worker run claims
+      // only the new pre-order work.
+      await db.query(
+        "DELETE FROM public.woocommerce_sync_work WHERE connector_id = $1 AND external_order_id = $2",
+        [fixture.connectorId, String(externalOrderId)],
+      );
+
+      const response = await workerHandler(
+        new Request(`${config.apiUrl}/functions/v1/woocommerce-worker`, {
+          method: "POST",
+          headers: { "x-woocommerce-scheduler-secret": cronToken },
+        }),
+      );
+      const body = await response.json() as Record<string, unknown>;
+      expect(response.status, JSON.stringify(body)).toBe(200);
+      expect(body).toMatchObject({ claimed: 1 });
+      expect((body.results as Array<{ state: string }>)[0]).toMatchObject({ state: "succeeded" });
+
+      const row = await db.query(
+        "SELECT status, woocommerce_external_status FROM public.orders WHERE order_number = $1",
+        [`WC-${preOrderId}-W`],
+      );
+      expect(row.rows).toHaveLength(1);
+      expect(row.rows[0].status).toBe("pre_order_pending");
+      expect(row.rows[0].woocommerce_external_status).toBe("processing");
+
+      const productRequests = woo.requests.filter(
+        (entry) => entry.path === "/wp-json/wc/v3/products/6823" && entry.authorized,
+      );
+      expect(productRequests.length).toBeGreaterThan(0);
+    } finally {
+      await db.query("DELETE FROM public.app_settings WHERE key = 'preorder_category_ids'");
+      wooOrders.delete(preOrderId);
+      wooProducts.delete(6823);
+    }
+  }, 60_000);
+
+  it("imports a variable product with categories, images and variations via product_import work", async () => {
+    // S-10: a product.created/updated delivery queues a product_import work
+    // item. This drives that work end-to-end: stand-in product + variations ->
+    // worker -> local product, categories, variations and identity map.
+    const externalProductId = 88001;
+    const parentCat = 910;
+    const childCat = 911;
+    wooProducts.set(externalProductId, {
+      id: externalProductId,
+      type: "variable",
+      name: "Vertical Variable Widget",
+      sku: "VVW-1",
+      description: "Long description",
+      short_description: "Short description",
+      price: "250.00",
+      regular_price: "300.00",
+      sale_price: "250.00",
+      manage_stock: true,
+      stock_quantity: 5,
+      stock_status: "instock",
+      date_modified_gmt: "2026-11-26T10:00:00",
+      attributes: [{ name: "Color", options: ["Red", "Blue"] }],
+      images: [{ src: "https://img.invalid/hero.jpg" }, { src: "https://img.invalid/2.jpg" }],
+      categories: [
+        { id: parentCat, name: "Widgets", slug: "widgets", parent: 0 },
+        { id: childCat, name: "Variable Widgets", slug: "variable-widgets", parent: parentCat },
+      ],
+    });
+    wooVariations.set(externalProductId, [
+      { id: 99001, name: "Red", sku: "VVW-1-RED", price: "250.00", regular_price: "300.00", stock_quantity: 3, stock_status: "instock", attributes: [{ name: "Color", option: "Red" }] },
+      { id: 99002, name: "Blue", sku: "VVW-1-BLUE", price: "250.00", stock_quantity: 2, stock_status: "instock" },
+    ]);
+
+    await db.query(
+      `INSERT INTO public.woocommerce_sync_work
+         (connector_id, direction, kind, external_order_id, identity_key, payload, state)
+       VALUES ($1, 'inbound', 'product_import', $2, $3, '{}'::jsonb, 'pending')`,
+      [fixture.connectorId, externalProductId, `product-test:${externalProductId}`],
+    );
+
+    const response = await workerHandler(
+      new Request(`${config.apiUrl}/functions/v1/woocommerce-worker`, {
+        method: "POST",
+        headers: { "x-woocommerce-scheduler-secret": cronToken },
+      }),
+    );
+    const body = await response.json() as Record<string, unknown>;
+    expect(response.status, JSON.stringify(body)).toBe(200);
+    expect(body).toMatchObject({ claimed: 1 });
+    expect((body.results as Array<{ state: string }>)[0]).toMatchObject({ state: "succeeded" });
+
+    // The worker fetched the product and its variations, both authenticated.
+    expect(woo.requests).toContainEqual({
+      method: "GET",
+      path: `/wp-json/wc/v3/products/${externalProductId}`,
+      authorized: true,
+    });
+    expect(woo.requests).toContainEqual({
+      method: "GET",
+      path: `/wp-json/wc/v3/products/${externalProductId}/variations`,
+      authorized: true,
+    });
+
+    const product = await db.query(
+      `SELECT id, name, sku, price, regular_price, sale_price, description, short_description,
+              image_url, image_urls, attributes, origin_kind, origin_order_source_id, woo_updated_at
+       FROM public.products WHERE store_id = $1 AND sku = $2`,
+      [fixture.storeId, "VVW-1"],
+    );
+    expect(product.rows).toHaveLength(1);
+    const row = product.rows[0];
+    expect(row).toMatchObject({
+      name: "Vertical Variable Widget",
+      sku: "VVW-1",
+      description: "Long description",
+      short_description: "Short description",
+      origin_kind: "woo_sync",
+      origin_order_source_id: fixture.orderSourceId,
+    });
+    expect(Number(row.price)).toBe(250);
+    expect(Number(row.regular_price)).toBe(300);
+    expect(Number(row.sale_price)).toBe(250);
+    expect(row.image_url).toBe("https://img.invalid/hero.jpg");
+    expect(Array.isArray(row.image_urls)).toBe(true);
+    expect(new Date(row.woo_updated_at).toISOString()).toBe(new Date("2026-11-26T10:00:00Z").toISOString());
+
+    const cats = await db.query<{ id: string; woo_category_id: number; name: string; parent_id: string | null }>(
+      `SELECT c.id, c.woo_category_id, c.name, c.parent_id
+       FROM public.categories c
+       JOIN public.product_categories pc ON pc.category_id = c.id
+       WHERE pc.product_id = $1 ORDER BY c.woo_category_id`,
+      [row.id],
+    );
+    expect(cats.rows).toHaveLength(2);
+    const byWoo = new Map<string, (typeof cats.rows)[number]>(
+      cats.rows.map((entry) => [String(entry.woo_category_id), entry] as const),
+    );
+    expect(byWoo.get(String(parentCat))).toMatchObject({ name: "Widgets", parent_id: null });
+    expect(byWoo.get(String(childCat))?.parent_id).toBe(byWoo.get(String(parentCat))?.id);
+
+    const vars = await db.query(
+      `SELECT pv.id, pv.sku, pv.price, pv.regular_price, pv.woo_updated_at,
+              m.external_variation_id
+       FROM public.product_variations pv
+       JOIN public.woocommerce_product_map m ON m.variation_id = pv.id
+       WHERE pv.product_id = $1 ORDER BY pv.sku`,
+      [row.id],
+    );
+    expect(vars.rows).toHaveLength(2);
+    const blue = vars.rows.find((entry) => entry.sku === "VVW-1-BLUE");
+    const red = vars.rows.find((entry) => entry.sku === "VVW-1-RED");
+    expect(String(blue?.external_variation_id)).toBe("99002");
+    expect(String(red?.external_variation_id)).toBe("99001");
+    expect(Number(red?.regular_price)).toBe(300);
+
+    const map = await db.query(
+      `SELECT external_product_id, external_variation_id, product_id, variation_id
+       FROM public.woocommerce_product_map WHERE connector_id = $1 AND external_product_id = $2`,
+      [fixture.connectorId, externalProductId],
+    );
+    expect(map.rows).toHaveLength(3);
+    const parentMap = map.rows.find((entry) => entry.external_variation_id === null);
+    expect(parentMap?.product_id).toBe(row.id);
+
+    // Replay must be a no-op: no duplicate product/category/variation rows.
+    await db.query(
+      `INSERT INTO public.woocommerce_sync_work
+         (connector_id, direction, kind, external_order_id, identity_key, payload, state)
+       VALUES ($1, 'inbound', 'product_import', $2, $3, '{}'::jsonb, 'pending')`,
+      [fixture.connectorId, externalProductId, `product-test-replay:${externalProductId}`],
+    );
+    const replay = await workerHandler(
+      new Request(`${config.apiUrl}/functions/v1/woocommerce-worker`, {
+        method: "POST",
+        headers: { "x-woocommerce-scheduler-secret": cronToken },
+      }),
+    );
+    expect(replay.status).toBe(200);
+    const replayBody = await replay.json() as Record<string, unknown>;
+    expect((replayBody.results as Array<{ state: string }>)[0]).toMatchObject({ state: "succeeded" });
+    const productCount = await db.query(
+      "SELECT count(*)::int AS n FROM public.products WHERE store_id = $1 AND sku = $2",
+      [fixture.storeId, "VVW-1"],
+    );
+    expect(productCount.rows[0].n).toBe(1);
+    const varCount = await db.query(
+      "SELECT count(*)::int AS n FROM public.product_variations WHERE product_id = $1",
+      [row.id],
+    );
+    expect(varCount.rows[0].n).toBe(2);
+  }, 60_000);
 });
 
 export {};

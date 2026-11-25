@@ -33,9 +33,29 @@ const FIXTURE_BUSINESS_SQL = `INSERT INTO public.businesses (id, name, slug, cur
   VALUES ('11111111-0000-0000-0000-000000000001', 'WooCommerce SQL fixture business', 'woocommerce-sql-fixture', 'BDT', 'Asia/Dhaka')
   ON CONFLICT DO NOTHING;`;
 
+// Rehearsed inside every test transaction, oldest first, so the newest function
+// bodies are the ones under test even for legacy regression files.
+const ALWAYS_REHEARSED = [
+  "20261124090000_woocommerce_e2e_findings_fixes.sql",
+  "20261125090000_woocommerce_item_fidelity.sql",
+  "20261126090000_woocommerce_product_import.sql",
+];
+
 // Each test file, and the migrations it needs applied first when the local
 // ledger does not already contain them.
 const TESTS = [
+  {
+    file: "woocommerce_item_fidelity_test.sql",
+    // The fidelity migration is already in ALWAYS_REHEARSED and must be applied
+    // after the 2026-11-24 fixes it builds on, so it is not repeated here.
+    requires: [],
+  },
+  {
+    file: "woocommerce_product_import_test.sql",
+    // The product-import migration is in ALWAYS_REHEARSED, after the fixes it
+    // builds on; no extra per-test prerequisites.
+    requires: [],
+  },
   {
     file: "woocommerce_e2e_findings_fixes_test.sql",
     requires: ["20261124090000_woocommerce_e2e_findings_fixes.sql"],
@@ -132,12 +152,9 @@ async function run() {
       }
 
       let preamble = "";
-      // Rehearse the latest fix in every test transaction, after older
+      // Rehearse the latest fixes in every test transaction, after older
       // prerequisites, so legacy regression files also exercise the new bodies.
-      const required = [...new Set([
-        ...test.requires,
-        "20261124090000_woocommerce_e2e_findings_fixes.sql",
-      ])];
+      const required = [...new Set([...test.requires, ...ALWAYS_REHEARSED])];
       const missing = required.filter(
         (name) => !applied.has(name.slice(0, name.indexOf("_"))),
       );

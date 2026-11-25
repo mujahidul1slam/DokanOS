@@ -1,10 +1,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { decideWorkFailure, type WorkFailureDecision } from "../../../src/lib/woocommerceWork.ts";
 import {
+  expandWooCategoryIds,
   hasWooPreOrderItem,
+  isWooProductPreOrder,
   mapWooFulfillmentType,
   mapWooLocalStatus,
   mapWooPaymentStatus,
+  type WooLocalCategoryRef,
 } from "../../../src/lib/woocommerceConnector.ts";
 import { assertOutboundWritePersisted, serializeWorkerFailure, validateFinishResult, validateOutboundConfirmation } from "../../../src/lib/woocommerceWorkerValidation.ts";
 export { assertOutboundWritePersisted, serializeWorkerFailure, validateFinishResult, validateOutboundConfirmation } from "../../../src/lib/woocommerceWorkerValidation.ts";
@@ -69,6 +72,30 @@ type WooOrder = {
   shipping_lines?: Array<{ method_id?: string; method_title?: string }>;
 };
 
+// The subset of the WooCommerce v3 product representation the product import
+// consumes. `categories` is retained for the pre-order lookup that already
+// uses currentProduct(); the remaining fields feed upsert_woocommerce_product.
+type WooProduct = {
+  id: number | string;
+  type?: string;
+  name?: string;
+  sku?: string;
+  description?: string;
+  short_description?: string;
+  price?: string | number;
+  regular_price?: string | number;
+  sale_price?: string | number;
+  manage_stock?: boolean;
+  stock_quantity?: number;
+  stock_status?: string;
+  backorders?: string;
+  date_modified_gmt?: string;
+  date_modified?: string;
+  images?: Array<{ src?: string }>;
+  attributes?: unknown;
+  categories?: unknown;
+};
+
 function sb() {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -109,15 +136,119 @@ function shippingMethod(external: WooOrder): string | null {
   return line?.method_id || line?.method_title || null;
 }
 
-function preorderCategoryIds(): ReadonlySet<string> {
-  // Woo order line items do not carry authoritative category metadata in the
-  // current adapter, so absence is fail-closed until a reviewed catalog
-  // resolver is added. The v2 RPC still accepts an explicit audited flag.
-  return new Set<string>();
+async function currentProduct(connector: Connector, productId: number): Promise<{ categories?: unknown }> {
+  return fetchWooProduct(connector, productId);
 }
 
-function localStatus(externalStatus: string, items: unknown[]): string {
-  return mapWooLocalStatus(externalStatus, hasWooPreOrderItem(items, preorderCategoryIds()));
+/**
+ * Fetch one product with the same authenticated transport as currentOrder.
+ * Kept separate from currentProduct() so the pre-order routing path (which
+ * only needs categories) is untouched by the import path.
+ */
+async function fetchWooProduct(connector: Connector, productId: number): Promise<WooProduct> {
+  const auth = credentials(connector.credentials_ref);
+  const url = `${connector.external_store_url.replace(/\/$/, "")}/wp-json/wc/v3/products/${encodeURIComponent(String(productId))}`;
+  const token = btoa(`${auth.consumer_key}:${auth.consumer_secret}`);
+  const result = await fetch(url, { headers: { Authorization: `Basic ${token}`, Accept: "application/json" } });
+  if (!result.ok) {
+    const error = new Error(`woocommerce_http_${result.status}`);
+    (error as Error & { status?: number }).status = result.status;
+    throw error;
+  }
+  const value: unknown = await result.json();
+  if (!value || typeof value !== "object") throw new Error("woocommerce_invalid_product_payload");
+  return value as WooProduct;
+}
+
+/**
+ * Fetch every variation of a variable product. `per_page=100` keeps the common
+ * case to one request; the worker calls this only for `type=variable`.
+ */
+async function fetchWooProductVariations(connector: Connector, productId: number): Promise<WooProduct[]> {
+  const auth = credentials(connector.credentials_ref);
+  const url = `${connector.external_store_url.replace(/\/$/, "")}/wp-json/wc/v3/products/${encodeURIComponent(String(productId))}/variations?per_page=100`;
+  const token = btoa(`${auth.consumer_key}:${auth.consumer_secret}`);
+  const result = await fetch(url, { headers: { Authorization: `Basic ${token}`, Accept: "application/json" } });
+  if (!result.ok) {
+    const error = new Error(`woocommerce_http_${result.status}`);
+    (error as Error & { status?: number }).status = result.status;
+    throw error;
+  }
+  const value: unknown = await result.json();
+  if (!Array.isArray(value)) throw new Error("woocommerce_invalid_variations_payload");
+  return value as WooProduct[];
+}
+
+/**
+ * Resolve which configured pre-order categories apply. Configured ids are
+ * local category UUIDs; fetch them with their `woo_category_id` and descendants
+ * so a parent selection covers its subcategories. Missing/unreadable config is
+ * fail-closed (no pre-order) with a warning, and never stops the order import.
+ */
+async function preorderContext(
+  client: ReturnType<typeof sb>,
+): Promise<{ ids: ReadonlySet<string>; categories: WooLocalCategoryRef[] }> {
+  try {
+    const settingResult = await client.from("app_settings").select("value").eq("key", "preorder_category_ids").maybeSingle();
+    if (settingResult.error) throw settingResult.error;
+    const raw = settingResult.data?.value as unknown;
+    const idsValue = raw && typeof raw === "object" ? (raw as Record<string, unknown>).ids : null;
+    const ids = Array.isArray(idsValue)
+      ? idsValue.filter((id): id is string => typeof id === "string")
+      : [];
+    if (ids.length === 0) return { ids: new Set(), categories: [] };
+    const categoryResult = await client.from("categories").select("id,parent_id,woo_category_id,slug,name");
+    if (categoryResult.error) throw categoryResult.error;
+    const categories = (categoryResult.data ?? []) as WooLocalCategoryRef[];
+    return { ids: expandWooCategoryIds(ids, categories), categories };
+  } catch (cause) {
+    console.warn("woocommerce_preorder_lookup_failed; treating order as not pre-order", cause);
+    return { ids: new Set(), categories: [] };
+  }
+}
+
+/**
+ * Inspect the order's line items. Woo line items carry a product_id (and
+ * optionally a parent product_id for variations), never categories; so fetch
+ * each product to read its authoritative categories. Any lookup failure is
+ * fail-closed with a warning rather than dropping the order.
+ */
+async function isPreOrderOrder(
+  client: ReturnType<typeof sb>,
+  connector: Connector,
+  items: unknown[],
+): Promise<boolean> {
+  const { ids, categories } = await preorderContext(client);
+  if (ids.size === 0) return false;
+  // Legacy line items that do embed categories can still be honoured directly.
+  if (hasWooPreOrderItem(items, ids)) return true;
+  const productIds = new Set<number>();
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    // Woo line items carry the variable product in `product_id` and the
+    // variation in `variation_id`; the product endpoint is keyed by product_id.
+    // `parent_id` is accepted as a fallback for adapters that fill it instead.
+    const line = item as { product_id?: unknown; parent_id?: unknown };
+    const productId = Number(line.product_id);
+    const parentId = Number(line.parent_id);
+    const id = Number.isSafeInteger(productId) && productId > 0
+      ? productId
+      : parentId;
+    if (Number.isSafeInteger(id) && id > 0) productIds.add(id);
+  }
+  for (const productId of productIds) {
+    try {
+      const product = await currentProduct(connector, productId);
+      if (isWooProductPreOrder(product.categories, categories, ids)) return true;
+    } catch (cause) {
+      console.warn(`woocommerce_preorder_product_lookup_failed for product ${productId}; treating as not pre-order`, cause);
+    }
+  }
+  return false;
+}
+
+function localStatus(externalStatus: string, isPreOrder: boolean): string {
+  return mapWooLocalStatus(externalStatus, isPreOrder);
 }
 
 function paymentStatus(externalStatus: string, paymentMethod: string | null | undefined): string {
@@ -154,7 +285,7 @@ async function persistOrder(client: ReturnType<typeof sb>, connector: Connector,
   const modified = external.date_modified_gmt || external.date_modified || null;
   const billing: WooAddress = external.billing ?? {};
   const items = Array.isArray(external.line_items) ? external.line_items : [];
-  const isPreOrder = hasWooPreOrderItem(items, preorderCategoryIds());
+  const isPreOrder = await isPreOrderOrder(client, connector, items);
   const { error } = await client.rpc("upsert_woocommerce_order_v2", {
     p_connector_id: connector.id,
     p_external_order_id: externalId,
@@ -166,7 +297,7 @@ async function persistOrder(client: ReturnType<typeof sb>, connector: Connector,
     p_discount: Number(external.discount_total ?? 0),
     p_shipping: Number(external.shipping_total ?? 0),
     p_payment_method: external.payment_method || "online",
-    p_local_status: localStatus(status, items),
+    p_local_status: localStatus(status, isPreOrder),
     p_payment_status: paymentStatus(status, external.payment_method),
     p_fulfillment_type: mapWooFulfillmentType(shippingMethod(external)),
     p_is_preorder: isPreOrder,
@@ -210,6 +341,27 @@ export async function processWooCommerceWork(client: ReturnType<typeof sb>, work
         .eq("id", work.payload.outbound_write_id);
       assertOutboundWritePersisted(updateResult);
     }
+    return;
+  }
+  // Product import is a separate inbound product path. Handle it before the
+  // order-kind gate, which still requires an external ORDER id for webhook /
+  // order_refresh / reconciliation work.
+  if (work.kind === "product_import") {
+    const productId = work.external_order_id;
+    if (!Number.isSafeInteger(productId) || productId === null || productId <= 0) throw new Error("missing_external_product_id");
+    const product = await fetchWooProduct(connector, productId);
+    const variations = product.type === "variable"
+      ? await fetchWooProductVariations(connector, productId)
+      : [];
+    const payload = { ...product, variations_data: variations };
+    const modified = product.date_modified_gmt || product.date_modified || null;
+    const { error: productError } = await client.rpc("upsert_woocommerce_product", {
+      p_connector_id: connector.id,
+      p_external_product_id: productId,
+      p_payload: payload,
+      p_modified_at: modified,
+    });
+    if (productError) throw productError;
     return;
   }
   // Reconciliation deliberately uses the same current-state import path as a

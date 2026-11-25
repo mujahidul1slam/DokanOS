@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   allowedWooWebhookTopic,
   deliveryFingerprintInput,
+  extractWooExternalId,
   extractWooOrderId,
   isStrictWebhookId,
+  isWooWebhookResourceValid,
   normalizeWooWebhookSource,
   resolveWooWebhookBinding,
   shouldEnqueueWooDelivery,
@@ -16,11 +18,11 @@ import {
 const now = "2026-11-10T12:00:00.000Z";
 
 describe("WooCommerce webhook intake contract", () => {
-  it.each(["order.created", "order.updated", "order.deleted"])("accepts %s", (topic) => {
+  it.each(["order.created", "order.updated", "order.deleted", "product.created", "product.updated"])("accepts %s", (topic) => {
     expect(allowedWooWebhookTopic(topic)).toBe(true);
   });
 
-  it.each(["product.updated", "order.created.foo", "", null, undefined])("rejects unsupported topic %s", (topic) => {
+  it.each(["product.deleted", "order.created.foo", "product.created.foo", "", null, undefined])("rejects unsupported topic %s", (topic) => {
     expect(allowedWooWebhookTopic(topic)).toBe(false);
   });
 
@@ -72,6 +74,19 @@ describe("WooCommerce webhook intake contract", () => {
       topic: "order.updated",
       resource: "product",
     })).toMatchObject({ accepted: false, reason: "wrong_resource" });
+    // Product topics bind only to resource=product; order topics stay order-only.
+    expect(resolveWooWebhookBinding(connector, {
+      source: "https://shop.example",
+      webhookId: "42",
+      topic: "product.created",
+      resource: "product",
+    })).toMatchObject({ accepted: true, reason: "accepted" });
+    expect(resolveWooWebhookBinding(connector, {
+      source: "https://shop.example",
+      webhookId: "42",
+      topic: "product.created",
+      resource: "order",
+    })).toMatchObject({ accepted: false, reason: "wrong_resource" });
   });
 
   it("extracts only a safe external Order ID, including deleted ID-only bodies", () => {
@@ -83,11 +98,28 @@ describe("WooCommerce webhook intake contract", () => {
     expect(extractWooOrderId(null)).toBeNull();
   });
 
+  it("extracts a product payload id with the same safe numeric guard", () => {
+    expect(extractWooExternalId({ id: 88001, name: "Widget" })).toBe(88001);
+    expect(extractWooExternalId({ id: "88001" })).toBe(88001);
+    expect(extractWooExternalId({ id: 0 })).toBeNull();
+    expect(extractWooExternalId({ id: -1 })).toBeNull();
+    expect(extractWooExternalId({ id: "1.5" })).toBeNull();
+  });
+
   it("never enqueues a duplicate delivery or fingerprint", () => {
     expect(shouldEnqueueWooDelivery({ duplicateDeliveryId: false, duplicateFingerprint: false, orderId: 10 })).toBe(true);
     expect(shouldEnqueueWooDelivery({ duplicateDeliveryId: true, duplicateFingerprint: false, orderId: 10 })).toBe(false);
     expect(shouldEnqueueWooDelivery({ duplicateDeliveryId: false, duplicateFingerprint: true, orderId: 10 })).toBe(false);
     expect(shouldEnqueueWooDelivery({ duplicateDeliveryId: false, duplicateFingerprint: false, orderId: null })).toBe(false);
+  });
+
+  it("matches the resource header to the topic family", () => {
+    expect(isWooWebhookResourceValid("order.updated", "order")).toBe(true);
+    expect(isWooWebhookResourceValid("product.created", "product")).toBe(true);
+    expect(isWooWebhookResourceValid("product.updated", "order")).toBe(false);
+    expect(isWooWebhookResourceValid("order.updated", "product")).toBe(false);
+    expect(isWooWebhookResourceValid("product.deleted", "product")).toBe(false);
+    expect(isWooWebhookResourceValid(null, "order")).toBe(false);
   });
 
   it("includes binding headers in the deterministic fallback fingerprint", () => {
@@ -99,7 +131,7 @@ describe("WooCommerce webhook intake contract", () => {
 
   it("normalizes sources and fingerprints them the way the intake signs them", () => {
     expect(normalizeWooWebhookSource("  HTTPS://Shop.Example/ ")).toBe("https://shop.example");
-    expect(WOO_WEBHOOK_TOPICS).toEqual(["order.created", "order.updated", "order.deleted"]);
+    expect(WOO_WEBHOOK_TOPICS).toEqual(["order.created", "order.updated", "order.deleted", "product.created", "product.updated"]);
     // The edge function hashes this string, a null byte, then the raw body; a
     // trailing slash or header casing must not change the dedupe identity.
     expect(deliveryFingerprintInput({ source: "HTTPS://SHOP.EXAMPLE/", webhookId: "42", topic: "order.updated", resource: "order", rawBody: "" }))

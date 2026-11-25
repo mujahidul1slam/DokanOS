@@ -2,8 +2,9 @@ import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import {
   allowedWooWebhookTopic,
   deliveryFingerprintInput,
-  extractWooOrderId,
+  extractWooExternalId,
   isStrictWebhookId,
+  isWooWebhookResourceValid,
   normalizeWooWebhookSource,
   shouldEnqueueWooWebhookWork,
   shouldPromoteWooWebhookStatus,
@@ -199,7 +200,11 @@ Deno.serve(async (req: Request) => {
   const configuredSource = normalizeWooWebhookSource(typedConnector.external_store_url);
   const sourceValid = rawSource === configuredSource;
   const topicValid = allowedWooWebhookTopic(topic);
-  const resourceValid = resource === "order";
+  // Resource must match the topic family. Order topics still require `order`;
+  // product.* topics require `product`. An empty/mismatched resource fails
+  // closed. This does not touch the signature, secret or source checks below.
+  const resourceValid = isWooWebhookResourceValid(topic, resource);
+  const isProductTopic = typeof topic === "string" && topic.startsWith("product.");
   const signatureValid = sourceValid && (await Promise.all((await secretsFor(typedConnector)).map((secret) => verify(raw, signature, secret)))).some(Boolean);
   let parsed: Record<string, unknown> | null = null;
   try {
@@ -210,7 +215,7 @@ Deno.serve(async (req: Request) => {
     // rejected with 400 malformed_payload; a null payload never queues work.
   }
 
-  const externalOrderId = extractWooOrderId(parsed);
+  const externalOrderId = extractWooExternalId(parsed);
   const verificationResult = shouldEnqueueWooWebhookWork({
     signatureValid,
     topicValid,
@@ -273,14 +278,14 @@ Deno.serve(async (req: Request) => {
       topic,
       resource,
       raw_body: raw,
-      reason: "missing_order_id",
+      reason: isProductTopic ? "missing_product_id" : "missing_order_id",
       signature_present: Boolean(signature),
     });
-    return response({ error: "missing_order_id" }, 400);
+    return response({ error: isProductTopic ? "missing_product_id" : "missing_order_id" }, 400);
   }
   if (verificationResult !== "accepted") return response({ accepted: false }, 400);
 
-  const { data: rpcData, error: rpcError } = await sb.rpc("accept_woocommerce_webhook_delivery", {
+  const rpcArgs = {
     p_connector_id: typedConnector.id,
     p_webhook_id: webhookId,
     p_delivery_id: deliveryId,
@@ -292,7 +297,12 @@ Deno.serve(async (req: Request) => {
     p_raw_body: `\\x${bytesToHex(raw)}`,
     p_parsed_payload: parsed,
     p_external_order_id: externalOrderId,
-  });
+  };
+  // Product deliveries use the mirrored intake RPC, which retains identical
+  // evidence and dedupe checks but queues a `product_import` work item.
+  const { data: rpcData, error: rpcError } = isProductTopic
+    ? await sb.rpc("accept_woocommerce_product_delivery", rpcArgs)
+    : await sb.rpc("accept_woocommerce_webhook_delivery", rpcArgs);
   const result = rpcData as { status?: unknown; delivery_id?: unknown; work_id?: unknown } | null;
   if (rpcError || !result || typeof result.status !== "string") {
     console.error("woocommerce webhook intake RPC failed", rpcError?.message ?? "malformed response");

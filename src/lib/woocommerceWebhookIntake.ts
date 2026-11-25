@@ -2,6 +2,8 @@ export const WOO_WEBHOOK_TOPICS = [
   "order.created",
   "order.updated",
   "order.deleted",
+  "product.created",
+  "product.updated",
 ] as const;
 
 export type WooWebhookTopic = (typeof WOO_WEBHOOK_TOPICS)[number];
@@ -43,6 +45,27 @@ export function allowedWooWebhookTopic(value: string | null | undefined): value 
   return typeof value === "string" && (WOO_WEBHOOK_TOPICS as readonly string[]).includes(value);
 }
 
+/** Which `x-wc-webhook-resource` header a topic is allowed to carry. */
+export function expectedWooWebhookResource(topic: string | null | undefined): "order" | "product" | null {
+  // Fail closed: only an explicitly allowed topic has a valid resource family.
+  // An arbitrary `product.*` string (e.g. the unsupported product.deleted) must
+  // not be treated as a valid product delivery.
+  if (!allowedWooWebhookTopic(topic)) return null;
+  return topic.startsWith("product.") ? "product" : "order";
+}
+
+/**
+ * A delivery is only internally consistent when its resource header matches
+ * its topic. Order topics must still say `order`, product topics `product`.
+ */
+export function isWooWebhookResourceValid(
+  topic: string | null | undefined,
+  resource: string | null | undefined,
+): boolean {
+  const expected = expectedWooWebhookResource(topic);
+  return expected !== null && resource === expected;
+}
+
 export function isStrictWebhookId(value: string | null | undefined): boolean {
   if (!value || !/^\d+$/.test(value)) return false;
   const parsed = Number(value);
@@ -61,14 +84,20 @@ export function resolveWooWebhookBinding(
     return { accepted: false, reason: "wrong_webhook_id" };
   }
   if (!allowedWooWebhookTopic(input.topic)) return { accepted: false, reason: "wrong_topic" };
-  if (input.resource !== "order") return { accepted: false, reason: "wrong_resource" };
+  if (!isWooWebhookResourceValid(input.topic, input.resource)) return { accepted: false, reason: "wrong_resource" };
   if (!connector.intake_enabled || !["healthy", "degraded"].includes(connector.status)) {
     return { accepted: false, reason: "inactive_connector" };
   }
   return { accepted: true, reason: "accepted" };
 }
 
-export function extractWooOrderId(payload: unknown): number | null {
+/**
+ * Read a positive numeric `id` from a WooCommerce payload. Both order and
+ * product webhook bodies carry their external identity in `id`, so the same
+ * guard serves both: only a safe positive integer is accepted, never a
+ * stringified object or a borrowed tenancy field.
+ */
+export function extractWooExternalId(payload: unknown): number | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const value = (payload as Record<string, unknown>).id;
   if (typeof value === "number") return Number.isSafeInteger(value) && value > 0 ? value : null;
@@ -77,6 +106,11 @@ export function extractWooOrderId(payload: unknown): number | null {
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
   }
   return null;
+}
+
+/** Backwards-compatible name: order and product payloads both use `id`. */
+export function extractWooOrderId(payload: unknown): number | null {
+  return extractWooExternalId(payload);
 }
 
 export function shouldEnqueueWooDelivery(input: {
@@ -129,7 +163,7 @@ export function shouldEnqueueWooWebhookWork(input: {
     && input.resourceValid
     && input.payload !== null
     && input.payload !== undefined
-    && extractWooOrderId(input.payload) !== null;
+    && extractWooExternalId(input.payload) !== null;
 }
 
 export function deliveryFingerprintInput(input: {

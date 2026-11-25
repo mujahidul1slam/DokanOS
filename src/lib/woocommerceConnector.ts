@@ -200,6 +200,101 @@ export function hasWooPreOrderItem(
   });
 }
 
+/** A local category as needed to resolve a Woo product category to a local id. */
+export type WooLocalCategoryRef = {
+  id: string;
+  parent_id?: string | null;
+  woo_category_id?: number | string | null;
+  slug?: string | null;
+  name?: string | null;
+};
+
+function categoryTextKey(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const key = String(value).trim().toLowerCase().replace(/[\s_]+/g, "-");
+  return key ? key : null;
+}
+
+/**
+ * Expand configured pre-order category ids with all descendants. A selected
+ * parent marks every category below it as pre-order too.
+ */
+export function expandWooCategoryIds(
+  selected: Iterable<string>,
+  categories: readonly WooLocalCategoryRef[],
+): Set<string> {
+  const children = new Map<string, string[]>();
+  for (const category of categories) {
+    if (!category.parent_id) continue;
+    const list = children.get(category.parent_id) ?? [];
+    list.push(category.id);
+    children.set(category.parent_id, list);
+  }
+  const out = new Set<string>();
+  const walk = (id: string) => {
+    if (out.has(id)) return;
+    out.add(id);
+    for (const child of children.get(id) ?? []) walk(child);
+  };
+  for (const id of selected) walk(id);
+  return out;
+}
+
+/**
+ * Resolve the local category ids a Woo product belongs to. A Woo category id is
+ * authoritative when the local catalogue records `woo_category_id`; slug/name
+ * matching is only a fallback for categories that have no external id. This is
+ * deliberately conservative: an ambiguous slug must not silently make an order
+ * a pre-order.
+ */
+export function mapWooProductCategoryIds(
+  productCategories: unknown,
+  localCategories: readonly WooLocalCategoryRef[],
+): string[] {
+  if (!Array.isArray(productCategories) || localCategories.length === 0) return [];
+  const matched = new Set<string>();
+  for (const entry of productCategories) {
+    if (!entry || typeof entry !== "object") continue;
+    const wooId = (entry as { id?: unknown }).id;
+    const wooSlug = categoryTextKey((entry as { slug?: unknown }).slug);
+    const wooName = categoryTextKey((entry as { name?: unknown }).name);
+
+    const idMatches = localCategories.filter(
+      (local) => wooId != null && local.woo_category_id != null
+        && String(local.woo_category_id) === String(wooId),
+    );
+    if (idMatches.length > 0) {
+      for (const local of idMatches) matched.add(local.id);
+      continue;
+    }
+    // No external-id match: fall back to a unique slug/name match. If more than
+    // one distinct local category matches, the mapping is ambiguous — fail
+    // closed instead of guessing (never silently marking an order as pre-order).
+    const candidates = new Set<string>();
+    for (const local of localCategories) {
+      if (local.woo_category_id != null) continue;
+      const slug = categoryTextKey(local.slug);
+      const name = categoryTextKey(local.name);
+      const isMatch = (wooSlug !== null && slug !== null && wooSlug === slug)
+        || (wooName !== null && name !== null && wooName === name);
+      if (isMatch) candidates.add(local.id);
+    }
+    if (candidates.size === 1) matched.add([...candidates][0]);
+  }
+  return [...matched];
+}
+
+/** True when a Woo product's categories intersect the expanded pre-order set. */
+export function isWooProductPreOrder(
+  productCategories: unknown,
+  localCategories: readonly WooLocalCategoryRef[],
+  expandedPreOrderIds: ReadonlySet<string>,
+): boolean {
+  if (expandedPreOrderIds.size === 0) return false;
+  return mapWooProductCategoryIds(productCategories, localCategories)
+    .some((id) => expandedPreOrderIds.has(id));
+}
+
 export function isKnownWooStatus(status: string | null | undefined): status is WooOrderStatus {
   return typeof status === "string" && (WOO_ORDER_STATUSES as readonly string[]).includes(status);
 }

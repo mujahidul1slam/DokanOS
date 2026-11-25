@@ -8,6 +8,9 @@ import {
   mapWooLocalStatus,
   mapWooPaymentStatus,
   hasWooPreOrderItem,
+  expandWooCategoryIds,
+  mapWooProductCategoryIds,
+  isWooProductPreOrder,
   nextWooPageUrl,
   outboundIdempotencyKey,
   outboundWooStatus,
@@ -101,6 +104,45 @@ describe("WooCommerce connector recovery requirements", () => {
       { product_id: 11, categories: [{ id: 9 }] },
     ], new Set([7]))).toBe(true);
     expect(hasWooPreOrderItem([{ product_id: 11, categories: [9] }], new Set([7]))).toBe(false);
+  });
+
+  it("maps Woo product categories to local ids by external id, with a unique slug fallback", () => {
+    const local = [
+      { id: "cat-preorder", woo_category_id: 41, slug: "pre-order", name: "Pre Order" },
+      { id: "cat-child", parent_id: "cat-preorder", woo_category_id: 42, slug: "child", name: "Child" },
+      { id: "cat-slug-only", slug: "Backorders", name: "Backorders" },
+      { id: "cat-ambiguous-a", slug: "dupe", name: "Dupe" },
+      { id: "cat-ambiguous-b", slug: "dupe", name: "Dupe" },
+    ];
+    expect(mapWooProductCategoryIds([{ id: 41 }, { id: 99 }], local)).toEqual(["cat-preorder"]);
+    expect(mapWooProductCategoryIds([{ id: 0, slug: "backorders", name: "Backorders" }], local)).toEqual(["cat-slug-only"]);
+    // Two local categories share the slug -> ambiguous -> fail closed.
+    expect(mapWooProductCategoryIds([{ id: 0, slug: "dupe", name: "Dupe" }], local)).toEqual([]);
+    expect(mapWooProductCategoryIds([], local)).toEqual([]);
+    expect(mapWooProductCategoryIds([{ id: 41 }], [])).toEqual([]);
+  });
+
+  it("expands selected pre-order categories with their descendants", () => {
+    const categories = [
+      { id: "parent" },
+      { id: "child", parent_id: "parent" },
+      { id: "grandchild", parent_id: "child" },
+      { id: "other", parent_id: "unrelated" },
+    ];
+    expect([...expandWooCategoryIds(["parent"], categories)].sort()).toEqual(["child", "grandchild", "parent"]);
+    expect([...expandWooCategoryIds(["other"], categories)]).toEqual(["other"]);
+  });
+
+  it("detects pre-order products conservatively and fails closed on unmapped categories", () => {
+    const local = [
+      { id: "cat-preorder", woo_category_id: 41, slug: "pre-order", name: "Pre Order" },
+      { id: "cat-child", parent_id: "cat-preorder", woo_category_id: 42, slug: "child", name: "Child" },
+    ];
+    const expanded = expandWooCategoryIds(["cat-preorder"], local);
+    expect(isWooProductPreOrder([{ id: 42 }], local, expanded)).toBe(true);
+    expect(isWooProductPreOrder([{ id: 7, slug: "unknown", name: "Unknown" }], local, expanded)).toBe(false);
+    expect(isWooProductPreOrder([{ id: 41 }], local, new Set())).toBe(false);
+    expect(isWooProductPreOrder(null, local, expanded)).toBe(false);
   });
 });
 
