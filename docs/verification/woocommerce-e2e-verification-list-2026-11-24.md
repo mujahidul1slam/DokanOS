@@ -15,7 +15,7 @@ The automatic product notice is now wired up too. Before, a new product in your 
 
 Two things to know, so nothing looks broken later: a change can take up to five minutes to appear (the background worker checks every five minutes), and the WooCommerce "Error: Delivery URL returned response code: 400" warning that appears while saving a product notice is harmless — it is WooCommerce testing the address before DokanOS has been told about it.
 
-**Your next action:** none. All ten checks pass or are formally set aside, and every fix is live and proven. No real money, no couriers, no customer data touched; the only test data is marked "DO NOT SHIP" and made up.
+**Your next action:** none. All ten checks pass or are formally set aside, and every fix is live and proven. No real money, no couriers, no customer data touched; the only test data is marked "DO NOT SHIP" and made up. I moved the made-up test product to the Trash so no customer can see it; it stays in the Trash until you decide to empty it.
 <!-- END FOR MUJAHID ONLY - AGENTS: RESUME READING -->
 
 # WooCommerce E2E verification list — 2026-11-24
@@ -73,6 +73,12 @@ Dead registrations retired: Enveil webhook 12 ("OmniSync Product Create", pointe
 - **Up to 5 minutes of lag is normal.** The webhook only queues work; the worker runs on a 5-minute cron. Both proofs show roughly 3–4 minutes from delivery to local row.
 - **`invalid_webhook_identity` rejection rows are not failures.** WooCommerce pings a delivery URL when a webhook is saved, and that ping carries no `x-wc-webhook-source` header, so the handler rejects it before connector resolution. The bodies read literally `webhook_id=16` / `webhook_id=17` / `webhook_id=10` / `webhook_id=11` (no JSON payload). Real deliveries always carry the header and are accepted — proven by the two deliveries above.
 - **Register the binding before the webhook.** Saving a Woo webhook with no binding yet shows "Error: Delivery URL returned response code: 400" in the Woo admin even though the webhook is created. Insert the binding row first, or accept the warning and bind afterwards.
+
+**Fixture residue (recorded, not deleted — deleting it would destroy the evidence).**
+
+- Woo side: product 8873 "DOKANOS-E2E-20261125T1021Z-S10 PRODUCT SYNC TEST" (SKU `EV-5783`) was **moved to the Trash** at 10:36 UTC on 2026-11-25, so it no longer shows on the public storefront. Trash count on Enveil is now 1; restore or delete it permanently whenever you like.
+- DokanOS side: local product `344af7f6-5539-49c7-a03a-7a37590e77bf` (price 2.00, `origin_kind=woo_sync`) and `woocommerce_product_map` row `f9b18ce4-d935-4749-895a-de1fd8a25d37` are kept deliberately as the proof record. It is an internal catalogue row, not customer-facing.
+- Order side: order `#8872` / `EE-8872-W` (৳2,595, private note "DO NOT SHIP") is likewise kept as the S-02/S-03 proof record.
 
 ## How to read this document
 
