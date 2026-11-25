@@ -1,5 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 
+/**
+ * Order sources under brands (formerly "stores under brands").
+ *
+ * The Task 16 contract migration dropped `brand_stores` and
+ * `create_brand_store(uuid, text, text)`, and the Brands page was reduced to
+ * brand-only CRUD. A merchant now names the places orders come from as ORDER
+ * SOURCES on the Integrations page (one section per brand). This spec drives
+ * that surface: physical and digital sources under two brands, with no store
+ * row, storefront, or publish state created as a side effect.
+ */
+
 const user = {
   id: "00000000-0000-0000-0000-000000000099",
   aud: "authenticated",
@@ -57,8 +68,8 @@ async function signedIn(page: Page) {
   }, { user, businessId: business.id });
 }
 
-test("a member creates multiple physical and online stores under brands without publishing or extra resources", async ({ page }) => {
-  const stores: Array<Record<string, unknown>> = [];
+test("a member creates physical and digital order sources under brands without publishing or extra resources", async ({ page }) => {
+  const sources: Array<Record<string, unknown>> = [];
   const writes: Array<{ path: string; body: unknown }> = [];
 
   await page.route("https://challenges.cloudflare.com/**", (route) => route.abort());
@@ -75,8 +86,6 @@ test("a member creates multiple physical and online stores under brands without 
       await route.fulfill({ json: [{ role: "manager", business_id: business.id, businesses: business }] });
       return;
     }
-    // Task 11 moved store creation to the Brands page (unguarded); the
-    // permission mock stays for the other routes the app touches.
     if (url.pathname.endsWith("/rpc/get_user_permissions")) {
       await route.fulfill({ json: ["dashboard.view"] });
       return;
@@ -93,29 +102,46 @@ test("a member creates multiple physical and online stores under brands without 
       await route.fulfill({ json: brands });
       return;
     }
-    if (url.pathname.endsWith("/brand_stores") && method === "GET") {
-      await route.fulfill({ json: [...stores].sort((a, b) => String(a.name).localeCompare(String(b.name))) });
+    if (url.pathname.endsWith("/order_sources") && method === "GET") {
+      await route.fulfill({ json: [...sources].sort((a, b) => String(a.name).localeCompare(String(b.name))) });
       return;
     }
-    if (url.pathname.endsWith("/rpc/create_brand_store")) {
-      const payload = body as { p_brand_id: string; p_name: string; p_store_type: string };
-      expect(["physical", "online"]).toContain(payload.p_store_type);
-      expect(brands.some((brand) => brand.id === payload.p_brand_id)).toBe(true);
-      const store = {
-        id: `55555555-0000-0000-0000-${String(stores.length + 1).padStart(12, "0")}`,
-        brand_id: payload.p_brand_id,
-        name: payload.p_name,
-        store_type: payload.p_store_type,
-        is_published: false,
-        created_at: "2026-10-19T00:00:00Z",
-        updated_at: "2026-10-19T00:00:00Z",
+    if (url.pathname.endsWith("/order_sources") && method === "POST") {
+      const payload = body as { brand_id: string; name: string; type: string };
+      // Only the non-legacy source types the dialog offers may be created here.
+      expect(["physical_store", "storefront"]).toContain(payload.type);
+      expect(brands.some((brand) => brand.id === payload.brand_id)).toBe(true);
+      const source = {
+        id: `66666666-0000-0000-0000-${String(sources.length + 1).padStart(12, "0")}`,
+        brand_id: payload.brand_id,
+        name: payload.name,
+        type: payload.type,
+        config: {},
+        sync_direction: null,
+        last_sync_at: null,
+        last_sync_error: null,
+        is_stock_holding: payload.type === "physical_store",
+        is_default: false,
+        ship_from_store: false,
+        fulfillment_preference: [],
+        accepted_payment_methods: ["cod", "cash"],
+        legacy_woo_store_id: null,
       };
-      stores.push(store);
-      await route.fulfill({ json: store });
+      sources.push(source);
+      await route.fulfill({ json: source });
       return;
     }
-    if (url.pathname.endsWith("/selling_points")) {
-      await route.fulfill({ status: 200, headers: { "content-range": "*/0" }, json: [] });
+    // The panel reads these to scope the legacy store binding and order counts.
+    if (url.pathname.endsWith("/stores")) {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    if (url.pathname.endsWith("/warehouses")) {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    if (url.pathname.endsWith("/orders")) {
+      await route.fulfill({ json: [] });
       return;
     }
     // 2435c1b moved the signup kill switch from an app_config row read to the
@@ -138,42 +164,42 @@ test("a member creates multiple physical and online stores under brands without 
   });
   await signedIn(page);
 
-  await page.goto("/brands");
-  await expect(page.getByText("North Star", { exact: true })).toBeVisible();
-  await expect(page.getByText("Daylight Goods", { exact: true })).toBeVisible();
+  await page.goto("/integrations");
+  await expect(page.getByRole("heading", { name: "Order Sources", exact: true })).toBeVisible();
+  for (const brand of brands) {
+    await expect(page.getByRole("heading", { name: brand.name, exact: true })).toBeVisible();
+  }
 
-  async function createStore(brand: string, name: string, type: "Physical store" | "Online store") {
-    await page.getByRole("button", { name: "New Store", exact: true }).click();
+  async function createSource(brandName: string, name: string, type: "Physical store" | "Storefront") {
+    const section = page.getByRole("region", { name: `Order sources — ${brandName}` });
+    await section.getByRole("button", { name: "Add source" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    // There is no combined physical-and-online type in the UI.
-    await expect(dialog.getByRole("radio")).toHaveCount(2);
-    await expect(dialog.getByText(/Physical and online/i)).toHaveCount(0);
+    // Seven non-legacy source types; the retired WooCommerce type is not offered.
+    await expect(dialog.getByRole("radio")).toHaveCount(7);
+    await expect(dialog.getByText(/WooCommerce \(legacy\)/i)).toHaveCount(0);
     await expect(dialog.getByLabel("Address")).toHaveCount(0);
-    await dialog.getByLabel("Store name").fill(name);
-    await dialog.getByLabel("Parent brand").selectOption({ label: brand });
+    await dialog.getByLabel("Name", { exact: true }).fill(name);
     await dialog.getByLabel(type).check();
-    await dialog.getByRole("button", { name: "Create store" }).click();
+    await dialog.getByRole("button", { name: "Create source" }).click();
     await expect(dialog).toHaveCount(0);
   }
 
-  await createStore("North Star", "Dhanmondi Outlet", "Physical store");
-  await createStore("North Star", "North Star Online", "Online store");
-  await createStore("Daylight Goods", "Gulshan Outlet", "Physical store");
+  await createSource("North Star", "Dhanmondi Outlet", "Physical store");
+  await createSource("North Star", "North Star Online", "Storefront");
+  await createSource("Daylight Goods", "Gulshan Outlet", "Physical store");
 
-  // Task 11: StoresHub retired — each brand card lists its stores inline
-  // (type badge + publish state), so every created store is visible at once.
+  // Each brand section lists its own sources inline, so every created source is
+  // visible at once without navigating away.
   await expect(page.getByText("Dhanmondi Outlet", { exact: true })).toBeVisible();
   await expect(page.getByText("North Star Online", { exact: true })).toBeVisible();
   await expect(page.getByText("Gulshan Outlet", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Unpublished/)).toBeVisible();
 
-  // A store enters the brand's existing operational context without requiring
-  // an address, integration or storefront configuration first; brand → store
-  // scoping is asserted on the created rows (each landed under the brand
-  // picked in the dialog).
+  // A source enters the brand's operational context without requiring an
+  // address, integration or storefront configuration first; brand scoping is
+  // asserted on the created rows (each landed under the brand picked).
   const brandId = (name: string) => brands.find((brand) => brand.name === name)?.id;
-  expect(stores.map((store) => `${String(store.brand_id)}:${String(store.name)}`).sort()).toEqual(
+  expect(sources.map((source) => `${String(source.brand_id)}:${String(source.name)}`).sort()).toEqual(
     [
       `${brandId("Daylight Goods")}:Gulshan Outlet`,
       `${brandId("North Star")}:Dhanmondi Outlet`,
@@ -181,9 +207,12 @@ test("a member creates multiple physical and online stores under brands without 
     ].sort(),
   );
 
-  expect(stores).toHaveLength(3);
-  expect(stores.every((store) => store.is_published === false)).toBe(true);
-  expect(writes.filter((write) => write.path.endsWith("/rpc/create_brand_store"))).toHaveLength(3);
+  expect(sources).toHaveLength(3);
+  // Physical sources hold stock by default; the storefront source does not.
+  expect(sources.find((source) => source.name === "Dhanmondi Outlet")?.is_stock_holding).toBe(true);
+  expect(sources.find((source) => source.name === "North Star Online")?.is_stock_holding).toBe(false);
+  expect(writes.filter((write) => write.path.endsWith("/rest/v1/order_sources"))).toHaveLength(3);
+  // Creating a source must not mint a legacy store row, a storefront, or a brand.
   expect(writes.some((write) => /\/rest\/v1\/(stores|storefronts|brands)$/.test(write.path))).toBe(false);
   expect(JSON.stringify(writes)).not.toContain("\"is_published\":true");
 });

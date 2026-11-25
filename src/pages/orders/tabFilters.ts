@@ -234,7 +234,7 @@ export function matchesTab(
       // load" symptom — and the dashboard's /orders?status=pending link had
       // nothing to land on.
       return (
-        ["pending", "processing", "payment_pending"].includes(o.status) &&
+        ["pending", "processing", "payment_pending", "new_order"].includes(o.status) &&
         !o.consignment_id &&
         !preOrderOrderIds.has(o.id)
       );

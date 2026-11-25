@@ -1264,9 +1264,13 @@ export type Database = {
           product_id: string | null
           product_name: string
           quantity: number
+          sku: string | null
           stock_ledger: Json | null
+          tax_amount: number | null
           unit_price: number
           variation_id: string | null
+          woocommerce_product_id: number | null
+          woocommerce_variation_id: number | null
         }
         Insert: {
           created_at?: string
@@ -1277,9 +1281,13 @@ export type Database = {
           product_id?: string | null
           product_name: string
           quantity?: number
+          sku?: string | null
           stock_ledger?: Json | null
+          tax_amount?: number | null
           unit_price?: number
           variation_id?: string | null
+          woocommerce_product_id?: number | null
+          woocommerce_variation_id?: number | null
         }
         Update: {
           created_at?: string
@@ -1290,9 +1298,13 @@ export type Database = {
           product_id?: string | null
           product_name?: string
           quantity?: number
+          sku?: string | null
           stock_ledger?: Json | null
+          tax_amount?: number | null
           unit_price?: number
           variation_id?: string | null
+          woocommerce_product_id?: number | null
+          woocommerce_variation_id?: number | null
         }
         Relationships: [
           {
@@ -1494,6 +1506,7 @@ export type Database = {
           business_id: string | null
           consignment_id: string | null
           created_at: string
+          currency: string | null
           customer_address: string | null
           customer_city: string | null
           customer_email: string | null
@@ -1546,6 +1559,7 @@ export type Database = {
           business_id?: string | null
           consignment_id?: string | null
           created_at?: string
+          currency?: string | null
           customer_address?: string | null
           customer_city?: string | null
           customer_email?: string | null
@@ -1598,6 +1612,7 @@ export type Database = {
           business_id?: string | null
           consignment_id?: string | null
           created_at?: string
+          currency?: string | null
           customer_address?: string | null
           customer_city?: string | null
           customer_email?: string | null
@@ -2326,6 +2341,98 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      woocommerce_product_map: {
+        Row: {
+          connector_id: string
+          created_at: string
+          external_product_id: number
+          external_variation_id: number | null
+          id: string
+          last_modified_at: string | null
+          product_id: string
+          updated_at: string
+          variation_id: string | null
+        }
+        Insert: {
+          connector_id: string
+          created_at?: string
+          external_product_id: number
+          external_variation_id?: number | null
+          id?: string
+          last_modified_at?: string | null
+          product_id: string
+          updated_at?: string
+          variation_id?: string | null
+        }
+        Update: {
+          connector_id?: string
+          created_at?: string
+          external_product_id?: number
+          external_variation_id?: number | null
+          id?: string
+          last_modified_at?: string | null
+          product_id?: string
+          updated_at?: string
+          variation_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "woocommerce_product_map_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "woocommerce_product_map_variation_id_fkey"
+            columns: ["variation_id"]
+            isOneToOne: false
+            referencedRelation: "product_variations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      woocommerce_webhook_bindings: {
+        Row: {
+          connector_id: string
+          created_at: string
+          id: string
+          secret_ref: string
+          status: string
+          topic: string
+          updated_at: string
+          webhook_id: number
+        }
+        Insert: {
+          connector_id: string
+          created_at?: string
+          id?: string
+          secret_ref: string
+          status?: string
+          topic: string
+          updated_at?: string
+          webhook_id: number
+        }
+        Update: {
+          connector_id?: string
+          created_at?: string
+          id?: string
+          secret_ref?: string
+          status?: string
+          topic?: string
+          updated_at?: string
+          webhook_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "woocommerce_webhook_bindings_connector_id_fkey"
+            columns: ["connector_id"]
+            isOneToOne: false
+            referencedRelation: "woocommerce_connectors"
             referencedColumns: ["id"]
           },
         ]
@@ -3437,6 +3544,31 @@ export type Database = {
     }
     Functions: {
       accept_business_invitation: { Args: { p_token: string }; Returns: Json }
+      accept_woocommerce_product_delivery: {
+        Args: {
+          p_connector_id: string
+          p_delivery_fingerprint: string
+          p_delivery_id: string
+          p_external_order_id: number
+          p_parsed_payload: Json
+          p_payload_version: string
+          p_raw_body: string
+          p_resource: string
+          p_source_url: string
+          p_topic: string
+          p_webhook_id: number
+        }
+        Returns: Json
+      }
+      upsert_woocommerce_product: {
+        Args: {
+          p_connector_id: string
+          p_external_product_id: number
+          p_modified_at: string
+          p_payload: Json
+        }
+        Returns: string
+      }
       business_has_other_owner: {
         Args: { p_business_id: string; p_user: string }
         Returns: boolean
