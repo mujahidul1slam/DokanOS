@@ -343,13 +343,13 @@ All re-run against the local stack with the pending fix migration rehearsed, to 
 
 ## 14. Cleanup and release gate
 
-- [ ] **G-01** **LIVE:** cancel disposable fixtures only through the approved supported path; keep do-not-ship notes and record all residue IDs (`Woo B/A / DokanOS B/A / Causal IDs / UTC / Result`).
+- [ ] **G-01** **LIVE:** cancel disposable fixtures only through the approved supported path; keep do-not-ship notes and record all residue IDs (`Woo B/A / DokanOS B/A / Causal IDs / UTC / Result`). This is cleanup work, not a reason to replay dead letters or delete evidence.
 - [ ] **G-02** Do not delete production orders, webhook evidence, sync work, payments, or conflicts. Do not replay the four pre-existing production dead letters (`inbound:8848`, `inbound:8855`, `inbound:11047`, `reconcile:11066`) until fixes are deployed and read-only preflight is captured.
 - [ ] **G-03** Do not disable webhook intake globally; restore any per-connector changes made strictly for the test and confirm `webhook_status` matches the W-03 baseline.
-- [ ] **G-04** Confirm no generated secrets/artifacts are untracked; inspect `git status --short`.
+- [ ] **G-04** Confirm no generated secrets/artifacts are untracked; inspect `git status --short`. Current uncommitted items are known unrelated work (`AGENTS.md`, dependency lockfiles, Supabase CLI temp state, `.codegraph/`, `CON`); do not sweep them into this fix.
 - [ ] **G-05 — STILL BLOCKED.** **All ten scenarios S-01…S-10 must be `Pass`, or have an explicit approved deferral recorded with approver name + UTC + reason.** D1/D2/D3 proof alone is **not** sufficient to clear this gate.
   - Now `Pass`: S-01, S-04 (with documented limitation), S-05, S-06, S-07, S-08.
-  - Still blocking: **S-02 `Fail`** (money loss on fee/tax orders — fixed locally, waiting on the frontend release tracked by G-07; W-11 SKU/product/variation/currency loss remains a known limitation with no fix written).
+  - Still blocking: **S-02 `Fail`** because W-11 still loses SKU, `product_id`, `variation_id`, and currency on import. The separate fee-only money loss (W-43/G-07) is fixed and proven on the branch Preview; that does not fix the missing product metadata.
   - **Needs an explicit deferral decision:** S-03 `Blocked — unsupported by construction` (preorder routing cannot fire from webhook payloads), S-09 and S-10 `Confirmed unsupported` (stock pipeline and product importer were retired by `supabase/migrations/20261103160000_retire_woocommerce_integration.sql`).
   - Untestable as configured: W-38 multi-business isolation — production has exactly one business.
   - Database/webhook deployment and the read-only causal preflight **are** established. Fresh typecheck and 14 focused tests passed; the frontend build passed again in 11.37 seconds. The browser-suite rerun remains unverified: Chromium installation stopped producing output after its download and was cancelled after more than seven minutes. The chained browser suite did not run; do not report it as green.
